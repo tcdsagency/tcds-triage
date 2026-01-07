@@ -9,7 +9,10 @@ interface LiveAssistCardProps {
   suggestions?: AgentSuggestion[];
   confidence?: number;
   matchedTriggers?: string[];
+  isLoading?: boolean;
   onUseSuggestion?: (suggestion: AgentSuggestion) => void;
+  onDismissSuggestion?: (suggestion: AgentSuggestion) => void;
+  onPlaybookFeedback?: (playbookId: string, feedback: string) => void;
   onCopyScript?: (script: string) => void;
   className?: string;
 }
@@ -40,12 +43,24 @@ export default function LiveAssistCard({
   suggestions = [],
   confidence = 0,
   matchedTriggers = [],
+  isLoading = false,
   onUseSuggestion,
+  onDismissSuggestion,
+  onPlaybookFeedback,
   onCopyScript,
   className,
 }: LiveAssistCardProps) {
   const [scriptTab, setScriptTab] = useState<ScriptTab>("opening");
   const [expandedSection, setExpandedSection] = useState<string | null>("scripts");
+
+  if (isLoading) {
+    return (
+      <div className={cn("p-4 text-center text-gray-500", className)}>
+        <div className="text-4xl mb-2 animate-pulse">🔍</div>
+        <p className="text-sm">Analyzing conversation...</p>
+      </div>
+    );
+  }
 
   if (!playbook) {
     return (
@@ -263,6 +278,37 @@ export default function LiveAssistCard({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Compact version for minimized call popup
+ */
+export function LiveAssistCompact({
+  playbook,
+  suggestionCount = 0,
+}: {
+  playbook: Playbook | null;
+  suggestionCount?: number;
+}) {
+  if (!playbook && suggestionCount === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-2 px-2 py-1 bg-purple-50 border border-purple-200 rounded-md">
+      {playbook && (
+        <div className="flex items-center gap-1 text-xs text-purple-700">
+          <span>{DOMAIN_ICONS[playbook.domain] || "📞"}</span>
+          <span className="font-medium truncate max-w-[120px]">{playbook.title}</span>
+        </div>
+      )}
+      {suggestionCount > 0 && (
+        <span className="text-xs bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded">
+          {suggestionCount} tip{suggestionCount !== 1 ? "s" : ""}
+        </span>
+      )}
     </div>
   );
 }
