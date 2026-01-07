@@ -95,6 +95,12 @@ export default function AgencySettingsPage() {
   const [aiUsageLoading, setAiUsageLoading] = useState(false);
   const [aiUsagePeriod, setAiUsagePeriod] = useState("30d");
 
+  // JSON Import state
+  const [showJsonImport, setShowJsonImport] = useState(false);
+  const [jsonImportText, setJsonImportText] = useState("");
+  const [jsonImportLoading, setJsonImportLoading] = useState(false);
+  const [jsonImportError, setJsonImportError] = useState<string | null>(null);
+
   const [afterHours, setAfterHours] = useState({
     enabled: true,
     timezone: "America/Chicago",
@@ -412,6 +418,81 @@ export default function AgencySettingsPage() {
       console.error("Failed to save integration:", err);
     } finally {
       setSavingIntegration(false);
+    }
+  };
+
+  // Import credentials from JSON
+  const handleJsonImport = async () => {
+    setJsonImportError(null);
+    setJsonImportLoading(true);
+    try {
+      const parsed = JSON.parse(jsonImportText);
+
+      // Map common env var names to integration IDs
+      const keyMapping: Record<string, { integration: string; field: string }> = {
+        OPENAI_API_KEY: { integration: "openai", field: "apiKey" },
+        ANTHROPIC_API_KEY: { integration: "anthropic", field: "apiKey" },
+        TWILIO_ACCOUNT_SID: { integration: "twilio", field: "accountSid" },
+        TWILIO_AUTH_TOKEN: { integration: "twilio", field: "authToken" },
+        TWILIO_PHONE_NUMBER: { integration: "twilio", field: "phoneNumber" },
+        RESEND_API_KEY: { integration: "resend", field: "apiKey" },
+        AGENCYZOOM_API_USERNAME: { integration: "agencyzoom", field: "username" },
+        AGENCYZOOM_API_PASSWORD: { integration: "agencyzoom", field: "password" },
+        HAWKSOFT_API_KEY: { integration: "hawksoft", field: "apiKey" },
+        HAWKSOFT_AGENCY_ID: { integration: "hawksoft", field: "agencyId" },
+        HAWKSOFT_CLIENT_ID: { integration: "hawksoft", field: "clientId" },
+        HAWKSOFT_CLIENT_SECRET: { integration: "hawksoft", field: "clientSecret" },
+        DEEPGRAM_API_KEY: { integration: "deepgram", field: "apiKey" },
+        NEARMAP_API_KEY: { integration: "nearmap", field: "apiKey" },
+        GOOGLE_API_KEY: { integration: "google", field: "apiKey" },
+        GOOGLE_MAPS_API_KEY: { integration: "google", field: "apiKey" },
+        CANOPY_CLIENT_ID: { integration: "canopy", field: "clientId" },
+        CANOPY_CLIENT_SECRET: { integration: "canopy", field: "clientSecret" },
+        CANOPY_ENVIRONMENT: { integration: "canopy", field: "environment" },
+        THREECX_API_KEY: { integration: "3cx", field: "apiKey" },
+        THREECX_BASE_URL: { integration: "3cx", field: "baseUrl" },
+      };
+
+      // Group credentials by integration
+      const integrationCredentials: Record<string, Record<string, string>> = {};
+
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value !== "string") continue;
+        const mapping = keyMapping[key];
+        if (mapping) {
+          if (!integrationCredentials[mapping.integration]) {
+            integrationCredentials[mapping.integration] = {};
+          }
+          integrationCredentials[mapping.integration][mapping.field] = value;
+        }
+      }
+
+      // Save each integration
+      let savedCount = 0;
+      for (const [integrationId, credentials] of Object.entries(integrationCredentials)) {
+        const res = await fetch("/api/integrations", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ integrationId, credentials }),
+        });
+        if (res.ok) savedCount++;
+      }
+
+      // Reload integrations
+      const reloadRes = await fetch("/api/integrations");
+      const reloadData = await reloadRes.json();
+      if (reloadData.success) {
+        setIntegrationsData(reloadData.integrations);
+        setIntegrationsGrouped(reloadData.grouped);
+      }
+
+      setShowJsonImport(false);
+      setJsonImportText("");
+      alert(`Successfully imported ${savedCount} integration(s)`);
+    } catch (err: any) {
+      setJsonImportError(err.message || "Invalid JSON format");
+    } finally {
+      setJsonImportLoading(false);
     }
   };
 
@@ -927,7 +1008,50 @@ export default function AgencySettingsPage() {
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Integration Settings</h2>
                   <p className="text-sm text-gray-500">Configure API keys and credentials for external services</p>
                 </div>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowJsonImport(true)}
+                >
+                  <Database className="w-4 h-4 mr-2" />
+                  Import from JSON
+                </Button>
               </div>
+
+              {/* JSON Import Modal */}
+              {showJsonImport && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold">Import Credentials from JSON</h3>
+                      <button onClick={() => setShowJsonImport(false)}>
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Paste a JSON object with your environment variables. Supported keys:
+                      OPENAI_API_KEY, ANTHROPIC_API_KEY, TWILIO_*, RESEND_API_KEY, AGENCYZOOM_*, HAWKSOFT_*, DEEPGRAM_API_KEY, NEARMAP_API_KEY, GOOGLE_API_KEY, CANOPY_*, THREECX_*
+                    </p>
+                    <textarea
+                      value={jsonImportText}
+                      onChange={(e) => setJsonImportText(e.target.value)}
+                      placeholder={'{\n  "OPENAI_API_KEY": "sk-...",\n  "ANTHROPIC_API_KEY": "sk-ant-...",\n  "TWILIO_ACCOUNT_SID": "AC...",\n  "TWILIO_AUTH_TOKEN": "..."\n}'}
+                      className="w-full h-64 p-3 font-mono text-sm border rounded-lg bg-gray-50 dark:bg-gray-800 dark:border-gray-700"
+                    />
+                    {jsonImportError && (
+                      <p className="text-red-500 text-sm mt-2">{jsonImportError}</p>
+                    )}
+                    <div className="flex justify-end gap-3 mt-4">
+                      <Button variant="outline" onClick={() => setShowJsonImport(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleJsonImport} disabled={jsonImportLoading || !jsonImportText.trim()}>
+                        {jsonImportLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                        Import Credentials
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {integrationsLoading ? (
                 <div className="flex items-center justify-center py-12">
