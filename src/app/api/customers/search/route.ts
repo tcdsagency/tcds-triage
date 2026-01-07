@@ -1,0 +1,248 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/db';
+import { customers, policies, vehicles, drivers, users, properties } from '@/db/schema';
+import { eq, or, ilike, sql, and, desc } from 'drizzle-orm';
+
+// GET /api/customers/search?q=query&limit=20
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const query = searchParams.get('q') || '';
+    const phone = searchParams.get('phone');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });
+    }
+
+    const selectFields = {
+      id: customers.id,
+      firstName: customers.firstName,
+      lastName: customers.lastName,
+      email: customers.email,
+      phone: customers.phone,
+      phoneAlt: customers.phoneAlt,
+      address: customers.address,
+      agencyzoomId: customers.agencyzoomId,
+      hawksoftClientCode: customers.hawksoftClientCode,
+      isLead: customers.isLead,
+      updatedAt: customers.updatedAt,
+      producerId: customers.producerId,
+      csrId: customers.csrId,
+    };
+
+    let results;
+
+    if (phone) {
+      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      results = await db
+        .select(selectFields)
+        .from(customers)
+        .where(
+          and(
+            eq(customers.tenantId, tenantId),
+            or(
+              sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ${'%' + normalizedPhone}`,
+              sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phoneAlt}, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ${'%' + normalizedPhone}`
+            )
+          )
+        )
+        .orderBy(desc(customers.updatedAt))
+        .limit(limit);
+    } else if (query.length >= 2) {
+      const searchTerm = `%${query}%`;
+      results = await db
+        .select(selectFields)
+        .from(customers)
+        .where(
+          and(
+            eq(customers.tenantId, tenantId),
+            or(
+              ilike(customers.firstName, searchTerm),
+              ilike(customers.lastName, searchTerm),
+              ilike(customers.email, searchTerm),
+              sql`${customers.firstName} || ' ' || ${customers.lastName} ILIKE ${searchTerm}`
+            )
+          )
+        )
+        .orderBy(desc(customers.updatedAt))
+        .limit(limit);
+    } else {
+      results = await db
+        .select(selectFields)
+        .from(customers)
+        .where(eq(customers.tenantId, tenantId))
+        .orderBy(desc(customers.updatedAt))
+        .limit(limit);
+    }
+
+    // Fetch FULL policy data for each customer
+    const customerIds = results.map(r => r.id);
+    const policyData = customerIds.length > 0 
+      ? await db.select({
+          id: policies.id,
+          customerId: policies.customerId,
+          policyNumber: policies.policyNumber,
+          lineOfBusiness: policies.lineOfBusiness,
+          carrier: policies.carrier,
+          effectiveDate: policies.effectiveDate,
+          expirationDate: policies.expirationDate,
+          premium: policies.premium,
+          status: policies.status,
+          coverages: policies.coverages,
+        })
+        .from(policies)
+        .where(sql`${policies.customerId} IN (${sql.join(customerIds.map(id => sql`${id}`), sql`, `)})`)
+      : [];
+
+    // Fetch vehicles for all policies
+    const policyIds = policyData.map(p => p.id);
+    const vehicleData = policyIds.length > 0
+      ? await db.select({
+          policyId: vehicles.policyId,
+          year: vehicles.year,
+          make: vehicles.make,
+          model: vehicles.model,
+          vin: vehicles.vin,
+          use: vehicles.use,
+          annualMiles: vehicles.annualMiles,
+        })
+        .from(vehicles)
+        .where(sql`${vehicles.policyId} IN (${sql.join(policyIds.map(id => sql`${id}`), sql`, `)})`)
+      : [];
+
+    // Fetch drivers for all policies
+    const driverData = policyIds.length > 0
+      ? await db.select({
+          policyId: drivers.policyId,
+          firstName: drivers.firstName,
+          lastName: drivers.lastName,
+          dateOfBirth: drivers.dateOfBirth,
+          licenseNumber: drivers.licenseNumber,
+          licenseState: drivers.licenseState,
+          relationship: drivers.relationship,
+        })
+        .from(drivers)
+        .where(sql`${drivers.policyId} IN (${sql.join(policyIds.map(id => sql`${id}`), sql`, `)})`)
+      : [];
+
+    // Fetch properties for all policies (home/property policies)
+    const propertyData = policyIds.length > 0
+      ? await db.select({
+          policyId: properties.policyId,
+          address: properties.address,
+          yearBuilt: properties.yearBuilt,
+          squareFeet: properties.squareFeet,
+          stories: properties.stories,
+          constructionType: properties.constructionType,
+          roofType: properties.roofType,
+          roofAge: properties.roofAge,
+          nearmapData: properties.nearmapData,
+          riskScore: properties.riskScore,
+          hazardExposure: properties.hazardExposure,
+        })
+        .from(properties)
+        .where(sql`${properties.policyId} IN (${sql.join(policyIds.map(id => sql`${id}`), sql`, `)})`)
+      : [];
+
+    // Fetch producer/CSR info
+    const userIds = [...new Set([
+      ...results.map(r => r.producerId).filter(Boolean),
+      ...results.map(r => r.csrId).filter(Boolean),
+    ])];
+    const userData = userIds.length > 0
+      ? await db.select({
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        })
+        .from(users)
+        .where(sql`${users.id} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`)
+      : [];
+    const userMap = new Map(userData.map(u => [u.id, u]));
+
+    // Group vehicles by policy
+    const vehicleMap = new Map<string, typeof vehicleData>();
+    for (const v of vehicleData) {
+      const existing = vehicleMap.get(v.policyId) || [];
+      existing.push(v);
+      vehicleMap.set(v.policyId, existing);
+    }
+
+    // Group drivers by policy
+    const driverMap = new Map<string, typeof driverData>();
+    for (const d of driverData) {
+      const existing = driverMap.get(d.policyId) || [];
+      existing.push(d);
+      driverMap.set(d.policyId, existing);
+    }
+
+    // Group properties by policy
+    const propertyMap = new Map<string, typeof propertyData>();
+    for (const prop of propertyData) {
+      if (prop.policyId) {
+        const existing = propertyMap.get(prop.policyId) || [];
+        existing.push(prop);
+        propertyMap.set(prop.policyId, existing);
+      }
+    }
+
+    // Group policies by customer with vehicles, drivers, and properties
+    const policyMap = new Map<string, any[]>();
+    for (const p of policyData) {
+      const existing = policyMap.get(p.customerId) || [];
+      existing.push({
+        ...p,
+        premium: p.premium ? parseFloat(p.premium) : null,
+        vehicles: vehicleMap.get(p.id) || [],
+        drivers: driverMap.get(p.id) || [],
+        properties: propertyMap.get(p.id) || [],
+      });
+      policyMap.set(p.customerId, existing);
+    }
+
+    const enrichedResults = results.map(r => {
+      const custPolicies = policyMap.get(r.id) || [];
+      const activePolicies = custPolicies.filter(p => p.status === 'active');
+      const policyTypes = [...new Set(activePolicies.map(p => p.lineOfBusiness))];
+      
+      // Determine policy status
+      let policyStatus: string = 'none';
+      if (activePolicies.length > 0) {
+        const now = new Date();
+        const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const expiringSoon = activePolicies.some(p => 
+          p.expirationDate && new Date(p.expirationDate) <= thirtyDaysFromNow
+        );
+        policyStatus = expiringSoon ? 'expiring' : 'active';
+      } else if (r.isLead) {
+        policyStatus = 'lead';
+      }
+
+      return {
+        ...r,
+        displayName: `${r.firstName} ${r.lastName}`.trim(),
+        policyStatus,
+        policyCount: activePolicies.length,
+        policyTypes,
+        policies: custPolicies,
+        producer: r.producerId ? userMap.get(r.producerId) : null,
+        csr: r.csrId ? userMap.get(r.csrId) : null,
+      };
+    });
+
+    return NextResponse.json({
+      success: true,
+      query: query || phone || '',
+      count: enrichedResults.length,
+      results: enrichedResults,
+    });
+  } catch (error) {
+    console.error('Customer search error:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Search failed' },
+      { status: 500 }
+    );
+  }
+}
