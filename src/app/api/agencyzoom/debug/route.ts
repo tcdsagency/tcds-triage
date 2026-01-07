@@ -73,8 +73,8 @@ export async function GET(request: NextRequest) {
   }
   
   // Test 4: Try openapi endpoint with Basic auth
-  const username = process.env.AGENCYZOOM_USERNAME;
-  const password = process.env.AGENCYZOOM_PASSWORD;
+  const username = process.env.AGENCYZOOM_API_USERNAME || process.env.AGENCYZOOM_USERNAME;
+  const password = process.env.AGENCYZOOM_API_PASSWORD || process.env.AGENCYZOOM_PASSWORD;
   
   if (username && password) {
     const auth = Buffer.from(`${username}:${password}`).toString("base64");
@@ -147,7 +147,7 @@ export async function GET(request: NextRequest) {
   } else {
     results.tests.openapi = {
       skipped: true,
-      reason: "AGENCYZOOM_USERNAME/PASSWORD not configured"
+      reason: "AGENCYZOOM_API_USERNAME/AGENCYZOOM_API_PASSWORD not configured"
     };
   }
   

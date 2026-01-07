@@ -187,11 +187,12 @@ export default function PaymentAdvancePage() {
     setSearchResults([]);
     setSearchQuery("");
 
-    // Update form with customer info
+    // Update form with customer info (prefill all available data)
     setFormData((prev) => ({
       ...prev,
       firstName: customer.firstName,
       lastName: customer.lastName,
+      submitterEmail: prev.submitterEmail || "", // Don't overwrite if already set
     }));
 
     // Load policies

@@ -128,6 +128,16 @@ const INTEGRATION_CONFIGS: Record<string, {
       { key: "placeId", label: "Google Place ID (for reviews)", type: "text", required: false },
     ],
   },
+  canopy: {
+    name: "Canopy Connect",
+    description: "Insurance verification, policy pull, carrier data",
+    category: "Data",
+    fields: [
+      { key: "clientId", label: "Client ID", type: "text", required: true },
+      { key: "clientSecret", label: "Client Secret", type: "password", required: true },
+      { key: "environment", label: "Environment", type: "text", required: false, placeholder: "sandbox or production" },
+    ],
+  },
 };
 
 // Mask sensitive values for display
@@ -318,6 +328,7 @@ function checkEnvConfig(integrationId: string): boolean {
     resend: ["RESEND_API_KEY"],
     pinecone: ["PINECONE_API_KEY"],
     google: ["GOOGLE_API_KEY"],
+    canopy: ["CANOPY_CLIENT_ID", "CANOPY_CLIENT_SECRET"],
   };
 
   const keys = envMappings[integrationId] || [];
@@ -338,6 +349,7 @@ function checkEnvField(integrationId: string, fieldKey: string): boolean {
     resend: { apiKey: "RESEND_API_KEY" },
     pinecone: { apiKey: "PINECONE_API_KEY", environment: "PINECONE_ENVIRONMENT" },
     google: { apiKey: "GOOGLE_API_KEY" },
+    canopy: { clientId: "CANOPY_CLIENT_ID", clientSecret: "CANOPY_CLIENT_SECRET", environment: "CANOPY_ENVIRONMENT" },
   };
 
   const mapping = envMappings[integrationId];

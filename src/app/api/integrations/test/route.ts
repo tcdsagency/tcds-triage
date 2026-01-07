@@ -66,6 +66,8 @@ async function testIntegration(
       return testNearmap(creds);
     case "google":
       return testGoogle(creds);
+    case "canopy":
+      return testCanopy(creds);
     default:
       return { success: false, message: "Test not implemented for this integration" };
   }
@@ -106,6 +108,11 @@ function getEnvCredentials(integrationId: string): Record<string, string> {
       break;
     case "google":
       if (process.env.GOOGLE_API_KEY) creds.apiKey = process.env.GOOGLE_API_KEY;
+      break;
+    case "canopy":
+      if (process.env.CANOPY_CLIENT_ID) creds.clientId = process.env.CANOPY_CLIENT_ID;
+      if (process.env.CANOPY_CLIENT_SECRET) creds.clientSecret = process.env.CANOPY_CLIENT_SECRET;
+      if (process.env.CANOPY_ENVIRONMENT) creds.environment = process.env.CANOPY_ENVIRONMENT;
       break;
   }
 
@@ -327,6 +334,46 @@ async function testGoogle(creds: Record<string, string>): Promise<{ success: boo
       return { success: false, message: `API status: ${data.status}` };
     } else {
       return { success: false, message: `API error: ${response.status}` };
+    }
+  } catch (error: any) {
+    return { success: false, message: error.message || "Connection failed" };
+  }
+}
+
+async function testCanopy(creds: Record<string, string>): Promise<{ success: boolean; message: string; details?: any }> {
+  if (!creds.clientId || !creds.clientSecret) {
+    return { success: false, message: "Client ID and Client Secret required" };
+  }
+
+  try {
+    // Canopy Connect uses OAuth2 - try to get an access token
+    const environment = creds.environment || "sandbox";
+    const baseUrl = environment === "production"
+      ? "https://api.usecanopy.com"
+      : "https://sandbox-api.usecanopy.com";
+
+    const response = await fetch(`${baseUrl}/oauth/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        success: true,
+        message: "Authentication successful",
+        details: { hasAccessToken: !!data.access_token, environment },
+      };
+    } else {
+      const error = await response.text();
+      return { success: false, message: `Authentication failed: ${response.status}`, details: { error } };
     }
   } catch (error: any) {
     return { success: false, message: error.message || "Connection failed" };

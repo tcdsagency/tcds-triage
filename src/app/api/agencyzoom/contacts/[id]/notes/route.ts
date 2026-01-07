@@ -10,9 +10,9 @@ import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 // =============================================================================
 
 function getAgencyZoomAuth() {
-  return Buffer.from(
-    `${process.env.AGENCYZOOM_USERNAME}:${process.env.AGENCYZOOM_PASSWORD}`
-  ).toString("base64");
+  const username = process.env.AGENCYZOOM_API_USERNAME || process.env.AGENCYZOOM_USERNAME;
+  const password = process.env.AGENCYZOOM_API_PASSWORD || process.env.AGENCYZOOM_PASSWORD;
+  return Buffer.from(`${username}:${password}`).toString("base64");
 }
 
 // =============================================================================
