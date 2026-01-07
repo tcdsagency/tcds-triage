@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { QuoteComparisonModal } from "@/components/features/QuoteComparisonModal";
 
 interface Quote {
   id: string;
@@ -79,6 +80,7 @@ export default function QuotesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [comparisonQuoteId, setComparisonQuoteId] = useState<string | null>(null);
 
   const fetchQuotes = async (showRefresh = false) => {
     try {
@@ -270,6 +272,9 @@ export default function QuotesPage() {
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="sm"><MoreVertical className="w-4 h-4" /></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem>View Details</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setComparisonQuoteId(quote.id)}>
+                            Compare Quotes
+                          </DropdownMenuItem>
                           <DropdownMenuItem>Edit Quote</DropdownMenuItem>
                           <DropdownMenuItem>Send to Customer</DropdownMenuItem>
                           <DropdownMenuItem>Mark as Accepted</DropdownMenuItem>
@@ -285,6 +290,14 @@ export default function QuotesPage() {
           )}
         </div>
       </div>
+
+      {/* Quote Comparison Modal */}
+      <QuoteComparisonModal
+        quoteId={comparisonQuoteId || ""}
+        isOpen={!!comparisonQuoteId}
+        onClose={() => setComparisonQuoteId(null)}
+        onSelect={() => fetchQuotes(true)}
+      />
     </div>
   );
 }
