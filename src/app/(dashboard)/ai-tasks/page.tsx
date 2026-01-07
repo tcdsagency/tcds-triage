@@ -240,7 +240,7 @@ export default function AITasksPage() {
               Retention Impact
             </div>
             <div className="text-sm font-medium text-purple-400">
-              {taskList?.summary.retentionImpact || "High"}
+              {taskList?.summary?.retentionImpact || "High"}
             </div>
           </div>
         </div>
