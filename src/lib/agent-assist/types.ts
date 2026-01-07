@@ -1,5 +1,5 @@
 // Agent Assist System Types
-// Real-time guidance for intake staff during calls and form completion
+// Real-time guidance for intake staff with contextual scripts and tips
 
 // =============================================================================
 // PLAYBOOK TYPES
@@ -13,33 +13,26 @@ export type PlaybookDomain =
   | 'policy_changes'
   | 'escalations';
 
-export interface PlaybookScripts {
-  opening: string[];
-  discovery: string[];
-  resolution: string[];
-}
-
 export interface Playbook {
   id: string;
   domain: PlaybookDomain;
-  name: string;
+  title: string;
   description: string;
-  triggerKeywords: string[];
-  doList: string[];
-  dontList: string[];
+  triggers: string[];
+  confirm: string;
+  do: string[];
+  dont: string[];
   escalateIf: string[];
-  scripts: PlaybookScripts;
+  scripts: {
+    opening: string[];
+    discovery: string[];
+    resolution: string[];
+  };
   complianceNotes?: string[];
 }
 
-export interface PlaybookMatch {
-  playbook: Playbook;
-  confidence: number;
-  matchedTriggers: string[];
-}
-
 // =============================================================================
-// AI SUGGESTION TYPES
+// SUGGESTION TYPES
 // =============================================================================
 
 export type SuggestionType = 'knowledge' | 'compliance' | 'upsell' | 'next_action';
@@ -51,26 +44,6 @@ export interface AgentSuggestion {
   content: string;
   confidence: number;
   source?: string;
-  actionLabel?: string;
-}
-
-export interface SuggestionsRequest {
-  transcript: string;
-  customerProfile?: {
-    name?: string;
-    policyTypes?: string[];
-    tenure?: string;
-    claimsHistory?: number;
-  };
-  currentPlaybook?: string;
-  callId?: string;
-}
-
-export interface SuggestionsResponse {
-  success: boolean;
-  suggestions: AgentSuggestion[];
-  tokensUsed?: number;
-  error?: string;
 }
 
 // =============================================================================
@@ -91,21 +64,13 @@ export interface FormSectionGuidance {
   tips: FormGuidanceTip[];
 }
 
-export type QuoteType =
-  | 'personal_auto'
-  | 'homeowners'
-  | 'renters'
-  | 'commercial_auto'
-  | 'general_liability'
-  | 'bop'
-  | 'workers_comp'
-  | 'umbrella';
+export type QuoteType = 'personal_auto' | 'homeowners' | 'commercial_auto' | 'commercial_property' | 'umbrella' | 'life';
 
 // =============================================================================
 // TELEMETRY TYPES
 // =============================================================================
 
-export type TelemetryAction = 'shown' | 'used' | 'dismissed' | 'expanded' | 'collapsed';
+export type TelemetryAction = 'shown' | 'used' | 'dismissed' | 'copied';
 export type TelemetryFeedback = 'helpful' | 'not_helpful' | 'too_basic' | 'incorrect';
 
 export interface TelemetryEvent {
@@ -119,13 +84,6 @@ export interface TelemetryEvent {
   callId?: string;
   formSection?: string;
   callTranscriptSnippet?: string;
-}
-
-export interface TelemetryRecord extends TelemetryEvent {
-  id: string;
-  tenantId: string;
-  userId?: string;
-  createdAt: Date;
 }
 
 // =============================================================================
@@ -142,52 +100,34 @@ export interface PlaybookMatchResponse {
   playbook: Playbook | null;
   confidence: number;
   matchedTriggers: string[];
+}
+
+export interface SuggestionsRequest {
+  transcript: string;
+  customerName?: string;
+  policyInfo?: {
+    carrier?: string;
+    policyNumber?: string;
+    expirationDate?: string;
+  };
+  currentPlaybook?: string;
+}
+
+export interface SuggestionsResponse {
+  success: boolean;
+  suggestions: AgentSuggestion[];
+  tokensUsed?: number;
   error?: string;
 }
 
 export interface TelemetryRequest {
-  suggestionType: string;
-  suggestionId?: string;
-  playbookId?: string;
-  action: TelemetryAction;
-  feedback?: TelemetryFeedback;
-  feedbackNote?: string;
+  events: TelemetryEvent[];
+  userId?: string;
   callId?: string;
-  formSection?: string;
-  content?: string;
-  callTranscriptSnippet?: string;
 }
 
 export interface TelemetryResponse {
   success: boolean;
-  id?: string;
+  recorded: number;
   error?: string;
-}
-
-// =============================================================================
-// COMPONENT PROP TYPES
-// =============================================================================
-
-export interface LiveAssistCardProps {
-  playbook: Playbook | null;
-  suggestions: AgentSuggestion[];
-  isLoading?: boolean;
-  onUseSuggestion?: (suggestion: AgentSuggestion) => void;
-  onDismissSuggestion?: (suggestion: AgentSuggestion) => void;
-  onPlaybookFeedback?: (playbookId: string, feedback: TelemetryFeedback) => void;
-}
-
-export interface AgentAssistSidebarProps {
-  quoteType: QuoteType;
-  currentSection: string;
-  expandedSections?: string[];
-  onSectionClick?: (sectionId: string) => void;
-  className?: string;
-}
-
-export interface AgentAssistPanelProps {
-  suggestions: AgentSuggestion[];
-  isLoading?: boolean;
-  onUseSuggestion?: (suggestion: AgentSuggestion) => void;
-  onFeedback?: (suggestionId: string, feedback: TelemetryFeedback) => void;
 }

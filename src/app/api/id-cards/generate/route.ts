@@ -3,8 +3,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
-import { readFile } from "fs/promises";
-import path from "path";
 
 // =============================================================================
 // TYPES
@@ -90,16 +88,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Load PDF template
-    const templatePath = path.join(process.cwd(), "public", "templates", "IDCard_Template_1767336446487.pdf");
-    let templateBytes: Buffer;
+    // Load PDF template from public URL (works in serverless environment)
+    let baseUrl = "http://localhost:3000";
+    if (process.env.NEXTAUTH_URL) {
+      baseUrl = process.env.NEXTAUTH_URL;
+    } else if (process.env.VERCEL_URL) {
+      baseUrl = `https://${process.env.VERCEL_URL}`;
+    }
+    const templateUrl = `${baseUrl}/templates/IDCard_Template_1767336446487.pdf`;
 
+    let templateBytes: ArrayBuffer;
     try {
-      templateBytes = await readFile(templatePath);
-    } catch (err) {
-      console.error("[ID Cards] Template not found:", templatePath);
+      const response = await fetch(templateUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      templateBytes = await response.arrayBuffer();
+    } catch (err: any) {
+      console.error("[ID Cards] Template fetch error:", err.message, "URL:", templateUrl);
       return NextResponse.json(
-        { success: false, error: "ID card template not found" },
+        { success: false, error: "ID card template not found", details: err.message },
         { status: 500 }
       );
     }

@@ -1,7 +1,7 @@
-// Agent Assist Playbooks Configuration
-// 20+ playbooks across 6 domains for real-time call guidance
+// Agent Assist Playbooks
+// Static playbook definitions for real-time call guidance
 
-import { Playbook, PlaybookDomain } from './types';
+import { Playbook } from './types';
 
 // =============================================================================
 // BILLING & PAYMENTS PLAYBOOKS
@@ -10,69 +10,71 @@ import { Playbook, PlaybookDomain } from './types';
 const billingPaymentInquiry: Playbook = {
   id: 'billing-inquiry',
   domain: 'billing_payments',
-  name: 'Payment & Billing Inquiry',
-  description: 'Customer asking about their bill, payment status, or balance due',
-  triggerKeywords: ['bill', 'payment', 'pay', 'balance', 'due', 'owe', 'amount', 'statement', 'invoice'],
-  doList: [
+  title: 'Payment & Billing Inquiry',
+  description: 'Customer asking about their bill, balance, or payment status',
+  triggers: ['bill', 'payment', 'pay', 'balance', 'due', 'owe', 'amount', 'how much'],
+  confirm: "I can help you with your billing question. Let me pull up your account.",
+  do: [
     'Verify customer identity before discussing account details',
-    'Pull up the billing summary and payment history',
-    'Explain each charge clearly if asked',
-    'Offer multiple payment options',
-    'Confirm payment due date'
+    'Pull up the account in HawkSoft',
+    'Explain each charge clearly',
+    'Offer payment options if balance is due',
+    'Document the call in notes'
   ],
-  dontList: [
+  dont: [
     'Never share account details without verification',
-    'Do not make payment promises you cannot guarantee',
+    'Do not make promises about credits without supervisor approval',
     'Avoid discussing other customers\' accounts'
   ],
   escalateIf: [
-    'Customer disputes charges after explanation',
-    'System shows account in collections',
-    'Customer requests payment arrangement over 6 months'
+    'Customer disputes charges over $500',
+    'Billing discrepancy that cannot be explained',
+    'Customer threatens to cancel'
   ],
   scripts: {
     opening: [
-      "I can help you with your billing question. Let me pull up your account.",
-      "I'll be happy to review your account with you. Can I verify some information first?"
+      "I can help you with that billing question. Let me pull up your account.",
+      "I'd be happy to review your billing. Can I verify your information first?"
     ],
     discovery: [
-      "Can you tell me which bill or statement you're referring to?",
-      "What specifically would you like to know about your balance?",
-      "Are you looking at a particular charge you have questions about?"
+      "What specific charge are you asking about?",
+      "When was your last payment made?",
+      "Are you looking at a specific invoice or statement?"
     ],
     resolution: [
-      "Your current balance is [amount], due on [date].",
-      "I've explained the charges. Would you like to make a payment now?",
-      "I can set up a payment reminder for you if that would help."
+      "Your current balance is [amount] due on [date].",
+      "I see the charge you're asking about - that's for [explanation].",
+      "Would you like to make a payment now, or set up a payment plan?"
     ]
   },
   complianceNotes: [
-    'Always verify identity before disclosing balance information',
-    'Document any billing disputes in customer notes'
+    'PCI: Never write down full card numbers',
+    'Always verify identity before discussing account'
   ]
 };
 
 const billingNSF: Playbook = {
   id: 'billing-nsf',
   domain: 'billing_payments',
-  name: 'NSF / Returned Payment',
-  description: 'Customer calling about a bounced or declined payment',
-  triggerKeywords: ['nsf', 'bounced', 'returned', 'declined', 'failed payment', 'rejected', 'insufficient'],
-  doList: [
+  title: 'NSF / Returned Payment',
+  description: 'Payment was returned, declined, or bounced',
+  triggers: ['nsf', 'bounced', 'returned', 'declined', 'failed payment', 'rejected', 'insufficient'],
+  confirm: "I see there was an issue with a recent payment. Let me look into this for you.",
+  do: [
     'Verify customer identity first',
     'Check payment history for failed transaction',
     'Explain any NSF fees charged',
     'Offer alternative payment methods',
     'Set up autopay to prevent future issues'
   ],
-  dontList: [
+  dont: [
     'Never blame customer for failed payment',
     'Do not promise to waive fees without supervisor approval',
     'Do not take new payment info until confirming failed one'
   ],
   escalateIf: [
-    'Multiple NSF incidents in 6 months',
-    'Customer requests fee waiver over $50',
+    'Multiple NSF occurrences (3+ in 12 months)',
+    'Customer is combative about fees',
     'Policy is at risk of cancellation'
   ],
   scripts: {
@@ -86,277 +88,234 @@ const billingNSF: Playbook = {
       "Were there any changes to your bank account recently?"
     ],
     resolution: [
-      "I've updated your payment method and processed the payment.",
+      "I've updated your payment method and can process the payment now.",
       "Would you like to set up autopay to avoid this in the future?",
-      "I've waived the NSF fee as a one-time courtesy. [Requires approval]"
+      "Let me check if we can waive that NSF fee for you."
     ]
   },
   complianceNotes: [
-    'Document all fee waivers with supervisor approval',
-    'PCI: Never write down full card numbers'
+    'PCI: Never write down full card numbers',
+    'Document all fee waivers with supervisor approval'
   ]
 };
 
-const billingPaymentPlan: Playbook = {
+const paymentPlanSetup: Playbook = {
   id: 'billing-payment-plan',
   domain: 'billing_payments',
-  name: 'Payment Plan Setup',
-  description: 'Customer requesting to set up a payment plan or installments',
-  triggerKeywords: ['payment plan', 'installments', 'split', 'monthly payments', 'can\'t afford', 'struggling'],
-  doList: [
-    'Show empathy for financial situation',
-    'Review available payment plan options',
-    'Explain any fees associated with plans',
-    'Document the agreed plan clearly',
-    'Set up automatic payments when possible'
+  title: 'Payment Plan Setup',
+  description: 'Customer wants to split payments or set up installments',
+  triggers: ['payment plan', 'installments', 'split', 'pay over time', 'monthly payments', 'can\'t pay all'],
+  confirm: "I can help you set up a payment arrangement. Let me see what options are available.",
+  do: [
+    'Verify customer identity',
+    'Review current balance and due dates',
+    'Explain available payment plan options',
+    'Document the agreed payment schedule',
+    'Set reminders for follow-up'
   ],
-  dontList: [
-    'Never judge customer financial situation',
-    'Do not create plans longer than policy allows',
-    'Avoid promising specific approval without checking'
+  dont: [
+    'Do not create plans exceeding carrier guidelines',
+    'Never promise to hold cancellation without authority',
+    'Avoid extending past policy expiration'
   ],
   escalateIf: [
-    'Requested plan exceeds 6 months',
-    'Customer has defaulted on previous plan',
-    'Total amount exceeds $5,000'
+    'Balance exceeds $1000',
+    'Customer has defaulted on previous plans',
+    'Request extends beyond carrier limits'
   ],
   scripts: {
     opening: [
-      "I understand, let's look at some options to help manage your payments.",
-      "We do have payment plans available. Let me see what works for your account."
+      "I understand. Let me see what payment options we can offer.",
+      "We do have some flexibility on payment arrangements. Let me review your account."
     ],
     discovery: [
-      "What amount were you thinking per month?",
-      "When would you like the first payment drafted?",
-      "Do you prefer payments on a specific day of the month?"
+      "What amount can you pay today?",
+      "What timeframe works best for you?",
+      "Do you prefer payments on specific dates?"
     ],
     resolution: [
-      "I've set up your payment plan: [X] payments of [amount] starting [date].",
-      "You'll receive a confirmation email with the payment schedule.",
-      "Would you like me to set up autopay for these installments?"
+      "I've set up your payment plan: [amount] on [dates].",
+      "You'll receive email confirmations for each scheduled payment.",
+      "Would you like to set up automatic payments for this plan?"
     ]
   }
 };
 
-const billingAutopay: Playbook = {
+const autopaySetup: Playbook = {
   id: 'billing-autopay',
   domain: 'billing_payments',
-  name: 'Autopay Setup',
-  description: 'Customer wants to set up or modify automatic payments',
-  triggerKeywords: ['autopay', 'automatic', 'recurring', 'auto draft', 'direct debit', 'eft'],
-  doList: [
-    'Explain autopay benefits and timing',
-    'Verify payment method details',
-    'Confirm draft date preferences',
-    'Provide confirmation number',
-    'Explain how to cancel if needed'
+  title: 'Autopay Setup',
+  description: 'Customer wants to set up automatic recurring payments',
+  triggers: ['autopay', 'automatic', 'recurring', 'auto draft', 'automatic payment', 'set up autopay'],
+  confirm: "Great choice! Autopay helps ensure you never miss a payment. Let me set that up.",
+  do: [
+    'Verify customer identity',
+    'Explain how autopay works',
+    'Collect payment method details securely',
+    'Confirm the draft date',
+    'Send confirmation email'
   ],
-  dontList: [
-    'Never process without explicit authorization',
-    'Do not set up autopay on disputed accounts',
-    'Avoid promising specific draft dates if system determines them'
+  dont: [
+    'Never read back full card numbers',
+    'Do not set up without verbal authorization',
+    'Avoid promising specific draft times'
   ],
   escalateIf: [
-    'Customer has history of NSF payments',
-    'Account has pending disputes'
+    'Customer wants autopay for multiple policies with different carriers',
+    'Technical issues preventing setup'
   ],
   scripts: {
     opening: [
-      "Great choice! Autopay ensures you never miss a payment.",
-      "I can get that set up for you right now."
+      "I'd be happy to set up autopay for you. It's a great way to ensure on-time payments.",
+      "Autopay is convenient and you'll get a discount on some policies. Let me help you set that up."
     ],
     discovery: [
       "Would you like to use a bank account or credit card?",
-      "What date works best for the monthly draft?",
-      "Would you like the full amount or minimum due drafted?"
+      "What day of the month works best for the draft?",
+      "Should I set this up for all your policies?"
     ],
     resolution: [
-      "Your autopay is now active. The first draft will be on [date].",
-      "You'll receive a confirmation email with all the details.",
-      "You can cancel anytime by calling us at least 5 days before the draft date."
+      "Your autopay is all set up. You'll be drafted on the [date] of each month.",
+      "I'm sending you a confirmation email now.",
+      "Remember, you'll still get a statement before each draft so you can review it."
     ]
   },
   complianceNotes: [
-    'Obtain verbal authorization and document it',
-    'PCI: Mask card numbers in notes'
+    'PCI: Process payments through secure system only',
+    'Document verbal authorization in notes'
   ]
-};
-
-const billingRefund: Playbook = {
-  id: 'billing-refund',
-  domain: 'billing_payments',
-  name: 'Refund Request',
-  description: 'Customer requesting a refund for overpayment or cancellation',
-  triggerKeywords: ['refund', 'money back', 'overpaid', 'credit', 'reimbursement'],
-  doList: [
-    'Verify the refund amount and reason',
-    'Check for any outstanding balances first',
-    'Explain the refund timeline (7-10 business days)',
-    'Confirm the refund method matches payment method',
-    'Provide reference number'
-  ],
-  dontList: [
-    'Never promise immediate refunds',
-    'Do not process refunds to different accounts without approval',
-    'Avoid processing refunds while disputes are pending'
-  ],
-  escalateIf: [
-    'Refund amount exceeds $500',
-    'Customer demands immediate refund',
-    'Refund to different payment method requested'
-  ],
-  scripts: {
-    opening: [
-      "I can look into that refund for you. Let me check your account.",
-      "Let me review your payment history to verify the refund amount."
-    ],
-    discovery: [
-      "What payment are you expecting a refund for?",
-      "When was the original payment made?",
-      "Would you prefer the refund to the original payment method?"
-    ],
-    resolution: [
-      "I've submitted your refund of [amount]. It will arrive in 7-10 business days.",
-      "Your reference number is [number]. You'll receive an email confirmation.",
-      "The refund will go back to your [card/account] ending in [last 4]."
-    ]
-  }
 };
 
 // =============================================================================
 // NEW BUSINESS PLAYBOOKS
 // =============================================================================
 
-const newBusinessQuote: Playbook = {
-  id: 'new-business-quote',
+const newQuoteRequest: Playbook = {
+  id: 'new-quote',
   domain: 'new_business',
-  name: 'New Quote Request',
-  description: 'Prospect calling for a new insurance quote',
-  triggerKeywords: ['quote', 'rate', 'price', 'coverage', 'new policy', 'how much', 'estimate', 'shopping'],
-  doList: [
-    'Thank them for considering your agency',
-    'Gather all required information methodically',
-    'Explain coverage options, not just prices',
-    'Identify cross-sell opportunities',
-    'Set clear expectations for follow-up'
+  title: 'New Quote Request',
+  description: 'Customer calling to get a new insurance quote',
+  triggers: ['quote', 'rate', 'price', 'coverage', 'new policy', 'how much', 'looking for insurance', 'need insurance'],
+  confirm: "I'd be happy to help you with a quote! Let me gather some information.",
+  do: [
+    'Ask about current coverage and expiration',
+    'Gather all required rating information',
+    'Quote multiple carriers for comparison',
+    'Explain coverage options clearly',
+    'Set follow-up if not binding today'
   ],
-  dontList: [
-    'Never provide a quote without full information',
-    'Do not bash competitors',
-    'Avoid making coverage recommendations without understanding needs'
+  dont: [
+    'Never guarantee a specific price before quoting',
+    'Do not rush through coverage explanations',
+    'Avoid badmouthing their current carrier'
   ],
   escalateIf: [
-    'Commercial risk with over $1M in revenue',
-    'Complex multi-policy household',
-    'Prior carrier non-renewed for claims'
+    'Complex commercial risk',
+    'Customer has multiple claims or violations',
+    'High-value home or vehicles'
   ],
   scripts: {
     opening: [
-      "Thank you for calling! I'd be happy to get you a quote. What type of coverage are you looking for?",
-      "Great, let's find you the best coverage at a competitive price."
+      "Great! I'd love to help you find the best coverage. Let me ask you a few questions.",
+      "Absolutely, let's see what we can do for you. What type of insurance are you looking for?"
     ],
     discovery: [
-      "Is this for auto, home, or both?",
-      "How many vehicles/drivers do we need to include?",
-      "What's your current coverage situation?",
-      "When would you like the new coverage to start?"
+      "Do you currently have insurance? When does it expire?",
+      "How long have you been with your current company?",
+      "What's prompting you to shop around today?"
     ],
     resolution: [
-      "Based on what you've told me, here are your options...",
-      "I can have your quotes ready by [time/date]. What's the best way to reach you?",
-      "Would you like me to email you a comparison of the options we discussed?"
-    ]
-  },
-  complianceNotes: [
-    'Document all coverage discussions',
-    'Provide state-required disclosures'
-  ]
-};
-
-const newBusinessFollowUp: Playbook = {
-  id: 'new-business-follow-up',
-  domain: 'new_business',
-  name: 'Quote Follow-Up',
-  description: 'Prospect following up on a quote they previously requested',
-  triggerKeywords: ['follow up', 'checking on', 'quote I requested', 'did you get', 'called before', 'waiting'],
-  doList: [
-    'Apologize if there was any delay',
-    'Pull up the existing quote quickly',
-    'Review any changes in their situation',
-    'Address any objections proactively',
-    'Attempt to close or set next steps'
-  ],
-  dontList: [
-    'Never make excuses for delays',
-    'Do not requote without checking for changes',
-    'Avoid leaving them waiting again'
-  ],
-  escalateIf: [
-    'Quote is more than 30 days old',
-    'Customer complained about service',
-    'Quote requires manager approval'
-  ],
-  scripts: {
-    opening: [
-      "Thank you for calling back! Let me pull up your quote right away.",
-      "I apologize for any wait. Let me get your information up."
-    ],
-    discovery: [
-      "Has anything changed since we last spoke?",
-      "Did you have any questions about the quote I sent?",
-      "What's holding you back from moving forward?"
-    ],
-    resolution: [
-      "I can get you bound right now if you're ready to proceed.",
-      "Let me address those concerns and see if we can adjust the coverage.",
-      "I'll send you an updated quote today. When can I follow up with you?"
+      "Based on what you've told me, I can offer you [coverage] for [price].",
+      "I'd like to email you a detailed comparison of your options.",
+      "Would you like to move forward today, or would you prefer some time to review?"
     ]
   }
 };
 
-const newBusinessBinding: Playbook = {
-  id: 'new-business-binding',
+const quoteFollowUp: Playbook = {
+  id: 'quote-followup',
   domain: 'new_business',
-  name: 'Binding Coverage',
-  description: 'Customer ready to purchase and bind new coverage',
-  triggerKeywords: ['ready to buy', 'want to start', 'bind', 'purchase', 'sign up', 'get started', 'enroll'],
-  doList: [
-    'Verify all information is still accurate',
-    'Review coverage limits and deductibles',
-    'Collect payment information securely',
-    'Provide binder number and effective date',
-    'Explain what documents they will receive'
+  title: 'Quote Follow-Up',
+  description: 'Customer calling back about a previous quote',
+  triggers: ['follow up', 'checking on', 'quote I requested', 'called earlier', 'got a quote', 'following up'],
+  confirm: "Let me pull up your quote information.",
+  do: [
+    'Find the existing quote in the system',
+    'Review what was quoted',
+    'Check if rates have changed',
+    'Address any questions',
+    'Move toward binding if interested'
   ],
-  dontList: [
-    'Never bind without full payment or payment arrangement',
-    'Do not skip coverage verification',
-    'Avoid rushing through disclosures'
+  dont: [
+    'Do not dismiss their previous interaction',
+    'Never pressure them to decide immediately',
+    'Avoid creating duplicate quotes'
   ],
   escalateIf: [
-    'Requested effective date is more than 30 days out',
-    'Prior insurance has lapsed more than 30 days',
-    'Underwriting flags appear'
+    'Quote has expired and rates increased significantly',
+    'Customer is upset about wait time'
   ],
   scripts: {
     opening: [
-      "Excellent! Let's get you covered today.",
+      "Welcome back! Let me pull up your information.",
+      "I'm glad you called back. Let me find your quote."
+    ],
+    discovery: [
+      "Did you have any questions about the coverage options?",
+      "Has anything changed since we last spoke?",
+      "Are you ready to move forward, or do you need more information?"
+    ],
+    resolution: [
+      "Everything still looks good. We can get you started today.",
+      "I can hold this rate for you until [date] if you need more time.",
+      "Let me email you an updated summary to review."
+    ]
+  }
+};
+
+const bindingCoverage: Playbook = {
+  id: 'binding-coverage',
+  domain: 'new_business',
+  title: 'Binding Coverage',
+  description: 'Customer ready to purchase and start coverage',
+  triggers: ['ready to buy', 'want to start', 'bind', 'purchase', 'start the policy', 'sign me up', 'let\'s do it'],
+  confirm: "Excellent! I'm excited to get you covered. Let me finalize everything.",
+  do: [
+    'Verify all information is accurate',
+    'Confirm coverage selections',
+    'Collect payment for first installment',
+    'Set effective date',
+    'Send welcome documents'
+  ],
+  dont: [
+    'Never backdate coverage without proper documentation',
+    'Do not bind without payment',
+    'Avoid rushing through disclosures'
+  ],
+  escalateIf: [
+    'Customer wants same-day effective date after hours',
+    'Payment method issues',
+    'Underwriting concerns arise'
+  ],
+  scripts: {
+    opening: [
+      "Wonderful! Let's get everything finalized for you.",
       "Great decision! I'll walk you through the final steps."
     ],
     discovery: [
-      "Let me verify a few details before we finalize...",
-      "What effective date would you like for the policy?",
-      "How would you like to handle the down payment?"
+      "Let me confirm the coverage: [coverage details]. Is that correct?",
+      "What effective date would you like?",
+      "How would you like to make your payment today?"
     ],
     resolution: [
-      "You're all set! Your policy number is [number], effective [date].",
-      "You'll receive your ID cards and policy documents within 24-48 hours.",
-      "Welcome to [Agency Name]! Do you have any other questions?"
+      "Congratulations! Your policy is now active.",
+      "I'm emailing your ID cards and policy documents now.",
+      "You'll receive your full policy packet in 7-10 business days."
     ]
   },
   complianceNotes: [
-    'Read all required state disclosures',
-    'Document coverage selections',
-    'PCI: Process payment securely'
+    'Read all required disclosures',
+    'Document verbal consent for electronic delivery'
   ]
 };
 
@@ -367,127 +326,130 @@ const newBusinessBinding: Playbook = {
 const renewalDiscussion: Playbook = {
   id: 'renewal-discussion',
   domain: 'renewals',
-  name: 'Renewal Discussion',
-  description: 'Customer calling about their upcoming renewal',
-  triggerKeywords: ['renewal', 'renew', 'expiring', 'coming up', 'policy ending'],
-  doList: [
-    'Review the renewal terms with them',
-    'Identify any changes from current policy',
-    'Look for discount opportunities',
-    'Discuss any coverage improvements',
-    'Confirm payment method for renewal'
+  title: 'Renewal Discussion',
+  description: 'Customer calling about upcoming or recent renewal',
+  triggers: ['renewal', 'renew', 'expiring', 'renewal notice', 'coming up for renewal'],
+  confirm: "I can help you with your renewal. Let me review your policy.",
+  do: [
+    'Pull up renewal offer and compare to current',
+    'Review for any coverage gaps',
+    'Look for available discounts',
+    'Discuss any changes needed',
+    'Confirm renewal or shop if requested'
   ],
-  dontList: [
-    'Never let a policy lapse without communication',
-    'Do not make promises about rates you cannot guarantee',
-    'Avoid dismissing their concerns about changes'
+  dont: [
+    'Never let a policy lapse without discussing options',
+    'Do not ignore rate increases - address proactively',
+    'Avoid promising to match competitor rates'
   ],
   escalateIf: [
-    'Non-renewal notice was issued',
-    'Rate increase exceeds 25%',
-    'Customer threatens to cancel'
+    'Rate increase over 25%',
+    'Customer threatening to leave',
+    'Major coverage changes needed'
   ],
   scripts: {
     opening: [
-      "I see your renewal is coming up. Let me review the details with you.",
-      "Great timing! I have your renewal information right here."
+      "Let me pull up your renewal information and review it with you.",
+      "I'm glad you called about your renewal. Let's make sure everything looks good."
     ],
     discovery: [
       "Have there been any changes we should know about?",
-      "Are you happy with your current coverage levels?",
-      "Have you had any claims this year?"
+      "Are you happy with your current coverage?",
+      "Did you see anything on the renewal notice you had questions about?"
     ],
     resolution: [
-      "Your renewal premium is [amount], effective [date].",
-      "I found a discount that will save you [amount]. Let me apply that.",
-      "Your policy will auto-renew. You don't need to do anything."
+      "Your renewal is all set. No action needed on your part.",
+      "I've updated your policy with those changes for the renewal.",
+      "Would you like me to shop this to see if we can find a better rate?"
     ]
   }
 };
 
-const renewalRateIncrease: Playbook = {
-  id: 'renewal-rate-increase',
+const rateIncreaseExplanation: Playbook = {
+  id: 'rate-increase',
   domain: 'renewals',
-  name: 'Rate Increase Explanation',
+  title: 'Rate Increase Explanation',
   description: 'Customer upset about rate increase at renewal',
-  triggerKeywords: ['increase', 'went up', 'more expensive', 'higher', 'rate hike', 'why did'],
-  doList: [
+  triggers: ['increase', 'went up', 'more expensive', 'rate went up', 'higher', 'why did my rate'],
+  confirm: "I understand your concern about the rate increase. Let me explain what happened.",
+  do: [
     'Acknowledge their frustration',
-    'Explain the specific reasons for increase',
-    'Look for applicable discounts',
-    'Offer to re-shop with other carriers',
+    'Review specific reasons for increase',
+    'Look for any available discounts',
+    'Offer to shop other carriers',
     'Document the conversation'
   ],
-  dontList: [
-    'Never be defensive about rate increases',
-    'Do not blame the customer for claims',
-    'Avoid making promises about future rates'
+  dont: [
+    'Never dismiss their concerns',
+    'Do not blame the customer for the increase',
+    'Avoid making negative comments about the carrier'
   ],
   escalateIf: [
-    'Increase exceeds 30%',
-    'Customer demands to speak with management',
-    'Retention discount needed over $200'
+    'Rate increase over 30% with no claims',
+    'Customer is very upset or threatening',
+    'You cannot identify the reason for increase'
   ],
   scripts: {
     opening: [
-      "I understand rate increases are frustrating. Let me look into this for you.",
-      "Let me pull up your account and see exactly what changed."
+      "I completely understand your frustration. Let me look into this for you.",
+      "Nobody likes rate increases. Let me see exactly what changed."
     ],
     discovery: [
-      "Were there any claims or violations this year?",
-      "Did you make any changes to your coverage?",
-      "Have there been any changes to your household?"
+      "Let me review your policy... I see the increase was due to [reason].",
+      "Have you had any claims or tickets in the past year?",
+      "Are there any changes to your household we should update?"
     ],
     resolution: [
-      "The increase is due to [reason]. Here's what we can do...",
-      "I found some discounts that will reduce your increase by [amount].",
-      "Let me shop this with other carriers to see if we can find better rates."
+      "I found a discount that can help offset some of that increase.",
+      "Would you like me to shop this with other carriers to compare?",
+      "I can set up a review to make sure you're getting all available discounts."
     ]
   }
 };
 
-const renewalLapseWarning: Playbook = {
-  id: 'renewal-lapse-warning',
+const lapseWarning: Playbook = {
+  id: 'lapse-warning',
   domain: 'renewals',
-  name: 'Lapse Warning',
-  description: 'Customer whose policy has or is about to lapse',
-  triggerKeywords: ['lapsed', 'expired', 'gap in coverage', 'didn\'t renew', 'forgot to pay'],
-  doList: [
-    'Check exact lapse date and duration',
-    'Explain consequences of coverage gap',
-    'Attempt to reinstate immediately if possible',
-    'Document reason for lapse',
-    'Set up payment to prevent future lapse'
+  title: 'Lapse Warning',
+  description: 'Policy has lapsed or is about to lapse',
+  triggers: ['lapsed', 'expired', 'gap in coverage', 'cancelled', 'no longer active', 'not covered'],
+  confirm: "This is important - let me check on your coverage status right away.",
+  do: [
+    'Determine exact lapse date',
+    'Explain consequences of lapse',
+    'Work urgently to reinstate if possible',
+    'If cannot reinstate, requote immediately',
+    'Document everything'
   ],
-  dontList: [
-    'Never dismiss the seriousness of a lapse',
-    'Do not promise reinstatement without checking',
-    'Avoid lecturing the customer'
+  dont: [
+    'Never minimize the seriousness of a lapse',
+    'Do not let them drive without coverage',
+    'Avoid blaming payment issues on customer without verification'
   ],
   escalateIf: [
-    'Lapse exceeds 30 days',
-    'Claim occurred during lapse period',
-    'State requires SR-22 due to lapse'
+    'Customer was in accident during lapse',
+    'Lapse over 30 days',
+    'DMV/state involvement'
   ],
   scripts: {
     opening: [
-      "Let me check your policy status right away.",
-      "I can see there's been an issue with your coverage. Let me help."
+      "I can see there's been a coverage interruption. Let's address this immediately.",
+      "This is important - let me see what options we have to get you covered."
     ],
     discovery: [
       "When did you realize the policy had lapsed?",
-      "Was there a payment issue or did you intend to cancel?",
-      "Have you had any incidents during the gap period?"
+      "Have you been driving without coverage?",
+      "Were there any accidents or incidents during this time?"
     ],
     resolution: [
-      "I was able to reinstate your policy effective [date].",
-      "Unfortunately, we'll need to write a new policy due to the gap length.",
-      "Let's set up autopay to make sure this doesn't happen again."
+      "Good news - I can reinstate your policy effective today.",
+      "I'll need to write a new policy due to the lapse. Let me get you quoted.",
+      "Please don't drive until we have coverage in place."
     ]
   },
   complianceNotes: [
-    'Document lapse reason for underwriting',
-    'Check state requirements for lapse disclosure'
+    'Document any gap in coverage clearly',
+    'Advise customer not to drive uninsured'
   ]
 };
 
@@ -495,135 +457,139 @@ const renewalLapseWarning: Playbook = {
 // CLAIMS PLAYBOOKS
 // =============================================================================
 
-const claimsNewReport: Playbook = {
-  id: 'claims-new-report',
+const newClaimReport: Playbook = {
+  id: 'claims-new',
   domain: 'claims',
-  name: 'New Claim Report',
-  description: 'Customer reporting a new claim or incident',
-  triggerKeywords: ['accident', 'damage', 'claim', 'file', 'report', 'incident', 'hit', 'stolen', 'broken'],
-  doList: [
-    'Express concern for their safety first',
-    'Gather all details of the incident',
-    'Verify coverage for the type of loss',
-    'Provide claim number and next steps',
-    'Set expectations for adjuster contact'
+  title: 'New Claim Report',
+  description: 'Customer reporting a new claim or accident',
+  triggers: ['accident', 'damage', 'claim', 'file', 'report', 'hit', 'crash', 'broken into', 'stolen'],
+  confirm: "I'm sorry to hear about this. Let me help you report this claim.",
+  do: [
+    'Express empathy first',
+    'Verify they are safe',
+    'Gather basic claim details',
+    'Provide carrier claim number',
+    'Explain next steps'
   ],
-  dontList: [
-    'Never guarantee coverage before investigation',
-    'Do not assign fault',
-    'Avoid discussing settlement amounts'
+  dont: [
+    'Never admit fault on behalf of the insured',
+    'Do not promise specific coverage outcomes',
+    'Avoid giving legal advice'
   ],
   escalateIf: [
-    'Injuries are involved',
-    'Claim involves litigation',
-    'Damage estimate exceeds policy limits'
+    'Serious injuries involved',
+    'Potential fraud indicators',
+    'Major property damage (over $50k)',
+    'Legal involvement'
   ],
   scripts: {
     opening: [
-      "I'm sorry to hear that. First, is everyone okay?",
-      "Let me help you get this claim started. Are you in a safe place?"
+      "I'm so sorry to hear that. First, is everyone okay?",
+      "Let's get this reported right away. Are you safe?"
     ],
     discovery: [
-      "When and where did this happen?",
-      "Can you describe what occurred?",
-      "Were there any witnesses or a police report?",
-      "Do you have photos of the damage?"
+      "Can you tell me what happened?",
+      "When and where did this occur?",
+      "Were there any other vehicles or people involved?",
+      "Did you get a police report?"
     ],
     resolution: [
-      "Your claim number is [number]. An adjuster will contact you within 24-48 hours.",
-      "Here's what to expect next: [explain process]",
-      "Is there anything else you need help with right now?"
+      "I've reported your claim. Your claim number is [number].",
+      "An adjuster will contact you within 24-48 hours.",
+      "Here's what to expect next: [explanation]"
     ]
   },
   complianceNotes: [
-    'Document all details exactly as stated',
-    'Do not admit liability on behalf of insured'
+    'Never admit fault or liability',
+    'Direct complex questions to claims adjuster'
   ]
 };
 
-const claimsStatusInquiry: Playbook = {
+const claimStatusInquiry: Playbook = {
   id: 'claims-status',
   domain: 'claims',
-  name: 'Claim Status Inquiry',
-  description: 'Customer checking on status of existing claim',
-  triggerKeywords: ['claim status', 'adjuster', 'settlement', 'check on claim', 'where\'s my', 'when will'],
-  doList: [
-    'Pull up the claim immediately',
-    'Provide specific status updates',
-    'Explain any pending items needed',
-    'Offer to facilitate contact with adjuster',
-    'Set realistic timeline expectations'
+  title: 'Claim Status Inquiry',
+  description: 'Customer checking on existing claim status',
+  triggers: ['claim status', 'adjuster', 'settlement', 'check on claim', 'my claim', 'when will', 'heard anything'],
+  confirm: "Let me check on the status of your claim.",
+  do: [
+    'Pull up claim in carrier system',
+    'Provide current status',
+    'Explain any pending items',
+    'Give realistic timeline if possible',
+    'Offer to escalate if delayed'
   ],
-  dontList: [
-    'Never guess at claim status',
-    'Do not promise specific timelines',
-    'Avoid criticizing the claims department'
+  dont: [
+    'Never promise specific settlement amounts',
+    'Do not speak negatively about the adjuster',
+    'Avoid making commitments on carrier\'s behalf'
   ],
   escalateIf: [
-    'Claim has been open more than 30 days',
-    'Customer is extremely frustrated',
-    'There are unresolved coverage questions'
+    'Claim open over 30 days with no contact',
+    'Customer very frustrated with process',
+    'Adjuster unresponsive'
   ],
   scripts: {
     opening: [
-      "Let me pull up your claim and give you an update.",
-      "I can check on that for you right now."
+      "I understand you want an update. Let me look that up for you.",
+      "Of course, let me check on your claim status."
     ],
     discovery: [
       "Do you have your claim number handy?",
-      "Have you spoken with your adjuster recently?",
-      "Are there any specific concerns about the claim?"
+      "Have you been in contact with your adjuster?",
+      "What's the last update you received?"
     ],
     resolution: [
-      "Your claim is currently [status]. Next steps are [explanation].",
-      "I've sent a message to your adjuster to follow up with you today.",
-      "The estimate has been approved. Payment should arrive within [timeframe]."
+      "Your claim is currently in [status]. The adjuster is [name] at [phone].",
+      "I see they're waiting on [item]. Once received, things should move quickly.",
+      "Let me reach out to the claims department and have someone call you back."
     ]
   }
 };
 
-const claimsDispute: Playbook = {
+const claimDispute: Playbook = {
   id: 'claims-dispute',
   domain: 'claims',
-  name: 'Claim Dispute',
-  description: 'Customer disputing claim denial or settlement amount',
-  triggerKeywords: ['denied', 'dispute', 'appeal', 'disagree', 'not fair', 'not enough', 'won\'t pay'],
-  doList: [
-    'Listen to their complete concern',
-    'Review the denial/settlement reason',
-    'Explain the appeal process',
-    'Document their dispute thoroughly',
-    'Provide supervisor contact if requested'
+  title: 'Claim Dispute',
+  description: 'Customer disagreeing with claim decision',
+  triggers: ['denied', 'dispute', 'appeal', 'disagree', 'not fair', 'won\'t pay', 'fighting the claim'],
+  confirm: "I understand this is frustrating. Let me see what options you have.",
+  do: [
+    'Listen fully to their concerns',
+    'Review the denial reason',
+    'Explain appeal process',
+    'Document everything',
+    'Escalate to claims manager if needed'
   ],
-  dontList: [
-    'Never argue with the customer',
-    'Do not make promises about reversals',
-    'Avoid dismissing their concerns'
+  dont: [
+    'Never promise to overturn a decision',
+    'Do not argue with the customer',
+    'Avoid criticizing the claims decision'
   ],
   escalateIf: [
+    'Always - claims disputes should involve supervisor',
     'Customer mentions attorney',
-    'Dispute involves coverage interpretation',
-    'Customer requests DOI complaint information'
+    'Media or social media threats'
   ],
   scripts: {
     opening: [
-      "I understand you're not satisfied with the outcome. Let me review this with you.",
-      "I want to make sure I understand your concerns completely."
+      "I'm sorry you're dealing with this. Let me understand what happened.",
+      "I want to help. Tell me more about the situation."
     ],
     discovery: [
-      "What specific part of the decision do you disagree with?",
-      "Do you have additional documentation to support your position?",
-      "Have you spoken with the adjuster about these concerns?"
+      "What reason was given for the denial?",
+      "Do you have any additional documentation to support your claim?",
+      "Have you spoken with the adjuster about this?"
     ],
     resolution: [
-      "I've documented your dispute and submitted it for review.",
-      "A supervisor will contact you within [timeframe] to discuss this further.",
-      "Here's how to file a formal appeal: [process]"
+      "You do have the right to appeal. Here's how that process works.",
+      "Let me escalate this to our claims manager to review.",
+      "I'll document your concerns and have someone from claims follow up with you."
     ]
   },
   complianceNotes: [
-    'Document all dispute details verbatim',
-    'Provide DOI information if requested'
+    'Document all dispute details thoroughly',
+    'Do not make promises about outcomes'
   ]
 };
 
@@ -631,213 +597,218 @@ const claimsDispute: Playbook = {
 // POLICY CHANGES PLAYBOOKS
 // =============================================================================
 
-const policyChangeAddVehicle: Playbook = {
-  id: 'policy-change-add-vehicle',
+const addVehicle: Playbook = {
+  id: 'changes-add-vehicle',
   domain: 'policy_changes',
-  name: 'Add Vehicle',
-  description: 'Customer wants to add a vehicle to their policy',
-  triggerKeywords: ['add vehicle', 'new car', 'bought a car', 'another vehicle', 'add car', 'just purchased'],
-  doList: [
-    'Get VIN and verify vehicle details',
-    'Confirm who will be primary driver',
-    'Review coverage options for new vehicle',
-    'Calculate premium change',
-    'Provide effective date and new ID cards'
+  title: 'Add Vehicle',
+  description: 'Customer needs to add a new vehicle to policy',
+  triggers: ['add vehicle', 'new car', 'bought a car', 'add a car', 'just purchased', 'got a new'],
+  confirm: "Congratulations on the new vehicle! Let me add it to your policy.",
+  do: [
+    'Get VIN for accurate rating',
+    'Verify ownership (purchased vs leased)',
+    'Check for any lender requirements',
+    'Review coverage with customer',
+    'Issue updated ID cards'
   ],
-  dontList: [
-    'Never add vehicle without VIN verification',
-    'Do not assume same coverage as existing vehicles',
-    'Avoid backdating beyond carrier guidelines'
+  dont: [
+    'Never add without VIN verification',
+    'Do not assume same coverage as other vehicles',
+    'Avoid backdating more than carrier allows'
   ],
   escalateIf: [
-    'Vehicle is commercial use',
-    'Vehicle value exceeds $100,000',
-    'VIN doesn\'t match stated vehicle'
+    'Exotic or high-value vehicle',
+    'Commercial use vehicle on personal policy',
+    'Customer wants to backdate significantly'
   ],
   scripts: {
     opening: [
-      "Congratulations on the new vehicle! Let's get it added to your policy.",
-      "I can add that for you today. I'll just need some information."
+      "That's exciting! Let's get your new vehicle covered.",
+      "I can add that right away. Do you have the VIN number?"
     ],
     discovery: [
-      "Do you have the VIN handy?",
-      "Who will be the primary driver of this vehicle?",
-      "What coverage would you like? Same as your current vehicles or different?",
-      "When did you purchase it?"
+      "Is this purchased or leased?",
+      "Who is the lienholder?",
+      "When did you take possession of the vehicle?",
+      "Will anyone new be driving this vehicle?"
     ],
     resolution: [
-      "Your new vehicle is added effective [date]. Premium change is [amount].",
-      "I'll email your new ID cards within the hour.",
-      "Is there anything else you need for the new vehicle?"
+      "Your vehicle is added. Your new premium is [amount].",
+      "I'm sending updated ID cards to your email now.",
+      "Remember to put your ID card in the glove box!"
     ]
   }
 };
 
-const policyChangeRemoveVehicle: Playbook = {
-  id: 'policy-change-remove-vehicle',
+const removeVehicle: Playbook = {
+  id: 'changes-remove-vehicle',
   domain: 'policy_changes',
-  name: 'Remove Vehicle',
-  description: 'Customer wants to remove a vehicle from their policy',
-  triggerKeywords: ['remove vehicle', 'sold', 'traded', 'take off', 'don\'t have anymore', 'got rid of'],
-  doList: [
-    'Verify which vehicle to remove',
-    'Confirm sale/trade date',
-    'Calculate premium credit',
-    'Update driver assignments if needed',
-    'Remind about gap in coverage risks'
+  title: 'Remove Vehicle',
+  description: 'Customer needs to remove a vehicle from policy',
+  triggers: ['remove vehicle', 'sold', 'traded', 'getting rid of', 'take off', 'no longer have'],
+  confirm: "I can help you remove that vehicle. Let me verify the details.",
+  do: [
+    'Confirm which vehicle to remove',
+    'Get date of sale/trade',
+    'Verify remaining vehicles have coverage',
+    'Process removal and credit',
+    'Document reason for removal'
   ],
-  dontList: [
-    'Never remove last vehicle without cancellation discussion',
-    'Do not backdate beyond 30 days without documentation',
-    'Avoid removing vehicle with open claim'
+  dont: [
+    'Never remove the only vehicle without discussing options',
+    'Do not backdate removal before sale date',
+    'Avoid removing without confirming new owner\'s coverage'
   ],
   escalateIf: [
-    'Vehicle has open claim',
-    'Removing would leave driver unassigned',
-    'Customer wants significant backdating'
+    'Customer wants credit for period after sale',
+    'Only vehicle on policy being removed',
+    'Vehicle was in accident recently'
   ],
   scripts: {
     opening: [
-      "I can help you remove that vehicle. Let me pull up your policy.",
-      "No problem, let's get that taken care of."
+      "I can take care of that for you. Which vehicle are we removing?",
+      "No problem. Let me pull up your policy."
     ],
     discovery: [
-      "Which vehicle are you removing?",
-      "When did you sell or trade it?",
-      "Do you have a replacement vehicle to add?"
+      "When did you sell/trade the vehicle?",
+      "Did the new owner get their own insurance?",
+      "Do you have any other vehicles to add?"
     ],
     resolution: [
-      "I've removed the [vehicle] effective [date]. You'll receive a credit of [amount].",
-      "Your updated ID cards will be sent to your email.",
-      "Do you need anything else updated on your policy?"
+      "The vehicle has been removed effective [date].",
+      "You'll receive a credit of approximately [amount].",
+      "Your updated policy documents will be emailed shortly."
     ]
   }
 };
 
-const policyChangeDriver: Playbook = {
-  id: 'policy-change-driver',
+const addRemoveDriver: Playbook = {
+  id: 'changes-driver',
   domain: 'policy_changes',
-  name: 'Add/Remove Driver',
-  description: 'Customer wants to add or remove a driver',
-  triggerKeywords: ['add driver', 'remove driver', 'new driver', 'take off driver', 'household member', 'exclude'],
-  doList: [
-    'Get full driver information',
-    'Run MVR for new drivers',
+  title: 'Add/Remove Driver',
+  description: 'Customer needs to add or remove a driver',
+  triggers: ['add driver', 'remove driver', 'new driver', 'my kid', 'spouse', 'ex', 'teenager'],
+  confirm: "I can help you update the drivers on your policy.",
+  do: [
+    'Verify all household members are listed',
+    'Get license information for new drivers',
+    'Check for any violations or accidents',
     'Explain rate impact',
-    'Discuss exclusion options if removing',
-    'Update vehicle assignments'
+    'Update policy and document'
   ],
-  dontList: [
-    'Never add driver without license verification',
-    'Do not exclude without signed form',
-    'Avoid removing household members without exclusion'
+  dont: [
+    'Never exclude a regular household driver',
+    'Do not ignore unlisted drivers in household',
+    'Avoid removing drivers without documentation'
   ],
   escalateIf: [
-    'Driver has DUI/major violations',
-    'Customer refuses to add household driver',
-    'Underwriting questions arise'
+    'Driver has DUI/DWI',
+    'Youthful driver with violations',
+    'Customer wants to hide household member'
   ],
   scripts: {
     opening: [
-      "I can update the drivers on your policy. What change do you need?",
+      "I can update the drivers on your policy. Who are we adding/removing?",
       "Let me help you with that driver change."
     ],
     discovery: [
-      "What is the driver's full name and date of birth?",
-      "Do they have a valid driver's license?",
-      "Which vehicle will they primarily drive?"
+      "What is their date of birth and license number?",
+      "How long have they been licensed?",
+      "Have they had any accidents or tickets in the past 5 years?"
     ],
     resolution: [
-      "I've added [name] to your policy. Premium change is [amount].",
-      "I've removed [name]. They are now excluded from coverage.",
-      "I'll need a signed exclusion form. I'm sending it to your email now."
+      "The driver has been added. Your new rate is [amount].",
+      "I've removed that driver. You'll see a credit on your next bill.",
+      "I'm sending updated ID cards now."
     ]
   }
 };
 
-const policyChangeAddress: Playbook = {
-  id: 'policy-change-address',
+const addressChange: Playbook = {
+  id: 'changes-address',
   domain: 'policy_changes',
-  name: 'Address Change',
-  description: 'Customer has moved and needs to update their address',
-  triggerKeywords: ['address', 'moved', 'moving', 'new address', 'relocated', 'different location'],
-  doList: [
+  title: 'Address Change',
+  description: 'Customer has moved or is moving',
+  triggers: ['address', 'moved', 'moving', 'relocating', 'new address', 'change my address'],
+  confirm: "I can update your address. This may affect your rate.",
+  do: [
     'Get complete new address',
     'Verify garaging location for vehicles',
-    'Check if new address affects rates',
-    'Update all related policies',
-    'Verify continued eligibility'
+    'Check if new state requires different policy',
+    'Explain any rate change',
+    'Update all policies if applicable'
   ],
-  dontList: [
-    'Never change address without verification',
-    'Do not assume garaging location is same as mailing',
-    'Avoid missing multi-policy updates'
+  dont: [
+    'Never use incorrect garaging address',
+    'Do not ignore out-of-state moves',
+    'Avoid partial address updates'
   ],
   escalateIf: [
-    'Moving out of state',
-    'New address is commercial',
-    'Rate change exceeds 20%'
+    'Moving to another state',
+    'Address change significantly increases rate',
+    'PO Box without physical address'
   ],
   scripts: {
     opening: [
-      "I can update your address. What's the new location?",
-      "Let me get your new address information."
+      "I can update that for you. What's your new address?",
+      "Moving is exciting! Let me get your new address updated."
     ],
     discovery: [
-      "What is your new street address, city, state, and zip?",
-      "Is this also where your vehicles will be garaged?",
-      "When is your effective move date?"
+      "Is this where the vehicles will be parked?",
+      "When did you move or when will you move?",
+      "Will any vehicles be kept at a different location?"
     ],
     resolution: [
-      "Your address is updated effective [date]. Rate change is [amount].",
-      "I've updated your auto and home policies.",
-      "Your new ID cards will be mailed to the new address."
+      "Your address is updated. Your new rate is [amount].",
+      "All your policies have been updated with the new address.",
+      "New documents will be mailed to your new address."
     ]
   }
 };
 
-const policyChangeCoverage: Playbook = {
-  id: 'policy-change-coverage',
+const coverageChange: Playbook = {
+  id: 'changes-coverage',
   domain: 'policy_changes',
-  name: 'Coverage Change',
-  description: 'Customer wants to modify coverage limits or deductibles',
-  triggerKeywords: ['increase coverage', 'decrease', 'change limits', 'deductible', 'more coverage', 'less coverage'],
-  doList: [
-    'Understand what change they want',
-    'Explain implications of change',
-    'Quote the premium difference',
-    'Document reasons for decrease',
-    'Provide updated dec page'
+  title: 'Coverage Change',
+  description: 'Customer wants to adjust coverage levels',
+  triggers: ['increase coverage', 'decrease', 'change limits', 'add coverage', 'remove coverage', 'lower my', 'raise my'],
+  confirm: "I can review your coverage options with you.",
+  do: [
+    'Review current coverage',
+    'Understand reason for change',
+    'Explain impact of changes',
+    'Document customer request',
+    'Provide updated pricing'
   ],
-  dontList: [
-    'Never reduce coverage without documentation',
-    'Do not encourage minimum limits',
-    'Avoid making recommendations without understanding needs'
+  dont: [
+    'Never remove coverage without explaining consequences',
+    'Do not pressure specific coverage amounts',
+    'Avoid changes without clear documentation'
   ],
   escalateIf: [
-    'Reducing below state minimums',
-    'Removing coverage with open loan',
-    'Customer seems confused about coverage'
+    'Customer wants state minimum only',
+    'Removing comprehensive on financed vehicle',
+    'Major reduction that leaves gaps'
   ],
   scripts: {
     opening: [
-      "I can help you adjust your coverage. What did you have in mind?",
-      "Let's review your options for coverage changes."
+      "I can help you review your coverage options.",
+      "Let's look at your current coverage and what changes you're considering."
     ],
     discovery: [
-      "Which coverage are you looking to change?",
-      "Are you looking to increase or decrease?",
-      "Is there a specific reason for the change?"
+      "What changes are you looking to make?",
+      "Is there a specific concern driving this change?",
+      "Are you aware of the coverage you'd be giving up?"
     ],
     resolution: [
-      "I've updated your [coverage] to [new limit]. Premium change is [amount].",
-      "Your updated declarations page will be emailed to you.",
-      "Is there anything else you'd like to adjust?"
+      "With those changes, your new premium would be [amount].",
+      "I want to make sure you understand what this change means: [explanation].",
+      "I've made the changes effective [date]. I'm sending updated documents now."
     ]
   },
   complianceNotes: [
-    'Document customer acknowledgment of coverage reduction',
-    'Verify lienholder requirements before removing coverage'
+    'Document all coverage reduction requests',
+    'Explain liability gap risks for low limits'
   ]
 };
 
@@ -845,205 +816,154 @@ const policyChangeCoverage: Playbook = {
 // ESCALATION PLAYBOOKS
 // =============================================================================
 
-const escalationUpset: Playbook = {
+const upsetCustomer: Playbook = {
   id: 'escalation-upset',
   domain: 'escalations',
-  name: 'Upset Customer',
-  description: 'Customer is frustrated, angry, or threatening',
-  triggerKeywords: ['supervisor', 'manager', 'complaint', 'frustrated', 'angry', 'terrible', 'worst', 'ridiculous'],
-  doList: [
-    'Let them vent without interrupting',
+  title: 'Upset Customer',
+  description: 'Customer is angry, frustrated, or demanding supervisor',
+  triggers: ['supervisor', 'manager', 'complaint', 'frustrated', 'angry', 'unacceptable', 'ridiculous', 'terrible'],
+  confirm: "I understand you're frustrated. I want to help resolve this.",
+  do: [
+    'Stay calm and professional',
     'Acknowledge their feelings',
-    'Apologize for their experience',
-    'Focus on resolution, not blame',
-    'Offer supervisor if they insist'
+    'Listen without interrupting',
+    'Focus on solutions',
+    'Involve supervisor if needed'
   ],
-  dontList: [
-    'Never argue or become defensive',
+  dont: [
+    'Never argue or get defensive',
     'Do not take it personally',
-    'Avoid saying "calm down"',
-    'Do not make excuses'
+    'Avoid saying "calm down"'
   ],
   escalateIf: [
-    'Customer threatens legal action',
-    'Customer uses abusive language',
-    'Customer demands specific supervisor by name',
-    'Issue requires authority beyond your level'
+    'Customer uses profanity repeatedly',
+    'Threats of any kind',
+    'Customer specifically demands supervisor',
+    'You cannot resolve the issue'
   ],
   scripts: {
     opening: [
-      "I can hear you're frustrated, and I want to help. Let me understand what happened.",
-      "I'm sorry you're dealing with this. I'm here to help resolve it."
+      "I can hear how frustrated you are, and I want to help make this right.",
+      "I understand this has been a difficult experience. Let me see what I can do."
     ],
     discovery: [
-      "Can you tell me what happened from the beginning?",
-      "What would you like to see happen to resolve this?",
-      "Have you spoken with anyone else about this?"
+      "Help me understand what happened.",
+      "What would be an acceptable resolution for you?",
+      "How can I make this better for you today?"
     ],
     resolution: [
-      "Here's what I can do to fix this right now...",
-      "I've documented your concerns and escalated to my supervisor.",
-      "I'm going to personally follow up on this and call you back by [time]."
+      "Here's what I can do for you...",
+      "I'm going to get my supervisor involved to make sure we resolve this.",
+      "I've documented everything and someone will follow up with you by [time]."
     ]
   },
   complianceNotes: [
     'Document all complaints thoroughly',
-    'Note if customer mentions regulatory agencies'
+    'Never hang up on a customer'
   ]
 };
 
-const escalationCallback: Playbook = {
+const callbackRequest: Playbook = {
   id: 'escalation-callback',
   domain: 'escalations',
-  name: 'Callback Request',
-  description: 'Customer who was promised a callback that never came',
-  triggerKeywords: ['call me back', 'waiting for', 'no one called', 'promised', 'never heard back', 'left message'],
-  doList: [
-    'Apologize sincerely for the delay',
-    'Research what happened',
-    'Resolve the issue now if possible',
-    'Set specific callback time if needed',
-    'Follow through personally'
+  title: 'Callback Request',
+  description: 'Customer waiting for a callback or follow-up',
+  triggers: ['call me back', 'waiting for', 'no one called', 'been waiting', 'supposed to call', 'never heard back'],
+  confirm: "I apologize for the wait. Let me find out what happened and get this resolved.",
+  do: [
+    'Apologize for the delay',
+    'Research previous interactions',
+    'Determine who was supposed to follow up',
+    'Resolve the issue if possible',
+    'Set clear expectations'
   ],
-  dontList: [
-    'Never blame other departments',
-    'Do not make promises you cannot keep',
-    'Avoid vague timeline commitments'
+  dont: [
+    'Never blame the customer for not receiving callback',
+    'Do not make excuses for delays',
+    'Avoid vague promises about follow-up'
   ],
   escalateIf: [
-    'Customer has called more than 3 times',
-    'Issue has been pending more than 1 week',
-    'Customer threatens to cancel'
+    'Multiple missed callbacks',
+    'Urgent matter that should have been handled',
+    'Customer very upset about wait'
   ],
   scripts: {
     opening: [
-      "I apologize that you didn't receive a callback. Let me help you now.",
-      "I'm sorry for the delay. I want to make sure this gets resolved today."
+      "I'm sorry you've been waiting. Let me look into this right away.",
+      "That's not the service we want to provide. Let me make this right."
     ],
     discovery: [
-      "What were you calling about originally?",
-      "Who did you speak with?",
-      "What date were you promised a callback?"
+      "When were you expecting the callback?",
+      "What were they supposed to be calling you about?",
+      "Do you remember who you spoke with?"
     ],
     resolution: [
-      "I've resolved [issue] for you today. Is there anything else?",
-      "I will personally call you at [time] with an update.",
-      "I've noted your account so whoever calls you back will have all the details."
+      "I can handle this for you right now.",
+      "I'm scheduling a callback for [specific time]. I'll personally follow up.",
+      "I've flagged this as urgent. You'll hear from us within [timeframe]."
     ]
   }
 };
 
-const escalationCancel: Playbook = {
-  id: 'escalation-cancel',
-  domain: 'escalations',
-  name: 'Cancellation Request',
-  description: 'Customer wants to cancel their policy',
-  triggerKeywords: ['cancel', 'cancellation', 'end policy', 'stop coverage', 'done with you', 'leaving'],
-  doList: [
-    'Understand the reason for cancellation',
-    'Attempt to resolve underlying issue',
-    'Offer retention solutions if appropriate',
-    'Explain cancellation process and timing',
-    'Ensure they have replacement coverage'
-  ],
-  dontList: [
-    'Never beg or be pushy',
-    'Do not process without required documentation',
-    'Avoid making the customer feel guilty'
-  ],
-  escalateIf: [
-    'High-value customer (multiple policies)',
-    'Cancellation reason involves complaint',
-    'Customer retention offer needed'
-  ],
-  scripts: {
-    opening: [
-      "I'm sorry to hear you're considering cancellation. May I ask what's prompting this?",
-      "Before we process that, I'd like to understand if there's anything we can do."
-    ],
-    discovery: [
-      "Is this due to a rate increase or service issue?",
-      "Do you have replacement coverage lined up?",
-      "Is there anything we could do to keep your business?"
-    ],
-    resolution: [
-      "I understand. I'll process your cancellation effective [date].",
-      "I was able to [resolution]. Would you like to stay with us?",
-      "You'll receive written confirmation and any refund owed within [timeframe]."
-    ]
-  },
-  complianceNotes: [
-    'Obtain written/signed cancellation request',
-    'Verify no claims pending before processing'
-  ]
-};
-
 // =============================================================================
-// EXPORT ALL PLAYBOOKS
+// PLAYBOOKS EXPORT
 // =============================================================================
 
-export const ALL_PLAYBOOKS: Playbook[] = [
+export const PLAYBOOKS: Playbook[] = [
   // Billing & Payments
   billingPaymentInquiry,
   billingNSF,
-  billingPaymentPlan,
-  billingAutopay,
-  billingRefund,
-
+  paymentPlanSetup,
+  autopaySetup,
+  
   // New Business
-  newBusinessQuote,
-  newBusinessFollowUp,
-  newBusinessBinding,
-
+  newQuoteRequest,
+  quoteFollowUp,
+  bindingCoverage,
+  
   // Renewals
   renewalDiscussion,
-  renewalRateIncrease,
-  renewalLapseWarning,
-
+  rateIncreaseExplanation,
+  lapseWarning,
+  
   // Claims
-  claimsNewReport,
-  claimsStatusInquiry,
-  claimsDispute,
-
+  newClaimReport,
+  claimStatusInquiry,
+  claimDispute,
+  
   // Policy Changes
-  policyChangeAddVehicle,
-  policyChangeRemoveVehicle,
-  policyChangeDriver,
-  policyChangeAddress,
-  policyChangeCoverage,
-
+  addVehicle,
+  removeVehicle,
+  addRemoveDriver,
+  addressChange,
+  coverageChange,
+  
   // Escalations
-  escalationUpset,
-  escalationCallback,
-  escalationCancel,
+  upsetCustomer,
+  callbackRequest,
 ];
 
-// Group by domain for UI
-export const PLAYBOOKS_BY_DOMAIN: Record<PlaybookDomain, Playbook[]> = {
-  billing_payments: [billingPaymentInquiry, billingNSF, billingPaymentPlan, billingAutopay, billingRefund],
-  new_business: [newBusinessQuote, newBusinessFollowUp, newBusinessBinding],
-  renewals: [renewalDiscussion, renewalRateIncrease, renewalLapseWarning],
-  claims: [claimsNewReport, claimsStatusInquiry, claimsDispute],
-  policy_changes: [policyChangeAddVehicle, policyChangeRemoveVehicle, policyChangeDriver, policyChangeAddress, policyChangeCoverage],
-  escalations: [escalationUpset, escalationCallback, escalationCancel],
-};
+// Index by ID for quick lookup
+export const PLAYBOOKS_BY_ID: Record<string, Playbook> = Object.fromEntries(
+  PLAYBOOKS.map(p => [p.id, p])
+);
 
-// Domain display names
-export const DOMAIN_NAMES: Record<PlaybookDomain, string> = {
-  billing_payments: 'Billing & Payments',
-  new_business: 'New Business',
-  renewals: 'Renewals',
-  claims: 'Claims',
-  policy_changes: 'Policy Changes',
-  escalations: 'Escalations',
-};
+// Index by domain for filtering
+export const PLAYBOOKS_BY_DOMAIN: Record<string, Playbook[]> = PLAYBOOKS.reduce((acc, p) => {
+  if (!acc[p.domain]) acc[p.domain] = [];
+  acc[p.domain].push(p);
+  return acc;
+}, {} as Record<string, Playbook[]>);
 
-// Find playbook by ID
-export function getPlaybookById(id: string): Playbook | undefined {
-  return ALL_PLAYBOOKS.find(p => p.id === id);
-}
-
-// Get playbooks for a domain
-export function getPlaybooksByDomain(domain: PlaybookDomain): Playbook[] {
-  return PLAYBOOKS_BY_DOMAIN[domain] || [];
+// Get all trigger keywords for matching
+export function getAllTriggers(): Map<string, string[]> {
+  const triggerMap = new Map<string, string[]>();
+  for (const playbook of PLAYBOOKS) {
+    for (const trigger of playbook.triggers) {
+      const existing = triggerMap.get(trigger) || [];
+      existing.push(playbook.id);
+      triggerMap.set(trigger, existing);
+    }
+  }
+  return triggerMap;
 }
