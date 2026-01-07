@@ -26,6 +26,7 @@ import {
   Target,
   Receipt,
   Star,
+  Headphones,
 } from 'lucide-react';
 
 const navigation = [
@@ -34,6 +35,7 @@ const navigation = [
   { name: 'Triage Queue', href: '/triage', icon: ClipboardList },
   { name: 'Lead Queue', href: '/leads', icon: UserPlus },
   { name: 'Calls', href: '/calls', icon: Phone },
+  { name: 'Supervisor', href: '/supervisor', icon: Headphones },
   { name: 'Customers', href: '/customers', icon: Users },
   { name: 'Quotes', href: '/quotes', icon: FileText },
   { name: 'Quote Extractor', href: '/quote-extractor', icon: FileSearch },
