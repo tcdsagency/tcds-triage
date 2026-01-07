@@ -200,6 +200,7 @@ export const tenants = pgTable('tenants', {
     commercialQuotes: boolean;
     trainingSystem: boolean;
     riskMonitor: boolean;
+    reviewAutoSend: boolean; // When false, review requests require manual approval
   }>().default({
     aiAssistant: true,
     voiceTranscription: true,
@@ -207,6 +208,7 @@ export const tenants = pgTable('tenants', {
     commercialQuotes: false,
     trainingSystem: true,
     riskMonitor: false,
+    reviewAutoSend: true, // Default: auto-send enabled
   }),
   
   // AI Customization
@@ -1535,6 +1537,59 @@ export const leadClaimActivity = pgTable('lead_claim_activity', {
   index('lead_claim_activity_timestamp_idx').on(table.tenantId, table.timestamp),
 ]);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// GENERATED ID CARDS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const generatedIdCards = pgTable('generated_id_cards', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Contact information (from AgencyZoom)
+  contactId: text('contact_id').notNull(),
+  contactType: text('contact_type').notNull(), // 'customer' or 'lead'
+  contactName: text('contact_name').notNull(),
+
+  // HawkSoft reference
+  hawksoftClientNumber: text('hawksoft_client_number'),
+
+  // Policy information
+  policyNumber: text('policy_number').notNull(),
+  carrier: text('carrier').notNull(),
+  carrierNaic: text('carrier_naic'),
+  effectiveDate: text('effective_date').notNull(),
+  expirationDate: text('expiration_date').notNull(),
+
+  // Vehicle count
+  vehicleCount: integer('vehicle_count').notNull().default(1),
+
+  // Vehicles included (JSON array)
+  vehicles: jsonb('vehicles').$type<Array<{
+    year: string;
+    make: string;
+    model: string;
+    vin: string;
+  }>>(),
+
+  // PDF storage
+  pdfBase64: text('pdf_base64'),
+
+  // Delivery tracking
+  deliveryMethod: text('delivery_method'), // 'download', 'email', 'sms'
+  deliveredTo: text('delivered_to'), // email address or phone number
+  deliveredAt: timestamp('delivered_at'),
+
+  // Creator
+  createdById: uuid('created_by_id').references(() => users.id),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('generated_id_cards_tenant_idx').on(table.tenantId),
+  index('generated_id_cards_contact_idx').on(table.contactId),
+  index('generated_id_cards_policy_idx').on(table.policyNumber),
+  index('generated_id_cards_created_idx').on(table.tenantId, table.createdAt),
+]);
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RELATIONS
@@ -2254,6 +2309,247 @@ export const quoteDocumentsRelations = relations(quoteDocuments, ({ one }) => ({
   }),
   uploadedBy: one(users, {
     fields: [quoteDocuments.uploadedById],
+    references: [users.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEMANTIC SEARCH - EMBEDDINGS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const embeddingTypeEnum = pgEnum('embedding_type', [
+  'customer',
+  'policy',
+  'call',
+  'document',
+  'note',
+  'knowledge',
+]);
+
+/**
+ * Vector Embeddings for Semantic Search
+ *
+ * Note: The actual vector column should be added via raw SQL migration:
+ * ALTER TABLE embeddings ADD COLUMN embedding vector(1536);
+ * CREATE INDEX embeddings_vector_idx ON embeddings USING ivfflat (embedding vector_cosine_ops);
+ *
+ * For now, we store embeddings as JSON array and use pgvector functions via raw queries.
+ */
+export const embeddings = pgTable('embeddings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // What this embedding represents
+  type: embeddingTypeEnum('type').notNull(),
+  sourceId: text('source_id').notNull(), // ID of the source record
+  sourceTable: text('source_table').notNull(), // Table name
+
+  // Content that was embedded
+  content: text('content').notNull(),
+  contentHash: text('content_hash').notNull(), // For deduplication
+
+  // Metadata for filtering
+  metadata: jsonb('metadata').$type<Record<string, any>>(),
+
+  // Embedding storage (JSON array format, convert to vector for queries)
+  // Use raw SQL with pgvector for actual similarity search
+  embeddingJson: jsonb('embedding_json').$type<number[]>(),
+
+  // Model info
+  model: text('model').default('text-embedding-3-small'),
+  dimensions: integer('dimensions').default(1536),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('embeddings_tenant_idx').on(table.tenantId),
+  typeIdx: index('embeddings_type_idx').on(table.type),
+  sourceIdx: index('embeddings_source_idx').on(table.sourceId, table.sourceTable),
+  contentHashIdx: uniqueIndex('embeddings_content_hash_idx').on(table.tenantId, table.contentHash),
+}));
+
+export const embeddingsRelations = relations(embeddings, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [embeddings.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AI PREDICTIONS - For tracking and retraining
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const aiPredictions = pgTable('ai_predictions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // What was predicted
+  type: text('type').notNull(), // churn, cross_sell, intent, sentiment, etc.
+  subjectType: text('subject_type').notNull(), // customer, call, policy
+  subjectId: text('subject_id').notNull(),
+
+  // The prediction
+  prediction: jsonb('prediction').notNull(), // The full prediction object
+  confidence: real('confidence'), // 0-1
+
+  // Actual outcome (filled in later)
+  actualOutcome: jsonb('actual_outcome'),
+  wasAccurate: boolean('was_accurate'),
+
+  // Context at time of prediction
+  context: jsonb('context'),
+
+  // Model info
+  model: text('model'),
+  tokensUsed: integer('tokens_used'),
+  latencyMs: integer('latency_ms'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  verifiedAt: timestamp('verified_at'),
+}, (table) => ({
+  tenantIdx: index('ai_predictions_tenant_idx').on(table.tenantId),
+  typeIdx: index('ai_predictions_type_idx').on(table.type),
+  subjectIdx: index('ai_predictions_subject_idx').on(table.subjectType, table.subjectId),
+  createdAtIdx: index('ai_predictions_created_at_idx').on(table.createdAt),
+}));
+
+export const aiPredictionsRelations = relations(aiPredictions, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [aiPredictions.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REVIEW REQUESTS - Track Google review solicitation SMS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const reviewRequestStatusEnum = pgEnum('review_request_status', [
+  'pending_approval', // Waiting for manual approval (when auto-send is OFF)
+  'pending',          // Approved and scheduled, waiting to be sent
+  'sent',             // SMS successfully delivered
+  'failed',           // SMS delivery failed
+  'cancelled',        // Manually cancelled by agent
+  'opted_out',        // Customer replied STOP
+  'suppressed',       // Skipped - customer already has a review
+]);
+
+export const reviewRequests = pgTable('review_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Link to originating call
+  callSessionId: text('call_session_id'),
+  callId: uuid('call_id').references(() => calls.id),
+
+  // Customer info
+  customerName: text('customer_name').notNull(),
+  customerPhone: text('customer_phone').notNull(),
+  customerId: text('customer_id'), // AgencyZoom ID
+
+  // Sentiment from call analysis
+  sentiment: varchar('sentiment', { length: 20 }), // positive, neutral, negative
+
+  // Scheduling
+  scheduledFor: timestamp('scheduled_for').notNull(),
+  status: reviewRequestStatusEnum('status').default('pending').notNull(),
+  sentAt: timestamp('sent_at'),
+
+  // SMS delivery tracking
+  twilioMessageId: text('twilio_message_id'),
+  errorMessage: text('error_message'),
+
+  // Suppression (skip if customer already reviewed)
+  suppressed: boolean('suppressed').default(false),
+  suppressionReason: varchar('suppression_reason', { length: 50 }), // existing_review, manual, opted_out
+  googleReviewId: uuid('google_review_id'), // Link to existing review if suppressed
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  processedBy: uuid('processed_by').references(() => users.id),
+}, (table) => ({
+  tenantIdx: index('review_requests_tenant_idx').on(table.tenantId),
+  statusIdx: index('review_requests_status_idx').on(table.status),
+  scheduledForIdx: index('review_requests_scheduled_for_idx').on(table.scheduledFor),
+  customerPhoneIdx: index('review_requests_customer_phone_idx').on(table.customerPhone),
+  customerIdIdx: index('review_requests_customer_id_idx').on(table.customerId),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GOOGLE REVIEWS - Imported reviews for matching to customers
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const matchConfidenceEnum = pgEnum('match_confidence', [
+  'exact',   // Phone number match
+  'high',    // Exact name match
+  'medium',  // Fuzzy name match
+  'low',     // Partial match
+  'manual',  // Manually matched by agent
+]);
+
+export const googleReviews = pgTable('google_reviews', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Google review data
+  googleReviewId: text('google_review_id').unique(), // Google's unique ID
+  reviewerName: text('reviewer_name').notNull(),
+  reviewerNameNormalized: text('reviewer_name_normalized'), // Lowercase, no special chars
+  reviewerProfileUrl: text('reviewer_profile_url'),
+  rating: integer('rating').notNull(), // 1-5 stars
+  comment: text('comment'), // Review text
+  reviewTimestamp: timestamp('review_timestamp'), // When review was left
+
+  // Customer matching
+  matchedCustomerId: text('matched_customer_id'), // AgencyZoom customer ID
+  matchedCustomerName: text('matched_customer_name'),
+  matchedCustomerPhone: text('matched_customer_phone'),
+  matchConfidence: matchConfidenceEnum('match_confidence'),
+  matchedAt: timestamp('matched_at'),
+  matchedBy: uuid('matched_by').references(() => users.id),
+
+  // Import tracking
+  importedAt: timestamp('imported_at').defaultNow().notNull(),
+  importSource: varchar('import_source', { length: 20 }), // manual, api, csv
+  rawPayload: jsonb('raw_payload'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('google_reviews_tenant_idx').on(table.tenantId),
+  googleReviewIdIdx: index('google_reviews_google_id_idx').on(table.googleReviewId),
+  reviewerNameNormalizedIdx: index('google_reviews_reviewer_name_idx').on(table.reviewerNameNormalized),
+  matchedCustomerIdIdx: index('google_reviews_matched_customer_idx').on(table.matchedCustomerId),
+  ratingIdx: index('google_reviews_rating_idx').on(table.rating),
+  reviewTimestampIdx: index('google_reviews_timestamp_idx').on(table.reviewTimestamp),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REVIEW REQUESTS RELATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const reviewRequestsRelations = relations(reviewRequests, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [reviewRequests.tenantId],
+    references: [tenants.id],
+  }),
+  call: one(calls, {
+    fields: [reviewRequests.callId],
+    references: [calls.id],
+  }),
+  processedByUser: one(users, {
+    fields: [reviewRequests.processedBy],
+    references: [users.id],
+  }),
+}));
+
+export const googleReviewsRelations = relations(googleReviews, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [googleReviews.tenantId],
+    references: [tenants.id],
+  }),
+  matchedByUser: one(users, {
+    fields: [googleReviews.matchedBy],
     references: [users.id],
   }),
 }));

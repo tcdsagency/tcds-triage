@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink, Clock, Moon } from "lucide-react";
+import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,28 @@ export default function AgencySettingsPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("general");
   const [syncing, setSyncing] = useState<string | null>(null);
-  
+
+  // Team members state
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [userFormData, setUserFormData] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    role: "agent",
+    extension: "",
+    directDial: "",
+    cellPhone: "",
+    agencyzoomId: "",
+    agentCode: "",
+    inLeadRotation: true,
+  });
+  const [userSaving, setUserSaving] = useState(false);
+  const [userError, setUserError] = useState<string | null>(null);
+
   const [agency, setAgency] = useState({
     name: "TCDS Insurance Agency",
     phone: "(205) 555-0100",
@@ -130,12 +151,113 @@ export default function AgencySettingsPage() {
     { id: "security", label: "Security", icon: Shield },
   ];
 
-  const teamMembers = [
-    { id: 1, name: "Todd Conn", email: "todd.conn@tcdsagency.com", role: "Admin", status: "active" },
-    { id: 2, name: "Sarah Smith", email: "sarah@tcdsagency.com", role: "Agent", status: "active" },
-    { id: 3, name: "Mike Johnson", email: "mike@tcdsagency.com", role: "CSR", status: "active" },
-    { id: 4, name: "Emily Davis", email: "emily@tcdsagency.com", role: "Agent", status: "invited" },
-  ];
+  // Fetch team members function
+  const fetchTeamMembers = async () => {
+    setTeamLoading(true);
+    try {
+      const res = await fetch("/api/users?active=true");
+      const data = await res.json();
+      if (data.success) {
+        setTeamMembers(data.users);
+      }
+    } catch (err) {
+      console.error("Failed to fetch team members:", err);
+    } finally {
+      setTeamLoading(false);
+    }
+  };
+
+  // Load team members when tab changes to team
+  useEffect(() => {
+    if (activeTab === "team" && teamMembers.length === 0) {
+      fetchTeamMembers();
+    }
+  }, [activeTab]);
+
+  // Open add user modal
+  const handleAddUser = () => {
+    setEditingUser(null);
+    setUserFormData({
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      role: "agent",
+      extension: "",
+      directDial: "",
+      cellPhone: "",
+      agencyzoomId: "",
+      agentCode: "",
+      inLeadRotation: true,
+    });
+    setUserError(null);
+    setShowUserModal(true);
+  };
+
+  // Open edit user modal
+  const handleEditUser = (user: any) => {
+    setEditingUser(user);
+    setUserFormData({
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      email: user.email || "",
+      phone: user.phone || "",
+      role: user.role || "agent",
+      extension: user.extension || "",
+      directDial: user.directDial || "",
+      cellPhone: user.cellPhone || "",
+      agencyzoomId: user.agencyzoomId || "",
+      agentCode: user.agentCode || "",
+      inLeadRotation: user.inLeadRotation ?? true,
+    });
+    setUserError(null);
+    setShowUserModal(true);
+  };
+
+  // Save user (create or update)
+  const handleSaveUser = async () => {
+    setUserSaving(true);
+    setUserError(null);
+
+    try {
+      const url = editingUser ? `/api/users/${editingUser.id}` : "/api/users";
+      const method = editingUser ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(userFormData),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setShowUserModal(false);
+        fetchTeamMembers();
+      } else {
+        setUserError(data.error || "Failed to save user");
+      }
+    } catch (err) {
+      setUserError("Failed to save user");
+    } finally {
+      setUserSaving(false);
+    }
+  };
+
+  // Deactivate user
+  const handleDeactivateUser = async (user: any) => {
+    if (!confirm(`Are you sure you want to deactivate ${user.name}?`)) return;
+
+    try {
+      const res = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        fetchTeamMembers();
+      }
+    } catch (err) {
+      console.error("Failed to deactivate user:", err);
+    }
+  };
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -384,36 +506,100 @@ export default function AgencySettingsPage() {
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Team Members</h2>
-                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700">
-                  <Users className="w-4 h-4 mr-2" />
-                  Invite Member
+                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddUser}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Team Member
                 </Button>
               </div>
-              
-              <div className="space-y-3">
-                {teamMembers.map((member) => (
-                  <div key={member.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                        {member.name.split(" ").map(n => n[0]).join("")}
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">{member.name}</div>
-                        <div className="text-sm text-gray-500">{member.email}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Badge variant="secondary">{member.role}</Badge>
-                      {member.status === "invited" ? (
-                        <Badge variant="secondary" className="bg-yellow-100 text-yellow-700">Pending</Badge>
-                      ) : (
-                        <Badge variant="secondary" className="bg-green-100 text-green-700">Active</Badge>
-                      )}
-                      <Button variant="ghost" size="sm">Edit</Button>
-                    </div>
-                  </div>
-                ))}
+
+              {/* Cross-System ID Legend */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm">
+                <div className="font-medium text-blue-800 dark:text-blue-200 mb-2">Cross-System ID Mapping</div>
+                <div className="grid grid-cols-3 gap-2 text-blue-700 dark:text-blue-300">
+                  <div><span className="font-mono bg-blue-100 dark:bg-blue-800 px-1 rounded">Ext</span> = 3CX Phone</div>
+                  <div><span className="font-mono bg-purple-100 dark:bg-purple-800 px-1 rounded">AZ</span> = AgencyZoom CSR</div>
+                  <div><span className="font-mono bg-amber-100 dark:bg-amber-800 px-1 rounded">HS</span> = HawkSoft Code</div>
+                </div>
               </div>
+
+              {teamLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                </div>
+              ) : teamMembers.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>No team members yet</p>
+                  <Button size="sm" className="mt-4" onClick={handleAddUser}>Add First Team Member</Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {teamMembers.map((member) => (
+                    <div key={member.id} className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-3">
+                          <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                            {member.initials || "??"}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-gray-900 dark:text-white">{member.name}</div>
+                            <div className="text-sm text-gray-500 flex items-center gap-1">
+                              <Mail className="w-3 h-3" /> {member.email}
+                            </div>
+                            {member.phone && (
+                              <div className="text-sm text-gray-500 flex items-center gap-1">
+                                <Phone className="w-3 h-3" /> {member.phone}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="capitalize">{member.role}</Badge>
+                          {member.isActive ? (
+                            <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Active</Badge>
+                          ) : (
+                            <Badge className="bg-gray-100 text-gray-600">Inactive</Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Cross-System IDs */}
+                      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex items-center gap-4 flex-wrap">
+                        {member.extension && (
+                          <div className="flex items-center gap-1.5 text-sm">
+                            <span className="font-mono text-xs bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 px-1.5 py-0.5 rounded">Ext</span>
+                            <span className="text-gray-700 dark:text-gray-300 font-mono">{member.extension}</span>
+                          </div>
+                        )}
+                        {member.agencyzoomId && (
+                          <div className="flex items-center gap-1.5 text-sm">
+                            <span className="font-mono text-xs bg-purple-100 dark:bg-purple-800 text-purple-700 dark:text-purple-200 px-1.5 py-0.5 rounded">AZ</span>
+                            <span className="text-gray-700 dark:text-gray-300 font-mono">{member.agencyzoomId}</span>
+                          </div>
+                        )}
+                        {member.agentCode && (
+                          <div className="flex items-center gap-1.5 text-sm">
+                            <span className="font-mono text-xs bg-amber-100 dark:bg-amber-800 text-amber-700 dark:text-amber-200 px-1.5 py-0.5 rounded">HS</span>
+                            <span className="text-gray-700 dark:text-gray-300 font-mono">{member.agentCode}</span>
+                          </div>
+                        )}
+                        {!member.extension && !member.agencyzoomId && !member.agentCode && (
+                          <span className="text-sm text-gray-400 italic">No cross-system IDs configured</span>
+                        )}
+
+                        <div className="ml-auto flex items-center gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => handleEditUser(member)}>
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeactivateUser(member)}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -645,6 +831,201 @@ export default function AgencySettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Add/Edit User Modal */}
+      {showUserModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {editingUser ? "Edit Team Member" : "Add Team Member"}
+              </h3>
+              <button
+                onClick={() => setShowUserModal(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {userError && (
+                <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-300 text-sm flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  {userError}
+                </div>
+              )}
+
+              <div className="space-y-6">
+                {/* Basic Info */}
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Basic Information</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">First Name *</label>
+                      <Input
+                        value={userFormData.firstName}
+                        onChange={(e) => setUserFormData({ ...userFormData, firstName: e.target.value })}
+                        placeholder="John"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Last Name *</label>
+                      <Input
+                        value={userFormData.lastName}
+                        onChange={(e) => setUserFormData({ ...userFormData, lastName: e.target.value })}
+                        placeholder="Smith"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Email *</label>
+                      <Input
+                        type="email"
+                        value={userFormData.email}
+                        onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
+                        placeholder="john@tcdsagency.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Phone</label>
+                      <Input
+                        value={userFormData.phone}
+                        onChange={(e) => setUserFormData({ ...userFormData, phone: e.target.value })}
+                        placeholder="(555) 123-4567"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Role</label>
+                      <select
+                        value={userFormData.role}
+                        onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
+                        className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                      >
+                        <option value="agent">Agent</option>
+                        <option value="csr">CSR</option>
+                        <option value="manager">Manager</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Phone Numbers */}
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Phone Numbers</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Direct Dial</label>
+                      <Input
+                        value={userFormData.directDial}
+                        onChange={(e) => setUserFormData({ ...userFormData, directDial: e.target.value })}
+                        placeholder="(555) 123-4568"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Cell Phone</label>
+                      <Input
+                        value={userFormData.cellPhone}
+                        onChange={(e) => setUserFormData({ ...userFormData, cellPhone: e.target.value })}
+                        placeholder="(555) 123-4569"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cross-System IDs */}
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Cross-System IDs</h4>
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 mb-4 text-sm text-blue-700 dark:text-blue-300">
+                    These IDs link this user to external systems for call routing, task assignment, and policy mapping.
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        <span className="font-mono text-xs bg-blue-100 dark:bg-blue-800 px-1 rounded mr-1">Ext</span>
+                        3CX Extension
+                      </label>
+                      <Input
+                        value={userFormData.extension}
+                        onChange={(e) => setUserFormData({ ...userFormData, extension: e.target.value })}
+                        placeholder="1001"
+                        className="font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        <span className="font-mono text-xs bg-purple-100 dark:bg-purple-800 px-1 rounded mr-1">AZ</span>
+                        AgencyZoom CSR ID
+                      </label>
+                      <Input
+                        value={userFormData.agencyzoomId}
+                        onChange={(e) => setUserFormData({ ...userFormData, agencyzoomId: e.target.value })}
+                        placeholder="94007"
+                        className="font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        <span className="font-mono text-xs bg-amber-100 dark:bg-amber-800 px-1 rounded mr-1">HS</span>
+                        HawkSoft Code
+                      </label>
+                      <Input
+                        value={userFormData.agentCode}
+                        onChange={(e) => setUserFormData({ ...userFormData, agentCode: e.target.value })}
+                        placeholder="LT"
+                        className="font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Options */}
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Options</h4>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={userFormData.inLeadRotation}
+                      onChange={(e) => setUserFormData({ ...userFormData, inLeadRotation: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-white">Include in Lead Rotation</div>
+                      <div className="text-sm text-gray-500">This user will receive leads in the round-robin queue</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3">
+              <Button variant="outline" onClick={() => setShowUserModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveUser}
+                disabled={userSaving || !userFormData.firstName || !userFormData.lastName || !userFormData.email}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                {userSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 mr-2" />
+                    {editingUser ? "Update" : "Add"} Team Member
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
