@@ -6,7 +6,7 @@ import {
   ArrowLeft, Sparkles, Car, Home, Ship, Building2, Droplets,
   ChevronDown, ChevronRight, Loader2, Search,
   User, Phone, Mail, Shield, DollarSign, FileText,
-  Plus, Trash2, Wand2, Send
+  Plus, Trash2, Wand2, Send, Check, Cloud, HelpCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1162,6 +1162,86 @@ export default function QuoteIntakePage() {
   const [currentFormSection, setCurrentFormSection] = useState<string>("customer-info");
   const [showAgentAssist, setShowAgentAssist] = useState(true);
 
+  // Auto-save state
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [timeSinceLastSave, setTimeSinceLastSave] = useState<string>("");
+
+  // Load saved draft on mount
+  useEffect(() => {
+    try {
+      const savedDraft = localStorage.getItem("quote-draft");
+      if (savedDraft) {
+        const parsed = JSON.parse(savedDraft);
+        if (parsed.selectedType) setSelectedType(parsed.selectedType);
+        if (parsed.autoFormData) setAutoFormData(parsed.autoFormData);
+        if (parsed.homeownersFormData) setHomeownersFormData(parsed.homeownersFormData);
+        if (parsed.rentersFormData) setRentersFormData(parsed.rentersFormData);
+        if (parsed.umbrellaFormData) setUmbrellaFormData(parsed.umbrellaFormData);
+        if (parsed.bopFormData) setBopFormData(parsed.bopFormData);
+        if (parsed.glFormData) setGlFormData(parsed.glFormData);
+        if (parsed.wcFormData) setWcFormData(parsed.wcFormData);
+        if (parsed.recreationalFormData) setRecreationalFormData(parsed.recreationalFormData);
+        if (parsed.lastSaved) setLastSaved(new Date(parsed.lastSaved));
+      }
+    } catch (e) {
+      console.error("Failed to load draft:", e);
+    }
+  }, []);
+
+  // Auto-save to localStorage on changes (debounced)
+  useEffect(() => {
+    if (!selectedType) return;
+
+    const saveTimeout = setTimeout(() => {
+      setAutoSaving(true);
+      try {
+        const draft = {
+          selectedType,
+          autoFormData,
+          homeownersFormData,
+          rentersFormData,
+          umbrellaFormData,
+          bopFormData,
+          glFormData,
+          wcFormData,
+          recreationalFormData,
+          lastSaved: new Date().toISOString(),
+        };
+        localStorage.setItem("quote-draft", JSON.stringify(draft));
+        setLastSaved(new Date());
+      } catch (e) {
+        console.error("Failed to save draft:", e);
+      }
+      setAutoSaving(false);
+    }, 1000); // 1 second debounce
+
+    return () => clearTimeout(saveTimeout);
+  }, [selectedType, autoFormData, homeownersFormData, rentersFormData, umbrellaFormData, bopFormData, glFormData, wcFormData, recreationalFormData]);
+
+  // Update "time since last save" display
+  useEffect(() => {
+    if (!lastSaved) return;
+
+    const updateTime = () => {
+      const seconds = Math.floor((Date.now() - lastSaved.getTime()) / 1000);
+      if (seconds < 5) setTimeSinceLastSave("Just now");
+      else if (seconds < 60) setTimeSinceLastSave(`${seconds}s ago`);
+      else if (seconds < 3600) setTimeSinceLastSave(`${Math.floor(seconds / 60)}m ago`);
+      else setTimeSinceLastSave(`${Math.floor(seconds / 3600)}h ago`);
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 5000);
+    return () => clearInterval(interval);
+  }, [lastSaved]);
+
+  // Clear draft after successful submission
+  const clearDraft = () => {
+    localStorage.removeItem("quote-draft");
+    setLastSaved(null);
+  };
+
   // Auto form completion calculation
   const autoCompletion = useCallback(() => {
     let filled = 0, total = 10;
@@ -1532,9 +1612,19 @@ export default function QuoteIntakePage() {
     </div>
   );
 
-  const Field = ({ label, value, onChange, type = "text", placeholder, options, required, className, error }: any) => (
+  const Field = ({ label, value, onChange, type = "text", placeholder, options, required, className, error, tooltip }: any) => (
     <div className={className}>
-      <label className="block text-sm font-medium text-gray-300 mb-1">{label} {required && <span className="text-red-400">*</span>}</label>
+      <label className="flex items-center gap-1.5 text-sm font-medium text-gray-300 mb-1">
+        {label} {required && <span className="text-red-400">*</span>}
+        {tooltip && (
+          <span className="group relative">
+            <HelpCircle className="w-3.5 h-3.5 text-gray-500 hover:text-amber-400 cursor-help" />
+            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-700 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
+              {tooltip}
+            </span>
+          </span>
+        )}
+      </label>
       {options ? (
         <select value={value} onChange={(e) => onChange(e.target.value)} className={cn("w-full px-3 py-2 bg-gray-900 border rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50", error ? "border-red-500" : "border-gray-700")}>
           {options.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -1593,6 +1683,20 @@ export default function QuoteIntakePage() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {/* Auto-save indicator */}
+            <div className="flex items-center gap-1.5 text-xs">
+              {autoSaving ? (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                  <span className="text-blue-400">Saving...</span>
+                </>
+              ) : lastSaved ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-green-500" />
+                  <span className="text-gray-400">Saved {timeSinceLastSave}</span>
+                </>
+              ) : null}
+            </div>
             <div className="flex items-center gap-2">
               <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-amber-500 to-green-500 transition-all" style={{ width: `${completion}%` }} />
@@ -1687,7 +1791,7 @@ export default function QuoteIntakePage() {
                       <Field label="Year" value={v.year} onChange={(val: string) => updateVehicle(v.id, "year", val)} placeholder="2023" />
                       <Field label="Make" value={v.make} onChange={(val: string) => updateVehicle(v.id, "make", val)} placeholder="Toyota" />
                       <Field label="Model" value={v.model} onChange={(val: string) => updateVehicle(v.id, "model", val)} placeholder="Camry" />
-                      <Field label="Ownership" value={v.ownership} onChange={(val: string) => updateVehicle(v.id, "ownership", val)} options={[{ value: "owned", label: "Owned" }, { value: "financed", label: "Financed" }, { value: "leased", label: "Leased" }]} />
+                      <Field label="Ownership" value={v.ownership} onChange={(val: string) => updateVehicle(v.id, "ownership", val)} options={[{ value: "owned", label: "Owned" }, { value: "financed", label: "Financed" }, { value: "leased", label: "Leased" }]} tooltip="Financed/leased require full coverage" />
                       <Field label="Primary Use" value={v.primaryUse} onChange={(val: string) => updateVehicle(v.id, "primaryUse", val)} options={[{ value: "commute", label: "Commute" }, { value: "pleasure", label: "Pleasure" }, { value: "business", label: "Business" }]} />
                       <Field label="Annual Miles" value={v.annualMileage} onChange={(val: string) => updateVehicle(v.id, "annualMileage", val)} placeholder="12000" />
                     </div>
@@ -1712,7 +1816,7 @@ export default function QuoteIntakePage() {
                       <Field label="First Name" value={d.firstName} onChange={(val: string) => updateDriver(d.id, "firstName", val)} placeholder="John" />
                       <Field label="Last Name" value={d.lastName} onChange={(val: string) => updateDriver(d.id, "lastName", val)} placeholder="Doe" />
                       <Field label="Date of Birth" value={d.dob} onChange={(val: string) => updateDriver(d.id, "dob", val)} type="date" />
-                      <Field label="Relationship" value={d.relationship} onChange={(val: string) => updateDriver(d.id, "relationship", val)} options={[{ value: "self", label: "Self" }, { value: "spouse", label: "Spouse" }, { value: "child", label: "Child" }, { value: "parent", label: "Parent" }, { value: "other", label: "Other" }]} />
+                      <Field label="Relationship" value={d.relationship} onChange={(val: string) => updateDriver(d.id, "relationship", val)} options={[{ value: "self", label: "Self" }, { value: "spouse", label: "Spouse" }, { value: "child", label: "Child" }, { value: "parent", label: "Parent" }, { value: "other", label: "Other" }]} tooltip="Relationship to the primary insured" />
                       <Field label="License #" value={d.licenseNumber} onChange={(val: string) => updateDriver(d.id, "licenseNumber", val)} placeholder="DL123456" />
                       <Field label="License State" value={d.licenseState} onChange={(val: string) => updateDriver(d.id, "licenseState", val)} options={[{ value: "", label: "Select..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                       <Field label="Gender" value={d.gender} onChange={(val: string) => updateDriver(d.id, "gender", val)} options={[{ value: "", label: "Select..." }, { value: "male", label: "Male" }, { value: "female", label: "Female" }]} />
@@ -1728,12 +1832,12 @@ export default function QuoteIntakePage() {
             {/* Coverage */}
             <Section id="coverage" icon={Shield} title="Coverage Options">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Bodily Injury" value={autoFormData.bodilyInjury} onChange={(v: string) => updateAutoField("bodilyInjury", v)} options={[{ value: "25/50", label: "$25K/$50K" }, { value: "50/100", label: "$50K/$100K" }, { value: "100/300", label: "$100K/$300K" }, { value: "250/500", label: "$250K/$500K" }]} />
-                <Field label="Property Damage" value={autoFormData.propertyDamage} onChange={(v: string) => updateAutoField("propertyDamage", v)} options={[{ value: "25000", label: "$25,000" }, { value: "50000", label: "$50,000" }, { value: "100000", label: "$100,000" }]} />
-                <Field label="UM/UIM" value={autoFormData.umUim} onChange={(v: string) => updateAutoField("umUim", v)} options={[{ value: "reject", label: "Reject" }, { value: "25/50", label: "$25K/$50K" }, { value: "100/300", label: "$100K/$300K" }]} />
-                <Field label="Med Pay" value={autoFormData.medPay} onChange={(v: string) => updateAutoField("medPay", v)} options={[{ value: "0", label: "None" }, { value: "5000", label: "$5,000" }, { value: "10000", label: "$10,000" }]} />
-                <Field label="Comp Deductible" value={autoFormData.comprehensive} onChange={(v: string) => updateAutoField("comprehensive", v)} options={[{ value: "0", label: "No Coverage" }, { value: "500", label: "$500" }, { value: "1000", label: "$1,000" }]} />
-                <Field label="Coll Deductible" value={autoFormData.collision} onChange={(v: string) => updateAutoField("collision", v)} options={[{ value: "0", label: "No Coverage" }, { value: "500", label: "$500" }, { value: "1000", label: "$1,000" }]} />
+                <Field label="Bodily Injury" value={autoFormData.bodilyInjury} onChange={(v: string) => updateAutoField("bodilyInjury", v)} options={[{ value: "25/50", label: "$25K/$50K" }, { value: "50/100", label: "$50K/$100K" }, { value: "100/300", label: "$100K/$300K" }, { value: "250/500", label: "$250K/$500K" }]} tooltip="Per person/per accident injury limits" />
+                <Field label="Property Damage" value={autoFormData.propertyDamage} onChange={(v: string) => updateAutoField("propertyDamage", v)} options={[{ value: "25000", label: "$25,000" }, { value: "50000", label: "$50,000" }, { value: "100000", label: "$100,000" }]} tooltip="Covers damage you cause to property" />
+                <Field label="UM/UIM" value={autoFormData.umUim} onChange={(v: string) => updateAutoField("umUim", v)} options={[{ value: "reject", label: "Reject" }, { value: "25/50", label: "$25K/$50K" }, { value: "100/300", label: "$100K/$300K" }]} tooltip="Protects you from uninsured drivers" />
+                <Field label="Med Pay" value={autoFormData.medPay} onChange={(v: string) => updateAutoField("medPay", v)} options={[{ value: "0", label: "None" }, { value: "5000", label: "$5,000" }, { value: "10000", label: "$10,000" }]} tooltip="Covers medical expenses regardless of fault" />
+                <Field label="Comp Deductible" value={autoFormData.comprehensive} onChange={(v: string) => updateAutoField("comprehensive", v)} options={[{ value: "0", label: "No Coverage" }, { value: "500", label: "$500" }, { value: "1000", label: "$1,000" }]} tooltip="Covers theft, vandalism, weather damage" />
+                <Field label="Coll Deductible" value={autoFormData.collision} onChange={(v: string) => updateAutoField("collision", v)} options={[{ value: "0", label: "No Coverage" }, { value: "500", label: "$500" }, { value: "1000", label: "$1,000" }]} tooltip="Covers damage from accidents" />
               </div>
             </Section>
 
@@ -1959,10 +2063,10 @@ export default function QuoteIntakePage() {
                 <Field label="Other Structures (B)" value={homeownersFormData.otherStructures} onChange={(v: string) => updateHomeownersField("otherStructures", v)} placeholder="10% of dwelling" />
                 <Field label="Personal Property (C)" value={homeownersFormData.personalProperty} onChange={(v: string) => updateHomeownersField("personalProperty", v)} placeholder="50-70% of dwelling" />
                 <div />
-                <Field label="Personal Liability" value={homeownersFormData.liability} onChange={(v: string) => updateHomeownersField("liability", v)} options={LIABILITY_OPTIONS} />
-                <Field label="Medical Payments" value={homeownersFormData.medicalPayments} onChange={(v: string) => updateHomeownersField("medicalPayments", v)} options={MED_PAY_OPTIONS} />
-                <Field label="All Peril Deductible" value={homeownersFormData.allPerilDeductible} onChange={(v: string) => updateHomeownersField("allPerilDeductible", v)} options={HOME_DEDUCTIBLE_OPTIONS} />
-                <Field label="Hurricane/Wind Deductible" value={homeownersFormData.hurricaneDeductible} onChange={(v: string) => updateHomeownersField("hurricaneDeductible", v)} options={HURRICANE_DEDUCTIBLE_OPTIONS} />
+                <Field label="Personal Liability" value={homeownersFormData.liability} onChange={(v: string) => updateHomeownersField("liability", v)} options={LIABILITY_OPTIONS} tooltip="Covers injuries on your property" />
+                <Field label="Medical Payments" value={homeownersFormData.medicalPayments} onChange={(v: string) => updateHomeownersField("medicalPayments", v)} options={MED_PAY_OPTIONS} tooltip="Guest medical expenses, no fault required" />
+                <Field label="All Peril Deductible" value={homeownersFormData.allPerilDeductible} onChange={(v: string) => updateHomeownersField("allPerilDeductible", v)} options={HOME_DEDUCTIBLE_OPTIONS} tooltip="Your out-of-pocket for most claims" />
+                <Field label="Hurricane/Wind Deductible" value={homeownersFormData.hurricaneDeductible} onChange={(v: string) => updateHomeownersField("hurricaneDeductible", v)} options={HURRICANE_DEDUCTIBLE_OPTIONS} tooltip="Percentage of dwelling for wind claims" />
               </div>
             </Section>
 
@@ -3080,8 +3184,8 @@ export default function QuoteIntakePage() {
                       <Field label="First Name" value={operator.firstName} onChange={(v: string) => updateRecreationalOperator(operator.id, "firstName", v)} required placeholder="John" />
                       <Field label="Last Name" value={operator.lastName} onChange={(v: string) => updateRecreationalOperator(operator.id, "lastName", v)} required placeholder="Smith" />
                       <Field label="Date of Birth" value={operator.dob} onChange={(v: string) => updateRecreationalOperator(operator.id, "dob", v)} type="date" required />
-                      <Field label="Relationship" value={operator.relationship} onChange={(v: string) => updateRecreationalOperator(operator.id, "relationship", v)} options={OPERATOR_RELATIONSHIPS} />
-                      <Field label="Years Experience" value={operator.yearsExperience} onChange={(v: string) => updateRecreationalOperator(operator.id, "yearsExperience", v)} placeholder="5" />
+                      <Field label="Relationship" value={operator.relationship} onChange={(v: string) => updateRecreationalOperator(operator.id, "relationship", v)} options={OPERATOR_RELATIONSHIPS} tooltip="Relationship to the primary insured" />
+                      <Field label="Years Experience" value={operator.yearsExperience} onChange={(v: string) => updateRecreationalOperator(operator.id, "yearsExperience", v)} placeholder="5" tooltip="Years operating this type of vehicle" />
                       {(recreationalFormData.itemType === "boat" || recreationalFormData.itemType === "pwc") && (
                         <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
                           <input type="checkbox" checked={operator.hasBoatingSafetyCourse} onChange={(e) => updateRecreationalOperator(operator.id, "hasBoatingSafetyCourse", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
