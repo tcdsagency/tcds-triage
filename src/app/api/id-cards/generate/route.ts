@@ -1,9 +1,10 @@
 // API Route: /api/id-cards/generate
-// Generate PDF ID card for Texas auto insurance
+// Generate PDF ID card using fillable PDF template
 
 import { NextRequest, NextResponse } from "next/server";
-import PdfPrinter from "pdfmake";
-import type { TDocumentDefinitions, Content } from "pdfmake/interfaces";
+import { PDFDocument } from "pdf-lib";
+import { readFile } from "fs/promises";
+import path from "path";
 
 // =============================================================================
 // TYPES
@@ -28,19 +29,6 @@ interface GenerateRequest {
 }
 
 // =============================================================================
-// PDF FONTS
-// =============================================================================
-
-const fonts = {
-  Helvetica: {
-    normal: "Helvetica",
-    bold: "Helvetica-Bold",
-    italics: "Helvetica-Oblique",
-    bolditalics: "Helvetica-BoldOblique",
-  },
-};
-
-// =============================================================================
 // HELPERS
 // =============================================================================
 
@@ -58,121 +46,26 @@ function formatDate(dateStr: string): string {
   }
 }
 
-function createIdCardPage(data: GenerateRequest, vehicle: Vehicle): Content[] {
-  const insuredDisplay = data.spouseName
-    ? `${data.insuredName} & ${data.spouseName}`
-    : data.insuredName;
-
-  const vehicleDisplay = `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim();
-
-  return [
-    // Header
-    {
-      text: "TEXAS MOTOR VEHICLE LIABILITY INSURANCE ID CARD",
-      style: "header",
-      alignment: "center" as const,
-      margin: [0, 0, 0, 15],
-    },
-    // Border box
-    {
-      table: {
-        widths: ["*"],
-        body: [
-          [
-            {
-              stack: [
-                // Row 1: Carrier & NAIC
-                {
-                  columns: [
-                    {
-                      width: "*",
-                      stack: [
-                        { text: "INSURANCE COMPANY", style: "label" },
-                        { text: data.carrier, style: "value" },
-                      ],
-                    },
-                    {
-                      width: 80,
-                      stack: [
-                        { text: "NAIC #", style: "label" },
-                        { text: data.carrierNaic || "N/A", style: "value" },
-                      ],
-                    },
-                  ],
-                  margin: [0, 0, 0, 10],
-                },
-                // Row 2: Insured
-                {
-                  stack: [
-                    { text: "INSURED", style: "label" },
-                    { text: insuredDisplay, style: "value" },
-                  ],
-                  margin: [0, 0, 0, 10],
-                },
-                // Row 3: Policy Number & Dates
-                {
-                  columns: [
-                    {
-                      width: "*",
-                      stack: [
-                        { text: "POLICY NUMBER", style: "label" },
-                        { text: data.policyNumber, style: "value" },
-                      ],
-                    },
-                    {
-                      width: 90,
-                      stack: [
-                        { text: "EFFECTIVE", style: "label" },
-                        { text: formatDate(data.effectiveDate), style: "value" },
-                      ],
-                    },
-                    {
-                      width: 90,
-                      stack: [
-                        { text: "EXPIRATION", style: "label" },
-                        { text: formatDate(data.expirationDate), style: "value" },
-                      ],
-                    },
-                  ],
-                  margin: [0, 0, 0, 10],
-                },
-                // Row 4: Vehicle
-                {
-                  stack: [
-                    { text: "VEHICLE", style: "label" },
-                    { text: vehicleDisplay || "All Vehicles", style: "value" },
-                  ],
-                  margin: [0, 0, 0, 5],
-                },
-                // Row 5: VIN
-                {
-                  stack: [
-                    { text: "VIN", style: "label" },
-                    { text: vehicle.vin || "N/A", style: "vinValue" },
-                  ],
-                },
-              ],
-              margin: [15, 15, 15, 15],
-            },
-          ],
-        ],
-      },
-      layout: {
-        hLineWidth: () => 2,
-        vLineWidth: () => 2,
-        hLineColor: () => "#000000",
-        vLineColor: () => "#000000",
-      },
-    },
-    // Footer disclaimer
-    {
-      text: "This card must be carried in the insured vehicle at all times as proof of financial responsibility.",
-      style: "disclaimer",
-      alignment: "center" as const,
-      margin: [0, 10, 0, 0],
-    },
-  ];
-}
+// Template form field names
+const FIELD_NAMES = {
+  carrier: "Carrier_Name",
+  naic: "Carrier_NAIC",
+  policy: "Policy_Num",
+  effDate: "Eff_Date",
+  expDate: "Exp_Date",
+  insured1: "Insured_Name_1",
+  insured2: "Driver 2 Name",
+  // Vehicle 1 (top card)
+  veh1Year: "Veh_1_Year",
+  veh1Make: "Veh_1_Make",
+  veh1Model: "Veh_1_Model",
+  veh1Vin: "Veh_1_Vin",
+  // Vehicle 2 (bottom card)
+  veh2Year: "Veh_2_Year",
+  veh2Make: "Veh_2_Make",
+  veh2Model: "Veh_2_Model",
+  veh2Vin: "Veh_2_Vin",
+};
 
 // =============================================================================
 // ROUTE HANDLER
@@ -197,83 +90,123 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build document content - one page per vehicle
-    const content: Content[] = [];
+    // Load PDF template
+    const templatePath = path.join(process.cwd(), "public", "templates", "IDCard_Template_1767336446487.pdf");
+    let templateBytes: Buffer;
 
-    body.vehicles.forEach((vehicle, index) => {
-      if (index > 0) {
-        content.push({ text: "", pageBreak: "before" });
+    try {
+      templateBytes = await readFile(templatePath);
+    } catch (err) {
+      console.error("[ID Cards] Template not found:", templatePath);
+      return NextResponse.json(
+        { success: false, error: "ID card template not found" },
+        { status: 500 }
+      );
+    }
+
+    // Create output PDF
+    const outputPdf = await PDFDocument.create();
+
+    // Calculate number of pages needed (2 vehicles per page)
+    const vehicleCount = body.vehicles.length;
+    const pagesNeeded = Math.ceil(vehicleCount / 2);
+
+    // Process vehicles in pairs
+    for (let pageIndex = 0; pageIndex < pagesNeeded; pageIndex++) {
+      // Load fresh template for each page
+      const templatePdf = await PDFDocument.load(templateBytes);
+      const form = templatePdf.getForm();
+
+      // Get vehicles for this page
+      const veh1 = body.vehicles[pageIndex * 2];
+      const veh2 = body.vehicles[pageIndex * 2 + 1];
+
+      // Fill common fields
+      try {
+        const carrierField = form.getTextField(FIELD_NAMES.carrier);
+        carrierField.setText(body.carrier || "");
+      } catch (e) { /* Field may not exist */ }
+
+      try {
+        const naicField = form.getTextField(FIELD_NAMES.naic);
+        naicField.setText(body.carrierNaic || "");
+      } catch (e) { /* Field may not exist */ }
+
+      try {
+        const policyField = form.getTextField(FIELD_NAMES.policy);
+        policyField.setText(body.policyNumber || "");
+      } catch (e) { /* Field may not exist */ }
+
+      try {
+        const effDateField = form.getTextField(FIELD_NAMES.effDate);
+        effDateField.setText(formatDate(body.effectiveDate));
+      } catch (e) { /* Field may not exist */ }
+
+      try {
+        const expDateField = form.getTextField(FIELD_NAMES.expDate);
+        expDateField.setText(formatDate(body.expirationDate));
+      } catch (e) { /* Field may not exist */ }
+
+      try {
+        const insured1Field = form.getTextField(FIELD_NAMES.insured1);
+        insured1Field.setText(body.insuredName || "");
+      } catch (e) { /* Field may not exist */ }
+
+      try {
+        const insured2Field = form.getTextField(FIELD_NAMES.insured2);
+        insured2Field.setText(body.spouseName || "");
+      } catch (e) { /* Field may not exist */ }
+
+      // Fill Vehicle 1 (top card)
+      if (veh1) {
+        try {
+          form.getTextField(FIELD_NAMES.veh1Year).setText(veh1.year || "");
+        } catch (e) { /* Field may not exist */ }
+        try {
+          form.getTextField(FIELD_NAMES.veh1Make).setText(veh1.make || "");
+        } catch (e) { /* Field may not exist */ }
+        try {
+          form.getTextField(FIELD_NAMES.veh1Model).setText(veh1.model || "");
+        } catch (e) { /* Field may not exist */ }
+        try {
+          form.getTextField(FIELD_NAMES.veh1Vin).setText(veh1.vin || "");
+        } catch (e) { /* Field may not exist */ }
       }
-      content.push(...createIdCardPage(body, vehicle));
-    });
 
-    // Create PDF document definition
-    const docDefinition: TDocumentDefinitions = {
-      pageSize: "LETTER",
-      pageMargins: [40, 40, 40, 40],
-      content,
-      styles: {
-        header: {
-          fontSize: 12,
-          bold: true,
-        },
-        label: {
-          fontSize: 8,
-          color: "#666666",
-          margin: [0, 0, 0, 2],
-        },
-        value: {
-          fontSize: 11,
-          bold: true,
-        },
-        vinValue: {
-          fontSize: 9,
-          bold: true,
-          font: "Helvetica",
-        },
-        disclaimer: {
-          fontSize: 7,
-          italics: true,
-          color: "#666666",
-        },
-      },
-      defaultStyle: {
-        font: "Helvetica",
-      },
-    };
+      // Fill Vehicle 2 (bottom card)
+      if (veh2) {
+        try {
+          form.getTextField(FIELD_NAMES.veh2Year).setText(veh2.year || "");
+        } catch (e) { /* Field may not exist */ }
+        try {
+          form.getTextField(FIELD_NAMES.veh2Make).setText(veh2.make || "");
+        } catch (e) { /* Field may not exist */ }
+        try {
+          form.getTextField(FIELD_NAMES.veh2Model).setText(veh2.model || "");
+        } catch (e) { /* Field may not exist */ }
+        try {
+          form.getTextField(FIELD_NAMES.veh2Vin).setText(veh2.vin || "");
+        } catch (e) { /* Field may not exist */ }
+      }
 
-    // Generate PDF
-    const printer = new PdfPrinter(fonts);
-    const pdfDoc = printer.createPdfKitDocument(docDefinition);
+      // Flatten the form to make it non-editable
+      form.flatten();
 
-    // Collect PDF chunks
-    const chunks: Buffer[] = [];
+      // Copy filled page to output PDF
+      const [copiedPage] = await outputPdf.copyPages(templatePdf, [0]);
+      outputPdf.addPage(copiedPage);
+    }
 
-    return new Promise<NextResponse>((resolve) => {
-      pdfDoc.on("data", (chunk: Buffer) => chunks.push(chunk));
-      pdfDoc.on("end", () => {
-        const pdfBuffer = Buffer.concat(chunks);
-        const pdfBase64 = pdfBuffer.toString("base64");
+    // Generate final PDF
+    const pdfBytes = await outputPdf.save();
+    const pdfBase64 = Buffer.from(pdfBytes).toString("base64");
 
-        resolve(
-          NextResponse.json({
-            success: true,
-            pdf: pdfBase64,
-            vehicleCount: body.vehicles.length,
-            filename: `ID_Card_${body.policyNumber.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`,
-          })
-        );
-      });
-      pdfDoc.on("error", (err: Error) => {
-        console.error("[ID Cards] PDF generation error:", err);
-        resolve(
-          NextResponse.json(
-            { success: false, error: "Failed to generate PDF" },
-            { status: 500 }
-          )
-        );
-      });
-      pdfDoc.end();
+    return NextResponse.json({
+      success: true,
+      pdf: pdfBase64,
+      vehicleCount: body.vehicles.length,
+      pageCount: pagesNeeded,
+      filename: `ID_Card_${body.policyNumber.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`,
     });
   } catch (error: any) {
     console.error("[ID Cards] Generate error:", error);
