@@ -2720,39 +2720,3 @@ export const aiTokenUsageDaily = pgTable('ai_token_usage_daily', {
   tenantDateIdx: uniqueIndex('ai_token_daily_tenant_date_idx').on(table.tenantId, table.date, table.provider, table.model),
 }));
 
-// ═══════════════════════════════════════════════════════════════════════════
-// AGENT ASSIST TELEMETRY
-// ═══════════════════════════════════════════════════════════════════════════
-
-export const agentAssistActionEnum = pgEnum('agent_assist_action', ['shown', 'used', 'dismissed', 'copied']);
-export const agentAssistFeedbackEnum = pgEnum('agent_assist_feedback', ['helpful', 'not_helpful', 'too_basic', 'incorrect']);
-
-export const agentAssistTelemetry = pgTable('agent_assist_telemetry', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
-  callId: uuid('call_id').references(() => calls.id, { onDelete: 'set null' }),
-
-  // What was shown
-  suggestionType: varchar('suggestion_type', { length: 50 }).notNull(), // playbook, knowledge, compliance, upsell, next_action
-  suggestionId: varchar('suggestion_id', { length: 100 }),
-  playbookId: varchar('playbook_id', { length: 100 }),
-  content: text('content'),
-
-  // User action
-  action: agentAssistActionEnum('action').notNull(),
-  feedback: agentAssistFeedbackEnum('feedback'),
-  feedbackNote: text('feedback_note'),
-
-  // Context
-  callTranscriptSnippet: text('call_transcript_snippet'),
-  formSection: varchar('form_section', { length: 100 }),
-
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (table) => ({
-  tenantIdx: index('agent_assist_telemetry_tenant_idx').on(table.tenantId),
-  userIdx: index('agent_assist_telemetry_user_idx').on(table.userId),
-  callIdx: index('agent_assist_telemetry_call_idx').on(table.callId),
-  typeIdx: index('agent_assist_telemetry_type_idx').on(table.suggestionType),
-  createdIdx: index('agent_assist_telemetry_created_idx').on(table.createdAt),
-}));

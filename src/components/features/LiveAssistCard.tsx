@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import type { Playbook, AgentSuggestion } from "@/lib/agent-assist/types";
+import type { Playbook, AgentSuggestion, TelemetryFeedback } from "@/lib/agent-assist/types";
 
 interface LiveAssistCardProps {
   playbook: Playbook | null;
@@ -12,7 +12,7 @@ interface LiveAssistCardProps {
   isLoading?: boolean;
   onUseSuggestion?: (suggestion: AgentSuggestion) => void;
   onDismissSuggestion?: (suggestion: AgentSuggestion) => void;
-  onPlaybookFeedback?: (playbookId: string, feedback: string) => void;
+  onPlaybookFeedback?: (playbookId: string, feedback: TelemetryFeedback) => void;
   onCopyScript?: (script: string) => void;
   className?: string;
 }

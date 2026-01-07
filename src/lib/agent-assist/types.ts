@@ -70,7 +70,7 @@ export type QuoteType = 'personal_auto' | 'homeowners' | 'commercial_auto' | 'co
 // TELEMETRY TYPES
 // =============================================================================
 
-export type TelemetryAction = 'shown' | 'used' | 'dismissed' | 'copied';
+export type TelemetryAction = 'shown' | 'used' | 'dismissed' | 'expanded' | 'collapsed';
 export type TelemetryFeedback = 'helpful' | 'not_helpful' | 'too_basic' | 'incorrect';
 
 export interface TelemetryEvent {
