@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2, Key, Eye, EyeOff, Zap, Settings2 } from "lucide-react";
+import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2, Key, Eye, EyeOff, Zap, Settings2, MessageSquare, Webhook, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +63,32 @@ export default function AgencySettingsPage() {
   const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
   const [savingIntegration, setSavingIntegration] = useState(false);
+
+  // SMS Templates state
+  const [smsTemplates, setSmsTemplates] = useState<any[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<any>(null);
+  const [templateForm, setTemplateForm] = useState({ name: "", category: "general", content: "" });
+  const [templateSaving, setTemplateSaving] = useState(false);
+
+  // Webhooks state
+  const [webhooksList, setWebhooksList] = useState<any[]>([]);
+  const [webhookEvents, setWebhookEvents] = useState<any[]>([]);
+  const [webhooksLoading, setWebhooksLoading] = useState(false);
+  const [showWebhookModal, setShowWebhookModal] = useState(false);
+  const [editingWebhook, setEditingWebhook] = useState<any>(null);
+  const [webhookForm, setWebhookForm] = useState({ name: "", url: "", events: [] as string[] });
+  const [webhookSaving, setWebhookSaving] = useState(false);
+  const [newWebhookSecret, setNewWebhookSecret] = useState<string | null>(null);
+
+  // API Keys state
+  const [apiKeysList, setApiKeysList] = useState<any[]>([]);
+  const [apiKeysLoading, setApiKeysLoading] = useState(false);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [apiKeyForm, setApiKeyForm] = useState({ name: "", permissions: ["read"] });
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [newApiKey, setNewApiKey] = useState<string | null>(null);
 
   const [afterHours, setAfterHours] = useState({
     enabled: true,
@@ -131,6 +157,181 @@ export default function AgencySettingsPage() {
     };
     loadIntegrations();
   }, []);
+
+  // Load SMS Templates when tab is active
+  useEffect(() => {
+    if (activeTab === "templates" && smsTemplates.length === 0) {
+      const loadTemplates = async () => {
+        setTemplatesLoading(true);
+        try {
+          const res = await fetch("/api/sms-templates");
+          const data = await res.json();
+          if (data.success) setSmsTemplates(data.templates);
+        } catch (err) {
+          console.error("Failed to load templates:", err);
+        } finally {
+          setTemplatesLoading(false);
+        }
+      };
+      loadTemplates();
+    }
+  }, [activeTab]);
+
+  // Load Webhooks when tab is active
+  useEffect(() => {
+    if (activeTab === "webhooks" && webhooksList.length === 0) {
+      const loadWebhooks = async () => {
+        setWebhooksLoading(true);
+        try {
+          const res = await fetch("/api/webhooks");
+          const data = await res.json();
+          if (data.success) {
+            setWebhooksList(data.webhooks);
+            setWebhookEvents(data.availableEvents || []);
+          }
+        } catch (err) {
+          console.error("Failed to load webhooks:", err);
+        } finally {
+          setWebhooksLoading(false);
+        }
+      };
+      loadWebhooks();
+    }
+  }, [activeTab]);
+
+  // Load API Keys when tab is active
+  useEffect(() => {
+    if (activeTab === "apikeys" && apiKeysList.length === 0) {
+      const loadApiKeys = async () => {
+        setApiKeysLoading(true);
+        try {
+          const res = await fetch("/api/api-keys");
+          const data = await res.json();
+          if (data.success) setApiKeysList(data.apiKeys);
+        } catch (err) {
+          console.error("Failed to load API keys:", err);
+        } finally {
+          setApiKeysLoading(false);
+        }
+      };
+      loadApiKeys();
+    }
+  }, [activeTab]);
+
+  // SMS Template handlers
+  const handleSaveTemplate = async () => {
+    setTemplateSaving(true);
+    try {
+      const method = editingTemplate ? "PUT" : "POST";
+      const body = editingTemplate ? { id: editingTemplate.id, ...templateForm } : templateForm;
+      const res = await fetch("/api/sms-templates", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (editingTemplate) {
+          setSmsTemplates(smsTemplates.map(t => t.id === editingTemplate.id ? data.template : t));
+        } else {
+          setSmsTemplates([data.template, ...smsTemplates]);
+        }
+        setShowTemplateModal(false);
+        setEditingTemplate(null);
+        setTemplateForm({ name: "", category: "general", content: "" });
+      }
+    } catch (err) {
+      console.error("Failed to save template:", err);
+    } finally {
+      setTemplateSaving(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    if (!confirm("Delete this template?")) return;
+    try {
+      const res = await fetch(`/api/sms-templates?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) setSmsTemplates(smsTemplates.filter(t => t.id !== id));
+    } catch (err) {
+      console.error("Failed to delete template:", err);
+    }
+  };
+
+  // Webhook handlers
+  const handleSaveWebhook = async () => {
+    setWebhookSaving(true);
+    try {
+      const method = editingWebhook ? "PUT" : "POST";
+      const body = editingWebhook ? { id: editingWebhook.id, ...webhookForm } : webhookForm;
+      const res = await fetch("/api/webhooks", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (editingWebhook) {
+          setWebhooksList(webhooksList.map(w => w.id === editingWebhook.id ? data.webhook : w));
+        } else {
+          setWebhooksList([data.webhook, ...webhooksList]);
+          if (data.webhook.secret) setNewWebhookSecret(data.webhook.secret);
+        }
+        setShowWebhookModal(false);
+        setEditingWebhook(null);
+        setWebhookForm({ name: "", url: "", events: [] });
+      }
+    } catch (err) {
+      console.error("Failed to save webhook:", err);
+    } finally {
+      setWebhookSaving(false);
+    }
+  };
+
+  const handleDeleteWebhook = async (id: string) => {
+    if (!confirm("Delete this webhook?")) return;
+    try {
+      const res = await fetch(`/api/webhooks?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) setWebhooksList(webhooksList.filter(w => w.id !== id));
+    } catch (err) {
+      console.error("Failed to delete webhook:", err);
+    }
+  };
+
+  // API Key handlers
+  const handleCreateApiKey = async () => {
+    setApiKeySaving(true);
+    try {
+      const res = await fetch("/api/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(apiKeyForm),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setApiKeysList([data.apiKey, ...apiKeysList]);
+        setNewApiKey(data.apiKey.key);
+        setShowApiKeyModal(false);
+        setApiKeyForm({ name: "", permissions: ["read"] });
+      }
+    } catch (err) {
+      console.error("Failed to create API key:", err);
+    } finally {
+      setApiKeySaving(false);
+    }
+  };
+
+  const handleRevokeApiKey = async (id: string) => {
+    if (!confirm("Revoke this API key? This cannot be undone.")) return;
+    try {
+      const res = await fetch(`/api/api-keys?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) setApiKeysList(apiKeysList.map(k => k.id === id ? { ...k, isActive: false, revokedAt: new Date().toISOString() } : k));
+    } catch (err) {
+      console.error("Failed to revoke API key:", err);
+    }
+  };
 
   // Open integration config modal
   const handleConfigureIntegration = (integration: any) => {
@@ -235,6 +436,9 @@ export default function AgencySettingsPage() {
     { id: "afterhours", label: "After Hours", icon: Moon },
     { id: "team", label: "Team", icon: Users },
     { id: "integrations", label: "Integrations", icon: Link2 },
+    { id: "templates", label: "SMS Templates", icon: MessageSquare },
+    { id: "webhooks", label: "Webhooks", icon: Webhook },
+    { id: "apikeys", label: "API Keys", icon: Key },
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "security", label: "Security", icon: Shield },
   ];
@@ -944,6 +1148,199 @@ export default function AgencySettingsPage() {
             </div>
           )}
 
+          {/* SMS Templates Tab */}
+          {activeTab === "templates" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">SMS Templates</h2>
+                <Button onClick={() => { setEditingTemplate(null); setTemplateForm({ name: "", category: "general", content: "" }); setShowTemplateModal(true); }}>
+                  <Plus className="w-4 h-4 mr-2" /> New Template
+                </Button>
+              </div>
+
+              {templatesLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+              ) : smsTemplates.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">No templates yet. Create your first template to get started.</div>
+              ) : (
+                <div className="space-y-3">
+                  {smsTemplates.map((template) => (
+                    <div key={template.id} className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-gray-900 dark:text-white">{template.name}</span>
+                            <Badge variant="outline" className="text-xs">{template.category}</Badge>
+                            {template.usageCount > 0 && (
+                              <span className="text-xs text-gray-500">Used {template.usageCount}x</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">{template.content}</p>
+                          {template.variables?.length > 0 && (
+                            <div className="flex gap-1 mt-2">
+                              {template.variables.map((v: string) => (
+                                <span key={v} className="text-xs px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">{`{{${v}}}`}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => { setEditingTemplate(template); setTemplateForm({ name: template.name, category: template.category, content: template.content }); setShowTemplateModal(true); }}>
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteTemplate(template.id)}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Webhooks Tab */}
+          {activeTab === "webhooks" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Webhooks</h2>
+                <Button onClick={() => { setEditingWebhook(null); setWebhookForm({ name: "", url: "", events: [] }); setShowWebhookModal(true); }}>
+                  <Plus className="w-4 h-4 mr-2" /> New Webhook
+                </Button>
+              </div>
+
+              {newWebhookSecret && (
+                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-medium text-amber-800 dark:text-amber-200">Save your webhook secret</div>
+                      <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">This will only be shown once. Use it to verify webhook signatures.</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <code className="px-2 py-1 bg-amber-100 dark:bg-amber-900/40 rounded text-xs font-mono">{newWebhookSecret}</code>
+                        <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(newWebhookSecret); }}>
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <Button size="sm" variant="ghost" className="mt-2" onClick={() => setNewWebhookSecret(null)}>Dismiss</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {webhooksLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+              ) : webhooksList.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">No webhooks configured. Create one to receive real-time event notifications.</div>
+              ) : (
+                <div className="space-y-3">
+                  {webhooksList.map((webhook) => (
+                    <div key={webhook.id} className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-gray-900 dark:text-white">{webhook.name}</span>
+                            <Badge variant={webhook.isActive ? "default" : "secondary"} className="text-xs">
+                              {webhook.isActive ? "Active" : "Inactive"}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 font-mono truncate">{webhook.url}</p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {(webhook.events as string[])?.map((event: string) => (
+                              <span key={event} className="text-xs px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded">{event}</span>
+                            ))}
+                          </div>
+                          {webhook.lastTriggeredAt && (
+                            <p className="text-xs text-gray-500 mt-2">Last triggered: {new Date(webhook.lastTriggeredAt).toLocaleString()}</p>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => { setEditingWebhook(webhook); setWebhookForm({ name: webhook.name, url: webhook.url, events: webhook.events || [] }); setShowWebhookModal(true); }}>
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteWebhook(webhook.id)}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* API Keys Tab */}
+          {activeTab === "apikeys" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">API Keys</h2>
+                <Button onClick={() => { setApiKeyForm({ name: "", permissions: ["read"] }); setShowApiKeyModal(true); }}>
+                  <Plus className="w-4 h-4 mr-2" /> New API Key
+                </Button>
+              </div>
+
+              {newApiKey && (
+                <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <Check className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-medium text-green-800 dark:text-green-200">API Key Created</div>
+                      <p className="text-sm text-green-700 dark:text-green-300 mt-1">Copy this key now. It will not be shown again.</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <code className="px-2 py-1 bg-green-100 dark:bg-green-900/40 rounded text-xs font-mono break-all">{newApiKey}</code>
+                        <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(newApiKey); }}>
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <Button size="sm" variant="ghost" className="mt-2" onClick={() => setNewApiKey(null)}>Dismiss</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {apiKeysLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+              ) : apiKeysList.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">No API keys created. Create one to access the API programmatically.</div>
+              ) : (
+                <div className="space-y-3">
+                  {apiKeysList.map((key) => (
+                    <div key={key.id} className={cn("p-4 rounded-lg", key.revokedAt ? "bg-red-50 dark:bg-red-900/10" : "bg-gray-50 dark:bg-gray-900")}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-gray-900 dark:text-white">{key.name}</span>
+                            <Badge variant={key.revokedAt ? "destructive" : key.isActive ? "default" : "secondary"} className="text-xs">
+                              {key.revokedAt ? "Revoked" : key.isActive ? "Active" : "Inactive"}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 font-mono">{key.keyPrefix}...****</p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {(key.permissions as string[])?.map((perm: string) => (
+                              <span key={perm} className="text-xs px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded">{perm}</span>
+                            ))}
+                          </div>
+                          <div className="flex gap-4 text-xs text-gray-500 mt-2">
+                            <span>Created: {new Date(key.createdAt).toLocaleDateString()}</span>
+                            {key.lastUsedAt && <span>Last used: {new Date(key.lastUsedAt).toLocaleDateString()}</span>}
+                            {key.usageCount > 0 && <span>Used {key.usageCount}x</span>}
+                          </div>
+                        </div>
+                        {!key.revokedAt && (
+                          <Button variant="ghost" size="sm" onClick={() => handleRevokeApiKey(key.id)}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === "security" && (
             <div className="space-y-6">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Security Settings</h2>
@@ -1202,6 +1599,175 @@ export default function AgencySettingsPage() {
                     {editingUser ? "Update" : "Add"} Team Member
                   </>
                 )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SMS Template Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg mx-4">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {editingTemplate ? "Edit Template" : "New SMS Template"}
+              </h3>
+              <button onClick={() => setShowTemplateModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Template Name</label>
+                <Input value={templateForm.name} onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })} placeholder="e.g., Payment Reminder" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
+                <select
+                  value={templateForm.category}
+                  onChange={(e) => setTemplateForm({ ...templateForm, category: e.target.value })}
+                  className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                >
+                  <option value="general">General</option>
+                  <option value="billing">Billing</option>
+                  <option value="quotes">Quotes</option>
+                  <option value="claims">Claims</option>
+                  <option value="service">Service</option>
+                  <option value="marketing">Marketing</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message Content</label>
+                <textarea
+                  value={templateForm.content}
+                  onChange={(e) => setTemplateForm({ ...templateForm, content: e.target.value })}
+                  rows={4}
+                  className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                  placeholder="Hi {{customerName}}, this is {{agentName}} from TCDS Insurance..."
+                />
+                <p className="text-xs text-gray-500 mt-1">Use {"{{variableName}}"} for dynamic values like {"{{customerName}}"}, {"{{agentName}}"}, {"{{policyNumber}}"}</p>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setShowTemplateModal(false)}>Cancel</Button>
+              <Button onClick={handleSaveTemplate} disabled={templateSaving || !templateForm.name || !templateForm.content} className="bg-emerald-600 hover:bg-emerald-700">
+                {templateSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                {editingTemplate ? "Update" : "Create"} Template
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Webhook Modal */}
+      {showWebhookModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {editingWebhook ? "Edit Webhook" : "New Webhook"}
+              </h3>
+              <button onClick={() => setShowWebhookModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Webhook Name</label>
+                <Input value={webhookForm.name} onChange={(e) => setWebhookForm({ ...webhookForm, name: e.target.value })} placeholder="e.g., Zapier Integration" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Endpoint URL</label>
+                <Input value={webhookForm.url} onChange={(e) => setWebhookForm({ ...webhookForm, url: e.target.value })} placeholder="https://hooks.zapier.com/..." />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Events to Trigger</label>
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                  {webhookEvents.map((event: any) => (
+                    <label key={event.id} className="flex items-start gap-2 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={webhookForm.events.includes(event.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setWebhookForm({ ...webhookForm, events: [...webhookForm.events, event.id] });
+                          } else {
+                            setWebhookForm({ ...webhookForm, events: webhookForm.events.filter((ev: string) => ev !== event.id) });
+                          }
+                        }}
+                        className="mt-0.5 w-4 h-4 rounded border-gray-300 text-emerald-600"
+                      />
+                      <div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">{event.name}</div>
+                        <div className="text-xs text-gray-500">{event.description}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setShowWebhookModal(false)}>Cancel</Button>
+              <Button onClick={handleSaveWebhook} disabled={webhookSaving || !webhookForm.name || !webhookForm.url || webhookForm.events.length === 0} className="bg-emerald-600 hover:bg-emerald-700">
+                {webhookSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                {editingWebhook ? "Update" : "Create"} Webhook
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* API Key Modal */}
+      {showApiKeyModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg mx-4">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create API Key</h3>
+              <button onClick={() => setShowApiKeyModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Key Name</label>
+                <Input value={apiKeyForm.name} onChange={(e) => setApiKeyForm({ ...apiKeyForm, name: e.target.value })} placeholder="e.g., Production API Key" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Permissions</label>
+                <div className="space-y-2">
+                  {["read", "write", "admin"].map((perm) => (
+                    <label key={perm} className="flex items-center gap-3 cursor-pointer p-2 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={apiKeyForm.permissions.includes(perm)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setApiKeyForm({ ...apiKeyForm, permissions: [...apiKeyForm.permissions, perm] });
+                          } else {
+                            setApiKeyForm({ ...apiKeyForm, permissions: apiKeyForm.permissions.filter((p: string) => p !== perm) });
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-gray-300 text-emerald-600"
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900 dark:text-white capitalize">{perm}</div>
+                        <div className="text-xs text-gray-500">
+                          {perm === "read" && "Read access to data"}
+                          {perm === "write" && "Create and update data"}
+                          {perm === "admin" && "Full administrative access"}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setShowApiKeyModal(false)}>Cancel</Button>
+              <Button onClick={handleCreateApiKey} disabled={apiKeySaving || !apiKeyForm.name || apiKeyForm.permissions.length === 0} className="bg-emerald-600 hover:bg-emerald-700">
+                {apiKeySaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Key className="w-4 h-4 mr-2" />}
+                Create API Key
               </Button>
             </div>
           </div>

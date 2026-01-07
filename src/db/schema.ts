@@ -2553,3 +2553,107 @@ export const googleReviewsRelations = relations(googleReviews, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SMS TEMPLATES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const smsTemplates = pgTable('sms_templates', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  name: varchar('name', { length: 100 }).notNull(),
+  category: varchar('category', { length: 50 }), // billing, quotes, claims, service, marketing
+  content: text('content').notNull(),
+
+  // Variable placeholders: {{customerName}}, {{agentName}}, {{policyNumber}}, etc.
+  variables: jsonb('variables').$type<string[]>(), // List of variable names used
+
+  isActive: boolean('is_active').default(true),
+  usageCount: integer('usage_count').default(0),
+
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('sms_templates_tenant_idx').on(table.tenantId),
+  categoryIdx: index('sms_templates_category_idx').on(table.category),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WEBHOOKS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const webhookEventEnum = pgEnum('webhook_event', [
+  'call.started',
+  'call.ended',
+  'call.missed',
+  'message.received',
+  'message.sent',
+  'lead.created',
+  'lead.updated',
+  'quote.created',
+  'quote.updated',
+  'customer.created',
+  'customer.updated',
+]);
+
+export const webhooks = pgTable('webhooks', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  name: varchar('name', { length: 100 }).notNull(),
+  url: text('url').notNull(),
+  secret: varchar('secret', { length: 64 }), // For HMAC signature verification
+
+  events: jsonb('events').$type<string[]>().notNull(), // Events to trigger on
+  headers: jsonb('headers').$type<Record<string, string>>(), // Custom headers
+
+  isActive: boolean('is_active').default(true),
+
+  // Stats
+  lastTriggeredAt: timestamp('last_triggered_at'),
+  successCount: integer('success_count').default(0),
+  failureCount: integer('failure_count').default(0),
+  lastError: text('last_error'),
+
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('webhooks_tenant_idx').on(table.tenantId),
+  activeIdx: index('webhooks_active_idx').on(table.isActive),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API KEYS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const apiKeys = pgTable('api_keys', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  name: varchar('name', { length: 100 }).notNull(),
+  keyPrefix: varchar('key_prefix', { length: 8 }).notNull(), // First 8 chars for identification
+  keyHash: varchar('key_hash', { length: 64 }).notNull(), // SHA-256 hash of full key
+
+  // Permissions
+  permissions: jsonb('permissions').$type<string[]>(), // read, write, admin
+  allowedIps: jsonb('allowed_ips').$type<string[]>(), // IP whitelist
+  rateLimit: integer('rate_limit').default(1000), // Requests per hour
+
+  isActive: boolean('is_active').default(true),
+  expiresAt: timestamp('expires_at'),
+
+  // Usage tracking
+  lastUsedAt: timestamp('last_used_at'),
+  usageCount: integer('usage_count').default(0),
+
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  revokedAt: timestamp('revoked_at'),
+}, (table) => ({
+  tenantIdx: index('api_keys_tenant_idx').on(table.tenantId),
+  keyPrefixIdx: index('api_keys_prefix_idx').on(table.keyPrefix),
+  activeIdx: index('api_keys_active_idx').on(table.isActive),
+}));
