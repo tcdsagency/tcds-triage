@@ -5,20 +5,26 @@ import { cn } from "@/lib/utils";
 import type { FormSectionGuidance, FormGuidanceTip, QuoteType } from "@/lib/agent-assist/types";
 import { QUOTE_FORM_GUIDANCE } from "@/lib/agent-assist/form-guidance";
 
+// Field completion tracking for checklists
+export interface FieldCompletionStatus {
+  [fieldName: string]: boolean;
+}
+
 interface AgentAssistSidebarProps {
   quoteType: QuoteType;
   currentSection?: string;
   expandedSections?: string[];
+  fieldCompletion?: FieldCompletionStatus;
   onSectionClick?: (sectionId: string) => void;
   className?: string;
 }
 
-// Tip type styling
+// Tip type styling - using high contrast colors for readability
 const TIP_STYLES = {
-  script: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-800", icon: "💬" },
-  tip: { bg: "bg-green-50", border: "border-green-200", text: "text-green-800", icon: "💡" },
-  warning: { bg: "bg-orange-50", border: "border-orange-200", text: "text-orange-800", icon: "⚠️" },
-  checklist: { bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-800", icon: "☑️" },
+  script: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-900", icon: "💬" },
+  tip: { bg: "bg-green-50", border: "border-green-200", text: "text-green-900", icon: "💡" },
+  warning: { bg: "bg-amber-50", border: "border-amber-300", text: "text-amber-900", icon: "⚠️" },
+  checklist: { bg: "bg-slate-50", border: "border-slate-300", text: "text-slate-900", icon: "☑️" },
 };
 
 // Section progress indicator
@@ -38,8 +44,15 @@ function SectionProgress({ total, current }: { total: number; current: number })
   );
 }
 
+// Map checklist items to field names for tracking completion
+const CHECKLIST_FIELD_MAP: Record<string, string[]> = {
+  "Required Information": ["firstName", "lastName", "dob", "phone", "email"],
+  "Required Per Vehicle": ["vin", "year", "make", "model", "mileage"],
+  "Required Per Driver": ["driverName", "driverDob", "licenseNumber", "licenseState", "yearsLicensed"],
+};
+
 // Single tip display
-function TipCard({ tip }: { tip: FormGuidanceTip }) {
+function TipCard({ tip, fieldCompletion }: { tip: FormGuidanceTip; fieldCompletion?: FieldCompletionStatus }) {
   const style = TIP_STYLES[tip.type];
   const [copied, setCopied] = useState(false);
 
@@ -53,20 +66,69 @@ function TipCard({ tip }: { tip: FormGuidanceTip }) {
   const isChecklist = tip.type === "checklist";
   const content = tip.content;
 
+  // Get completion status for checklist items
+  const getItemCompletion = (item: string, index: number): boolean => {
+    if (!fieldCompletion) return false;
+    const fieldNames = CHECKLIST_FIELD_MAP[tip.title];
+    if (fieldNames && fieldNames[index]) {
+      return fieldCompletion[fieldNames[index]] || false;
+    }
+    // Fallback: check if any field name contains the item text (lowercased)
+    const itemLower = item.toLowerCase();
+    for (const [key, value] of Object.entries(fieldCompletion)) {
+      if (itemLower.includes(key.toLowerCase()) || key.toLowerCase().includes(itemLower.split(" ")[0])) {
+        return value;
+      }
+    }
+    return false;
+  };
+
+  // Count completed items
+  const completedCount = isChecklist && Array.isArray(content)
+    ? content.filter((_, i) => getItemCompletion(content[i], i)).length
+    : 0;
+  const totalItems = isChecklist && Array.isArray(content) ? content.length : 0;
+
   return (
     <div className={cn("rounded-lg border p-3", style.bg, style.border)}>
       <div className={cn("flex items-start gap-2", style.text)}>
         <span className="text-base">{style.icon}</span>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-semibold mb-1">{tip.title}</div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold">{tip.title}</span>
+            {isChecklist && totalItems > 0 && (
+              <span className={cn(
+                "text-xs px-1.5 py-0.5 rounded",
+                completedCount === totalItems
+                  ? "bg-green-200 text-green-800"
+                  : "bg-slate-200 text-slate-600"
+              )}>
+                {completedCount}/{totalItems}
+              </span>
+            )}
+          </div>
           {isChecklist && Array.isArray(content) ? (
-            <ul className="space-y-0.5">
-              {content.map((item, i) => (
-                <li key={i} className="text-xs flex items-center gap-1.5">
-                  <span className="w-3 h-3 border rounded flex-shrink-0" />
-                  <span>{item}</span>
-                </li>
-              ))}
+            <ul className="space-y-1">
+              {content.map((item, i) => {
+                const isComplete = getItemCompletion(item, i);
+                return (
+                  <li key={i} className="text-xs flex items-center gap-2">
+                    {isComplete ? (
+                      <span className="w-3.5 h-3.5 bg-green-500 rounded flex-shrink-0 flex items-center justify-center">
+                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="w-3.5 h-3.5 border-2 border-slate-400 rounded flex-shrink-0 bg-white" />
+                    )}
+                    <span className={cn(
+                      "font-medium",
+                      isComplete ? "text-green-700 line-through" : "text-slate-800"
+                    )}>{item}</span>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <div className="text-xs">
@@ -97,11 +159,13 @@ function GuidanceSection({
   isActive,
   isExpanded,
   onToggle,
+  fieldCompletion,
 }: {
   section: FormSectionGuidance;
   isActive: boolean;
   isExpanded: boolean;
   onToggle: () => void;
+  fieldCompletion?: FieldCompletionStatus;
 }) {
   return (
     <div className={cn("border-b last:border-b-0", isActive && "bg-blue-50/50")}>
@@ -123,7 +187,7 @@ function GuidanceSection({
       {isExpanded && (
         <div className="px-3 pb-3 space-y-2">
           {section.tips.map((tip, i) => (
-            <TipCard key={i} tip={tip} />
+            <TipCard key={i} tip={tip} fieldCompletion={fieldCompletion} />
           ))}
         </div>
       )}
@@ -135,6 +199,7 @@ export default function AgentAssistSidebar({
   quoteType,
   currentSection,
   expandedSections = [],
+  fieldCompletion,
   onSectionClick,
   className,
 }: AgentAssistSidebarProps) {
@@ -190,6 +255,7 @@ export default function AgentAssistSidebar({
             isActive={section.id === currentSection}
             isExpanded={localExpanded.includes(section.id) || expandedSections.includes(section.id)}
             onToggle={() => toggleSection(section.id)}
+            fieldCompletion={fieldCompletion}
           />
         ))}
       </div>

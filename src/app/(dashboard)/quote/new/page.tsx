@@ -880,6 +880,7 @@ const MOTORHOME_CLASSES = [
 ];
 
 const STORAGE_LOCATIONS = [
+  { value: "", label: "Select storage location..." },
   { value: "home_garage", label: "Home - Garage" },
   { value: "home_driveway", label: "Home - Driveway" },
   { value: "home_yard", label: "Home - Yard" },
@@ -912,6 +913,7 @@ const REC_MED_PAY_OPTIONS = [
 ];
 
 const OWNERSHIP_TYPES = [
+  { value: "", label: "Select ownership type..." },
   { value: "individual", label: "Individual/Personal" },
   { value: "joint", label: "Joint Ownership (Married)" },
   { value: "llc", label: "LLC" },
@@ -919,6 +921,7 @@ const OWNERSHIP_TYPES = [
 ];
 
 const OPERATOR_RELATIONSHIPS = [
+  { value: "", label: "Select relationship..." },
   { value: "self", label: "Self (Named Insured)" },
   { value: "spouse", label: "Spouse" },
   { value: "child", label: "Child" },
@@ -927,6 +930,7 @@ const OPERATOR_RELATIONSHIPS = [
 ];
 
 const TRACTOR_USE_TYPES = [
+  { value: "", label: "Select primary use..." },
   { value: "lawn_care", label: "Lawn Care" },
   { value: "hobby_farm", label: "Hobby Farm" },
   { value: "personal_property", label: "Personal Property Maintenance" },
@@ -935,6 +939,7 @@ const TRACTOR_USE_TYPES = [
 
 // Renters select options
 const UNIT_TYPES = [
+  { value: "", label: "Select unit type..." },
   { value: "apartment", label: "Apartment" },
   { value: "condo", label: "Condo" },
   { value: "townhouse", label: "Townhouse" },
@@ -973,6 +978,7 @@ const AUTO_BI_OPTIONS = [
 
 // Homeowners select options
 const PROPERTY_TYPES = [
+  { value: "", label: "Select property type..." },
   { value: "single_family", label: "Single Family Home" },
   { value: "condo", label: "Condo/Townhouse" },
   { value: "multi_family", label: "Multi-Family (2-4 units)" },
@@ -980,12 +986,14 @@ const PROPERTY_TYPES = [
 ];
 
 const OCCUPANCY_TYPES = [
+  { value: "", label: "Select occupancy..." },
   { value: "owner", label: "Owner Occupied (Primary)" },
   { value: "secondary", label: "Secondary/Vacation Home" },
   { value: "rental", label: "Rental Property" },
 ];
 
 const CONSTRUCTION_TYPES = [
+  { value: "", label: "Select construction..." },
   { value: "frame", label: "Wood Frame" },
   { value: "masonry", label: "Masonry (Brick/Stone)" },
   { value: "masonry_veneer", label: "Masonry Veneer" },
@@ -994,6 +1002,7 @@ const CONSTRUCTION_TYPES = [
 ];
 
 const FOUNDATION_TYPES = [
+  { value: "", label: "Select foundation..." },
   { value: "slab", label: "Slab" },
   { value: "crawl_space", label: "Crawl Space" },
   { value: "basement", label: "Basement" },
@@ -1001,6 +1010,7 @@ const FOUNDATION_TYPES = [
 ];
 
 const ROOF_MATERIALS = [
+  { value: "", label: "Select roof type..." },
   { value: "asphalt_shingle", label: "Asphalt Shingle" },
   { value: "architectural_shingle", label: "Architectural Shingle" },
   { value: "metal", label: "Metal" },
@@ -1011,6 +1021,7 @@ const ROOF_MATERIALS = [
 ];
 
 const STORIES_OPTIONS = [
+  { value: "", label: "Select stories..." },
   { value: "1", label: "1 Story" },
   { value: "1.5", label: "1.5 Stories" },
   { value: "2", label: "2 Stories" },
@@ -1019,6 +1030,7 @@ const STORIES_OPTIONS = [
 ];
 
 const GARAGE_TYPES = [
+  { value: "", label: "Select garage type..." },
   { value: "none", label: "No Garage" },
   { value: "attached_1", label: "Attached 1-Car" },
   { value: "attached_2", label: "Attached 2-Car" },
@@ -1029,6 +1041,7 @@ const GARAGE_TYPES = [
 ];
 
 const HEATING_TYPES = [
+  { value: "", label: "Select heating type..." },
   { value: "central_gas", label: "Central Gas Furnace" },
   { value: "central_electric", label: "Central Electric" },
   { value: "heat_pump", label: "Heat Pump" },
@@ -1038,6 +1051,7 @@ const HEATING_TYPES = [
 ];
 
 const UPDATE_STATUS = [
+  { value: "", label: "Select status..." },
   { value: "original", label: "Original" },
   { value: "partial", label: "Partially Updated" },
   { value: "full", label: "Fully Updated" },
@@ -1072,6 +1086,7 @@ const HURRICANE_DEDUCTIBLE_OPTIONS = [
 
 // Commercial form select options
 const BUSINESS_TYPES = [
+  { value: "", label: "Select business type..." },
   { value: "sole_prop", label: "Sole Proprietorship" },
   { value: "partnership", label: "Partnership" },
   { value: "llc", label: "LLC" },
@@ -1081,6 +1096,7 @@ const BUSINESS_TYPES = [
 ];
 
 const COMMERCIAL_CONSTRUCTION_TYPES = [
+  { value: "", label: "Select construction type..." },
   { value: "frame", label: "Frame" },
   { value: "joisted_masonry", label: "Joisted Masonry" },
   { value: "masonry", label: "Masonry Non-Combustible" },
@@ -1628,12 +1644,12 @@ export default function QuoteIntakePage() {
                 <Field label="Email" value={autoFormData.email} onChange={(v: string) => updateAutoField("email", v)} type="email" placeholder="john@example.com" />
                 <Field label="Date of Birth" value={autoFormData.dob} onChange={(v: string) => updateAutoField("dob", v)} type="date" required error={errors.dob} />
                 <Field label="Gender" value={autoFormData.gender} onChange={(v: string) => updateAutoField("gender", v)} options={[{ value: "", label: "Select..." }, { value: "male", label: "Male" }, { value: "female", label: "Female" }]} />
-                <Field label="Marital Status" value={autoFormData.maritalStatus} onChange={(v: string) => updateAutoField("maritalStatus", v)} options={[{ value: "single", label: "Single" }, { value: "married", label: "Married" }, { value: "divorced", label: "Divorced" }, { value: "widowed", label: "Widowed" }]} />
+                <Field label="Marital Status" value={autoFormData.maritalStatus} onChange={(v: string) => updateAutoField("maritalStatus", v)} options={[{ value: "", label: "Select status..." }, { value: "single", label: "Single" }, { value: "married", label: "Married" }, { value: "divorced", label: "Divorced" }, { value: "widowed", label: "Widowed" }]} />
                 <div />
                 <Field label="Street Address" value={autoFormData.address} onChange={(v: string) => updateAutoField("address", v)} required placeholder="123 Main St" className="col-span-2" />
                 <Field label="City" value={autoFormData.city} onChange={(v: string) => updateAutoField("city", v)} required placeholder="Birmingham" />
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="State" value={autoFormData.state} onChange={(v: string) => updateAutoField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="State" value={autoFormData.state} onChange={(v: string) => updateAutoField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                   <Field label="ZIP" value={autoFormData.zip} onChange={(v: string) => updateAutoField("zip", v)} required placeholder="35203" />
                 </div>
               </div>
@@ -1771,7 +1787,7 @@ export default function QuoteIntakePage() {
                 <Field label="Phone" value={homeownersFormData.phone} onChange={(v: string) => updateHomeownersField("phone", v)} type="tel" required placeholder="(555) 555-5555" error={errors.phone} />
                 <Field label="Email" value={homeownersFormData.email} onChange={(v: string) => updateHomeownersField("email", v)} type="email" placeholder="john@example.com" />
                 <Field label="Date of Birth" value={homeownersFormData.dob} onChange={(v: string) => updateHomeownersField("dob", v)} type="date" />
-                <Field label="Marital Status" value={homeownersFormData.maritalStatus} onChange={(v: string) => updateHomeownersField("maritalStatus", v)} options={[{ value: "single", label: "Single" }, { value: "married", label: "Married" }, { value: "divorced", label: "Divorced" }, { value: "widowed", label: "Widowed" }]} />
+                <Field label="Marital Status" value={homeownersFormData.maritalStatus} onChange={(v: string) => updateHomeownersField("maritalStatus", v)} options={[{ value: "", label: "Select status..." }, { value: "single", label: "Single" }, { value: "married", label: "Married" }, { value: "divorced", label: "Divorced" }, { value: "widowed", label: "Widowed" }]} />
               </div>
               <div className="mt-6 pt-6 border-t border-gray-700/50">
                 <div className="flex items-center gap-3 mb-4">
@@ -1794,7 +1810,7 @@ export default function QuoteIntakePage() {
                 <Field label="Property Address" value={homeownersFormData.propertyAddress} onChange={(v: string) => updateHomeownersField("propertyAddress", v)} required placeholder="123 Main St" className="col-span-2" error={errors.propertyAddress} />
                 <Field label="City" value={homeownersFormData.propertyCity} onChange={(v: string) => updateHomeownersField("propertyCity", v)} required placeholder="Birmingham" />
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="State" value={homeownersFormData.propertyState} onChange={(v: string) => updateHomeownersField("propertyState", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="State" value={homeownersFormData.propertyState} onChange={(v: string) => updateHomeownersField("propertyState", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                   <Field label="ZIP" value={homeownersFormData.propertyZip} onChange={(v: string) => updateHomeownersField("propertyZip", v)} required placeholder="35203" />
                 </div>
                 <Field label="Property Type" value={homeownersFormData.propertyType} onChange={(v: string) => updateHomeownersField("propertyType", v)} options={PROPERTY_TYPES} />
@@ -2035,7 +2051,7 @@ export default function QuoteIntakePage() {
                 <Field label="Street Address" value={rentersFormData.rentalAddress} onChange={(v: string) => updateRentersField("rentalAddress", v)} required placeholder="123 Main St, Apt 4B" className="col-span-2" error={errors.rentalAddress} />
                 <Field label="City" value={rentersFormData.rentalCity} onChange={(v: string) => updateRentersField("rentalCity", v)} required placeholder="Birmingham" />
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="State" value={rentersFormData.rentalState} onChange={(v: string) => updateRentersField("rentalState", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="State" value={rentersFormData.rentalState} onChange={(v: string) => updateRentersField("rentalState", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                   <Field label="ZIP" value={rentersFormData.rentalZip} onChange={(v: string) => updateRentersField("rentalZip", v)} required placeholder="35203" />
                 </div>
                 <Field label="Unit Type" value={rentersFormData.unitType} onChange={(v: string) => updateRentersField("unitType", v)} options={UNIT_TYPES} />
@@ -2151,7 +2167,7 @@ export default function QuoteIntakePage() {
                   <Field label="Street Address" value={umbrellaFormData.address} onChange={(v: string) => updateUmbrellaField("address", v)} required placeholder="123 Main St" className="col-span-2" error={errors.address} />
                   <Field label="City" value={umbrellaFormData.city} onChange={(v: string) => updateUmbrellaField("city", v)} required placeholder="Birmingham" />
                   <div className="grid grid-cols-2 gap-2">
-                    <Field label="State" value={umbrellaFormData.state} onChange={(v: string) => updateUmbrellaField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                    <Field label="State" value={umbrellaFormData.state} onChange={(v: string) => updateUmbrellaField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                     <Field label="ZIP" value={umbrellaFormData.zip} onChange={(v: string) => updateUmbrellaField("zip", v)} required placeholder="35203" />
                   </div>
                 </div>
@@ -2321,7 +2337,7 @@ export default function QuoteIntakePage() {
                 <Field label="Street Address" value={bopFormData.address} onChange={(v: string) => updateBopField("address", v)} required placeholder="123 Business Way" className="col-span-2" error={errors.address} />
                 <Field label="City" value={bopFormData.city} onChange={(v: string) => updateBopField("city", v)} required placeholder="Dallas" />
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="State" value={bopFormData.state} onChange={(v: string) => updateBopField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="State" value={bopFormData.state} onChange={(v: string) => updateBopField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                   <Field label="ZIP" value={bopFormData.zip} onChange={(v: string) => updateBopField("zip", v)} required placeholder="75201" />
                 </div>
                 <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
@@ -2460,7 +2476,7 @@ export default function QuoteIntakePage() {
                 <Field label="Street Address" value={glFormData.address} onChange={(v: string) => updateGlField("address", v)} required placeholder="123 Business Way" className="col-span-2" error={errors.address} />
                 <Field label="City" value={glFormData.city} onChange={(v: string) => updateGlField("city", v)} required placeholder="Dallas" />
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="State" value={glFormData.state} onChange={(v: string) => updateGlField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="State" value={glFormData.state} onChange={(v: string) => updateGlField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                   <Field label="ZIP" value={glFormData.zip} onChange={(v: string) => updateGlField("zip", v)} required placeholder="75201" />
                 </div>
               </div>
@@ -2598,7 +2614,7 @@ export default function QuoteIntakePage() {
                 <Field label="Street Address" value={wcFormData.address} onChange={(v: string) => updateWcField("address", v)} placeholder="123 Business Way" className="col-span-2" />
                 <Field label="City" value={wcFormData.city} onChange={(v: string) => updateWcField("city", v)} placeholder="Dallas" />
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="State" value={wcFormData.state} onChange={(v: string) => updateWcField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="State" value={wcFormData.state} onChange={(v: string) => updateWcField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                   <Field label="ZIP" value={wcFormData.zip} onChange={(v: string) => updateWcField("zip", v)} placeholder="75201" />
                 </div>
                 <Field label="Governing Class Code" value={wcFormData.governingClassCode} onChange={(v: string) => updateWcField("governingClassCode", v)} required placeholder="8810" error={errors.governingClassCode} />
@@ -2752,7 +2768,7 @@ export default function QuoteIntakePage() {
                 <Field label="Street Address" value={recreationalFormData.address} onChange={(v: string) => updateRecreationalField("address", v)} placeholder="123 Main St" className="col-span-2" />
                 <Field label="City" value={recreationalFormData.city} onChange={(v: string) => updateRecreationalField("city", v)} placeholder="Dallas" />
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="State" value={recreationalFormData.state} onChange={(v: string) => updateRecreationalField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="State" value={recreationalFormData.state} onChange={(v: string) => updateRecreationalField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                   <Field label="ZIP" value={recreationalFormData.zip} onChange={(v: string) => updateRecreationalField("zip", v)} placeholder="75201" />
                 </div>
               </div>
@@ -2980,7 +2996,7 @@ export default function QuoteIntakePage() {
                     <Field label="Storage Address" value={recreationalFormData.storageAddress} onChange={(v: string) => updateRecreationalField("storageAddress", v)} placeholder="123 Marina Dr" className="col-span-2" />
                     <Field label="Storage City" value={recreationalFormData.storageCity} onChange={(v: string) => updateRecreationalField("storageCity", v)} placeholder="Austin" />
                     <div className="grid grid-cols-2 gap-2">
-                      <Field label="State" value={recreationalFormData.storageState} onChange={(v: string) => updateRecreationalField("storageState", v)} options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                      <Field label="State" value={recreationalFormData.storageState} onChange={(v: string) => updateRecreationalField("storageState", v)} options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                       <Field label="ZIP" value={recreationalFormData.storageZip} onChange={(v: string) => updateRecreationalField("storageZip", v)} placeholder="78703" />
                     </div>
                   </div>
