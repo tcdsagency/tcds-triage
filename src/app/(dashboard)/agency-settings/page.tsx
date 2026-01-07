@@ -430,27 +430,60 @@ export default function AgencySettingsPage() {
 
       // Map common env var names to integration IDs
       const keyMapping: Record<string, { integration: string; field: string }> = {
+        // OpenAI
         OPENAI_API_KEY: { integration: "openai", field: "apiKey" },
+        AI_INTEGRATIONS_OPENAI_API_KEY: { integration: "openai", field: "apiKey" },
+        AI_INTEGRATIONS_OPENAI_BASE_URL: { integration: "openai", field: "baseUrl" },
+        // Anthropic
         ANTHROPIC_API_KEY: { integration: "anthropic", field: "apiKey" },
+        AI_INTEGRATIONS_ANTHROPIC_API_KEY: { integration: "anthropic", field: "apiKey" },
+        AI_INTEGRATIONS_ANTHROPIC_BASE_URL: { integration: "anthropic", field: "baseUrl" },
+        // Twilio
         TWILIO_ACCOUNT_SID: { integration: "twilio", field: "accountSid" },
         TWILIO_AUTH_TOKEN: { integration: "twilio", field: "authToken" },
         TWILIO_PHONE_NUMBER: { integration: "twilio", field: "phoneNumber" },
+        // Resend
         RESEND_API_KEY: { integration: "resend", field: "apiKey" },
+        // AgencyZoom
         AGENCYZOOM_API_USERNAME: { integration: "agencyzoom", field: "username" },
         AGENCYZOOM_API_PASSWORD: { integration: "agencyzoom", field: "password" },
+        // HawkSoft
         HAWKSOFT_API_KEY: { integration: "hawksoft", field: "apiKey" },
         HAWKSOFT_AGENCY_ID: { integration: "hawksoft", field: "agencyId" },
         HAWKSOFT_CLIENT_ID: { integration: "hawksoft", field: "clientId" },
         HAWKSOFT_CLIENT_SECRET: { integration: "hawksoft", field: "clientSecret" },
+        HAWKSOFT_USERNAME: { integration: "hawksoft", field: "username" },
+        HAWKSOFT_PASSWORD: { integration: "hawksoft", field: "password" },
+        // Deepgram
         DEEPGRAM_API_KEY: { integration: "deepgram", field: "apiKey" },
+        // Nearmap
         NEARMAP_API_KEY: { integration: "nearmap", field: "apiKey" },
+        // Google
         GOOGLE_API_KEY: { integration: "google", field: "apiKey" },
         GOOGLE_MAPS_API_KEY: { integration: "google", field: "apiKey" },
+        // Canopy
         CANOPY_CLIENT_ID: { integration: "canopy", field: "clientId" },
         CANOPY_CLIENT_SECRET: { integration: "canopy", field: "clientSecret" },
         CANOPY_ENVIRONMENT: { integration: "canopy", field: "environment" },
+        // 3CX
         THREECX_API_KEY: { integration: "3cx", field: "apiKey" },
         THREECX_BASE_URL: { integration: "3cx", field: "baseUrl" },
+        THREECX_JWT_PUBLIC_KEY: { integration: "3cx", field: "jwtPublicKey" },
+        // SmartyStreets
+        SMARTY_AUTH_ID: { integration: "smarty", field: "authId" },
+        SMARTY_AUTH_TOKEN: { integration: "smarty", field: "authToken" },
+        // HasData
+        HASDATA_API_KEY: { integration: "hasdata", field: "apiKey" },
+        // MSSQL (for 3CX recordings)
+        MSSQL_SERVER: { integration: "mssql", field: "server" },
+        MSSQL_DATABASE: { integration: "mssql", field: "database" },
+        MSSQL_USER: { integration: "mssql", field: "user" },
+        MSSQL_PASSWORD: { integration: "mssql", field: "password" },
+        // Neptune
+        NEPTUNE_SECRET: { integration: "neptune", field: "secret" },
+        NEPTUNE_SOURCE: { integration: "neptune", field: "source" },
+        // Delphi
+        DELPHI_AUTH_TOKEN: { integration: "delphi", field: "authToken" },
       };
 
       // Group credentials by integration
@@ -1029,7 +1062,7 @@ export default function AgencySettingsPage() {
                     </div>
                     <p className="text-sm text-gray-500 mb-4">
                       Paste a JSON object with your environment variables. Supported keys:
-                      OPENAI_API_KEY, ANTHROPIC_API_KEY, TWILIO_*, RESEND_API_KEY, AGENCYZOOM_*, HAWKSOFT_*, DEEPGRAM_API_KEY, NEARMAP_API_KEY, GOOGLE_API_KEY, CANOPY_*, THREECX_*
+                      AI_INTEGRATIONS_OPENAI_*, AI_INTEGRATIONS_ANTHROPIC_*, TWILIO_*, RESEND_*, AGENCYZOOM_*, HAWKSOFT_*, DEEPGRAM_*, NEARMAP_*, GOOGLE_*, CANOPY_*, THREECX_*, SMARTY_*, HASDATA_*, MSSQL_*, NEPTUNE_*, DELPHI_*
                     </p>
                     <textarea
                       value={jsonImportText}
