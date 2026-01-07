@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { 
-  Search, Send, Phone, User, MoreVertical, Plus, Check, CheckCheck, 
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Search, Send, Phone, User, MoreVertical, Plus, Check, CheckCheck,
   Clock, AlertCircle, MessageSquare, Settings, ChevronDown, Paperclip,
-  Smile, Image as ImageIcon, X, RefreshCw
+  Smile, Image as ImageIcon, X, RefreshCw, ArrowDownLeft, ArrowUpRight
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,16 +18,26 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-// Types
-interface Message {
+// Types from API
+interface SMSMessage {
   id: string;
-  content: string;
-  timestamp: string;
+  type: "sms" | "mms";
   direction: "inbound" | "outbound";
-  status: "sent" | "delivered" | "read" | "failed";
-  sender?: string;
+  fromNumber: string;
+  toNumber: string;
+  body: string;
+  mediaUrls: string[];
+  contactId: string | null;
+  contactName: string | null;
+  contactType: string | null;
+  isAcknowledged: boolean;
+  acknowledgedAt: string | null;
+  isAfterHours: boolean;
+  sentAt: string | null;
+  createdAt: string;
 }
 
+// Grouped conversation
 interface Conversation {
   id: string;
   contact: {
@@ -40,63 +50,8 @@ interface Conversation {
   lastMessage: string;
   lastMessageTime: string;
   unreadCount: number;
-  messages: Message[];
+  messages: SMSMessage[];
 }
-
-// Mock data
-const MOCK_CONVERSATIONS: Conversation[] = [
-  {
-    id: "1",
-    contact: { id: "c1", name: "John Smith", phone: "(205) 555-1234", type: "customer" },
-    lastMessage: "Thanks for the quote! I'll review it tonight.",
-    lastMessageTime: "2024-01-06T14:30:00",
-    unreadCount: 2,
-    messages: [
-      { id: "m1", content: "Hi John, I wanted to follow up on your auto insurance quote.", timestamp: "2024-01-06T10:00:00", direction: "outbound", status: "read" },
-      { id: "m2", content: "Hi! Yes, I've been meaning to look at it. What's the total premium?", timestamp: "2024-01-06T10:15:00", direction: "inbound", status: "read" },
-      { id: "m3", content: "Your 6-month premium would be $847 for full coverage on both vehicles.", timestamp: "2024-01-06T10:20:00", direction: "outbound", status: "read" },
-      { id: "m4", content: "That's actually better than my current rate! Can I bundle with home insurance?", timestamp: "2024-01-06T14:00:00", direction: "inbound", status: "read" },
-      { id: "m5", content: "Absolutely! Bundling would save you an additional 15%. Want me to run a home quote?", timestamp: "2024-01-06T14:15:00", direction: "outbound", status: "delivered" },
-      { id: "m6", content: "Thanks for the quote! I'll review it tonight.", timestamp: "2024-01-06T14:30:00", direction: "inbound", status: "read" },
-    ]
-  },
-  {
-    id: "2",
-    contact: { id: "c2", name: "Sarah Johnson", phone: "(205) 555-5678", type: "lead" },
-    lastMessage: "When can we schedule a call to discuss?",
-    lastMessageTime: "2024-01-06T11:45:00",
-    unreadCount: 1,
-    messages: [
-      { id: "m7", content: "Hi Sarah, thank you for requesting a quote from TCDS Insurance!", timestamp: "2024-01-06T09:00:00", direction: "outbound", status: "read" },
-      { id: "m8", content: "Hi! Yes, I'm looking for home insurance for my new house.", timestamp: "2024-01-06T09:30:00", direction: "inbound", status: "read" },
-      { id: "m9", content: "Congratulations on the new home! I'd be happy to help. What's the address?", timestamp: "2024-01-06T09:35:00", direction: "outbound", status: "read" },
-      { id: "m10", content: "When can we schedule a call to discuss?", timestamp: "2024-01-06T11:45:00", direction: "inbound", status: "read" },
-    ]
-  },
-  {
-    id: "3",
-    contact: { id: "c3", name: "Mike Williams", phone: "(205) 555-9012", type: "customer" },
-    lastMessage: "Got it, thanks!",
-    lastMessageTime: "2024-01-05T16:20:00",
-    unreadCount: 0,
-    messages: [
-      { id: "m11", content: "Hi Mike, just a reminder that your policy renews next month.", timestamp: "2024-01-05T15:00:00", direction: "outbound", status: "read" },
-      { id: "m12", content: "Thanks for the reminder! Is the rate staying the same?", timestamp: "2024-01-05T16:00:00", direction: "inbound", status: "read" },
-      { id: "m13", content: "Your premium is actually going down $12/month due to your claims-free discount!", timestamp: "2024-01-05T16:10:00", direction: "outbound", status: "read" },
-      { id: "m14", content: "Got it, thanks!", timestamp: "2024-01-05T16:20:00", direction: "inbound", status: "read" },
-    ]
-  },
-  {
-    id: "4",
-    contact: { id: "c4", name: "Emily Davis", phone: "(205) 555-3456", type: "lead" },
-    lastMessage: "I'll send over the quote details shortly.",
-    lastMessageTime: "2024-01-05T10:30:00",
-    unreadCount: 0,
-    messages: [
-      { id: "m15", content: "I'll send over the quote details shortly.", timestamp: "2024-01-05T10:30:00", direction: "outbound", status: "delivered" },
-    ]
-  },
-];
 
 const QUICK_REPLIES = [
   "Thanks for reaching out! How can I help you today?",
@@ -106,14 +61,115 @@ const QUICK_REPLIES = [
   "I've sent the quote to your email. Let me know if you have questions!",
 ];
 
+// Format phone number for display
+const formatPhone = (phone: string) => {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  return phone;
+};
+
+// Group messages by phone number into conversations
+const groupIntoConversations = (messages: SMSMessage[]): Conversation[] => {
+  const convMap = new Map<string, Conversation>();
+
+  messages.forEach((msg) => {
+    // Use the other party's phone number as the conversation key
+    const phone = msg.direction === 'inbound' ? msg.fromNumber : msg.toNumber;
+    const normalizedPhone = phone.replace(/\D/g, '');
+
+    if (!convMap.has(normalizedPhone)) {
+      convMap.set(normalizedPhone, {
+        id: normalizedPhone,
+        contact: {
+          id: msg.contactId || normalizedPhone,
+          name: msg.contactName || formatPhone(phone),
+          phone: formatPhone(phone),
+          type: (msg.contactType as 'customer' | 'lead') || 'lead',
+        },
+        lastMessage: msg.body,
+        lastMessageTime: msg.createdAt,
+        unreadCount: 0,
+        messages: [],
+      });
+    }
+
+    const conv = convMap.get(normalizedPhone)!;
+    conv.messages.push(msg);
+
+    // Update unread count
+    if (msg.direction === 'inbound' && !msg.isAcknowledged) {
+      conv.unreadCount++;
+    }
+
+    // Update last message if newer
+    if (new Date(msg.createdAt) > new Date(conv.lastMessageTime)) {
+      conv.lastMessage = msg.body;
+      conv.lastMessageTime = msg.createdAt;
+    }
+  });
+
+  // Sort messages within each conversation
+  convMap.forEach((conv) => {
+    conv.messages.sort((a, b) =>
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+  });
+
+  // Sort conversations by last message time (newest first)
+  return Array.from(convMap.values()).sort(
+    (a, b) =>
+      new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+  );
+};
+
 export default function MessagesPage() {
-  const [conversations, setConversations] = useState<Conversation[]>(MOCK_CONVERSATIONS);
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(MOCK_CONVERSATIONS[0]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [unreadTotal, setUnreadTotal] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch messages from API
+  const fetchMessages = useCallback(async () => {
+    try {
+      const res = await fetch('/api/messages?filter=all&limit=500');
+      const data = await res.json();
+      if (data.success) {
+        const grouped = groupIntoConversations(data.messages);
+        setConversations(grouped);
+        setUnreadTotal(data.unreadCount);
+
+        // Select first conversation if none selected
+        if (!selectedConversation && grouped.length > 0) {
+          setSelectedConversation(grouped[0]);
+        } else if (selectedConversation) {
+          // Update selected conversation with fresh data
+          const updated = grouped.find((c) => c.id === selectedConversation.id);
+          if (updated) setSelectedConversation(updated);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedConversation]);
+
+  // Initial fetch and polling
+  useEffect(() => {
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 30000); // Poll every 30s
+    return () => clearInterval(interval);
+  }, []);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -147,50 +203,83 @@ export default function MessagesPage() {
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedConversation) return;
-    
+
     setSending(true);
-    
-    // Simulate sending
-    const newMsg: Message = {
-      id: `m${Date.now()}`,
-      content: newMessage,
-      timestamp: new Date().toISOString(),
-      direction: "outbound",
-      status: "sent"
-    };
-    
-    // Update conversation
-    const updatedConv = {
-      ...selectedConversation,
-      messages: [...selectedConversation.messages, newMsg],
-      lastMessage: newMessage,
-      lastMessageTime: new Date().toISOString()
-    };
-    
-    setConversations(prev => prev.map(c => c.id === updatedConv.id ? updatedConv : c));
-    setSelectedConversation(updatedConv);
-    setNewMessage("");
-    
-    // Simulate delivery after delay
-    setTimeout(() => {
-      const deliveredMsg = { ...newMsg, status: "delivered" as const };
-      const deliveredConv = {
-        ...updatedConv,
-        messages: updatedConv.messages.map(m => m.id === newMsg.id ? deliveredMsg : m)
-      };
-      setConversations(prev => prev.map(c => c.id === deliveredConv.id ? deliveredConv : c));
-      setSelectedConversation(deliveredConv);
+
+    try {
+      // Get the phone number to send to
+      const toPhone = selectedConversation.messages[0]?.direction === 'inbound'
+        ? selectedConversation.messages[0].fromNumber
+        : selectedConversation.messages[0].toNumber;
+
+      const res = await fetch('/api/sms/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: toPhone,
+          message: newMessage,
+          contactId: selectedConversation.contact.id,
+          contactName: selectedConversation.contact.name,
+          contactType: selectedConversation.contact.type,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setNewMessage("");
+        // Refresh messages to show the new one
+        await fetchMessages();
+      } else {
+        console.error('Send failed:', data.error);
+        alert(`Failed to send: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      alert('Failed to send message');
+    } finally {
       setSending(false);
-    }, 1000);
+    }
   };
 
-  const getStatusIcon = (status: Message["status"]) => {
-    switch (status) {
-      case "sent": return <Check className="w-3 h-3 text-gray-400" />;
-      case "delivered": return <CheckCheck className="w-3 h-3 text-gray-400" />;
-      case "read": return <CheckCheck className="w-3 h-3 text-blue-500" />;
-      case "failed": return <AlertCircle className="w-3 h-3 text-red-500" />;
+  // Acknowledge a message
+  const acknowledgeMessage = async (messageId: string) => {
+    try {
+      await fetch(`/api/messages/${messageId}/read`, { method: 'POST' });
+      // Update local state
+      setConversations(prev =>
+        prev.map(conv => ({
+          ...conv,
+          unreadCount: conv.messages.some(m => m.id === messageId && !m.isAcknowledged)
+            ? Math.max(0, conv.unreadCount - 1)
+            : conv.unreadCount,
+          messages: conv.messages.map(m =>
+            m.id === messageId ? { ...m, isAcknowledged: true } : m
+          ),
+        }))
+      );
+      if (selectedConversation) {
+        setSelectedConversation(prev => prev ? {
+          ...prev,
+          messages: prev.messages.map(m =>
+            m.id === messageId ? { ...m, isAcknowledged: true } : m
+          ),
+        } : null);
+      }
+      setUnreadTotal(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Error acknowledging message:', error);
     }
+  };
+
+  const getStatusIcon = (msg: SMSMessage) => {
+    if (msg.direction === 'inbound') {
+      return msg.isAcknowledged
+        ? <CheckCheck className="w-3 h-3 text-blue-500" />
+        : <Clock className="w-3 h-3 text-amber-500" />;
+    }
+    // Outbound messages
+    return <CheckCheck className="w-3 h-3 text-gray-400" />;
   };
 
   return (
@@ -199,11 +288,26 @@ export default function MessagesPage() {
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-semibold text-gray-900">Messages</h1>
-            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700">
-              <Plus className="w-4 h-4 mr-1" />
-              New
-            </Button>
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Messages</h1>
+              {unreadTotal > 0 && (
+                <p className="text-xs text-amber-600">{unreadTotal} unread</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={fetchMessages}
+                className="text-gray-500"
+              >
+                <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+              </Button>
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700">
+                <Plus className="w-4 h-4 mr-1" />
+                New
+              </Button>
+            </div>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -319,18 +423,32 @@ export default function MessagesPage() {
                 )}
               >
                 <div className={cn(
-                  "max-w-[70%] rounded-2xl px-4 py-2",
+                  "max-w-[70%] rounded-2xl px-4 py-2 relative group",
                   msg.direction === "outbound"
                     ? "bg-emerald-600 text-white rounded-br-md"
-                    : "bg-white text-gray-900 rounded-bl-md shadow-sm"
+                    : "bg-white text-gray-900 rounded-bl-md shadow-sm",
+                  msg.direction === "inbound" && !msg.isAcknowledged && "ring-2 ring-amber-400"
                 )}>
-                  <p>{msg.content}</p>
+                  {/* Unread indicator */}
+                  {msg.direction === "inbound" && !msg.isAcknowledged && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        acknowledgeMessage(msg.id);
+                      }}
+                      className="absolute -top-2 -right-2 bg-amber-500 text-white p-1 rounded-full hover:bg-amber-600 transition-colors"
+                      title="Mark as read"
+                    >
+                      <Check className="w-3 h-3" />
+                    </button>
+                  )}
+                  <p>{msg.body}</p>
                   <div className={cn(
                     "flex items-center justify-end gap-1 mt-1",
                     msg.direction === "outbound" ? "text-emerald-200" : "text-gray-400"
                   )}>
-                    <span className="text-xs">{formatMessageTime(msg.timestamp)}</span>
-                    {msg.direction === "outbound" && getStatusIcon(msg.status)}
+                    <span className="text-xs">{formatMessageTime(msg.createdAt)}</span>
+                    {getStatusIcon(msg)}
                   </div>
                 </div>
               </div>

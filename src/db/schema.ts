@@ -946,45 +946,66 @@ export const messages = pgTable('messages', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   customerId: uuid('customer_id').references(() => customers.id),
-  
+
   // Message Info
   type: messageTypeEnum('type').notNull(),
   direction: messageDirectionEnum('direction').notNull(),
-  
+
   // Participants
   fromNumber: varchar('from_number', { length: 100 }),
   toNumber: varchar('to_number', { length: 100 }),
   fromEmail: text('from_email'),
   toEmail: text('to_email'),
-  
+
   // Content
   body: text('body').notNull(),
   mediaUrls: jsonb('media_urls').$type<string[]>().default([]),
-  
+
   // External Reference
   externalId: varchar('external_id', { length: 100 }), // Twilio SID
-  
+
   // Status
   status: varchar('status', { length: 20 }).default('sent'),
   deliveredAt: timestamp('delivered_at'),
   readAt: timestamp('read_at'),
-  
+
   // Agent
   sentById: uuid('sent_by_id').references(() => users.id),
-  
+
   // AI
   aiGenerated: boolean('ai_generated').default(false),
   aiDraft: text('ai_draft'), // If agent modified AI suggestion
-  
+
+  // AgencyZoom Contact Info (from contact lookup)
+  contactId: varchar('contact_id', { length: 100 }), // AgencyZoom customer/lead ID
+  contactName: text('contact_name'),
+  contactType: varchar('contact_type', { length: 20 }), // 'customer' or 'lead'
+
+  // Acknowledgment Workflow (for incoming messages)
+  isAcknowledged: boolean('is_acknowledged').default(false),
+  acknowledgedById: uuid('acknowledged_by_id').references(() => users.id),
+  acknowledgedAt: timestamp('acknowledged_at'),
+
+  // Scheduling (for outgoing messages)
+  scheduledAt: timestamp('scheduled_at'),
+  scheduleStatus: varchar('schedule_status', { length: 20 }), // 'pending', 'sent', 'failed'
+
+  // After-hours tracking
+  isAfterHours: boolean('is_after_hours').default(false),
+  afterHoursAutoReplySent: boolean('after_hours_auto_reply_sent').default(false),
+
   // AgencyZoom Sync
   syncedToAz: boolean('synced_to_az').default(false),
   azActivityId: varchar('az_activity_id', { length: 100 }),
-  
+
+  sentAt: timestamp('sent_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => [
   index('messages_tenant_idx').on(table.tenantId),
   index('messages_customer_idx').on(table.customerId),
   index('messages_phone_idx').on(table.tenantId, table.fromNumber),
+  index('messages_acknowledged_idx').on(table.tenantId, table.isAcknowledged),
+  index('messages_scheduled_idx').on(table.tenantId, table.scheduledAt, table.scheduleStatus),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
