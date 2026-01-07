@@ -1,11 +1,14 @@
 // API Route: /api/id-cards/send-sms
-// Send ID card PDF via SMS (upload to storage, send link)
+// Send ID card as MMS image via Twilio
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { generatedIdCards } from "@/db/schema";
 import { twilioClient } from "@/lib/twilio";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+
+// Twilio sender number for ID cards
+const TWILIO_ID_CARD_NUMBER = "+12058475616";
 
 interface SendSMSRequest {
   phone: string;
@@ -45,13 +48,15 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // Upload PDF to storage and get a public URL
-    let pdfUrl = "";
+    // Upload media to get a public URL for MMS
+    // Twilio MMS requires a publicly accessible URL
+    let mediaUrl = "";
     const storageEndpoint = process.env.STORAGE_UPLOAD_ENDPOINT;
     const storagePublicUrl = process.env.STORAGE_PUBLIC_URL;
 
     if (storageEndpoint) {
       try {
+        // Upload as PNG image for better MMS compatibility
         const filename = `id_cards/${Date.now()}_${body.policyNumber.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
 
         const response = await fetch(storageEndpoint, {
@@ -66,35 +71,35 @@ export async function POST(request: NextRequest) {
 
         if (response.ok) {
           const result = await response.json();
-          pdfUrl = result.url || (storagePublicUrl ? `${storagePublicUrl}/${filename}` : "");
+          mediaUrl = result.url || (storagePublicUrl ? `${storagePublicUrl}/${filename}` : "");
         }
       } catch (err) {
         console.error("[ID Cards] Storage upload error:", err);
       }
     }
 
-    // If no storage, try using a data URL shortener or direct link service
-    if (!pdfUrl) {
-      // Fallback: create a temporary download endpoint
-      // For now, we'll inform the user that storage isn't configured
+    // If no storage configured, return error
+    if (!mediaUrl) {
       return NextResponse.json({
         success: false,
-        error: "PDF storage not configured. Set STORAGE_UPLOAD_ENDPOINT to enable SMS delivery with PDF link.",
+        error: "Media storage not configured. Set STORAGE_UPLOAD_ENDPOINT to enable MMS delivery.",
       }, { status: 500 });
     }
 
-    // Send SMS with link
-    const message = `Your insurance ID card is ready! Policy: ${body.policyNumber}. Download: ${pdfUrl}`;
+    // Send MMS with the ID card
+    const message = `Hi ${body.insuredName.split(" ")[0]}! Here's your insurance ID card for policy ${body.policyNumber}. Keep this in your vehicle. - TCDS Agency`;
 
-    const smsResult = await twilioClient.sendSMS({
+    const mmsResult = await twilioClient.sendMMS({
       to: body.phone,
       message,
+      mediaUrl,
+      from: TWILIO_ID_CARD_NUMBER, // Use dedicated ID card number
     });
 
-    if (!smsResult.success) {
+    if (!mmsResult.success) {
       return NextResponse.json({
         success: false,
-        error: smsResult.error || "Failed to send SMS",
+        error: mmsResult.error || "Failed to send MMS",
       }, { status: 500 });
     }
 
@@ -127,7 +132,7 @@ export async function POST(request: NextRequest) {
     if (body.contactId) {
       try {
         const azClient = getAgencyZoomClient();
-        const noteContent = `ID Card sent via SMS to ${body.phone}\nPolicy: ${body.policyNumber}\n${body.carrier || ""}`;
+        const noteContent = `ID Card sent via MMS to ${body.phone}\nPolicy: ${body.policyNumber}\n${body.carrier || ""}`;
 
         if (body.contactType === "customer") {
           await azClient.addNote(parseInt(body.contactId), noteContent);
@@ -142,12 +147,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: `ID card sent to ${body.phone}`,
-      messageId: smsResult.messageId,
+      messageId: mmsResult.messageId,
+      from: TWILIO_ID_CARD_NUMBER,
     });
   } catch (error: any) {
     console.error("[ID Cards] Send SMS error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to send SMS", details: error.message },
+      { success: false, error: "Failed to send MMS", details: error.message },
       { status: 500 }
     );
   }

@@ -1,5 +1,5 @@
-// Twilio SMS Client
-// Handles sending SMS messages via Twilio API
+// Twilio SMS/MMS Client
+// Handles sending SMS and MMS messages via Twilio API
 
 // =============================================================================
 // TYPES
@@ -8,6 +8,13 @@
 export interface SendSMSParams {
   to: string;
   message: string;
+  from?: string;
+}
+
+export interface SendMMSParams {
+  to: string;
+  message: string;
+  mediaUrl: string;  // Public URL to the media (image/PDF)
   from?: string;
 }
 
@@ -92,6 +99,58 @@ class TwilioClient {
       };
     } catch (error) {
       console.error('Twilio send error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * Send an MMS message with media attachment
+   */
+  async sendMMS({ to, message, mediaUrl, from }: SendMMSParams): Promise<SendSMSResult> {
+    if (!this.isConfigured()) {
+      console.error('Twilio not configured');
+      return { success: false, error: 'Twilio credentials not configured' };
+    }
+
+    try {
+      const fromNumber = from || this.phoneNumber;
+      const url = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Messages.json`;
+
+      const params = new URLSearchParams({
+        To: this.formatPhoneNumber(to),
+        From: fromNumber,
+        Body: message,
+        MediaUrl: mediaUrl,
+      });
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64'),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params,
+      });
+
+      const data: TwilioMessageResponse = await response.json();
+
+      if (!response.ok || data.error_code) {
+        console.error('Twilio MMS send error:', data);
+        return {
+          success: false,
+          error: data.error_message || `HTTP ${response.status}`,
+        };
+      }
+
+      return {
+        success: true,
+        messageId: data.sid,
+      };
+    } catch (error) {
+      console.error('Twilio MMS send error:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
