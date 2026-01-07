@@ -1648,3 +1648,346 @@ export const triageItemsRelations = relations(triageItems, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RISK MONITOR - Property Listing/Sale Detection
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const propertyStatusEnum = pgEnum('property_status', [
+  'off_market',
+  'active',
+  'pending',
+  'sold',
+  'unknown',
+]);
+
+export const riskAlertTypeEnum = pgEnum('risk_alert_type', [
+  'listing_detected',
+  'pending_sale',
+  'sold',
+  'price_change',
+  'status_change',
+]);
+
+export const riskAlertStatusEnum = pgEnum('risk_alert_status', [
+  'new',
+  'acknowledged',
+  'in_progress',
+  'resolved',
+  'dismissed',
+]);
+
+export const riskAlertPriorityEnum = pgEnum('risk_alert_priority', [
+  '1', // Low
+  '2',
+  '3', // Medium
+  '4',
+  '5', // Critical
+]);
+
+// Monitored policies for property risk detection
+export const riskMonitorPolicies = pgTable('risk_monitor_policies', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // AgencyZoom references
+  azContactId: varchar('az_contact_id', { length: 100 }),
+  azPolicyId: varchar('az_policy_id', { length: 100 }),
+
+  // Customer info
+  contactName: text('contact_name').notNull(),
+  contactEmail: text('contact_email'),
+  contactPhone: varchar('contact_phone', { length: 20 }),
+
+  // Property address
+  addressLine1: text('address_line1').notNull(),
+  addressLine2: text('address_line2'),
+  city: varchar('city', { length: 100 }).notNull(),
+  state: varchar('state', { length: 2 }).notNull(),
+  zipCode: varchar('zip_code', { length: 10 }).notNull(),
+
+  // Policy info
+  policyNumber: varchar('policy_number', { length: 50 }),
+  carrier: varchar('carrier', { length: 100 }),
+  policyType: varchar('policy_type', { length: 50 }), // homeowners, dwelling fire, etc.
+  effectiveDate: timestamp('effective_date'),
+  expirationDate: timestamp('expiration_date'),
+
+  // Current property status
+  currentStatus: propertyStatusEnum('current_status').default('off_market').notNull(),
+  previousStatus: propertyStatusEnum('previous_status'),
+  lastStatusChange: timestamp('last_status_change'),
+
+  // Listing details (when active/pending)
+  listingPrice: integer('listing_price'),
+  listingDate: timestamp('listing_date'),
+  listingAgent: text('listing_agent'),
+  daysOnMarket: integer('days_on_market'),
+  mlsNumber: varchar('mls_number', { length: 50 }),
+
+  // Sale details (when sold)
+  lastSalePrice: integer('last_sale_price'),
+  lastSaleDate: timestamp('last_sale_date'),
+
+  // RPR/MMI data
+  rprPropertyId: varchar('rpr_property_id', { length: 100 }),
+  mmiPropertyId: varchar('mmi_property_id', { length: 100 }),
+  ownerName: text('owner_name'),
+  ownerOccupied: boolean('owner_occupied'),
+  estimatedValue: integer('estimated_value'),
+
+  // Monitoring status
+  isActive: boolean('is_active').default(true).notNull(),
+  lastCheckedAt: timestamp('last_checked_at'),
+  lastCheckSource: varchar('last_check_source', { length: 20 }), // 'rpr', 'mmi', 'both'
+  checkErrorCount: integer('check_error_count').default(0),
+  lastCheckError: text('last_check_error'),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('risk_policies_tenant_idx').on(table.tenantId),
+  statusIdx: index('risk_policies_status_idx').on(table.currentStatus),
+  lastCheckedIdx: index('risk_policies_last_checked_idx').on(table.lastCheckedAt),
+  addressIdx: index('risk_policies_address_idx').on(table.addressLine1, table.city, table.state),
+}));
+
+// Alerts generated when property status changes
+export const riskMonitorAlerts = pgTable('risk_monitor_alerts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  policyId: uuid('policy_id').notNull().references(() => riskMonitorPolicies.id),
+
+  // Alert details
+  alertType: riskAlertTypeEnum('alert_type').notNull(),
+  priority: riskAlertPriorityEnum('priority').default('3').notNull(),
+  status: riskAlertStatusEnum('status').default('new').notNull(),
+
+  // Content
+  title: text('title').notNull(),
+  description: text('description'),
+
+  // Status change that triggered the alert
+  previousStatus: propertyStatusEnum('previous_status'),
+  newStatus: propertyStatusEnum('new_status').notNull(),
+
+  // Additional data at time of alert
+  listingPrice: integer('listing_price'),
+  salePrice: integer('sale_price'),
+  dataSource: varchar('data_source', { length: 20 }), // 'rpr', 'mmi'
+  rawData: jsonb('raw_data'), // Full response data for debugging
+
+  // Assignment
+  assignedToUserId: uuid('assigned_to_user_id').references(() => users.id),
+  assignedAt: timestamp('assigned_at'),
+
+  // Resolution
+  acknowledgedAt: timestamp('acknowledged_at'),
+  acknowledgedByUserId: uuid('acknowledged_by_user_id').references(() => users.id),
+  resolvedAt: timestamp('resolved_at'),
+  resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id),
+  resolution: text('resolution'), // Notes on how it was resolved
+  resolutionType: varchar('resolution_type', { length: 50 }), // 'customer_moving', 'false_positive', 'policy_updated', etc.
+
+  // Email notification tracking
+  emailSentAt: timestamp('email_sent_at'),
+  emailRecipients: jsonb('email_recipients'),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('risk_alerts_tenant_idx').on(table.tenantId),
+  policyIdx: index('risk_alerts_policy_idx').on(table.policyId),
+  statusIdx: index('risk_alerts_status_idx').on(table.status),
+  priorityIdx: index('risk_alerts_priority_idx').on(table.priority),
+  createdAtIdx: index('risk_alerts_created_at_idx').on(table.createdAt),
+}));
+
+// Global settings for the risk monitor scheduler
+export const riskMonitorSettings = pgTable('risk_monitor_settings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id).unique(),
+
+  // Scheduler controls
+  isPaused: boolean('is_paused').default(false).notNull(),
+  pausedAt: timestamp('paused_at'),
+  pausedByUserId: uuid('paused_by_user_id').references(() => users.id),
+  pauseReason: text('pause_reason'),
+
+  // Schedule window (CST)
+  scheduleStartHour: integer('schedule_start_hour').default(21).notNull(), // 9pm
+  scheduleEndHour: integer('schedule_end_hour').default(4).notNull(), // 4am
+  checkIntervalMinutes: integer('check_interval_minutes').default(15).notNull(),
+
+  // Rate limiting
+  dailyRequestBudget: integer('daily_request_budget').default(100).notNull(),
+  requestsToday: integer('requests_today').default(0).notNull(),
+  lastBudgetResetAt: timestamp('last_budget_reset_at'),
+
+  // Check cycle
+  recheckDays: integer('recheck_days').default(3).notNull(), // Re-check each property every N days
+  delayBetweenCallsMs: integer('delay_between_calls_ms').default(5000).notNull(), // Rate limiting between API calls
+
+  // Scheduler state
+  lastSchedulerRunAt: timestamp('last_scheduler_run_at'),
+  lastSchedulerCompletedAt: timestamp('last_scheduler_completed_at'),
+  lastSchedulerError: text('last_scheduler_error'),
+  schedulerRunCount: integer('scheduler_run_count').default(0).notNull(),
+
+  // Email notifications
+  emailNotificationsEnabled: boolean('email_notifications_enabled').default(true).notNull(),
+  emailRecipients: jsonb('email_recipients'), // Array of email addresses
+
+  // API credentials status
+  rprCredentialsValid: boolean('rpr_credentials_valid').default(false),
+  mmiCredentialsValid: boolean('mmi_credentials_valid').default(false),
+  lastCredentialsCheckAt: timestamp('last_credentials_check_at'),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Activity log for scheduler runs
+export const riskMonitorActivityLog = pgTable('risk_monitor_activity_log', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // Run info
+  runId: uuid('run_id').notNull(), // Groups events from same run
+  runType: varchar('run_type', { length: 20 }).notNull(), // 'scheduled', 'manual', 'test'
+
+  // Timing
+  startedAt: timestamp('started_at').notNull(),
+  completedAt: timestamp('completed_at'),
+  durationMs: integer('duration_ms'),
+
+  // Results
+  policiesChecked: integer('policies_checked').default(0).notNull(),
+  alertsCreated: integer('alerts_created').default(0).notNull(),
+  errorsEncountered: integer('errors_encountered').default(0).notNull(),
+
+  // API usage
+  rprCallsMade: integer('rpr_calls_made').default(0).notNull(),
+  mmiCallsMade: integer('mmi_calls_made').default(0).notNull(),
+
+  // Status
+  status: varchar('status', { length: 20 }).notNull(), // 'running', 'completed', 'failed', 'cancelled'
+  errorMessage: text('error_message'),
+
+  // Summary
+  summary: jsonb('summary'), // Detailed breakdown of what was checked/found
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('risk_activity_log_tenant_idx').on(table.tenantId),
+  runIdIdx: index('risk_activity_log_run_id_idx').on(table.runId),
+  startedAtIdx: index('risk_activity_log_started_at_idx').on(table.startedAt),
+}));
+
+// Detailed event log for each API call and status change
+export const riskMonitorActivityEvents = pgTable('risk_monitor_activity_events', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  runId: uuid('run_id'), // Links to activity log run
+  policyId: uuid('policy_id').references(() => riskMonitorPolicies.id),
+
+  // Event type
+  eventType: varchar('event_type', { length: 50 }).notNull(),
+  // Types: 'api_call_rpr', 'api_call_mmi', 'status_change', 'alert_created', 'error', 'email_sent'
+
+  // Event details
+  description: text('description'),
+
+  // For API calls
+  apiSource: varchar('api_source', { length: 20 }), // 'rpr', 'mmi'
+  apiEndpoint: text('api_endpoint'),
+  apiResponseTimeMs: integer('api_response_time_ms'),
+  apiStatusCode: integer('api_status_code'),
+  apiSuccess: boolean('api_success'),
+
+  // For status changes
+  previousStatus: propertyStatusEnum('previous_status'),
+  newStatus: propertyStatusEnum('new_status'),
+
+  // Raw data
+  requestData: jsonb('request_data'),
+  responseData: jsonb('response_data'),
+  errorDetails: jsonb('error_details'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('risk_events_tenant_idx').on(table.tenantId),
+  runIdIdx: index('risk_events_run_id_idx').on(table.runId),
+  policyIdIdx: index('risk_events_policy_id_idx').on(table.policyId),
+  eventTypeIdx: index('risk_events_type_idx').on(table.eventType),
+  createdAtIdx: index('risk_events_created_at_idx').on(table.createdAt),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RISK MONITOR RELATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const riskMonitorPoliciesRelations = relations(riskMonitorPolicies, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [riskMonitorPolicies.tenantId],
+    references: [tenants.id],
+  }),
+  alerts: many(riskMonitorAlerts),
+  events: many(riskMonitorActivityEvents),
+}));
+
+export const riskMonitorAlertsRelations = relations(riskMonitorAlerts, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [riskMonitorAlerts.tenantId],
+    references: [tenants.id],
+  }),
+  policy: one(riskMonitorPolicies, {
+    fields: [riskMonitorAlerts.policyId],
+    references: [riskMonitorPolicies.id],
+  }),
+  assignedTo: one(users, {
+    fields: [riskMonitorAlerts.assignedToUserId],
+    references: [users.id],
+  }),
+  acknowledgedBy: one(users, {
+    fields: [riskMonitorAlerts.acknowledgedByUserId],
+    references: [users.id],
+  }),
+  resolvedBy: one(users, {
+    fields: [riskMonitorAlerts.resolvedByUserId],
+    references: [users.id],
+  }),
+}));
+
+export const riskMonitorSettingsRelations = relations(riskMonitorSettings, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [riskMonitorSettings.tenantId],
+    references: [tenants.id],
+  }),
+  pausedBy: one(users, {
+    fields: [riskMonitorSettings.pausedByUserId],
+    references: [users.id],
+  }),
+}));
+
+export const riskMonitorActivityLogRelations = relations(riskMonitorActivityLog, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [riskMonitorActivityLog.tenantId],
+    references: [tenants.id],
+  }),
+  events: many(riskMonitorActivityEvents),
+}));
+
+export const riskMonitorActivityEventsRelations = relations(riskMonitorActivityEvents, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [riskMonitorActivityEvents.tenantId],
+    references: [tenants.id],
+  }),
+  policy: one(riskMonitorPolicies, {
+    fields: [riskMonitorActivityEvents.policyId],
+    references: [riskMonitorPolicies.id],
+  }),
+}));
