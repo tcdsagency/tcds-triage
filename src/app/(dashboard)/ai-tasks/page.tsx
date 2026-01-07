@@ -282,10 +282,16 @@ export default function AITasksPage() {
               <p className="text-zinc-400">No prioritized tasks for today.</p>
             </div>
           ) : (
-            taskList.tasks.map((task, index) => {
+            taskList.tasks.map((task: any, index) => {
               const isCompleted = completedTasks.has(index);
               const isExpanded = expandedTask === index;
-              const TaskIcon = TASK_TYPE_ICONS[task.type] || Phone;
+              // Handle both expected and actual AI response structures
+              const taskType = task.type || task.task || "general_outreach";
+              const taskPriority: "urgent" | "high" | "medium" | "low" = typeof task.priority === 'string'
+                ? (task.priority as "urgent" | "high" | "medium" | "low")
+                : (task.priority <= 2 ? 'urgent' : task.priority <= 4 ? 'high' : task.priority <= 7 ? 'medium' : 'low');
+              const customerName = task.customerName || task.customer || "Unknown Customer";
+              const TaskIcon = TASK_TYPE_ICONS[taskType] || Phone;
 
               return (
                 <div
@@ -318,7 +324,7 @@ export default function AITasksPage() {
 
                     {/* Task Icon */}
                     <div
-                      className={`w-10 h-10 rounded-lg flex items-center justify-center ${PRIORITY_COLORS[task.priority]}`}
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center ${PRIORITY_COLORS[taskPriority] || PRIORITY_COLORS.medium}`}
                     >
                       <TaskIcon className="w-5 h-5" />
                     </div>
@@ -327,35 +333,39 @@ export default function AITasksPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span
-                          className={`text-xs px-2 py-0.5 rounded-full ${PRIORITY_COLORS[task.priority]}`}
+                          className={`text-xs px-2 py-0.5 rounded-full ${PRIORITY_COLORS[taskPriority] || PRIORITY_COLORS.medium}`}
                         >
-                          {task.priority.toUpperCase()}
+                          {taskPriority.toUpperCase()}
                         </span>
                         <span className="text-xs text-zinc-500">
-                          {TASK_TYPE_LABELS[task.type] || task.type}
+                          {TASK_TYPE_LABELS[taskType] || taskType}
                         </span>
-                        <span className="text-xs text-zinc-600">
-                          ~{task.estimatedDuration} min
-                        </span>
+                        {task.estimatedDuration && (
+                          <span className="text-xs text-zinc-600">
+                            ~{task.estimatedDuration} min
+                          </span>
+                        )}
                       </div>
                       <h3
                         className={`font-medium ${isCompleted ? "line-through text-zinc-500" : ""}`}
                       >
-                        {task.customerName}
+                        {customerName}
                       </h3>
-                      <p className="text-sm text-zinc-400 truncate">{task.reasoning}</p>
+                      <p className="text-sm text-zinc-400 truncate">{task.reasoning || task.preparation || ""}</p>
                     </div>
 
                     {/* Expected Outcome */}
                     <div className="hidden md:flex items-center gap-4 text-sm">
-                      {task.expectedOutcome.revenue && task.expectedOutcome.revenue > 0 && (
+                      {task.expectedOutcome?.revenue && task.expectedOutcome.revenue > 0 && (
                         <div className="text-green-400">
                           +${task.expectedOutcome.revenue.toLocaleString()}
                         </div>
                       )}
-                      <div className="text-zinc-400">
-                        {Math.round(task.expectedOutcome.success * 100)}% success
-                      </div>
+                      {task.expectedOutcome?.success && (
+                        <div className="text-zinc-400">
+                          {Math.round(task.expectedOutcome.success * 100)}% success
+                        </div>
+                      )}
                     </div>
 
                     {/* Quick Actions */}
@@ -363,7 +373,9 @@ export default function AITasksPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          window.location.href = `/customer/${task.customerId}`;
+                          if (task.customerId) {
+                            window.location.href = `/customer/${task.customerId}`;
+                          }
                         }}
                         className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
                         title="View Customer"
@@ -402,7 +414,7 @@ export default function AITasksPage() {
                             Preparation Steps
                           </h4>
                           <ul className="space-y-1">
-                            {task.preparation.map((step, i) => (
+                            {task.preparation.map((step: string, i: number) => (
                               <li key={i} className="flex items-start gap-2 text-sm">
                                 <span className="text-purple-400 mt-1">•</span>
                                 {step}
