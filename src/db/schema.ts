@@ -2155,3 +2155,105 @@ export const agentAssistTelemetryRelations = relations(agentAssistTelemetry, ({ 
     references: [calls.id],
   }),
 }));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QUOTE DOCUMENTS - Extracted quote data from carrier PDFs
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const quoteDocumentStatusEnum = pgEnum('quote_document_status', [
+  'uploaded',
+  'extracting',
+  'extracted',
+  'posted',
+  'error',
+]);
+
+export const quoteDocumentTypeEnum = pgEnum('quote_document_type', [
+  'auto',
+  'home',
+  'renters',
+  'umbrella',
+  'recreational',
+  'commercial_auto',
+  'general_liability',
+  'bop',
+  'workers_comp',
+  'other',
+]);
+
+export const quoteDocuments = pgTable('quote_documents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  uploadedById: uuid('uploaded_by_id').references(() => users.id),
+
+  // File info
+  originalFileName: text('original_file_name').notNull(),
+  fileSize: integer('file_size'),
+  mimeType: text('mime_type').default('application/pdf'),
+  storagePath: text('storage_path'), // Path to stored PDF
+
+  // Source info
+  source: text('source').default('upload'), // 'upload' | 'email'
+  emailMessageId: text('email_message_id'), // If imported from email
+  emailSubject: text('email_subject'),
+  emailFrom: text('email_from'),
+
+  // Extracted quote data
+  carrierName: text('carrier_name'),
+  quoteType: quoteDocumentTypeEnum('quote_type'),
+  quotedPremium: real('quoted_premium'),
+  termMonths: integer('term_months'),
+  effectiveDate: timestamp('effective_date'),
+  expirationDate: timestamp('expiration_date'),
+  quoteNumber: text('quote_number'),
+
+  // Customer info
+  customerName: text('customer_name'),
+  customerAddress: text('customer_address'),
+  customerCity: text('customer_city'),
+  customerState: text('customer_state'),
+  customerZip: text('customer_zip'),
+  customerPhone: text('customer_phone'),
+  customerEmail: text('customer_email'),
+
+  // Coverage details (JSON)
+  coverageDetails: jsonb('coverage_details'), // { liability, collision, comprehensive, etc. }
+  vehicleInfo: jsonb('vehicle_info'), // [{ year, make, model, vin }]
+  propertyInfo: jsonb('property_info'), // { address, yearBuilt, squareFeet, roofType }
+  driverInfo: jsonb('driver_info'), // [{ name, dob, licenseNumber }]
+
+  // Processing status
+  status: quoteDocumentStatusEnum('status').default('uploaded'),
+  extractionError: text('extraction_error'),
+  rawExtraction: jsonb('raw_extraction'), // Full AI response
+  extractedAt: timestamp('extracted_at'),
+
+  // AgencyZoom integration
+  azLeadId: text('az_lead_id'),
+  azCustomerId: text('az_customer_id'),
+  azPostedAt: timestamp('az_posted_at'),
+  azPipelineId: integer('az_pipeline_id'),
+  azStageName: text('az_stage_name'),
+  azNoteId: text('az_note_id'),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('quote_documents_tenant_idx').on(table.tenantId),
+  statusIdx: index('quote_documents_status_idx').on(table.status),
+  carrierIdx: index('quote_documents_carrier_idx').on(table.carrierName),
+  customerNameIdx: index('quote_documents_customer_name_idx').on(table.customerName),
+  createdAtIdx: index('quote_documents_created_at_idx').on(table.createdAt),
+}));
+
+export const quoteDocumentsRelations = relations(quoteDocuments, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [quoteDocuments.tenantId],
+    references: [tenants.id],
+  }),
+  uploadedBy: one(users, {
+    fields: [quoteDocuments.uploadedById],
+    references: [users.id],
+  }),
+}));
