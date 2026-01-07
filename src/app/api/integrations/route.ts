@@ -30,13 +30,46 @@ const INTEGRATION_CONFIGS: Record<string, {
     ],
   },
   threecx: {
-    name: "3CX",
-    description: "Phone system - call control, events",
+    name: "3CX Native API",
+    description: "Phone system - OAuth2 call control, real-time events",
     category: "Phone",
     fields: [
       { key: "baseUrl", label: "Server URL", type: "url", required: true, placeholder: "https://your-pbx.3cx.com" },
-      { key: "apiKey", label: "API Key", type: "password", required: true },
+      { key: "clientId", label: "OAuth2 Client ID", type: "text", required: true, placeholder: "From 3CX Admin > Integrations" },
+      { key: "clientSecret", label: "OAuth2 Client Secret", type: "password", required: true },
+      { key: "jwtPublicKey", label: "JWT Public Key", type: "password", required: false, placeholder: "For webhook verification" },
       { key: "extension", label: "Default Extension", type: "text", required: false },
+    ],
+  },
+  voiptools: {
+    name: "VoIPTools Relay",
+    description: "Presence management middleware (separate from 3CX)",
+    category: "Phone",
+    fields: [
+      { key: "relayUrl", label: "Relay Server URL", type: "url", required: true, placeholder: "https://vt-relay.yourdomain.com:5656" },
+      { key: "jwtToken", label: "JWT Token", type: "password", required: true },
+    ],
+  },
+  vmbridge: {
+    name: "VM Bridge",
+    description: "Real-time audio capture & transcription",
+    category: "Phone",
+    fields: [
+      { key: "bridgeUrl", label: "Bridge Server URL", type: "url", required: true, placeholder: "https://vmbridge.yourdomain.com:5050" },
+      { key: "apiKey", label: "API Key (optional)", type: "password", required: false },
+    ],
+  },
+  mssql: {
+    name: "MSSQL Transcripts",
+    description: "SQL Server for post-call transcript storage",
+    category: "Phone",
+    fields: [
+      { key: "server", label: "Server Host", type: "text", required: true, placeholder: "sql.yourdomain.com" },
+      { key: "port", label: "Port", type: "text", required: false, placeholder: "1433" },
+      { key: "database", label: "Database Name", type: "text", required: true, placeholder: "transcription_db" },
+      { key: "user", label: "Username", type: "text", required: true },
+      { key: "password", label: "Password", type: "password", required: true },
+      { key: "encrypt", label: "Use Encryption", type: "text", required: false, placeholder: "true or false" },
     ],
   },
   twilio: {
@@ -319,7 +352,10 @@ function checkEnvConfig(integrationId: string): boolean {
   const envMappings: Record<string, string[]> = {
     agencyzoom: ["AGENCYZOOM_API_USERNAME", "AGENCYZOOM_API_PASSWORD"],
     hawksoft: ["HAWKSOFT_API_KEY"],
-    threecx: ["THREECX_API_KEY"],
+    threecx: ["THREECX_CLIENT_ID", "THREECX_CLIENT_SECRET"],
+    voiptools: ["VOIPTOOLS_RELAY_URL", "VOIPTOOLS_JWT_TOKEN"],
+    vmbridge: ["VMBRIDGE_URL"],
+    mssql: ["MSSQL_SERVER", "MSSQL_DATABASE", "MSSQL_USER", "MSSQL_PASSWORD"],
     twilio: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"],
     deepgram: ["DEEPGRAM_API_KEY"],
     openai: ["OPENAI_API_KEY"],
@@ -340,7 +376,28 @@ function checkEnvField(integrationId: string, fieldKey: string): boolean {
   const envMappings: Record<string, Record<string, string>> = {
     agencyzoom: { username: "AGENCYZOOM_API_USERNAME", password: "AGENCYZOOM_API_PASSWORD" },
     hawksoft: { apiKey: "HAWKSOFT_API_KEY", agencyId: "HAWKSOFT_AGENCY_ID" },
-    threecx: { baseUrl: "THREECX_BASE_URL", apiKey: "THREECX_API_KEY" },
+    threecx: {
+      baseUrl: "THREECX_BASE_URL",
+      clientId: "THREECX_CLIENT_ID",
+      clientSecret: "THREECX_CLIENT_SECRET",
+      jwtPublicKey: "THREECX_JWT_PUBLIC_KEY",
+    },
+    voiptools: {
+      relayUrl: "VOIPTOOLS_RELAY_URL",
+      jwtToken: "VOIPTOOLS_JWT_TOKEN",
+    },
+    vmbridge: {
+      bridgeUrl: "VMBRIDGE_URL",
+      apiKey: "VMBRIDGE_API_KEY",
+    },
+    mssql: {
+      server: "MSSQL_SERVER",
+      port: "MSSQL_PORT",
+      database: "MSSQL_DATABASE",
+      user: "MSSQL_USER",
+      password: "MSSQL_PASSWORD",
+      encrypt: "MSSQL_ENCRYPT",
+    },
     twilio: { accountSid: "TWILIO_ACCOUNT_SID", authToken: "TWILIO_AUTH_TOKEN", phoneNumber: "TWILIO_PHONE_NUMBER" },
     deepgram: { apiKey: "DEEPGRAM_API_KEY" },
     openai: { apiKey: "OPENAI_API_KEY" },

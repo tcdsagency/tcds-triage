@@ -469,11 +469,10 @@ export default function IdCardsPage() {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl mx-auto space-y-6">
-          {/* Customer Search */}
-          <div className="bg-white rounded-lg border shadow-sm p-6 overflow-visible">
+      {/* Customer Search - Fixed at top, not clipped by scroll */}
+      <div className="px-6 pt-6 pb-2">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-lg border shadow-sm p-6 relative">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               1. Search for Customer
             </h2>
@@ -516,7 +515,7 @@ export default function IdCardsPage() {
                 )}
 
                 {searchResults.length > 0 && (
-                  <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  <div className="absolute z-[100] w-full mt-1 bg-white border rounded-lg shadow-xl max-h-80 overflow-y-auto">
                     {searchResults.map((result) => (
                       <button
                         key={`${result.type}-${result.id}`}
@@ -546,6 +545,12 @@ export default function IdCardsPage() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Content - Scrollable area for everything below search */}
+      <div className="flex-1 overflow-y-auto px-6 pb-6">
+        <div className="max-w-4xl mx-auto space-y-6">
 
           {/* Policy Selection */}
           {selectedCustomer && (

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, users, tenants } from "@/db/schema";
 import { eq, desc, and, gte, sql } from "drizzle-orm";
+import { getThreeCXClient } from "@/lib/api/threecx";
 
 // =============================================================================
 // Types
@@ -194,27 +195,17 @@ export async function POST(request: NextRequest) {
     const { action, callId, agentExtension } = body;
 
     // Validate action
-    if (!["listen", "whisper", "barge", "hangup"].includes(action)) {
+    if (!["listen", "whisper", "barge", "hangup", "hold", "retrieve", "transfer"].includes(action)) {
       return NextResponse.json(
         { success: false, error: "Invalid action" },
         { status: 400 }
       );
     }
 
-    // Get 3CX credentials
-    const tenantId = process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
-    const [tenant] = await db
-      .select({ integrations: tenants.integrations })
-      .from(tenants)
-      .where(eq(tenants.id, tenantId))
-      .limit(1);
+    // Get 3CX client (uses OAuth2)
+    const threecxClient = await getThreeCXClient();
 
-    const integrations = (tenant?.integrations as Record<string, any>) || {};
-    const threecxConfig = integrations.threecx || {};
-    const baseUrl = threecxConfig.baseUrl || process.env.THREECX_BASE_URL;
-    const apiKey = threecxConfig.apiKey || process.env.THREECX_API_KEY;
-
-    if (!baseUrl || !apiKey) {
+    if (!threecxClient) {
       // Return success but note that 3CX is not configured
       return NextResponse.json({
         success: true,
@@ -223,56 +214,58 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Make 3CX API call based on action
+    // Execute action using the 3CX client
     try {
-      let endpoint = "";
-      let method = "POST";
-      let payload: any = {};
+      let success = false;
+      let message = "";
 
       switch (action) {
         case "listen":
-          // Silent monitor
-          endpoint = `/api/calls/${callId}/monitor`;
-          payload = { mode: "silent", supervisorExtension: agentExtension };
+          success = await threecxClient.monitorCall(callId, agentExtension, "silent");
+          message = success ? "Now monitoring call (silent)" : "Failed to monitor call";
           break;
+
         case "whisper":
-          // Whisper to agent only
-          endpoint = `/api/calls/${callId}/monitor`;
-          payload = { mode: "whisper", supervisorExtension: agentExtension };
+          success = await threecxClient.monitorCall(callId, agentExtension, "whisper");
+          message = success ? "Now monitoring call (whisper)" : "Failed to start whisper";
           break;
+
         case "barge":
-          // Join call (conference)
-          endpoint = `/api/calls/${callId}/barge`;
-          payload = { supervisorExtension: agentExtension };
+          success = await threecxClient.monitorCall(callId, agentExtension, "barge");
+          message = success ? "Joined call" : "Failed to barge into call";
           break;
+
         case "hangup":
-          // End the call
-          endpoint = `/api/calls/${callId}/hangup`;
+          success = await threecxClient.dropCall(callId);
+          message = success ? "Call ended" : "Failed to end call";
+          break;
+
+        case "hold":
+          success = await threecxClient.holdCall(callId);
+          message = success ? "Call placed on hold" : "Failed to hold call";
+          break;
+
+        case "retrieve":
+          success = await threecxClient.retrieveCall(callId);
+          message = success ? "Call retrieved from hold" : "Failed to retrieve call";
+          break;
+
+        case "transfer":
+          const { targetExtension, blind } = body;
+          if (!targetExtension) {
+            return NextResponse.json({
+              success: false,
+              error: "Target extension required for transfer",
+            });
+          }
+          success = await threecxClient.transferCall(callId, targetExtension, blind);
+          message = success
+            ? `Call transferred to ${targetExtension}`
+            : "Failed to transfer call";
           break;
       }
 
-      const response = await fetch(`${baseUrl}${endpoint}`, {
-        method,
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        return NextResponse.json({
-          success: true,
-          message: `${action} action executed successfully`,
-        });
-      } else {
-        const errorText = await response.text();
-        console.error(`3CX ${action} failed:`, errorText);
-        return NextResponse.json({
-          success: false,
-          error: `Failed to ${action}: ${response.status}`,
-        });
-      }
+      return NextResponse.json({ success, message });
     } catch (apiError: any) {
       console.error(`3CX API error:`, apiError);
       return NextResponse.json({

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { users, tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { ThreeCXClient, getThreeCXClient } from "@/lib/api/threecx";
+import { VoIPToolsRelayClient, getVoIPToolsRelayClient } from "@/lib/api/voiptools-relay";
 
 // 3CX Presence Status Types
 type PresenceStatus = "available" | "away" | "dnd" | "on_call" | "offline";
@@ -15,26 +17,43 @@ interface TeamMember {
   avatarUrl?: string;
 }
 
+// Map 3CX/VoIPTools status to our format
+function mapPresenceStatus(rawStatus: string | undefined): { status: PresenceStatus; text: string } {
+  const status = (rawStatus || "").toLowerCase();
+
+  switch (status) {
+    case "available":
+    case "online":
+    case "idle":
+      return { status: "available", text: "Available" };
+    case "away":
+    case "away_timeout":
+    case "awayfromdesk":
+      return { status: "away", text: "Away" };
+    case "dnd":
+    case "donotdisturb":
+    case "busy":
+      return { status: "dnd", text: "Do Not Disturb" };
+    case "ringing":
+    case "talking":
+    case "oncall":
+    case "on_call":
+      return { status: "on_call", text: "On a call" };
+    case "businesstrip":
+      return { status: "away", text: "Business Trip" };
+    case "lunch":
+      return { status: "away", text: "Lunch" };
+    default:
+      return { status: "offline", text: "Offline" };
+  }
+}
+
 // =============================================================================
-// GET /api/3cx/presence - Get team presence status from 3CX
+// GET /api/3cx/presence - Get team presence status from 3CX or VoIPTools
 // =============================================================================
 export async function GET(request: NextRequest) {
   try {
     const tenantId = process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
-
-    // Get 3CX credentials from tenant integrations
-    const [tenant] = await db
-      .select({ integrations: tenants.integrations })
-      .from(tenants)
-      .where(eq(tenants.id, tenantId))
-      .limit(1);
-
-    const integrations = (tenant?.integrations as Record<string, any>) || {};
-    const threecxConfig = integrations.threecx || {};
-
-    // Check environment variables as fallback
-    const baseUrl = threecxConfig.baseUrl || process.env.THREECX_BASE_URL;
-    const apiKey = threecxConfig.apiKey || process.env.THREECX_API_KEY;
 
     // Get users from database to populate team
     const teamUsers = await db
@@ -50,82 +69,78 @@ export async function GET(request: NextRequest) {
       .from(users)
       .where(eq(users.tenantId, tenantId));
 
-    // If 3CX is configured, try to fetch real presence data
-    if (baseUrl && apiKey) {
+    // Try VoIPTools Relay first (preferred for presence)
+    const voiptoolsClient = await getVoIPToolsRelayClient();
+    if (voiptoolsClient) {
       try {
-        // 3CX API call to get system status / presence
-        // Different 3CX versions have different API endpoints
-        const presenceUrl = `${baseUrl}/api/SystemStatus/GetAllExtensionStatuses`;
+        const presenceData = await voiptoolsClient.getAllPresence();
 
-        const response = await fetch(presenceUrl, {
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
+        // Map VoIPTools presence to our format
+        const teamMembers: TeamMember[] = teamUsers.map((user) => {
+          const extData = presenceData.find(
+            (p) => p.Extension === user.extension
+          );
+
+          const { status, text } = mapPresenceStatus(extData?.Status);
+          const statusText = extData?.StatusText || text;
+
+          return {
+            id: user.id,
+            name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Unknown",
+            extension: user.extension || "",
+            status,
+            statusText,
+            avatarUrl: user.avatarUrl || undefined,
+          };
         });
 
-        if (response.ok) {
-          const data = await response.json();
+        return NextResponse.json({
+          success: true,
+          connected: true,
+          source: "voiptools",
+          team: teamMembers,
+        });
+      } catch (voipError) {
+        console.error("VoIPTools API error:", voipError);
+        // Fall through to 3CX Native
+      }
+    }
 
-          // Map 3CX presence to our format
-          const teamMembers: TeamMember[] = teamUsers.map((user) => {
-            // Find matching extension in 3CX data
-            const extData = data.find?.((ext: any) =>
-              ext.Extension === user.extension || ext.Number === user.extension
-            );
+    // Try 3CX Native API with OAuth2
+    const threecxClient = await getThreeCXClient();
+    if (threecxClient) {
+      try {
+        const presenceData = await threecxClient.getAllExtensionStatuses();
 
-            let status: PresenceStatus = "offline";
-            let statusText = "Offline";
+        // Map 3CX presence to our format
+        const teamMembers: TeamMember[] = teamUsers.map((user) => {
+          const extData = presenceData.find(
+            (ext) => ext.Extension === user.extension || ext.Number === user.extension
+          );
 
-            if (extData) {
-              // Map 3CX status codes to our status
-              switch (extData.Status?.toLowerCase() || extData.PresenceStatus?.toLowerCase()) {
-                case "available":
-                case "online":
-                case "idle":
-                  status = "available";
-                  statusText = "Available";
-                  break;
-                case "away":
-                case "away_timeout":
-                  status = "away";
-                  statusText = "Away";
-                  break;
-                case "dnd":
-                case "donotdisturb":
-                case "busy":
-                  status = "dnd";
-                  statusText = "Do Not Disturb";
-                  break;
-                case "ringing":
-                case "talking":
-                case "oncall":
-                case "on_call":
-                  status = "on_call";
-                  statusText = extData.CallerName ? `On call with ${extData.CallerName}` : "On a call";
-                  break;
-                default:
-                  status = "offline";
-                  statusText = "Offline";
-              }
-            }
+          const { status, text } = mapPresenceStatus(
+            extData?.Status || extData?.PresenceStatus
+          );
+          const statusText = extData?.CallerName
+            ? `On call with ${extData.CallerName}`
+            : text;
 
-            return {
-              id: user.id,
-              name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Unknown',
-              extension: user.extension || '',
-              status,
-              statusText,
-              avatarUrl: user.avatarUrl || undefined,
-            };
-          });
+          return {
+            id: user.id,
+            name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Unknown",
+            extension: user.extension || "",
+            status,
+            statusText,
+            avatarUrl: user.avatarUrl || undefined,
+          };
+        });
 
-          return NextResponse.json({
-            success: true,
-            connected: true,
-            team: teamMembers,
-          });
-        }
+        return NextResponse.json({
+          success: true,
+          connected: true,
+          source: "threecx",
+          team: teamMembers,
+        });
       } catch (apiError) {
         console.error("3CX API error:", apiError);
         // Fall through to mock data
