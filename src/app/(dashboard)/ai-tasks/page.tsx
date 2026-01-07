@@ -141,16 +141,16 @@ export default function AITasksPage() {
     setTimeout(() => setCopiedScript(null), 2000);
   };
 
-  // Calculate stats
+  // Calculate stats (with null-safe access to summary)
   const stats = taskList
     ? {
-        total: taskList.tasks.length,
+        total: taskList.tasks?.length ?? 0,
         completed: completedTasks.size,
-        remaining: taskList.tasks.length - completedTasks.size,
-        urgent: taskList.tasks.filter((t) => t.priority === "urgent").length,
-        high: taskList.tasks.filter((t) => t.priority === "high").length,
-        totalRevenue: taskList.summary.expectedRevenue,
-        totalTime: taskList.summary.estimatedTime,
+        remaining: (taskList.tasks?.length ?? 0) - completedTasks.size,
+        urgent: taskList.tasks?.filter((t) => t.priority === "urgent").length ?? 0,
+        high: taskList.tasks?.filter((t) => t.priority === "high").length ?? 0,
+        totalRevenue: taskList.summary?.expectedRevenue ?? 0,
+        totalTime: taskList.summary?.estimatedTime ?? 0,
       }
     : null;
 
@@ -275,7 +275,7 @@ export default function AITasksPage() {
       {/* Task List */}
       {taskList && !loading && (
         <div className="space-y-4">
-          {taskList.tasks.length === 0 ? (
+          {(!taskList.tasks || taskList.tasks.length === 0) ? (
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-12 text-center">
               <CheckCircle2 className="w-16 h-16 text-green-400 mx-auto mb-4" />
               <h3 className="text-xl font-semibold mb-2">All Caught Up!</h3>

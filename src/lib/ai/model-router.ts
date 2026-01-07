@@ -5,6 +5,32 @@
  */
 
 import { AIModel, AITaskType } from "./types";
+import { trackTokenUsage } from "./token-tracker";
+
+// Default timeout for AI API calls (60 seconds)
+const DEFAULT_AI_TIMEOUT_MS = 60000;
+
+/**
+ * Create a fetch with timeout using AbortController
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number = DEFAULT_AI_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 interface ModelConfig {
   id: AIModel;
@@ -104,10 +130,9 @@ export class ModelRouter {
       temperature?: number;
       maxTokens?: number;
       responseFormat?: "text" | "json";
+      endpoint?: string; // For token tracking
     }
-  ): Promise<{ content: string; tokensUsed: number }> {
-    const startTime = Date.now();
-
+  ): Promise<{ content: string; tokensUsed: number; promptTokens?: number; completionTokens?: number }> {
     if (model.provider === "openai") {
       return this.executeOpenAI(model, messages, options);
     } else {
@@ -125,13 +150,15 @@ export class ModelRouter {
       temperature?: number;
       maxTokens?: number;
       responseFormat?: "text" | "json";
+      endpoint?: string;
     }
-  ): Promise<{ content: string; tokensUsed: number }> {
+  ): Promise<{ content: string; tokensUsed: number; promptTokens?: number; completionTokens?: number }> {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       throw new Error("OPENAI_API_KEY not configured");
     }
 
+    const startTime = Date.now();
     const body: any = {
       model: model.apiModel,
       messages,
@@ -143,25 +170,63 @@ export class ModelRouter {
       body.response_format = { type: "json_object" };
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    let success = true;
+    let errorMessage: string | undefined;
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} ${error}`);
+    try {
+      const response = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        success = false;
+        errorMessage = `${response.status} ${error}`;
+        throw new Error(`OpenAI API error: ${response.status} ${error}`);
+      }
+
+      const data = await response.json();
+      const promptTokens = data.usage?.prompt_tokens || 0;
+      const completionTokens = data.usage?.completion_tokens || 0;
+      const totalTokens = data.usage?.total_tokens || 0;
+
+      // Track token usage (fire and forget)
+      trackTokenUsage({
+        provider: "openai",
+        model: model.apiModel,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        endpoint: options?.endpoint,
+        requestDurationMs: Date.now() - startTime,
+        success: true,
+      });
+
+      return {
+        content: data.choices[0]?.message?.content || "",
+        tokensUsed: totalTokens,
+        promptTokens,
+        completionTokens,
+      };
+    } catch (error) {
+      // Track failed request
+      trackTokenUsage({
+        provider: "openai",
+        model: model.apiModel,
+        promptTokens: 0,
+        completionTokens: 0,
+        endpoint: options?.endpoint,
+        requestDurationMs: Date.now() - startTime,
+        success: false,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      });
+      throw error;
     }
-
-    const data = await response.json();
-    return {
-      content: data.choices[0]?.message?.content || "",
-      tokensUsed: data.usage?.total_tokens || 0,
-    };
   }
 
   /**
@@ -174,12 +239,15 @@ export class ModelRouter {
       temperature?: number;
       maxTokens?: number;
       responseFormat?: "text" | "json";
+      endpoint?: string;
     }
-  ): Promise<{ content: string; tokensUsed: number }> {
+  ): Promise<{ content: string; tokensUsed: number; promptTokens?: number; completionTokens?: number }> {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY not configured");
     }
+
+    const startTime = Date.now();
 
     // Extract system message
     const systemMessage = messages.find((m) => m.role === "system")?.content || "";
@@ -190,32 +258,65 @@ export class ModelRouter {
         content: m.content,
       }));
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    try {
+      const response = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: model.apiModel,
+          max_tokens: options?.maxTokens ?? 2000,
+          temperature: options?.temperature ?? 0.7,
+          system: systemMessage,
+          messages: userMessages,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Anthropic API error: ${response.status} ${error}`);
+      }
+
+      const data = await response.json();
+      const promptTokens = data.usage?.input_tokens || 0;
+      const completionTokens = data.usage?.output_tokens || 0;
+      const totalTokens = promptTokens + completionTokens;
+
+      // Track token usage (fire and forget)
+      trackTokenUsage({
+        provider: "anthropic",
         model: model.apiModel,
-        max_tokens: options?.maxTokens ?? 2000,
-        temperature: options?.temperature ?? 0.7,
-        system: systemMessage,
-        messages: userMessages,
-      }),
-    });
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        endpoint: options?.endpoint,
+        requestDurationMs: Date.now() - startTime,
+        success: true,
+      });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Anthropic API error: ${response.status} ${error}`);
+      return {
+        content: data.content[0]?.text || "",
+        tokensUsed: totalTokens,
+        promptTokens,
+        completionTokens,
+      };
+    } catch (error) {
+      // Track failed request
+      trackTokenUsage({
+        provider: "anthropic",
+        model: model.apiModel,
+        promptTokens: 0,
+        completionTokens: 0,
+        endpoint: options?.endpoint,
+        requestDurationMs: Date.now() - startTime,
+        success: false,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      });
+      throw error;
     }
-
-    const data = await response.json();
-    return {
-      content: data.content[0]?.text || "",
-      tokensUsed: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0),
-    };
   }
 
   /**

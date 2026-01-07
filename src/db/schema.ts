@@ -13,6 +13,7 @@ import {
   index,
   uniqueIndex,
   primaryKey,
+  date,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -2656,4 +2657,65 @@ export const apiKeys = pgTable('api_keys', {
   tenantIdx: index('api_keys_tenant_idx').on(table.tenantId),
   keyPrefixIdx: index('api_keys_prefix_idx').on(table.keyPrefix),
   activeIdx: index('api_keys_active_idx').on(table.isActive),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AI TOKEN USAGE TRACKING
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const aiProviderEnum = pgEnum('ai_provider', ['openai', 'anthropic', 'google']);
+
+export const aiTokenUsage = pgTable('ai_token_usage', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Provider & Model
+  provider: aiProviderEnum('provider').notNull(),
+  model: varchar('model', { length: 100 }).notNull(),
+
+  // Token counts
+  promptTokens: integer('prompt_tokens').notNull().default(0),
+  completionTokens: integer('completion_tokens').notNull().default(0),
+  totalTokens: integer('total_tokens').notNull().default(0),
+
+  // Cost tracking (in cents to avoid floating point)
+  estimatedCostCents: integer('estimated_cost_cents').default(0),
+
+  // Request metadata
+  endpoint: varchar('endpoint', { length: 200 }), // Which API route used this
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  requestDurationMs: integer('request_duration_ms'),
+  success: boolean('success').default(true),
+  errorMessage: text('error_message'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('ai_token_usage_tenant_idx').on(table.tenantId),
+  providerIdx: index('ai_token_usage_provider_idx').on(table.tenantId, table.provider),
+  createdAtIdx: index('ai_token_usage_created_idx').on(table.tenantId, table.createdAt),
+  modelIdx: index('ai_token_usage_model_idx').on(table.tenantId, table.model),
+}));
+
+// Daily aggregation for faster dashboard queries
+export const aiTokenUsageDaily = pgTable('ai_token_usage_daily', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Aggregation key
+  date: date('date').notNull(),
+  provider: aiProviderEnum('provider').notNull(),
+  model: varchar('model', { length: 100 }).notNull(),
+
+  // Aggregated totals
+  requestCount: integer('request_count').notNull().default(0),
+  promptTokens: integer('prompt_tokens').notNull().default(0),
+  completionTokens: integer('completion_tokens').notNull().default(0),
+  totalTokens: integer('total_tokens').notNull().default(0),
+  estimatedCostCents: integer('estimated_cost_cents').default(0),
+  errorCount: integer('error_count').default(0),
+  avgDurationMs: integer('avg_duration_ms'),
+
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantDateIdx: uniqueIndex('ai_token_daily_tenant_date_idx').on(table.tenantId, table.date, table.provider, table.model),
 }));

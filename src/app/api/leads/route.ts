@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { leadQueueEntries, leadRoundRobinState, leadClaimActivity, users } from '@/db/schema';
-import { eq, and, desc, asc, or, isNull, ne } from 'drizzle-orm';
+import { eq, and, desc, asc, or, isNull, ne, sql, inArray, count } from 'drizzle-orm';
 
 // GET /api/leads - Get lead queue
 export async function GET(request: NextRequest) {
@@ -39,53 +39,55 @@ export async function GET(request: NextRequest) {
       )
       .limit(limit);
 
-    // Enrich with user info
-    const enrichedLeads = await Promise.all(
-      leads.map(async (lead) => {
-        let assignedUser = null;
-        let claimedByUser = null;
+    // Batch-fetch all unique user IDs in a single query (fixes N+1)
+    const userIds = new Set<string>();
+    leads.forEach(lead => {
+      if (lead.assignedUserId) userIds.add(lead.assignedUserId);
+      if (lead.claimedBy) userIds.add(lead.claimedBy);
+    });
 
-        if (lead.assignedUserId) {
-          const [u] = await db
-            .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
-            .from(users)
-            .where(eq(users.id, lead.assignedUserId))
-            .limit(1);
-          assignedUser = u;
-        }
+    const usersMap = new Map<string, { id: string; firstName: string | null; lastName: string | null; email: string | null }>();
+    if (userIds.size > 0) {
+      const usersList = await db
+        .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
+        .from(users)
+        .where(inArray(users.id, Array.from(userIds)));
+      usersList.forEach(u => usersMap.set(u.id, u));
+    }
 
-        if (lead.claimedBy) {
-          const [u] = await db
-            .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
-            .from(users)
-            .where(eq(users.id, lead.claimedBy))
-            .limit(1);
-          claimedByUser = u;
-        }
+    // Enrich leads with user info from the batch-fetched map
+    const enrichedLeads = leads.map(lead => ({
+      ...lead,
+      assignedUser: lead.assignedUserId ? usersMap.get(lead.assignedUserId) || null : null,
+      claimedByUser: lead.claimedBy ? usersMap.get(lead.claimedBy) || null : null,
+    }));
 
-        return {
-          ...lead,
-          assignedUser,
-          claimedByUser,
-        };
+    // Get counts by status using SQL GROUP BY (fixes full table scan)
+    const statusCounts = await db
+      .select({
+        status: leadQueueEntries.status,
+        count: count(),
       })
-    );
-
-    // Get counts by status
-    const allLeads = await db
-      .select({ status: leadQueueEntries.status })
       .from(leadQueueEntries)
-      .where(eq(leadQueueEntries.tenantId, tenantId));
+      .where(eq(leadQueueEntries.tenantId, tenantId))
+      .groupBy(leadQueueEntries.status);
 
     const counts = {
-      total: allLeads.length,
-      queued: allLeads.filter(l => l.status === 'queued').length,
-      notified: allLeads.filter(l => l.status === 'notified').length,
-      escalated: allLeads.filter(l => l.status === 'escalated').length,
-      claimed: allLeads.filter(l => l.status === 'claimed').length,
-      converted: allLeads.filter(l => l.status === 'converted').length,
-      expired: allLeads.filter(l => l.status === 'expired').length,
+      total: 0,
+      queued: 0,
+      notified: 0,
+      escalated: 0,
+      claimed: 0,
+      converted: 0,
+      expired: 0,
     };
+    statusCounts.forEach(row => {
+      const c = Number(row.count);
+      counts.total += c;
+      if (row.status && row.status in counts) {
+        counts[row.status as keyof typeof counts] = c;
+      }
+    });
 
     return NextResponse.json({
       success: true,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2, Key, Eye, EyeOff, Zap, Settings2, MessageSquare, Webhook, Copy } from "lucide-react";
+import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2, Key, Eye, EyeOff, Zap, Settings2, MessageSquare, Webhook, Copy, Cpu, TrendingUp, DollarSign, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +89,11 @@ export default function AgencySettingsPage() {
   const [apiKeyForm, setApiKeyForm] = useState({ name: "", permissions: ["read"] });
   const [apiKeySaving, setApiKeySaving] = useState(false);
   const [newApiKey, setNewApiKey] = useState<string | null>(null);
+
+  // AI Usage state
+  const [aiUsage, setAiUsage] = useState<any>(null);
+  const [aiUsageLoading, setAiUsageLoading] = useState(false);
+  const [aiUsagePeriod, setAiUsagePeriod] = useState("30d");
 
   const [afterHours, setAfterHours] = useState({
     enabled: true,
@@ -217,6 +222,25 @@ export default function AgencySettingsPage() {
       loadApiKeys();
     }
   }, [activeTab]);
+
+  // Load AI Usage when tab is active
+  useEffect(() => {
+    if (activeTab === "aiusage") {
+      const loadAiUsage = async () => {
+        setAiUsageLoading(true);
+        try {
+          const res = await fetch(`/api/ai/token-usage?period=${aiUsagePeriod}`);
+          const data = await res.json();
+          if (data.success) setAiUsage(data);
+        } catch (err) {
+          console.error("Failed to load AI usage:", err);
+        } finally {
+          setAiUsageLoading(false);
+        }
+      };
+      loadAiUsage();
+    }
+  }, [activeTab, aiUsagePeriod]);
 
   // SMS Template handlers
   const handleSaveTemplate = async () => {
@@ -436,6 +460,7 @@ export default function AgencySettingsPage() {
     { id: "afterhours", label: "After Hours", icon: Moon },
     { id: "team", label: "Team", icon: Users },
     { id: "integrations", label: "Integrations", icon: Link2 },
+    { id: "aiusage", label: "AI Usage", icon: Cpu },
     { id: "templates", label: "SMS Templates", icon: MessageSquare },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
     { id: "apikeys", label: "API Keys", icon: Key },
@@ -1337,6 +1362,160 @@ export default function AgencySettingsPage() {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* AI Usage Tab */}
+          {activeTab === "aiusage" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">AI Token Usage</h2>
+                <select
+                  value={aiUsagePeriod}
+                  onChange={(e) => setAiUsagePeriod(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                >
+                  <option value="7d">Last 7 Days</option>
+                  <option value="30d">Last 30 Days</option>
+                  <option value="90d">Last 90 Days</option>
+                  <option value="all">All Time</option>
+                </select>
+              </div>
+
+              {aiUsageLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+              ) : !aiUsage ? (
+                <div className="text-center py-8 text-gray-500">No AI usage data available yet. Usage will be tracked as AI features are used.</div>
+              ) : (
+                <>
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-center gap-2 mb-2">
+                        <BarChart3 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                        <span className="text-sm text-blue-700 dark:text-blue-300">Total Requests</span>
+                      </div>
+                      <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{aiUsage.totals?.requests?.toLocaleString() || 0}</div>
+                    </div>
+                    <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl border border-purple-200 dark:border-purple-800">
+                      <div className="flex items-center gap-2 mb-2">
+                        <TrendingUp className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                        <span className="text-sm text-purple-700 dark:text-purple-300">Total Tokens</span>
+                      </div>
+                      <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">{(aiUsage.totals?.totalTokens || 0).toLocaleString()}</div>
+                    </div>
+                    <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-xl border border-green-200 dark:border-green-800">
+                      <div className="flex items-center gap-2 mb-2">
+                        <DollarSign className="w-5 h-5 text-green-600 dark:text-green-400" />
+                        <span className="text-sm text-green-700 dark:text-green-300">Est. Cost</span>
+                      </div>
+                      <div className="text-2xl font-bold text-green-900 dark:text-green-100">${(aiUsage.totals?.estimatedCost || 0).toFixed(2)}</div>
+                    </div>
+                    <div className="p-4 bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20 rounded-xl border border-red-200 dark:border-red-800">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                        <span className="text-sm text-red-700 dark:text-red-300">Errors</span>
+                      </div>
+                      <div className="text-2xl font-bold text-red-900 dark:text-red-100">{aiUsage.totals?.errors || 0}</div>
+                    </div>
+                  </div>
+
+                  {/* Usage by Provider */}
+                  <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-5">
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Usage by Provider</h3>
+                    <div className="space-y-3">
+                      {aiUsage.byProvider?.map((provider: any) => (
+                        <div key={provider.provider} className="flex items-center gap-4">
+                          <div className="w-24 flex items-center gap-2">
+                            <span className={cn("w-3 h-3 rounded-full", provider.provider === "openai" ? "bg-green-500" : provider.provider === "anthropic" ? "bg-orange-500" : "bg-blue-500")} />
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">{provider.provider}</span>
+                          </div>
+                          <div className="flex-1">
+                            <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                              <div
+                                className={cn("h-full rounded-full", provider.provider === "openai" ? "bg-green-500" : provider.provider === "anthropic" ? "bg-orange-500" : "bg-blue-500")}
+                                style={{ width: `${(provider.totalTokens / (aiUsage.totals?.totalTokens || 1)) * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                          <div className="w-32 text-right">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{provider.totalTokens?.toLocaleString()}</span>
+                            <span className="text-xs text-gray-500 ml-1">tokens</span>
+                          </div>
+                          <div className="w-20 text-right text-sm text-gray-500">${provider.estimatedCost?.toFixed(2)}</div>
+                        </div>
+                      ))}
+                      {(!aiUsage.byProvider || aiUsage.byProvider.length === 0) && (
+                        <div className="text-sm text-gray-500 text-center py-4">No provider data available</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Usage by Model */}
+                  <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-5">
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Usage by Model</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-gray-500 border-b border-gray-200 dark:border-gray-700">
+                            <th className="pb-2 font-medium">Model</th>
+                            <th className="pb-2 font-medium text-right">Requests</th>
+                            <th className="pb-2 font-medium text-right">Input Tokens</th>
+                            <th className="pb-2 font-medium text-right">Output Tokens</th>
+                            <th className="pb-2 font-medium text-right">Total Tokens</th>
+                            <th className="pb-2 font-medium text-right">Est. Cost</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                          {aiUsage.byModel?.map((model: any) => (
+                            <tr key={model.model} className="text-gray-700 dark:text-gray-300">
+                              <td className="py-2 font-mono text-xs">{model.model}</td>
+                              <td className="py-2 text-right">{model.requests?.toLocaleString()}</td>
+                              <td className="py-2 text-right">{model.promptTokens?.toLocaleString()}</td>
+                              <td className="py-2 text-right">{model.completionTokens?.toLocaleString()}</td>
+                              <td className="py-2 text-right font-medium">{model.totalTokens?.toLocaleString()}</td>
+                              <td className="py-2 text-right">${model.estimatedCost?.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                          {(!aiUsage.byModel || aiUsage.byModel.length === 0) && (
+                            <tr>
+                              <td colSpan={6} className="py-4 text-center text-gray-500">No model data available</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Daily Usage Chart (simplified) */}
+                  {aiUsage.chartData && aiUsage.chartData.length > 0 && (
+                    <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-5">
+                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Daily Token Usage</h3>
+                      <div className="flex items-end gap-1 h-32">
+                        {aiUsage.chartData.slice(-30).map((day: any, idx: number) => {
+                          const maxTokens = Math.max(...aiUsage.chartData.map((d: any) => d.totalTokens || 0));
+                          const height = maxTokens > 0 ? ((day.totalTokens || 0) / maxTokens) * 100 : 0;
+                          return (
+                            <div key={day.date} className="flex-1 flex flex-col items-center group relative">
+                              <div
+                                className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
+                                style={{ height: `${Math.max(height, 2)}%` }}
+                              />
+                              <div className="absolute bottom-full mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
+                                {day.date}: {day.totalTokens?.toLocaleString()} tokens
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="flex justify-between mt-2 text-xs text-gray-500">
+                        <span>{aiUsage.chartData[0]?.date}</span>
+                        <span>{aiUsage.chartData[aiUsage.chartData.length - 1]?.date}</span>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

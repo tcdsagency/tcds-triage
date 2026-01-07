@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Phone,
   TrendingUp,
@@ -737,9 +737,101 @@ function RecentActivity() {
 // MAIN PAGE
 // =============================================================================
 
+interface ReportStats {
+  metrics: {
+    totalCalls: number;
+    callsChange: number;
+    totalQuotes: number;
+    boundQuotes: number;
+    conversionRate: number;
+    avgHandleTime: string;
+    totalCustomers: number;
+    totalLeads: number;
+  };
+  agentPerformance: Array<{
+    id: string;
+    name: string;
+    calls: number;
+    avgCallTime: string;
+  }>;
+}
+
 export default function ReportsPage() {
   const [dateRange, setDateRange] = useState<DateRange>("30d");
   const [activeTab, setActiveTab] = useState<ReportTab>("overview");
+  const [stats, setStats] = useState<ReportStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch real data from API
+  useEffect(() => {
+    const fetchStats = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/reports/stats?period=${dateRange}`);
+        const data = await res.json();
+        if (data.success) {
+          setStats(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch report stats:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
+  }, [dateRange]);
+
+  // Generate dynamic metrics from real data
+  const dynamicMetrics: MetricCard[] = stats ? [
+    {
+      title: "Total Calls",
+      value: stats.metrics.totalCalls.toLocaleString(),
+      change: stats.metrics.callsChange,
+      changeLabel: "vs last period",
+      icon: <Phone className="h-5 w-5" />,
+      color: "bg-blue-500",
+    },
+    {
+      title: "Quotes Created",
+      value: stats.metrics.totalQuotes,
+      change: 0,
+      changeLabel: "this period",
+      icon: <FileText className="h-5 w-5" />,
+      color: "bg-green-500",
+    },
+    {
+      title: "Policies Bound",
+      value: stats.metrics.boundQuotes,
+      change: stats.metrics.conversionRate,
+      changeLabel: "conversion rate",
+      icon: <DollarSign className="h-5 w-5" />,
+      color: "bg-emerald-500",
+    },
+    {
+      title: "Conversion Rate",
+      value: `${stats.metrics.conversionRate}%`,
+      change: 0,
+      changeLabel: "quote to bind",
+      icon: <Target className="h-5 w-5" />,
+      color: "bg-purple-500",
+    },
+    {
+      title: "Total Customers",
+      value: stats.metrics.totalCustomers.toLocaleString(),
+      change: 0,
+      changeLabel: "in database",
+      icon: <Users className="h-5 w-5" />,
+      color: "bg-orange-500",
+    },
+    {
+      title: "Avg Handle Time",
+      value: stats.metrics.avgHandleTime || "0:00",
+      change: 0,
+      changeLabel: "per call",
+      icon: <Clock className="h-5 w-5" />,
+      color: "bg-cyan-500",
+    },
+  ] : METRICS;
 
   const tabs: { value: ReportTab; label: string; icon: React.ReactNode }[] = [
     { value: "overview", label: "Overview", icon: <BarChart3 className="h-4 w-4" /> },
@@ -790,9 +882,20 @@ export default function ReportsPage() {
         <div className="space-y-6">
           {/* Metrics Grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {METRICS.map((metric, idx) => (
-              <MetricCardComponent key={idx} metric={metric} />
-            ))}
+            {loading ? (
+              // Loading skeleton
+              Array.from({ length: 6 }).map((_, idx) => (
+                <div key={idx} className="bg-white rounded-xl border border-gray-200 p-5 animate-pulse">
+                  <div className="h-10 w-10 bg-gray-200 rounded-xl mb-3" />
+                  <div className="h-4 w-20 bg-gray-200 rounded mb-2" />
+                  <div className="h-6 w-16 bg-gray-200 rounded" />
+                </div>
+              ))
+            ) : (
+              dynamicMetrics.map((metric, idx) => (
+                <MetricCardComponent key={idx} metric={metric} />
+              ))
+            )}
           </div>
 
           {/* Quick Stats */}

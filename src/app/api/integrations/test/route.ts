@@ -3,6 +3,31 @@ import { db } from "@/db";
 import { tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+// Default timeout for external API calls (15 seconds for test connections)
+const TEST_TIMEOUT_MS = 15000;
+
+/**
+ * Fetch with timeout support
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = TEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // =============================================================================
 // POST /api/integrations/test - Test an integration connection
 // =============================================================================
@@ -127,7 +152,7 @@ async function testOpenAI(creds: Record<string, string>): Promise<{ success: boo
   }
 
   try {
-    const response = await fetch("https://api.openai.com/v1/models", {
+    const response = await fetchWithTimeout("https://api.openai.com/v1/models", {
       headers: { Authorization: `Bearer ${creds.apiKey}` },
     });
 
@@ -170,7 +195,7 @@ async function testTwilio(creds: Record<string, string>): Promise<{ success: boo
 
   try {
     const auth = Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString("base64");
-    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${creds.accountSid}.json`, {
+    const response = await fetchWithTimeout(`https://api.twilio.com/2010-04-01/Accounts/${creds.accountSid}.json`, {
       headers: { Authorization: `Basic ${auth}` },
     });
 
@@ -195,7 +220,7 @@ async function testResend(creds: Record<string, string>): Promise<{ success: boo
   }
 
   try {
-    const response = await fetch("https://api.resend.com/domains", {
+    const response = await fetchWithTimeout("https://api.resend.com/domains", {
       headers: { Authorization: `Bearer ${creds.apiKey}` },
     });
 
@@ -221,7 +246,7 @@ async function testAgencyZoom(creds: Record<string, string>): Promise<{ success:
   }
 
   try {
-    const response = await fetch("https://api.agencyzoom.com/v1/api/auth/login", {
+    const response = await fetchWithTimeout("https://api.agencyzoom.com/v1/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -253,7 +278,7 @@ async function testHawkSoft(creds: Record<string, string>): Promise<{ success: b
 
   // HawkSoft Partner API test
   try {
-    const response = await fetch("https://partner-api.hawksoft.com/vendor/agencies", {
+    const response = await fetchWithTimeout("https://partner-api.hawksoft.com/vendor/agencies", {
       headers: { Authorization: `Bearer ${creds.apiKey}` },
     });
 
@@ -278,7 +303,7 @@ async function testDeepgram(creds: Record<string, string>): Promise<{ success: b
   }
 
   try {
-    const response = await fetch("https://api.deepgram.com/v1/projects", {
+    const response = await fetchWithTimeout("https://api.deepgram.com/v1/projects", {
       headers: { Authorization: `Token ${creds.apiKey}` },
     });
 
@@ -299,7 +324,7 @@ async function testNearmap(creds: Record<string, string>): Promise<{ success: bo
 
   // Nearmap coverage check (simple test)
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://api.nearmap.com/coverage/v2/point/-97.7431,30.2672?apikey=${creds.apiKey}`
     );
 
@@ -320,7 +345,7 @@ async function testGoogle(creds: Record<string, string>): Promise<{ success: boo
 
   try {
     // Test with a simple geocoding request
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://maps.googleapis.com/maps/api/geocode/json?address=1600+Amphitheatre+Parkway,+Mountain+View,+CA&key=${creds.apiKey}`
     );
 
@@ -352,7 +377,7 @@ async function testCanopy(creds: Record<string, string>): Promise<{ success: boo
       ? "https://api.usecanopy.com"
       : "https://sandbox-api.usecanopy.com";
 
-    const response = await fetch(`${baseUrl}/oauth/token`, {
+    const response = await fetchWithTimeout(`${baseUrl}/oauth/token`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -361,7 +386,7 @@ async function testCanopy(creds: Record<string, string>): Promise<{ success: boo
         grant_type: "client_credentials",
         client_id: creds.clientId,
         client_secret: creds.clientSecret,
-      }),
+      }).toString(),
     });
 
     if (response.ok) {
