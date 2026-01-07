@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { 
+import {
   ArrowLeft, Sparkles, Car, Home, Ship, Building2, Droplets,
   ChevronDown, ChevronRight, Loader2, Search,
   User, Phone, Mail, Shield, DollarSign, FileText,
@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import AgentAssistSidebar from "@/components/features/AgentAssistSidebar";
+import { QuoteType as AgentAssistQuoteType } from "@/lib/agent-assist/types";
 
 // =============================================================================
 // TYPES
@@ -844,6 +846,10 @@ export default function QuoteIntakePage() {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Agent Assist state
+  const [currentFormSection, setCurrentFormSection] = useState<string>("customer-info");
+  const [showAgentAssist, setShowAgentAssist] = useState(true);
+
   // Auto form completion calculation
   const autoCompletion = useCallback(() => {
     let filled = 0, total = 10;
@@ -1278,8 +1284,10 @@ export default function QuoteIntakePage() {
         </div>
       )}
 
-      {/* Form */}
-      <div className="max-w-5xl mx-auto px-6 py-6 space-y-4">
+      {/* Form with Agent Assist Sidebar */}
+      <div className="flex">
+        {/* Main Form */}
+        <div className="flex-1 max-w-5xl mx-auto px-6 py-6 space-y-4">
         {/* ========================================================================= */}
         {/* PERSONAL AUTO FORM */}
         {/* ========================================================================= */}
@@ -2384,6 +2392,32 @@ export default function QuoteIntakePage() {
               </div>
             </Section>
           </>
+        )}
+        </div>
+
+        {/* Agent Assist Sidebar */}
+        {showAgentAssist && selectedType && (
+          <div className="hidden lg:block sticky top-20 h-[calc(100vh-5rem)]">
+            <AgentAssistSidebar
+              quoteType={(selectedType === "personal_auto" ? "personal_auto" :
+                         selectedType === "homeowners" ? "homeowners" :
+                         selectedType === "renters" ? "renters" :
+                         selectedType === "commercial_auto" ? "commercial_auto" :
+                         selectedType === "general_liability" ? "general_liability" :
+                         selectedType === "bop" ? "bop" :
+                         selectedType === "workers_comp" ? "workers_comp" :
+                         "personal_auto") as AgentAssistQuoteType}
+              currentSection={currentFormSection}
+              onSectionClick={(sectionId) => {
+                setCurrentFormSection(sectionId);
+                // Scroll to section if exists
+                const element = document.getElementById(sectionId);
+                if (element) {
+                  element.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+              }}
+            />
+          </div>
         )}
       </div>
     </div>

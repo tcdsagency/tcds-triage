@@ -2081,3 +2081,77 @@ export const paymentAdvancesRelations = relations(paymentAdvances, ({ one }) => 
     references: [users.id],
   }),
 }));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENT ASSIST TELEMETRY - Track AI suggestion usage and feedback
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const agentAssistActionEnum = pgEnum('agent_assist_action', [
+  'shown',
+  'used',
+  'dismissed',
+  'expanded',
+  'collapsed',
+]);
+
+export const agentAssistFeedbackEnum = pgEnum('agent_assist_feedback', [
+  'helpful',
+  'not_helpful',
+  'too_basic',
+  'incorrect',
+]);
+
+export const agentAssistTelemetry = pgTable('agent_assist_telemetry', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  userId: uuid('user_id').references(() => users.id),
+
+  // Call context (if during a call)
+  callId: uuid('call_id').references(() => calls.id),
+
+  // What was shown
+  suggestionType: varchar('suggestion_type', { length: 50 }).notNull(), // 'playbook', 'knowledge', 'compliance', 'upsell', 'next_action'
+  suggestionId: varchar('suggestion_id', { length: 100 }),
+  playbookId: varchar('playbook_id', { length: 100 }),
+  content: text('content'),
+
+  // User action
+  action: agentAssistActionEnum('action').notNull(),
+
+  // Feedback
+  feedback: agentAssistFeedbackEnum('feedback'),
+  feedbackNote: text('feedback_note'),
+
+  // Context
+  callTranscriptSnippet: text('call_transcript_snippet'), // Last 500 chars when suggestion was shown
+  formSection: varchar('form_section', { length: 100 }), // For form-based assist
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('agent_assist_telemetry_tenant_idx').on(table.tenantId),
+  userIdx: index('agent_assist_telemetry_user_idx').on(table.userId),
+  callIdx: index('agent_assist_telemetry_call_idx').on(table.callId),
+  typeIdx: index('agent_assist_telemetry_type_idx').on(table.suggestionType),
+  playbookIdx: index('agent_assist_telemetry_playbook_idx').on(table.playbookId),
+  createdAtIdx: index('agent_assist_telemetry_created_at_idx').on(table.createdAt),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENT ASSIST TELEMETRY RELATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const agentAssistTelemetryRelations = relations(agentAssistTelemetry, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [agentAssistTelemetry.tenantId],
+    references: [tenants.id],
+  }),
+  user: one(users, {
+    fields: [agentAssistTelemetry.userId],
+    references: [users.id],
+  }),
+  call: one(calls, {
+    fields: [agentAssistTelemetry.callId],
+    references: [calls.id],
+  }),
+}));

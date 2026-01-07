@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useCallWebSocket } from "@/hooks/useCallWebSocket";
 import TranscriptView from "./TranscriptView";
 import CoachingTip, { CoachingTipCompact } from "./CoachingTip";
+import LiveAssistCard, { LiveAssistCompact } from "./LiveAssistCard";
 import { MergedProfile } from "@/types/customer-profile";
+import { Playbook, AgentSuggestion, TelemetryFeedback } from "@/lib/agent-assist/types";
 
 // =============================================================================
 // TYPES
@@ -74,8 +76,14 @@ export default function CallPopup({
 }: CallPopupProps) {
   // UI State
   const [isMinimized, setIsMinimized] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "notes">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "notes" | "assist">("overview");
   const [callDuration, setCallDuration] = useState(0);
+
+  // Live Assist State
+  const [matchedPlaybook, setMatchedPlaybook] = useState<Playbook | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<AgentSuggestion[]>([]);
+  const [assistLoading, setAssistLoading] = useState(false);
+  const lastTranscriptLength = useRef(0);
   
   // Data State - Uses same MergedProfile type as CustomerProfilePage
   const [customerLookup, setCustomerLookup] = useState<CustomerLookup | null>(null);
@@ -226,6 +234,146 @@ export default function CallPopup({
   }, [isVisible, callStatus]);
 
   // =========================================================================
+  // LIVE ASSIST: Fetch playbook and suggestions based on transcript
+  // Debounced to avoid excessive API calls
+  // =========================================================================
+  useEffect(() => {
+    if (!isVisible || callStatus === "ended") return;
+
+    // Convert transcript segments to text
+    const transcriptText = transcript.map(s => s.text).join(" ");
+
+    // Only process if we have new content (at least 100 chars more)
+    if (transcriptText.length - lastTranscriptLength.current < 100) return;
+    lastTranscriptLength.current = transcriptText.length;
+
+    // Debounce API calls
+    const timeoutId = setTimeout(async () => {
+      setAssistLoading(true);
+
+      try {
+        // Fetch playbook match
+        const playbookRes = await fetch("/api/agent-assist/playbook", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transcript: transcriptText,
+            callType: direction,
+          }),
+        });
+
+        const playbookData = await playbookRes.json();
+        if (playbookData.success && playbookData.playbook) {
+          setMatchedPlaybook(playbookData.playbook);
+
+          // Track playbook shown
+          fetch("/api/agent-assist/telemetry", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              suggestionType: "playbook",
+              playbookId: playbookData.playbook.id,
+              action: "shown",
+              callTranscriptSnippet: transcriptText.slice(-500),
+            }),
+          }).catch(console.error);
+        }
+
+        // Fetch AI suggestions
+        const suggestionsRes = await fetch("/api/agent-assist/suggestions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transcript: transcriptText,
+            customerProfile: profile ? {
+              name: profile.name,
+              policyTypes: profile.activePolicyTypes?.map(p => p.type),
+              tenure: profile.customerSince,
+            } : undefined,
+            currentPlaybook: playbookData.playbook?.id,
+          }),
+        });
+
+        const suggestionsData = await suggestionsRes.json();
+        if (suggestionsData.success && suggestionsData.suggestions) {
+          setAiSuggestions(suggestionsData.suggestions);
+
+          // Track suggestions shown
+          for (const suggestion of suggestionsData.suggestions) {
+            fetch("/api/agent-assist/telemetry", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                suggestionType: suggestion.type,
+                suggestionId: suggestion.id,
+                action: "shown",
+                content: suggestion.title,
+                callTranscriptSnippet: transcriptText.slice(-500),
+              }),
+            }).catch(console.error);
+          }
+        }
+      } catch (err) {
+        console.error("Live Assist fetch error:", err);
+      } finally {
+        setAssistLoading(false);
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [transcript, isVisible, callStatus, direction, profile]);
+
+  // =========================================================================
+  // LIVE ASSIST: Handle suggestion usage and feedback
+  // =========================================================================
+  const handleUseSuggestion = useCallback((suggestion: AgentSuggestion) => {
+    // Track usage
+    fetch("/api/agent-assist/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        suggestionType: suggestion.type,
+        suggestionId: suggestion.id,
+        action: "used",
+        content: suggestion.title,
+      }),
+    }).catch(console.error);
+
+    // Remove from list after use
+    setAiSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
+  }, []);
+
+  const handleDismissSuggestion = useCallback((suggestion: AgentSuggestion) => {
+    // Track dismissal
+    fetch("/api/agent-assist/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        suggestionType: suggestion.type,
+        suggestionId: suggestion.id,
+        action: "dismissed",
+        content: suggestion.title,
+      }),
+    }).catch(console.error);
+
+    // Remove from list
+    setAiSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
+  }, []);
+
+  const handlePlaybookFeedback = useCallback((playbookId: string, feedback: TelemetryFeedback) => {
+    fetch("/api/agent-assist/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        suggestionType: "playbook",
+        playbookId,
+        action: "used",
+        feedback,
+      }),
+    }).catch(console.error);
+  }, []);
+
+  // =========================================================================
   // Post notes to HawkSoft and AgencyZoom
   // Uses existing API endpoints for note logging
   // =========================================================================
@@ -368,6 +516,9 @@ export default function CallPopup({
           </div>
         </div>
         {coaching && <CoachingTipCompact suggestion={coaching} />}
+        {(matchedPlaybook || aiSuggestions.length > 0) && (
+          <LiveAssistCompact playbook={matchedPlaybook} suggestionCount={aiSuggestions.length} />
+        )}
       </div>
     );
   }
@@ -628,19 +779,33 @@ export default function CallPopup({
               onClick={() => setActiveTab("overview")}
               className={cn(
                 "flex-1 px-4 py-2 text-sm font-medium",
-                activeTab === "overview" 
-                  ? "border-b-2 border-blue-500 text-blue-600" 
+                activeTab === "overview"
+                  ? "border-b-2 border-blue-500 text-blue-600"
                   : "text-gray-500 hover:text-gray-700"
               )}
             >
               📝 Transcript
             </button>
             <button
+              onClick={() => setActiveTab("assist")}
+              className={cn(
+                "flex-1 px-4 py-2 text-sm font-medium relative",
+                activeTab === "assist"
+                  ? "border-b-2 border-purple-500 text-purple-600"
+                  : "text-gray-500 hover:text-gray-700"
+              )}
+            >
+              🎯 Assist
+              {(matchedPlaybook || aiSuggestions.length > 0) && activeTab !== "assist" && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab("notes")}
               className={cn(
                 "flex-1 px-4 py-2 text-sm font-medium",
-                activeTab === "notes" 
-                  ? "border-b-2 border-blue-500 text-blue-600" 
+                activeTab === "notes"
+                  ? "border-b-2 border-blue-500 text-blue-600"
                   : "text-gray-500 hover:text-gray-700"
               )}
             >
@@ -659,6 +824,19 @@ export default function CallPopup({
               </div>
             )}
             
+            {activeTab === "assist" && (
+              <div className="h-full overflow-y-auto">
+                <LiveAssistCard
+                  playbook={matchedPlaybook}
+                  suggestions={aiSuggestions}
+                  isLoading={assistLoading}
+                  onUseSuggestion={handleUseSuggestion}
+                  onDismissSuggestion={handleDismissSuggestion}
+                  onPlaybookFeedback={handlePlaybookFeedback}
+                />
+              </div>
+            )}
+
             {activeTab === "notes" && (
               <div className="h-full flex flex-col p-4">
                 <div className="text-xs font-semibold text-gray-500 uppercase mb-2">
@@ -670,7 +848,7 @@ export default function CallPopup({
                   placeholder="Type notes during the call... These will be posted to HawkSoft and AgencyZoom."
                   className="flex-1 w-full p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 />
-                
+
                 {/* Post destinations and button */}
                 <div className="mt-3 flex items-center justify-between">
                   <div className="text-xs text-gray-500 flex items-center gap-3">
@@ -687,14 +865,14 @@ export default function CallPopup({
                       </span>
                     )}
                   </div>
-                  
+
                   <button
                     onClick={handlePostNotes}
                     disabled={!draftNotes.trim() || postingNotes}
                     className={cn(
                       "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-                      notePosted 
-                        ? "bg-green-500 text-white" 
+                      notePosted
+                        ? "bg-green-500 text-white"
                         : "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
                     )}
                   >
