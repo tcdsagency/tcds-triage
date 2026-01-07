@@ -93,6 +93,21 @@ export default function CallPopup({
   const [postingNotes, setPostingNotes] = useState(false);
   const [notePosted, setNotePosted] = useState(false);
 
+  // Wrap-Up State
+  const [showWrapUp, setShowWrapUp] = useState(false);
+  const [wrapupLoading, setWrapupLoading] = useState(false);
+  const [wrapupStatus, setWrapupStatus] = useState<string | null>(null);
+  const [wrapupData, setWrapupData] = useState<{
+    summary?: string;
+    aiCleanedSummary?: string;
+    requestType?: string;
+    insuranceType?: string;
+    policyNumbers?: string[];
+    customerName?: string;
+    aiExtraction?: any;
+    aiConfidence?: number;
+  } | null>(null);
+
   // WebSocket for transcript and coaching
   const { transcript, coaching, callStatus, isConnected } = useCallWebSocket(sessionId, isVisible);
 
@@ -260,6 +275,51 @@ export default function CallPopup({
       setPostingNotes(false);
     }
   }, [draftNotes, profile, direction]);
+
+  // =========================================================================
+  // Fetch Wrap-Up Data (from wrapupDrafts table - already has AI summary)
+  // =========================================================================
+  const fetchWrapupData = useCallback(async () => {
+    setWrapupLoading(true);
+    try {
+      const res = await fetch(`/api/wrapups/${sessionId}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setWrapupStatus(data.status);
+
+        if (data.hasWrapup && data.wrapup) {
+          setWrapupData(data.wrapup);
+          // Pre-fill notes with AI summary if available
+          if (data.wrapup.aiCleanedSummary && !draftNotes) {
+            setDraftNotes(data.wrapup.aiCleanedSummary);
+          } else if (data.wrapup.summary && !draftNotes) {
+            setDraftNotes(data.wrapup.summary);
+          }
+        } else if (data.hasTranscript && data.call?.aiSummary) {
+          // Fallback to call's aiSummary if no wrapup draft yet
+          setWrapupData({
+            summary: data.call.aiSummary,
+          });
+          if (!draftNotes) {
+            setDraftNotes(data.call.aiSummary);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch wrapup data:", err);
+      setWrapupStatus("error");
+    } finally {
+      setWrapupLoading(false);
+    }
+  }, [sessionId, draftNotes]);
+
+  // Fetch wrapup data when wrap-up modal is opened
+  useEffect(() => {
+    if (showWrapUp && !wrapupData && !wrapupLoading) {
+      fetchWrapupData();
+    }
+  }, [showWrapUp, wrapupData, wrapupLoading, fetchWrapupData]);
 
   // =========================================================================
   // Helpers
@@ -650,7 +710,7 @@ export default function CallPopup({
       {/* ===== FOOTER ===== */}
       <div className="border-t bg-gray-50 px-4 py-3 flex items-center justify-between">
         <div className="flex gap-2">
-          <button 
+          <button
             onClick={() => setActiveTab("notes")}
             className="px-4 py-2 text-sm bg-white border rounded-lg hover:bg-gray-50 flex items-center gap-1"
           >
@@ -662,18 +722,220 @@ export default function CallPopup({
         </div>
         <div className="flex gap-2">
           {customerLookup && (
-            <button 
+            <button
               onClick={openCustomerProfile}
               className="px-4 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200"
             >
               👤 Full Profile
             </button>
           )}
-          <button className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button
+            onClick={() => setShowWrapUp(true)}
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
             📋 Wrap-Up
           </button>
         </div>
       </div>
+
+      {/* ===== WRAP-UP MODAL ===== */}
+      {showWrapUp && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90%] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-gray-900 text-white px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">📋</span>
+                <div>
+                  <h2 className="font-semibold">Call Wrap-Up</h2>
+                  <p className="text-xs text-gray-400">
+                    {profile?.name || customerLookup?.name || phoneNumber} • {formatDuration(callDuration)}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowWrapUp(false)}
+                className="p-2 hover:bg-gray-700 rounded"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {/* AI Summary Section */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase flex items-center gap-2">
+                    <span>🤖</span> AI Call Summary
+                  </h3>
+                  {!wrapupLoading && wrapupData && (
+                    <button
+                      onClick={fetchWrapupData}
+                      className="text-xs text-blue-600 hover:text-blue-700"
+                    >
+                      Refresh
+                    </button>
+                  )}
+                </div>
+
+                {wrapupLoading ? (
+                  <div className="bg-blue-50 rounded-lg p-4 flex items-center gap-3">
+                    <span className="animate-spin text-xl">🔄</span>
+                    <span className="text-blue-700">Loading wrap-up data...</span>
+                  </div>
+                ) : wrapupStatus === "pending_transcript" ? (
+                  <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span>⏳</span>
+                      <span className="font-medium text-amber-800">Waiting for Transcript</span>
+                    </div>
+                    <p className="text-sm text-amber-700">
+                      The call transcript is still being fetched from the phone system.
+                      You can write notes manually below, or wait a moment and refresh.
+                    </p>
+                  </div>
+                ) : wrapupStatus === "pending_processing" ? (
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="animate-pulse">🤖</span>
+                      <span className="font-medium text-blue-800">AI Processing</span>
+                    </div>
+                    <p className="text-sm text-blue-700">
+                      The transcript is being processed by AI. The summary will appear shortly.
+                    </p>
+                  </div>
+                ) : wrapupData ? (
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+                    {/* Summary */}
+                    <p className="text-gray-700 mb-3">
+                      {wrapupData.aiCleanedSummary || wrapupData.summary || "No summary available"}
+                    </p>
+
+                    {/* Request Type & Insurance Type */}
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {wrapupData.requestType && (
+                        <span className={cn(
+                          "px-2 py-1 rounded text-xs font-medium",
+                          wrapupData.requestType.toLowerCase().includes("claim") && "bg-red-100 text-red-700",
+                          wrapupData.requestType.toLowerCase().includes("quote") && "bg-green-100 text-green-700",
+                          wrapupData.requestType.toLowerCase().includes("billing") && "bg-amber-100 text-amber-700",
+                          !["claim", "quote", "billing"].some(t => wrapupData.requestType?.toLowerCase().includes(t)) && "bg-gray-100 text-gray-700"
+                        )}>
+                          {wrapupData.requestType}
+                        </span>
+                      )}
+                      {wrapupData.insuranceType && (
+                        <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                          {wrapupData.insuranceType}
+                        </span>
+                      )}
+                      {wrapupData.aiConfidence && (
+                        <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                          {Math.round(wrapupData.aiConfidence * 100)}% confidence
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Policy Numbers */}
+                    {wrapupData.policyNumbers && wrapupData.policyNumbers.length > 0 && (
+                      <div className="text-sm mb-3">
+                        <span className="text-gray-500">Policies: </span>
+                        <span className="text-gray-700 font-mono">
+                          {wrapupData.policyNumbers.join(", ")}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* AI Extraction Data */}
+                    {wrapupData.aiExtraction && typeof wrapupData.aiExtraction === 'object' && (
+                      <div className="mt-3 pt-3 border-t border-blue-100">
+                        <div className="text-xs font-medium text-gray-500 mb-2">Extracted Data:</div>
+                        <div className="text-sm text-gray-600 space-y-1">
+                          {Object.entries(wrapupData.aiExtraction).slice(0, 5).map(([key, value]) => (
+                            <div key={key} className="flex gap-2">
+                              <span className="text-gray-400">{key}:</span>
+                              <span>{String(value)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <p className="text-sm text-gray-600">
+                      No AI summary available yet. You can write notes manually below.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Editable Notes */}
+              <div className="mb-6">
+                <label className="block text-sm font-semibold text-gray-700 uppercase mb-2">
+                  📝 Call Notes
+                </label>
+                <textarea
+                  value={draftNotes}
+                  onChange={(e) => setDraftNotes(e.target.value)}
+                  placeholder="Edit the AI-generated note or write your own..."
+                  rows={4}
+                  className="w-full p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  This note will be posted to {profile?.hawksoftId ? "HawkSoft" : ""}{profile?.hawksoftId && profile?.agencyzoomId ? " and " : ""}{profile?.agencyzoomId ? "AgencyZoom" : ""}
+                  {!profile?.hawksoftId && !profile?.agencyzoomId && "customer record"}
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 uppercase mb-2">
+                  Quick Actions
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button className="px-3 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center gap-1">
+                    📅 Schedule Follow-up
+                  </button>
+                  <button className="px-3 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center gap-1">
+                    🎫 Create Task
+                  </button>
+                  <button className="px-3 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center gap-1">
+                    📧 Send Email
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="border-t bg-gray-50 px-6 py-4 flex items-center justify-between">
+              <button
+                onClick={() => setShowWrapUp(false)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    handlePostNotes();
+                    setShowWrapUp(false);
+                    onClose();
+                  }}
+                  disabled={!draftNotes.trim() || postingNotes}
+                  className={cn(
+                    "px-6 py-2 rounded-lg text-sm font-medium transition-colors",
+                    "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  )}
+                >
+                  {postingNotes ? "Posting..." : "Post Notes & Close"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

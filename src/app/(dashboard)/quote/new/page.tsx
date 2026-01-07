@@ -172,6 +172,96 @@ interface HomeownersFormData {
   effectiveDate: string;
 }
 
+interface RentersFormData {
+  // Primary Insured
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  dob: string;
+  // Rental Property
+  rentalAddress: string;
+  rentalCity: string;
+  rentalState: string;
+  rentalZip: string;
+  unitType: string;
+  moveInDate: string;
+  // Coverage
+  personalProperty: string;
+  liability: string;
+  medicalPayments: string;
+  deductible: string;
+  // Valuables
+  hasHighValueItems: boolean;
+  jewelryValue: string;
+  electronicsValue: string;
+  otherValuablesValue: string;
+  // Liability
+  hasDog: boolean;
+  dogBreed: string;
+  // Prior Insurance
+  hasCurrentInsurance: boolean;
+  currentCarrier: string;
+  currentPremium: string;
+  // Discounts
+  wantsBundleAuto: boolean;
+  claimFree: boolean;
+  hasAutoPay: boolean;
+  hasPaperless: boolean;
+  // Notes
+  agentNotes: string;
+  effectiveDate: string;
+}
+
+interface UmbrellaFormData {
+  // Primary Insured
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  dob: string;
+  // Address
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  // Underlying Policies
+  hasAutoPolicy: boolean;
+  autoCarrier: string;
+  autoPolicyNumber: string;
+  autoBodilyInjury: string;
+  numVehicles: string;
+  numDrivers: string;
+  hasYouthfulDriver: boolean;
+  hasHomePolicy: boolean;
+  homeCarrier: string;
+  homePolicyNumber: string;
+  homeLiability: string;
+  hasWatercraftPolicy: boolean;
+  watercraftCarrier: string;
+  watercraftPolicyNumber: string;
+  hasOtherProperties: boolean;
+  numOtherProperties: string;
+  // Risk Questions
+  hasPool: boolean;
+  hasTrampoline: boolean;
+  hasDog: boolean;
+  dogBreed: string;
+  hasBusinessExposure: boolean;
+  businessDescription: string;
+  // Coverage
+  umbrellaLimit: string;
+  // Prior Insurance
+  hasCurrentUmbrella: boolean;
+  currentCarrier: string;
+  currentPremium: string;
+  hasClaims: boolean;
+  claimsDescription: string;
+  // Notes
+  agentNotes: string;
+  effectiveDate: string;
+}
+
 // =============================================================================
 // CONSTANTS
 // =============================================================================
@@ -179,6 +269,8 @@ interface HomeownersFormData {
 const QUOTE_TYPES: QuoteType[] = [
   { id: "personal_auto", name: "Personal Auto", icon: Car, description: "Auto insurance quote", available: true },
   { id: "homeowners", name: "Homeowners", icon: Home, description: "Home insurance quote", available: true },
+  { id: "renters", name: "Renters", icon: Home, description: "Renters insurance", available: true },
+  { id: "umbrella", name: "Umbrella", icon: Shield, description: "Excess liability", available: true },
   { id: "auto_home_bundle", name: "Auto + Home", icon: Home, description: "Bundle discount", available: false },
   { id: "recreational", name: "Recreational", icon: Ship, description: "Boat, RV, ATV", available: false },
   { id: "commercial", name: "Commercial", icon: Building2, description: "Business insurance", available: false },
@@ -254,6 +346,87 @@ const INITIAL_HOMEOWNERS_FORM: HomeownersFormData = {
   // Notes
   agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
 };
+
+const INITIAL_RENTERS_FORM: RentersFormData = {
+  // Primary Insured
+  firstName: "", lastName: "", email: "", phone: "", dob: "",
+  // Rental Property
+  rentalAddress: "", rentalCity: "", rentalState: "", rentalZip: "",
+  unitType: "apartment", moveInDate: "",
+  // Coverage
+  personalProperty: "25000", liability: "100000", medicalPayments: "1000", deductible: "500",
+  // Valuables
+  hasHighValueItems: false, jewelryValue: "", electronicsValue: "", otherValuablesValue: "",
+  // Liability
+  hasDog: false, dogBreed: "",
+  // Prior Insurance
+  hasCurrentInsurance: false, currentCarrier: "", currentPremium: "",
+  // Discounts
+  wantsBundleAuto: false, claimFree: true, hasAutoPay: true, hasPaperless: true,
+  // Notes
+  agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
+};
+
+const INITIAL_UMBRELLA_FORM: UmbrellaFormData = {
+  // Primary Insured
+  firstName: "", lastName: "", email: "", phone: "", dob: "",
+  // Address
+  address: "", city: "", state: "", zip: "",
+  // Underlying Policies
+  hasAutoPolicy: true, autoCarrier: "", autoPolicyNumber: "", autoBodilyInjury: "100/300",
+  numVehicles: "1", numDrivers: "1", hasYouthfulDriver: false,
+  hasHomePolicy: true, homeCarrier: "", homePolicyNumber: "", homeLiability: "300000",
+  hasWatercraftPolicy: false, watercraftCarrier: "", watercraftPolicyNumber: "",
+  hasOtherProperties: false, numOtherProperties: "0",
+  // Risk Questions
+  hasPool: false, hasTrampoline: false, hasDog: false, dogBreed: "",
+  hasBusinessExposure: false, businessDescription: "",
+  // Coverage
+  umbrellaLimit: "1000000",
+  // Prior Insurance
+  hasCurrentUmbrella: false, currentCarrier: "", currentPremium: "",
+  hasClaims: false, claimsDescription: "",
+  // Notes
+  agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
+};
+
+// Renters select options
+const UNIT_TYPES = [
+  { value: "apartment", label: "Apartment" },
+  { value: "condo", label: "Condo" },
+  { value: "townhouse", label: "Townhouse" },
+  { value: "single_family", label: "Single Family Home" },
+  { value: "duplex", label: "Duplex" },
+];
+
+const RENTERS_PP_OPTIONS = [
+  { value: "15000", label: "$15,000" },
+  { value: "20000", label: "$20,000" },
+  { value: "25000", label: "$25,000" },
+  { value: "30000", label: "$30,000" },
+  { value: "40000", label: "$40,000" },
+  { value: "50000", label: "$50,000" },
+];
+
+const RENTERS_DEDUCTIBLE_OPTIONS = [
+  { value: "250", label: "$250" },
+  { value: "500", label: "$500" },
+  { value: "1000", label: "$1,000" },
+];
+
+// Umbrella select options
+const UMBRELLA_LIMIT_OPTIONS = [
+  { value: "1000000", label: "$1,000,000" },
+  { value: "2000000", label: "$2,000,000" },
+  { value: "3000000", label: "$3,000,000" },
+  { value: "5000000", label: "$5,000,000" },
+];
+
+const AUTO_BI_OPTIONS = [
+  { value: "100/300", label: "$100K/$300K" },
+  { value: "250/500", label: "$250K/$500K" },
+  { value: "500/500", label: "$500K/$500K" },
+];
 
 // Homeowners select options
 const PROPERTY_TYPES = [
@@ -363,7 +536,9 @@ export default function QuoteIntakePage() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [autoFormData, setAutoFormData] = useState<AutoFormData>(INITIAL_AUTO_FORM);
   const [homeownersFormData, setHomeownersFormData] = useState<HomeownersFormData>(INITIAL_HOMEOWNERS_FORM);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["customer", "vehicles", "drivers", "coverage", "property", "propertyDetails", "roof"]));
+  const [rentersFormData, setRentersFormData] = useState<RentersFormData>(INITIAL_RENTERS_FORM);
+  const [umbrellaFormData, setUmbrellaFormData] = useState<UmbrellaFormData>(INITIAL_UMBRELLA_FORM);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["customer", "vehicles", "drivers", "coverage", "property", "propertyDetails", "roof", "rental", "underlying"]));
   const [aiProcessing, setAiProcessing] = useState(false);
   const [aiPasteText, setAiPasteText] = useState("");
   const [showAiPaste, setShowAiPaste] = useState(false);
@@ -405,7 +580,39 @@ export default function QuoteIntakePage() {
     return Math.round((filled / total) * 100);
   }, [homeownersFormData])();
 
-  const completion = selectedType === "homeowners" ? homeownersCompletion : autoCompletion;
+  // Renters form completion calculation
+  const rentersCompletion = useCallback(() => {
+    let filled = 0, total = 8;
+    if (rentersFormData.firstName) filled++;
+    if (rentersFormData.lastName) filled++;
+    if (rentersFormData.phone) filled++;
+    if (rentersFormData.rentalAddress) filled++;
+    if (rentersFormData.rentalCity) filled++;
+    if (rentersFormData.rentalState) filled++;
+    if (rentersFormData.rentalZip) filled++;
+    if (rentersFormData.personalProperty) filled++;
+    return Math.round((filled / total) * 100);
+  }, [rentersFormData])();
+
+  // Umbrella form completion calculation
+  const umbrellaCompletion = useCallback(() => {
+    let filled = 0, total = 8;
+    if (umbrellaFormData.firstName) filled++;
+    if (umbrellaFormData.lastName) filled++;
+    if (umbrellaFormData.phone) filled++;
+    if (umbrellaFormData.address) filled++;
+    if (umbrellaFormData.city) filled++;
+    if (umbrellaFormData.state) filled++;
+    if (umbrellaFormData.zip) filled++;
+    if (umbrellaFormData.umbrellaLimit) filled++;
+    return Math.round((filled / total) * 100);
+  }, [umbrellaFormData])();
+
+  const completion =
+    selectedType === "homeowners" ? homeownersCompletion :
+    selectedType === "renters" ? rentersCompletion :
+    selectedType === "umbrella" ? umbrellaCompletion :
+    autoCompletion;
 
   const toggleSection = (id: string) => {
     setExpandedSections(prev => {
@@ -432,6 +639,18 @@ export default function QuoteIntakePage() {
   // Homeowners form field updates
   const updateHomeownersField = (field: keyof HomeownersFormData, value: any) => {
     setHomeownersFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
+  };
+
+  // Renters form field updates
+  const updateRentersField = (field: keyof RentersFormData, value: any) => {
+    setRentersFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
+  };
+
+  // Umbrella form field updates
+  const updateUmbrellaField = (field: keyof UmbrellaFormData, value: any) => {
+    setUmbrellaFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
   };
 
@@ -491,6 +710,16 @@ export default function QuoteIntakePage() {
       if (!homeownersFormData.propertyAddress) errs.propertyAddress = "Required";
       if (!homeownersFormData.yearBuilt) errs.yearBuilt = "Required";
       if (!homeownersFormData.dwellingCoverage) errs.dwellingCoverage = "Required";
+    } else if (selectedType === "renters") {
+      if (!rentersFormData.firstName) errs.firstName = "Required";
+      if (!rentersFormData.lastName) errs.lastName = "Required";
+      if (!rentersFormData.phone) errs.phone = "Required";
+      if (!rentersFormData.rentalAddress) errs.rentalAddress = "Required";
+    } else if (selectedType === "umbrella") {
+      if (!umbrellaFormData.firstName) errs.firstName = "Required";
+      if (!umbrellaFormData.lastName) errs.lastName = "Required";
+      if (!umbrellaFormData.phone) errs.phone = "Required";
+      if (!umbrellaFormData.address) errs.address = "Required";
     } else {
       if (!autoFormData.firstName) errs.firstName = "Required";
       if (!autoFormData.lastName) errs.lastName = "Required";
@@ -595,11 +824,25 @@ export default function QuoteIntakePage() {
               <ArrowLeft className="w-4 h-4 mr-2" />Back
             </Button>
             <div className="flex items-center gap-3">
-              <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", selectedType === "homeowners" ? "bg-emerald-500/20" : "bg-blue-500/20")}>
-                {selectedType === "homeowners" ? <Home className="w-5 h-5 text-emerald-400" /> : <Car className="w-5 h-5 text-blue-400" />}
+              <div className={cn(
+                "w-10 h-10 rounded-lg flex items-center justify-center",
+                selectedType === "homeowners" ? "bg-emerald-500/20" :
+                selectedType === "renters" ? "bg-purple-500/20" :
+                selectedType === "umbrella" ? "bg-amber-500/20" :
+                "bg-blue-500/20"
+              )}>
+                {selectedType === "homeowners" ? <Home className="w-5 h-5 text-emerald-400" /> :
+                 selectedType === "renters" ? <Home className="w-5 h-5 text-purple-400" /> :
+                 selectedType === "umbrella" ? <Shield className="w-5 h-5 text-amber-400" /> :
+                 <Car className="w-5 h-5 text-blue-400" />}
               </div>
               <div>
-                <h1 className="font-semibold text-white">{selectedType === "homeowners" ? "Homeowners Quote" : "Personal Auto Quote"}</h1>
+                <h1 className="font-semibold text-white">
+                  {selectedType === "homeowners" ? "Homeowners Quote" :
+                   selectedType === "renters" ? "Renters Quote" :
+                   selectedType === "umbrella" ? "Umbrella Quote" :
+                   "Personal Auto Quote"}
+                </h1>
                 <p className="text-sm text-gray-400">Smart Form with AI Assist</p>
               </div>
             </div>
@@ -1034,6 +1277,283 @@ export default function QuoteIntakePage() {
                   <textarea value={homeownersFormData.agentNotes} onChange={(e) => updateHomeownersField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
                 </div>
                 <Field label="Effective Date" value={homeownersFormData.effectiveDate} onChange={(v: string) => updateHomeownersField("effectiveDate", v)} type="date" />
+              </div>
+            </Section>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* RENTERS FORM */}
+        {/* ========================================================================= */}
+        {selectedType === "renters" && (
+          <>
+            {/* Primary Insured */}
+            <Section id="customer" icon={User} title="Renter Information">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="First Name" value={rentersFormData.firstName} onChange={(v: string) => updateRentersField("firstName", v)} required placeholder="John" error={errors.firstName} />
+                <Field label="Last Name" value={rentersFormData.lastName} onChange={(v: string) => updateRentersField("lastName", v)} required placeholder="Doe" error={errors.lastName} />
+                <Field label="Phone" value={rentersFormData.phone} onChange={(v: string) => updateRentersField("phone", v)} type="tel" required placeholder="(555) 555-5555" error={errors.phone} />
+                <Field label="Email" value={rentersFormData.email} onChange={(v: string) => updateRentersField("email", v)} type="email" placeholder="john@example.com" />
+                <Field label="Date of Birth" value={rentersFormData.dob} onChange={(v: string) => updateRentersField("dob", v)} type="date" />
+              </div>
+            </Section>
+
+            {/* Rental Property */}
+            <Section id="rental" icon={Home} title="Rental Property">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Street Address" value={rentersFormData.rentalAddress} onChange={(v: string) => updateRentersField("rentalAddress", v)} required placeholder="123 Main St, Apt 4B" className="col-span-2" error={errors.rentalAddress} />
+                <Field label="City" value={rentersFormData.rentalCity} onChange={(v: string) => updateRentersField("rentalCity", v)} required placeholder="Birmingham" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="State" value={rentersFormData.rentalState} onChange={(v: string) => updateRentersField("rentalState", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="ZIP" value={rentersFormData.rentalZip} onChange={(v: string) => updateRentersField("rentalZip", v)} required placeholder="35203" />
+                </div>
+                <Field label="Unit Type" value={rentersFormData.unitType} onChange={(v: string) => updateRentersField("unitType", v)} options={UNIT_TYPES} />
+                <Field label="Move-In Date" value={rentersFormData.moveInDate} onChange={(v: string) => updateRentersField("moveInDate", v)} type="date" />
+              </div>
+            </Section>
+
+            {/* Coverage */}
+            <Section id="coverage" icon={Shield} title="Coverage Options">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Personal Property" value={rentersFormData.personalProperty} onChange={(v: string) => updateRentersField("personalProperty", v)} options={RENTERS_PP_OPTIONS} />
+                <Field label="Personal Liability" value={rentersFormData.liability} onChange={(v: string) => updateRentersField("liability", v)} options={LIABILITY_OPTIONS} />
+                <Field label="Medical Payments" value={rentersFormData.medicalPayments} onChange={(v: string) => updateRentersField("medicalPayments", v)} options={MED_PAY_OPTIONS} />
+                <Field label="Deductible" value={rentersFormData.deductible} onChange={(v: string) => updateRentersField("deductible", v)} options={RENTERS_DEDUCTIBLE_OPTIONS} />
+              </div>
+            </Section>
+
+            {/* High Value Items */}
+            <Section id="valuables" icon={DollarSign} title="High-Value Items">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={rentersFormData.hasHighValueItems} onChange={(e) => updateRentersField("hasHighValueItems", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">I have high-value items to schedule</span>
+                </label>
+                {rentersFormData.hasHighValueItems && (
+                  <>
+                    <Field label="Jewelry Value" value={rentersFormData.jewelryValue} onChange={(v: string) => updateRentersField("jewelryValue", v)} placeholder="$5,000" />
+                    <Field label="Electronics Value" value={rentersFormData.electronicsValue} onChange={(v: string) => updateRentersField("electronicsValue", v)} placeholder="$3,000" />
+                    <Field label="Other Valuables" value={rentersFormData.otherValuablesValue} onChange={(v: string) => updateRentersField("otherValuablesValue", v)} placeholder="Collectibles, art, etc." className="col-span-2" />
+                  </>
+                )}
+              </div>
+            </Section>
+
+            {/* Liability */}
+            <Section id="liability" icon={Shield} title="Liability Considerations">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={rentersFormData.hasDog} onChange={(e) => updateRentersField("hasDog", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Dog(s)</span>
+                </label>
+                {rentersFormData.hasDog && (
+                  <Field label="Dog Breed(s)" value={rentersFormData.dogBreed} onChange={(v: string) => updateRentersField("dogBreed", v)} placeholder="Labrador, Beagle" className="col-span-2" />
+                )}
+              </div>
+            </Section>
+
+            {/* Prior Insurance */}
+            <Section id="prior" icon={FileText} title="Current Insurance">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Currently Insured?" value={rentersFormData.hasCurrentInsurance ? "yes" : "no"} onChange={(v: string) => updateRentersField("hasCurrentInsurance", v === "yes")} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]} />
+                {rentersFormData.hasCurrentInsurance && (
+                  <>
+                    <Field label="Current Carrier" value={rentersFormData.currentCarrier} onChange={(v: string) => updateRentersField("currentCarrier", v)} placeholder="Lemonade" />
+                    <Field label="Current Premium" value={rentersFormData.currentPremium} onChange={(v: string) => updateRentersField("currentPremium", v)} placeholder="$15/mo" />
+                  </>
+                )}
+              </div>
+            </Section>
+
+            {/* Discounts */}
+            <Section id="discounts" icon={DollarSign} title="Potential Discounts">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={rentersFormData.wantsBundleAuto} onChange={(e) => updateRentersField("wantsBundleAuto", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Bundle with Auto</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={rentersFormData.claimFree} onChange={(e) => updateRentersField("claimFree", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Claims-Free</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={rentersFormData.hasPaperless} onChange={(e) => updateRentersField("hasPaperless", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Paperless</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={rentersFormData.hasAutoPay} onChange={(e) => updateRentersField("hasAutoPay", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Auto-Pay</span>
+                </label>
+              </div>
+            </Section>
+
+            {/* Notes */}
+            <Section id="notes" icon={FileText} title="Notes & Submission">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Agent Notes</label>
+                  <textarea value={rentersFormData.agentNotes} onChange={(e) => updateRentersField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                </div>
+                <Field label="Effective Date" value={rentersFormData.effectiveDate} onChange={(v: string) => updateRentersField("effectiveDate", v)} type="date" />
+              </div>
+            </Section>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* UMBRELLA FORM */}
+        {/* ========================================================================= */}
+        {selectedType === "umbrella" && (
+          <>
+            {/* Primary Insured */}
+            <Section id="customer" icon={User} title="Primary Insured">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="First Name" value={umbrellaFormData.firstName} onChange={(v: string) => updateUmbrellaField("firstName", v)} required placeholder="John" error={errors.firstName} />
+                <Field label="Last Name" value={umbrellaFormData.lastName} onChange={(v: string) => updateUmbrellaField("lastName", v)} required placeholder="Doe" error={errors.lastName} />
+                <Field label="Phone" value={umbrellaFormData.phone} onChange={(v: string) => updateUmbrellaField("phone", v)} type="tel" required placeholder="(555) 555-5555" error={errors.phone} />
+                <Field label="Email" value={umbrellaFormData.email} onChange={(v: string) => updateUmbrellaField("email", v)} type="email" placeholder="john@example.com" />
+                <Field label="Date of Birth" value={umbrellaFormData.dob} onChange={(v: string) => updateUmbrellaField("dob", v)} type="date" />
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50">
+                <h4 className="text-sm font-medium text-gray-300 mb-4">Mailing Address</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Street Address" value={umbrellaFormData.address} onChange={(v: string) => updateUmbrellaField("address", v)} required placeholder="123 Main St" className="col-span-2" error={errors.address} />
+                  <Field label="City" value={umbrellaFormData.city} onChange={(v: string) => updateUmbrellaField("city", v)} required placeholder="Birmingham" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="State" value={umbrellaFormData.state} onChange={(v: string) => updateUmbrellaField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                    <Field label="ZIP" value={umbrellaFormData.zip} onChange={(v: string) => updateUmbrellaField("zip", v)} required placeholder="35203" />
+                  </div>
+                </div>
+              </div>
+            </Section>
+
+            {/* Underlying Auto Policy */}
+            <Section id="underlying" icon={Car} title="Underlying Auto Policy">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={umbrellaFormData.hasAutoPolicy} onChange={(e) => updateUmbrellaField("hasAutoPolicy", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Has underlying auto policy</span>
+                </label>
+                {umbrellaFormData.hasAutoPolicy && (
+                  <>
+                    <Field label="Auto Carrier" value={umbrellaFormData.autoCarrier} onChange={(v: string) => updateUmbrellaField("autoCarrier", v)} placeholder="Progressive" />
+                    <Field label="Policy Number" value={umbrellaFormData.autoPolicyNumber} onChange={(v: string) => updateUmbrellaField("autoPolicyNumber", v)} placeholder="Optional" />
+                    <Field label="Bodily Injury Limits" value={umbrellaFormData.autoBodilyInjury} onChange={(v: string) => updateUmbrellaField("autoBodilyInjury", v)} options={AUTO_BI_OPTIONS} />
+                    <Field label="# of Vehicles" value={umbrellaFormData.numVehicles} onChange={(v: string) => updateUmbrellaField("numVehicles", v)} placeholder="2" />
+                    <Field label="# of Drivers" value={umbrellaFormData.numDrivers} onChange={(v: string) => updateUmbrellaField("numDrivers", v)} placeholder="2" />
+                    <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                      <input type="checkbox" checked={umbrellaFormData.hasYouthfulDriver} onChange={(e) => updateUmbrellaField("hasYouthfulDriver", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                      <span className="text-sm text-gray-300">Youthful Driver (&lt;25)</span>
+                    </label>
+                  </>
+                )}
+              </div>
+            </Section>
+
+            {/* Underlying Home Policy */}
+            <Section id="underlyingHome" icon={Home} title="Underlying Home Policy">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={umbrellaFormData.hasHomePolicy} onChange={(e) => updateUmbrellaField("hasHomePolicy", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Has underlying home/renters policy</span>
+                </label>
+                {umbrellaFormData.hasHomePolicy && (
+                  <>
+                    <Field label="Home Carrier" value={umbrellaFormData.homeCarrier} onChange={(v: string) => updateUmbrellaField("homeCarrier", v)} placeholder="State Farm" />
+                    <Field label="Policy Number" value={umbrellaFormData.homePolicyNumber} onChange={(v: string) => updateUmbrellaField("homePolicyNumber", v)} placeholder="Optional" />
+                    <Field label="Liability Limit" value={umbrellaFormData.homeLiability} onChange={(v: string) => updateUmbrellaField("homeLiability", v)} options={LIABILITY_OPTIONS} />
+                  </>
+                )}
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={umbrellaFormData.hasWatercraftPolicy} onChange={(e) => updateUmbrellaField("hasWatercraftPolicy", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Watercraft Policy</span>
+                  </label>
+                  {umbrellaFormData.hasWatercraftPolicy && (
+                    <>
+                      <Field label="Watercraft Carrier" value={umbrellaFormData.watercraftCarrier} onChange={(v: string) => updateUmbrellaField("watercraftCarrier", v)} placeholder="Carrier" />
+                      <Field label="Policy Number" value={umbrellaFormData.watercraftPolicyNumber} onChange={(v: string) => updateUmbrellaField("watercraftPolicyNumber", v)} placeholder="Optional" />
+                    </>
+                  )}
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={umbrellaFormData.hasOtherProperties} onChange={(e) => updateUmbrellaField("hasOtherProperties", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Additional Properties</span>
+                  </label>
+                  {umbrellaFormData.hasOtherProperties && (
+                    <Field label="# of Properties" value={umbrellaFormData.numOtherProperties} onChange={(v: string) => updateUmbrellaField("numOtherProperties", v)} placeholder="1" />
+                  )}
+                </div>
+              </div>
+            </Section>
+
+            {/* Risk Questions */}
+            <Section id="risk" icon={Shield} title="Risk Questions">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={umbrellaFormData.hasPool} onChange={(e) => updateUmbrellaField("hasPool", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Swimming Pool</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={umbrellaFormData.hasTrampoline} onChange={(e) => updateUmbrellaField("hasTrampoline", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Trampoline</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={umbrellaFormData.hasDog} onChange={(e) => updateUmbrellaField("hasDog", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Dog(s)</span>
+                </label>
+                {umbrellaFormData.hasDog && (
+                  <Field label="Dog Breed(s)" value={umbrellaFormData.dogBreed} onChange={(v: string) => updateUmbrellaField("dogBreed", v)} placeholder="Breed(s)" />
+                )}
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={umbrellaFormData.hasBusinessExposure} onChange={(e) => updateUmbrellaField("hasBusinessExposure", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Business exposure (board seats, side business, etc.)</span>
+                </label>
+                {umbrellaFormData.hasBusinessExposure && (
+                  <Field label="Describe Exposure" value={umbrellaFormData.businessDescription} onChange={(v: string) => updateUmbrellaField("businessDescription", v)} placeholder="Board member of nonprofit..." className="col-span-2" />
+                )}
+              </div>
+            </Section>
+
+            {/* Coverage */}
+            <Section id="coverage" icon={Shield} title="Umbrella Coverage">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Umbrella Limit" value={umbrellaFormData.umbrellaLimit} onChange={(v: string) => updateUmbrellaField("umbrellaLimit", v)} options={UMBRELLA_LIMIT_OPTIONS} />
+              </div>
+            </Section>
+
+            {/* Prior Insurance */}
+            <Section id="prior" icon={FileText} title="Current Umbrella Coverage">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Has Current Umbrella?" value={umbrellaFormData.hasCurrentUmbrella ? "yes" : "no"} onChange={(v: string) => updateUmbrellaField("hasCurrentUmbrella", v === "yes")} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]} />
+                {umbrellaFormData.hasCurrentUmbrella && (
+                  <>
+                    <Field label="Current Carrier" value={umbrellaFormData.currentCarrier} onChange={(v: string) => updateUmbrellaField("currentCarrier", v)} placeholder="USAA" />
+                    <Field label="Current Premium" value={umbrellaFormData.currentPremium} onChange={(v: string) => updateUmbrellaField("currentPremium", v)} placeholder="$350/yr" />
+                  </>
+                )}
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={umbrellaFormData.hasClaims} onChange={(e) => updateUmbrellaField("hasClaims", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Claims or Lawsuits in Past 5 Years</span>
+                </label>
+                {umbrellaFormData.hasClaims && (
+                  <div className="col-span-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Claims Details</label>
+                    <textarea value={umbrellaFormData.claimsDescription} onChange={(e) => updateUmbrellaField("claimsDescription", e.target.value)} placeholder="Type, date, and outcome for each claim/lawsuit..." rows={3} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            {/* Notes */}
+            <Section id="notes" icon={FileText} title="Notes & Submission">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Agent Notes</label>
+                  <textarea value={umbrellaFormData.agentNotes} onChange={(e) => updateUmbrellaField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                </div>
+                <Field label="Effective Date" value={umbrellaFormData.effectiveDate} onChange={(v: string) => updateUmbrellaField("effectiveDate", v)} type="date" />
               </div>
             </Section>
           </>

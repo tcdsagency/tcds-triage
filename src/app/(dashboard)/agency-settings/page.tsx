@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink, Clock, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 
 export default function AgencySettingsPage() {
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("general");
   const [syncing, setSyncing] = useState<string | null>(null);
   
@@ -30,10 +32,87 @@ export default function AgencySettingsPage() {
     openphone: { connected: false, lastSync: null, status: "inactive" },
   });
 
+  const [afterHours, setAfterHours] = useState({
+    enabled: true,
+    timezone: "America/Chicago",
+    businessHours: {
+      monday: { open: "08:00", close: "17:00", closed: false },
+      tuesday: { open: "08:00", close: "17:00", closed: false },
+      wednesday: { open: "08:00", close: "17:00", closed: false },
+      thursday: { open: "08:00", close: "17:00", closed: false },
+      friday: { open: "08:00", close: "17:00", closed: false },
+      saturday: { open: "", close: "", closed: true },
+      sunday: { open: "", close: "", closed: true },
+    },
+    autoReplyMessage: "Thank you for contacting TCDS Insurance. We're currently closed but will return your call during business hours. For emergencies, please call 911 or your insurance carrier's 24/7 claims line.",
+    cooldownHours: 4,
+    holidaysEnabled: true,
+  });
+
+  // Load settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const res = await fetch("/api/settings");
+        const data = await res.json();
+        if (data.success && data.settings) {
+          if (data.settings.agency) {
+            setAgency({
+              name: data.settings.agency.name || "",
+              phone: data.settings.agency.phone || "",
+              email: data.settings.agency.email || "",
+              address: data.settings.agency.address?.street || "",
+              city: data.settings.agency.address?.city || "",
+              state: data.settings.agency.address?.state || "",
+              zip: data.settings.agency.address?.zip || "",
+              website: data.settings.agency.website || "",
+            });
+          }
+          if (data.settings.afterHours) {
+            setAfterHours(data.settings.afterHours);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load settings:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadSettings();
+  }, []);
+
   const handleSave = async () => {
     setSaving(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setSaving(false);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agency: {
+            name: agency.name,
+            phone: agency.phone,
+            email: agency.email,
+            website: agency.website,
+            address: {
+              street: agency.address,
+              city: agency.city,
+              state: agency.state,
+              zip: agency.zip,
+            },
+          },
+          afterHours,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch (err) {
+      console.error("Failed to save settings:", err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSync = async (integration: string) => {
@@ -44,6 +123,7 @@ export default function AgencySettingsPage() {
 
   const tabs = [
     { id: "general", label: "General", icon: Building2 },
+    { id: "afterhours", label: "After Hours", icon: Moon },
     { id: "team", label: "Team", icon: Users },
     { id: "integrations", label: "Integrations", icon: Link2 },
     { id: "notifications", label: "Notifications", icon: Bell },
@@ -140,6 +220,161 @@ export default function AgencySettingsPage() {
                     <Button variant="outline" size="sm">Upload Logo</Button>
                     <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 2MB. Recommended: 200x200px</p>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "afterhours" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">After Hours Settings</h2>
+                  <p className="text-sm text-gray-500 mt-1">Configure business hours and after-hours auto-reply</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={cn(
+                    "px-2 py-1 rounded-full text-xs font-medium",
+                    afterHours.enabled ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                  )}>
+                    {afterHours.enabled ? "Active" : "Disabled"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Enable Toggle */}
+              <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">Enable After Hours Auto-Reply</div>
+                    <div className="text-sm text-gray-500">Automatically send SMS replies when messages come in after hours</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={afterHours.enabled}
+                    onChange={(e) => setAfterHours({ ...afterHours, enabled: e.target.checked })}
+                    className="w-5 h-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                </label>
+              </div>
+
+              {/* Timezone */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Timezone</label>
+                <select
+                  value={afterHours.timezone}
+                  onChange={(e) => setAfterHours({ ...afterHours, timezone: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                >
+                  <option value="America/New_York">Eastern Time (ET)</option>
+                  <option value="America/Chicago">Central Time (CT)</option>
+                  <option value="America/Denver">Mountain Time (MT)</option>
+                  <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                </select>
+              </div>
+
+              {/* Business Hours */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Business Hours</h3>
+                <div className="space-y-2">
+                  {(Object.entries(afterHours.businessHours) as [string, { open: string; close: string; closed: boolean }][]).map(([day, hours]) => (
+                    <div key={day} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                      <div className="w-24 font-medium text-gray-700 dark:text-gray-300 capitalize">{day}</div>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={hours.closed}
+                          onChange={(e) => setAfterHours({
+                            ...afterHours,
+                            businessHours: {
+                              ...afterHours.businessHours,
+                              [day]: { ...hours, closed: e.target.checked }
+                            }
+                          })}
+                          className="w-4 h-4 rounded border-gray-300 text-gray-600"
+                        />
+                        <span className="text-sm text-gray-500">Closed</span>
+                      </label>
+                      {!hours.closed && (
+                        <>
+                          <input
+                            type="time"
+                            value={hours.open}
+                            onChange={(e) => setAfterHours({
+                              ...afterHours,
+                              businessHours: {
+                                ...afterHours.businessHours,
+                                [day]: { ...hours, open: e.target.value }
+                              }
+                            })}
+                            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-sm"
+                          />
+                          <span className="text-gray-400">to</span>
+                          <input
+                            type="time"
+                            value={hours.close}
+                            onChange={(e) => setAfterHours({
+                              ...afterHours,
+                              businessHours: {
+                                ...afterHours.businessHours,
+                                [day]: { ...hours, close: e.target.value }
+                              }
+                            })}
+                            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-sm"
+                          />
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Holidays */}
+              <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">Observe Major Holidays</div>
+                    <div className="text-sm text-gray-500">Treat major US holidays (New Year's, Memorial Day, July 4th, Labor Day, Thanksgiving, Christmas) as after-hours</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={afterHours.holidaysEnabled}
+                    onChange={(e) => setAfterHours({ ...afterHours, holidaysEnabled: e.target.checked })}
+                    className="w-5 h-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                </label>
+              </div>
+
+              {/* Auto-Reply Message */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Auto-Reply Message</label>
+                <textarea
+                  value={afterHours.autoReplyMessage}
+                  onChange={(e) => setAfterHours({ ...afterHours, autoReplyMessage: e.target.value })}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white resize-none"
+                  placeholder="Enter the message to send when someone contacts you after hours..."
+                />
+                <p className="text-xs text-gray-500 mt-1">{afterHours.autoReplyMessage.length}/320 characters</p>
+              </div>
+
+              {/* Cooldown */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reply Cooldown</label>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={afterHours.cooldownHours}
+                    onChange={(e) => setAfterHours({ ...afterHours, cooldownHours: parseInt(e.target.value) })}
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value={1}>1 hour</option>
+                    <option value={2}>2 hours</option>
+                    <option value={4}>4 hours</option>
+                    <option value={8}>8 hours</option>
+                    <option value={12}>12 hours</option>
+                    <option value={24}>24 hours</option>
+                  </select>
+                  <span className="text-sm text-gray-500">Don't send another auto-reply to the same number within this time</span>
                 </div>
               </div>
             </div>
@@ -390,9 +625,22 @@ export default function AgencySettingsPage() {
 
           {/* Save Button */}
           <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 flex justify-end">
-            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700">
-              {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-              Save Changes
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className={cn(
+                "transition-colors",
+                saved ? "bg-green-600 hover:bg-green-700" : "bg-emerald-600 hover:bg-emerald-700"
+              )}
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : saved ? (
+                <Check className="w-4 h-4 mr-2" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              {saved ? "Saved!" : "Save Changes"}
             </Button>
           </div>
         </div>
