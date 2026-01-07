@@ -8,6 +8,7 @@ import {
   jsonb,
   varchar,
   decimal,
+  real,
   pgEnum,
   index,
   uniqueIndex,
@@ -1989,5 +1990,94 @@ export const riskMonitorActivityEventsRelations = relations(riskMonitorActivityE
   policy: one(riskMonitorPolicies, {
     fields: [riskMonitorActivityEvents.policyId],
     references: [riskMonitorPolicies.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAYMENT ADVANCES - Agency payment advances for customer premiums
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const paymentAdvanceStatusEnum = pgEnum('payment_advance_status', [
+  'pending',
+  'processed',
+  'failed',
+]);
+
+export const paymentAdvanceTypeEnum = pgEnum('payment_advance_type', [
+  'card',
+  'checking',
+]);
+
+export const paymentAdvances = pgTable('payment_advances', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // Customer info
+  firstName: text('first_name').notNull(),
+  lastName: text('last_name').notNull(),
+
+  // Policy
+  policyNumber: text('policy_number').notNull(),
+
+  // Payment amounts
+  amount: real('amount').notNull(),
+  processingFee: real('processing_fee').notNull(),
+  convenienceFee: real('convenience_fee').default(0),
+  convenienceFeeWaived: boolean('convenience_fee_waived').default(false),
+  totalAmount: real('total_amount').notNull(),
+
+  // Payment method
+  paymentType: paymentAdvanceTypeEnum('payment_type').notNull(),
+  paymentInfo: text('payment_info').notNull(), // Encrypted card/ACH details
+
+  // Dates
+  draftDate: text('draft_date').notNull(), // Date to charge customer
+  submittedDate: text('submitted_date').notNull(), // Date form was submitted
+
+  // Status
+  status: paymentAdvanceStatusEnum('status').default('pending'),
+  processedAt: timestamp('processed_at'),
+
+  // Notes
+  notes: text('notes'),
+  reason: text('reason'), // 'Hardship', 'New policy issued/payment date match', 'Other'
+  reasonDetails: text('reason_details'), // Details if reason is 'Other'
+
+  // AgencyZoom linkage
+  agencyzoomId: text('agencyzoom_id'),
+  agencyzoomType: text('agencyzoom_type'), // 'customer' | 'lead'
+
+  // Submitter
+  submitterEmail: text('submitter_email'),
+  submitterUserId: uuid('submitter_user_id').references(() => users.id),
+
+  // Notifications
+  reminderSent: boolean('reminder_sent').default(false),
+  reminderSentAt: timestamp('reminder_sent_at'),
+  emailSentAt: timestamp('email_sent_at'),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('payment_advances_tenant_idx').on(table.tenantId),
+  policyIdx: index('payment_advances_policy_idx').on(table.policyNumber),
+  statusIdx: index('payment_advances_status_idx').on(table.status),
+  draftDateIdx: index('payment_advances_draft_date_idx').on(table.draftDate),
+  createdAtIdx: index('payment_advances_created_at_idx').on(table.createdAt),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAYMENT ADVANCES RELATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const paymentAdvancesRelations = relations(paymentAdvances, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [paymentAdvances.tenantId],
+    references: [tenants.id],
+  }),
+  submitter: one(users, {
+    fields: [paymentAdvances.submitterUserId],
+    references: [users.id],
   }),
 }));
