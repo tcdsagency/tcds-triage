@@ -2,10 +2,13 @@
 // Fetches and merges customer data from HawkSoft and AgencyZoom
 
 import { NextRequest, NextResponse } from "next/server";
-import { 
-  getHawkSoftClient, 
-  FULL_CLIENT_INCLUDES, 
-  FULL_CLIENT_EXPANDS 
+import { db } from "@/db";
+import { customers } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import {
+  getHawkSoftClient,
+  FULL_CLIENT_INCLUDES,
+  FULL_CLIENT_EXPANDS
 } from "@/lib/api/hawksoft";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 import { 
@@ -546,10 +549,35 @@ export async function GET(
   try {
     const { id: customerId } = await params;
     const searchParams = request.nextUrl.searchParams;
-    const hawksoftId = searchParams.get("hsId");
-    const agencyzoomId = searchParams.get("azId");
-    
+    let hawksoftId = searchParams.get("hsId");
+    let agencyzoomId = searchParams.get("azId");
+
     debugInfo.customerId = customerId;
+
+    // If external IDs not provided, try to look them up from database
+    if (!hawksoftId && !agencyzoomId) {
+      try {
+        const [customerRecord] = await db
+          .select({
+            hawksoftClientCode: customers.hawksoftClientCode,
+            agencyzoomId: customers.agencyzoomId,
+          })
+          .from(customers)
+          .where(eq(customers.id, customerId))
+          .limit(1);
+
+        if (customerRecord) {
+          hawksoftId = customerRecord.hawksoftClientCode || null;
+          agencyzoomId = customerRecord.agencyzoomId || null;
+          debugInfo.dbLookup = "success";
+        } else {
+          debugInfo.dbLookup = "customer not found in database";
+        }
+      } catch (dbError: any) {
+        debugInfo.dbLookup = `error: ${dbError.message}`;
+      }
+    }
+
     debugInfo.hawksoftId = hawksoftId;
     debugInfo.agencyzoomId = agencyzoomId;
     
