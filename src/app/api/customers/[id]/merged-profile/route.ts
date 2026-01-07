@@ -410,12 +410,9 @@ function transformHawkSoftPolicy(hsPolicy: any): Policy {
         
       // ❌ INACTIVE STATUSES
       case "replaced:rewrite":
-        // OLD policy that was replaced - ALWAYS inactive
-        return false;
-        
       case "replaced":
-        // Uses Expiration date. Future = Active, Past = Inactive
-        return expirationDate ? expirationDate > today : false;
+        // Policy was superseded by another - ALWAYS inactive
+        return false;
         
       case "expired":
         // Always inactive
@@ -435,6 +432,10 @@ function transformHawkSoftPolicy(hsPolicy: any): Policy {
         return false;
         
       default:
+        // Check if status contains "replaced" - always inactive
+        if (rawStatus.includes('replaced')) {
+          return false;
+        }
         // Unknown status - check if expired based on expiration date
         return !expirationDate || expirationDate > today;
     }

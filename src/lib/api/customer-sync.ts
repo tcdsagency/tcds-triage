@@ -958,11 +958,6 @@ function calculatePolicyActiveStatus(policy: any): PolicyActiveStatus {
     return { status: 'active', isActive: true, isDeadFile: false, reason: 'Rewrite (new replacing policy)' };
   }
 
-  // REPLACED:REWRITE - this is the OLD policy that was replaced (INACTIVE)
-  if (rawStatus === 'replaced:rewrite' || rawStatus.includes('replaced:rewrite')) {
-    return { status: 'cancelled', isActive: false, isDeadFile: false, reason: 'Replaced by rewrite' };
-  }
-
   // CANCELLED - check cancellation date (statusDate)
   if (rawStatus === 'cancelled' || rawStatus === 'canceled') {
     if (statusDate && statusDate > now) {
@@ -980,12 +975,9 @@ function calculatePolicyActiveStatus(policy: any): PolicyActiveStatus {
     return { status: 'non_renewed', isActive: false, isDeadFile: false, reason: 'Non-renewed' };
   }
 
-  // REPLACED (general) - check expiration
-  if (rawStatus === 'replaced') {
-    if (expirationDate && expirationDate > now) {
-      return { status: 'active', isActive: true, isDeadFile: false, reason: 'Replaced but not yet expired' };
-    }
-    return { status: 'cancelled', isActive: false, isDeadFile: false, reason: 'Replaced and expired' };
+  // REPLACED (general) - always inactive (policy was superseded by another)
+  if (rawStatus === 'replaced' || rawStatus.startsWith('replaced:') || rawStatus.includes('replaced')) {
+    return { status: 'cancelled', isActive: false, isDeadFile: false, reason: 'Replaced by another policy' };
   }
 
   // EXPIRED
