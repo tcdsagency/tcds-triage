@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
 // =============================================================================
 
 interface SearchResult {
-  id: number;
+  id: string; // Local database UUID
+  agencyzoomId?: string; // AgencyZoom ID for API calls
   type: "customer" | "lead";
   firstName: string;
   lastName: string;
@@ -115,7 +116,18 @@ export default function IdCardsPage() {
       const res = await fetch(`/api/customers/search?q=${encodeURIComponent(searchQuery)}`);
       const data = await res.json();
       if (data.results) {
-        setSearchResults(data.results);
+        // Map search results to SearchResult interface
+        const mapped = data.results.map((r: any) => ({
+          id: r.id,
+          agencyzoomId: r.agencyzoomId,
+          type: r.isLead ? "lead" : "customer",
+          firstName: r.firstName,
+          lastName: r.lastName,
+          email: r.email,
+          phone: r.phone,
+          hawksoftClientNumber: r.hawksoftClientCode,
+        }));
+        setSearchResults(mapped);
       }
     } catch (error) {
       console.error("Search error:", error);
@@ -151,8 +163,19 @@ export default function IdCardsPage() {
     setHawkSoftError(null);
 
     try {
+      // Use hawksoft client number directly if available, otherwise use AgencyZoom ID
+      let lookupId: string;
+      if (customer.hawksoftClientNumber) {
+        lookupId = `hawksoft-${customer.hawksoftClientNumber}`;
+      } else if (customer.agencyzoomId) {
+        lookupId = customer.agencyzoomId;
+      } else {
+        // Fall back to local ID (will likely fail AgencyZoom lookup)
+        lookupId = customer.id;
+      }
+
       const res = await fetch(
-        `/api/id-cards/hawksoft-data/${customer.id}?type=${customer.type}`
+        `/api/id-cards/hawksoft-data/${lookupId}?type=${customer.type}`
       );
       const data = await res.json();
 

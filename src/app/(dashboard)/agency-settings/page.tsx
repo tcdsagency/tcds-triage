@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2 } from "lucide-react";
+import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2, Key, Eye, EyeOff, Zap, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +53,17 @@ export default function AgencySettingsPage() {
     openphone: { connected: false, lastSync: null, status: "inactive" },
   });
 
+  // Integration settings state
+  const [integrationsData, setIntegrationsData] = useState<any[]>([]);
+  const [integrationsGrouped, setIntegrationsGrouped] = useState<any[]>([]);
+  const [integrationsLoading, setIntegrationsLoading] = useState(true);
+  const [editingIntegration, setEditingIntegration] = useState<any>(null);
+  const [integrationFormData, setIntegrationFormData] = useState<Record<string, string>>({});
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
+  const [savingIntegration, setSavingIntegration] = useState(false);
+
   const [afterHours, setAfterHours] = useState({
     enabled: true,
     timezone: "America/Chicago",
@@ -101,6 +112,83 @@ export default function AgencySettingsPage() {
     };
     loadSettings();
   }, []);
+
+  // Load integrations data
+  useEffect(() => {
+    const loadIntegrations = async () => {
+      try {
+        const res = await fetch("/api/integrations");
+        const data = await res.json();
+        if (data.success) {
+          setIntegrationsData(data.integrations);
+          setIntegrationsGrouped(data.grouped);
+        }
+      } catch (err) {
+        console.error("Failed to load integrations:", err);
+      } finally {
+        setIntegrationsLoading(false);
+      }
+    };
+    loadIntegrations();
+  }, []);
+
+  // Open integration config modal
+  const handleConfigureIntegration = (integration: any) => {
+    setEditingIntegration(integration);
+    setIntegrationFormData({});
+    setShowPasswords({});
+    setTestResult(null);
+  };
+
+  // Test integration connection
+  const handleTestIntegration = async (integrationId: string, credentials?: Record<string, string>) => {
+    setTestingIntegration(integrationId);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/integrations/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ integrationId, credentials }),
+      });
+      const data = await res.json();
+      setTestResult({ id: integrationId, success: data.success, message: data.message });
+    } catch (err) {
+      setTestResult({ id: integrationId, success: false, message: "Test failed" });
+    } finally {
+      setTestingIntegration(null);
+    }
+  };
+
+  // Save integration credentials
+  const handleSaveIntegration = async () => {
+    if (!editingIntegration) return;
+    setSavingIntegration(true);
+    try {
+      const res = await fetch("/api/integrations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          integrationId: editingIntegration.id,
+          credentials: integrationFormData,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Reload integrations
+        const reloadRes = await fetch("/api/integrations");
+        const reloadData = await reloadRes.json();
+        if (reloadData.success) {
+          setIntegrationsData(reloadData.integrations);
+          setIntegrationsGrouped(reloadData.grouped);
+        }
+        setEditingIntegration(null);
+      }
+    } catch (err) {
+      console.error("Failed to save integration:", err);
+    } finally {
+      setSavingIntegration(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -605,133 +693,226 @@ export default function AgencySettingsPage() {
 
           {activeTab === "integrations" && (
             <div className="space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Connected Services</h2>
-              
-              <div className="space-y-4">
-                {/* HawkSoft */}
-                <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                        <Database className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">HawkSoft</div>
-                        <div className="text-sm text-gray-500">Agency Management System</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {integrations.hawksoft.connected ? (
-                        <Badge className="bg-green-100 text-green-700">
-                          <Check className="w-3 h-3 mr-1" />
-                          Connected
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Not Connected</Badge>
-                      )}
-                    </div>
-                  </div>
-                  {integrations.hawksoft.connected && (
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
-                      <span className="text-sm text-gray-500">Last sync: {integrations.hawksoft.lastSync}</span>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleSync("hawksoft")}
-                        disabled={syncing === "hawksoft"}
-                      >
-                        {syncing === "hawksoft" ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                        )}
-                        Sync Now
-                      </Button>
-                    </div>
-                  )}
-                </div>
-
-                {/* AgencyZoom */}
-                <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                        <Users className="w-5 h-5 text-purple-600" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">AgencyZoom</div>
-                        <div className="text-sm text-gray-500">CRM & Lead Management</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {integrations.agencyzoom.connected ? (
-                        <Badge className="bg-green-100 text-green-700">
-                          <Check className="w-3 h-3 mr-1" />
-                          Connected
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Not Connected</Badge>
-                      )}
-                    </div>
-                  </div>
-                  {integrations.agencyzoom.connected && (
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
-                      <span className="text-sm text-gray-500">Last sync: {integrations.agencyzoom.lastSync}</span>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => handleSync("agencyzoom")}
-                        disabled={syncing === "agencyzoom"}
-                      >
-                        {syncing === "agencyzoom" ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                        )}
-                        Sync Now
-                      </Button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Twilio */}
-                <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg opacity-75">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                        <Bell className="w-5 h-5 text-red-600" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">Twilio</div>
-                        <div className="text-sm text-gray-500">SMS & Voice</div>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      Connect
-                      <ExternalLink className="w-4 h-4 ml-2" />
-                    </Button>
-                  </div>
-                </div>
-
-                {/* OpenPhone */}
-                <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg opacity-75">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                        <Bell className="w-5 h-5 text-green-600" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900 dark:text-white">OpenPhone</div>
-                        <div className="text-sm text-gray-500">Business Phone System</div>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      Connect
-                      <ExternalLink className="w-4 h-4 ml-2" />
-                    </Button>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Integration Settings</h2>
+                  <p className="text-sm text-gray-500">Configure API keys and credentials for external services</p>
                 </div>
               </div>
+
+              {integrationsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {integrationsGrouped.map((group) => (
+                    <div key={group.category}>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">{group.category}</h3>
+                      <div className="space-y-3">
+                        {group.integrations.map((integration: any) => (
+                          <div
+                            key={integration.id}
+                            className={cn(
+                              "p-4 border rounded-lg transition-colors",
+                              integration.isConfigured
+                                ? "border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10"
+                                : "border-gray-200 dark:border-gray-700"
+                            )}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className={cn(
+                                  "w-10 h-10 rounded-lg flex items-center justify-center",
+                                  integration.isConfigured
+                                    ? "bg-green-100 dark:bg-green-900/30"
+                                    : "bg-gray-100 dark:bg-gray-800"
+                                )}>
+                                  <Key className={cn(
+                                    "w-5 h-5",
+                                    integration.isConfigured ? "text-green-600" : "text-gray-400"
+                                  )} />
+                                </div>
+                                <div>
+                                  <div className="font-medium text-gray-900 dark:text-white">{integration.name}</div>
+                                  <div className="text-sm text-gray-500">{integration.description}</div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                {integration.isConfigured ? (
+                                  <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                    <Check className="w-3 h-3 mr-1" />
+                                    {integration.configSource === "environment" ? "Configured (env)" : "Configured"}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary">Not Configured</Badge>
+                                )}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleConfigureIntegration(integration)}
+                                >
+                                  <Settings2 className="w-4 h-4 mr-2" />
+                                  Configure
+                                </Button>
+                                {integration.isConfigured && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleTestIntegration(integration.id)}
+                                    disabled={testingIntegration === integration.id}
+                                  >
+                                    {testingIntegration === integration.id ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Zap className="w-4 h-4" />
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Show test result */}
+                            {testResult && testResult.id === integration.id && (
+                              <div className={cn(
+                                "mt-3 p-2 rounded text-sm",
+                                testResult.success
+                                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                              )}>
+                                {testResult.success ? <Check className="w-4 h-4 inline mr-2" /> : <AlertCircle className="w-4 h-4 inline mr-2" />}
+                                {testResult.message}
+                              </div>
+                            )}
+
+                            {/* Show configured fields */}
+                            {integration.isConfigured && integration.configSource === "database" && (
+                              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                                <div className="flex flex-wrap gap-3">
+                                  {integration.fields.map((field: any) => (
+                                    <div key={field.key} className="text-xs">
+                                      <span className="text-gray-500">{field.label}:</span>
+                                      <span className="ml-1 font-mono text-gray-700 dark:text-gray-300">
+                                        {integration.values[field.key]?.isSet ? integration.values[field.key].maskedValue : "—"}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Configure Integration Modal */}
+              {editingIntegration && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4">
+                    <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                          Configure {editingIntegration.name}
+                        </h3>
+                        <p className="text-sm text-gray-500">{editingIntegration.description}</p>
+                      </div>
+                      <button
+                        onClick={() => setEditingIntegration(null)}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="p-4 space-y-4">
+                      {editingIntegration.fields.map((field: any) => (
+                        <div key={field.key}>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            {field.label} {field.required && <span className="text-red-500">*</span>}
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={field.type === "password" && !showPasswords[field.key] ? "password" : "text"}
+                              value={integrationFormData[field.key] || ""}
+                              onChange={(e) => setIntegrationFormData({
+                                ...integrationFormData,
+                                [field.key]: e.target.value,
+                              })}
+                              placeholder={field.placeholder || (editingIntegration.values[field.key]?.isSet ? editingIntegration.values[field.key].maskedValue : "")}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                            />
+                            {field.type === "password" && (
+                              <button
+                                type="button"
+                                onClick={() => setShowPasswords({
+                                  ...showPasswords,
+                                  [field.key]: !showPasswords[field.key],
+                                })}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              >
+                                {showPasswords[field.key] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            )}
+                          </div>
+                          {editingIntegration.values[field.key]?.isSet && (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Current: {editingIntegration.values[field.key].maskedValue}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Test result in modal */}
+                      {testResult && testResult.id === editingIntegration.id && (
+                        <div className={cn(
+                          "p-3 rounded-lg text-sm",
+                          testResult.success
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                        )}>
+                          {testResult.success ? <Check className="w-4 h-4 inline mr-2" /> : <AlertCircle className="w-4 h-4 inline mr-2" />}
+                          {testResult.message}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-b-xl">
+                      <Button
+                        variant="outline"
+                        onClick={() => handleTestIntegration(editingIntegration.id, integrationFormData)}
+                        disabled={testingIntegration === editingIntegration.id}
+                      >
+                        {testingIntegration === editingIntegration.id ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Zap className="w-4 h-4 mr-2" />
+                        )}
+                        Test Connection
+                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" onClick={() => setEditingIntegration(null)}>
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={handleSaveIntegration}
+                          disabled={savingIntegration}
+                          className="bg-emerald-600 hover:bg-emerald-700"
+                        >
+                          {savingIntegration ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Save className="w-4 h-4 mr-2" />
+                          )}
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

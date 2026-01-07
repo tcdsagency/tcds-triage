@@ -445,8 +445,8 @@ export default function InvoiceGeneratorPage() {
       }
 
       y -= 20;
-      page.drawText("✂ Detach and return with payment", {
-        x: (width - 200) / 2,
+      page.drawText("--- Detach and return with payment ---", {
+        x: (width - 220) / 2,
         y,
         size: 10,
         font: helvetica,
