@@ -12,7 +12,7 @@ interface TeamMember {
   extension: string;
   status: PresenceStatus;
   statusText?: string;
-  avatar?: string;
+  avatarUrl?: string;
 }
 
 // =============================================================================
@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
         email: users.email,
         role: users.role,
         extension: users.extension,
+        avatarUrl: users.avatarUrl,
       })
       .from(users)
       .where(eq(users.tenantId, tenantId));
@@ -115,6 +116,7 @@ export async function GET(request: NextRequest) {
               extension: user.extension || '',
               status,
               statusText,
+              avatarUrl: user.avatarUrl || undefined,
             };
           });
 
@@ -147,6 +149,7 @@ export async function GET(request: NextRequest) {
         extension: user.extension || `10${index + 1}`,
         status: mockStatus.status,
         statusText: mockStatus.text,
+        avatarUrl: user.avatarUrl || undefined,
       };
     });
 

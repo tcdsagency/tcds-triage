@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { customers, policies, vehicles, drivers, users, properties } from '@/db/schema';
 import { eq, or, ilike, sql, and, desc } from 'drizzle-orm';
+import { getPolicyTypeFromLineOfBusiness } from '@/types/customer-profile';
 
 // GET /api/customers/search?q=query&limit=20
 export async function GET(request: NextRequest) {
@@ -188,23 +189,70 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Calculate active status dynamically based on status and dates
+    const calculateIsActive = (p: any): boolean => {
+      const status = (p.status || '').toLowerCase();
+      const now = new Date();
+      const expirationDate = p.expirationDate ? new Date(p.expirationDate) : null;
+
+      // Replaced policies are ALWAYS inactive
+      if (status.includes('replaced')) return false;
+
+      // Dead file statuses
+      if (['deadfiled', 'prospect', 'purge', 'void', 'quote', 'lead', 'rejected', 'archived'].some(s => status.includes(s))) {
+        return false;
+      }
+
+      // Cancelled/expired
+      if (status === 'cancelled' || status === 'canceled' || status === 'expired' || status === 'non_renewed') {
+        return false;
+      }
+
+      // Check expiration for active/renewal/rewrite
+      if (status === 'active' || status === 'renewal' || status === 'renew' || status === 'rewrite' || status === 'new') {
+        return !expirationDate || expirationDate > now;
+      }
+
+      // Default: check expiration
+      return !expirationDate || expirationDate > now;
+    };
+
+    // Calculate display status
+    const getDisplayStatus = (p: any, isActive: boolean): string => {
+      const status = (p.status || '').toLowerCase();
+      if (status.includes('replaced')) return 'replaced';
+      if (status === 'cancelled' || status === 'canceled') return 'cancelled';
+      if (status === 'expired' || (p.expirationDate && new Date(p.expirationDate) < new Date())) return 'expired';
+      if (status === 'non_renewed') return 'non_renewed';
+      if (isActive) return 'active';
+      return status || 'unknown';
+    };
+
     // Group policies by customer with vehicles, drivers, and properties
     const policyMap = new Map<string, any[]>();
     for (const p of policyData) {
       const existing = policyMap.get(p.customerId) || [];
+      const isActive = calculateIsActive(p);
+      // Transform lineOfBusiness to type (same as merged-profile API)
+      const policyType = getPolicyTypeFromLineOfBusiness(p.lineOfBusiness || '');
       existing.push({
         ...p,
         premium: p.premium ? parseFloat(p.premium) : null,
         vehicles: vehicleMap.get(p.id) || [],
         drivers: driverMap.get(p.id) || [],
         properties: propertyMap.get(p.id) || [],
+        // Override status based on calculation
+        status: getDisplayStatus(p, isActive),
+        isActive,
+        // Add computed type field (same as merged-profile)
+        type: policyType,
       });
       policyMap.set(p.customerId, existing);
     }
 
     const enrichedResults = results.map(r => {
       const custPolicies = policyMap.get(r.id) || [];
-      const activePolicies = custPolicies.filter(p => p.status === 'active');
+      const activePolicies = custPolicies.filter(p => p.isActive);
       const policyTypes = [...new Set(activePolicies.map(p => p.lineOfBusiness))];
       
       // Determine policy status

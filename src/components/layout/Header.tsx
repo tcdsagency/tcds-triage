@@ -30,6 +30,8 @@ export function Header({ user }: HeaderProps) {
   const router = useRouter();
   const supabase = createClient();
 
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   // Close search results when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -39,6 +41,18 @@ export function Header({ user }: HeaderProps) {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Keyboard shortcut (Cmd+K or Ctrl+K) to focus search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Search function
@@ -173,19 +187,25 @@ export function Header({ user }: HeaderProps) {
           </label>
           <Search className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-gray-400" />
           <input
+            ref={searchInputRef}
             id="search-field"
-            className="block h-full w-full border-0 py-0 pl-8 pr-0 text-gray-900 placeholder:text-gray-400 focus:ring-0 sm:text-sm"
+            className="block h-full w-full border-0 py-0 pl-8 pr-16 text-gray-900 placeholder:text-gray-400 focus:ring-0 sm:text-sm"
             placeholder="Search customers, policies, calls..."
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => searchResults.length > 0 && setShowSearchResults(true)}
           />
-          {searchLoading && (
-            <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+          {/* Keyboard shortcut hint */}
+          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+            {searchLoading ? (
               <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-            </div>
-          )}
+            ) : (
+              <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-400 bg-gray-100 rounded border border-gray-200">
+                <span className="text-xs">⌘</span>K
+              </kbd>
+            )}
+          </div>
 
           {/* Search Results Dropdown */}
           {showSearchResults && searchResults.length > 0 && (

@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { getPolicyTypeFromLineOfBusiness, PolicyType } from "@/types/customer-profile";
+import { PolicyType } from "@/types/customer-profile";
 
 interface Coverage {
   type: string;
@@ -84,6 +84,7 @@ interface Policy {
   id: string;
   policyNumber: string;
   lineOfBusiness: string;
+  type: PolicyType;  // Computed from lineOfBusiness by API
   carrier: string | null;
   status: string;
   effectiveDate: string | null;
@@ -160,13 +161,6 @@ const POLICY_TYPE_NAMES: Record<PolicyType, string> = {
   other: "Policy",
 };
 
-function getLobInfo(lob: string): { name: string; type: PolicyType } {
-  const type = getPolicyTypeFromLineOfBusiness(lob);
-  return { 
-    name: POLICY_TYPE_NAMES[type], 
-    type 
-  };
-}
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -256,19 +250,17 @@ export default function CustomersPage() {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
-  const getPolicyIcon = (lob: string) => {
-    const info = getLobInfo(lob);
-    return POLICY_ICONS[info.type] || POLICY_ICONS.default;
+  // Use type directly from API (already computed from lineOfBusiness)
+  const getPolicyIcon = (type: PolicyType) => {
+    return POLICY_ICONS[type] || POLICY_ICONS.default;
   };
 
-  const getPolicyColor = (lob: string) => {
-    const info = getLobInfo(lob);
-    return POLICY_COLORS[info.type] || POLICY_COLORS.default;
+  const getPolicyColor = (type: PolicyType) => {
+    return POLICY_COLORS[type] || POLICY_COLORS.default;
   };
 
-  const getPolicyName = (lob: string) => {
-    const info = getLobInfo(lob);
-    return info.name;
+  const getPolicyName = (type: PolicyType) => {
+    return POLICY_TYPE_NAMES[type] || "Policy";
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -421,9 +413,9 @@ export default function CustomersPage() {
                   {customer.policies.length > 0 && (
                     <div className="flex -space-x-1">
                       {customer.policies.slice(0, 3).map((p, i) => {
-                        const Icon = getPolicyIcon(p.lineOfBusiness);
+                        const Icon = getPolicyIcon(p.type);
                         return (
-                          <div key={i} className={cn("w-6 h-6 rounded-full flex items-center justify-center", getPolicyColor(p.lineOfBusiness))}>
+                          <div key={i} className={cn("w-6 h-6 rounded-full flex items-center justify-center", getPolicyColor(p.type))}>
                             <Icon className="w-3 h-3" />
                           </div>
                         );
@@ -581,9 +573,9 @@ export default function CustomersPage() {
                 </h3>
                 <div className="space-y-3">
                   {selectedCustomer.policies.map((policy) => {
-                    const Icon = getPolicyIcon(policy.lineOfBusiness);
+                    const Icon = getPolicyIcon(policy.type);
                     const isExpanded = expandedPolicies.has(policy.id);
-                    
+
                     return (
                       <div key={policy.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                         {/* Policy Header */}
@@ -593,14 +585,14 @@ export default function CustomersPage() {
                       >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", getPolicyColor(policy.lineOfBusiness))}>
+                              <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", getPolicyColor(policy.type))}>
                                 <Icon className="w-5 h-5" />
                               </div>
                               <div>
                                 <div className="font-medium text-gray-900">
-                                  {getPolicyName(policy.lineOfBusiness) === "Policy" 
-                                    ? "Insurance Policy" 
-                                    : `${getPolicyName(policy.lineOfBusiness)} Insurance`}
+                                  {getPolicyName(policy.type) === "Policy"
+                                    ? "Insurance Policy"
+                                    : `${getPolicyName(policy.type)} Insurance`}
                                 </div>
                                 <div className="text-sm text-gray-500">
                                   {policy.carrier} • {policy.policyNumber}
@@ -610,7 +602,12 @@ export default function CustomersPage() {
                             <div className="flex items-center gap-3">
                               <Badge variant="secondary" className={cn(
                                 "text-xs",
-                                policy.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                                policy.status === "active" && "bg-green-100 text-green-700",
+                                policy.status === "cancelled" && "bg-gray-100 text-gray-600",
+                                policy.status === "replaced" && "bg-orange-100 text-orange-700",
+                                policy.status === "expired" && "bg-red-100 text-red-700",
+                                policy.status === "non_renewed" && "bg-yellow-100 text-yellow-700",
+                                !["active", "cancelled", "replaced", "expired", "non_renewed"].includes(policy.status) && "bg-gray-100 text-gray-600"
                               )}>
                                 {policy.status}
                               </Badge>

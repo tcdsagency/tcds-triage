@@ -25,6 +25,7 @@ interface SettingsUpdate {
     phone?: string;
     email?: string;
     website?: string;
+    logoUrl?: string;
     address?: {
       street: string;
       city: string;
@@ -54,6 +55,7 @@ export async function GET() {
         phone: tenants.phone,
         email: tenants.email,
         website: tenants.website,
+        logoUrl: tenants.logoUrl,
         address: tenants.address,
         timezone: tenants.timezone,
         businessHours: tenants.businessHours,
@@ -77,6 +79,7 @@ export async function GET() {
           phone: tenant.phone,
           email: tenant.email,
           website: tenant.website,
+          logoUrl: tenant.logoUrl,
           address: tenant.address,
         },
         afterHours: {
@@ -144,6 +147,7 @@ export async function PUT(request: NextRequest) {
       if (body.agency.phone) updateData.phone = body.agency.phone;
       if (body.agency.email) updateData.email = body.agency.email;
       if (body.agency.website) updateData.website = body.agency.website;
+      if (body.agency.logoUrl !== undefined) updateData.logoUrl = body.agency.logoUrl;
       if (body.agency.address) updateData.address = body.agency.address;
     }
 

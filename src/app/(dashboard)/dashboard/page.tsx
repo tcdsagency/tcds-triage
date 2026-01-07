@@ -60,6 +60,7 @@ interface TeamMember {
   extension: string;
   status: "available" | "away" | "dnd" | "on_call" | "offline";
   statusText?: string;
+  avatarUrl?: string;
 }
 
 export default function DashboardPage() {
@@ -330,17 +331,17 @@ export default function DashboardPage() {
                 <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 text-left max-w-sm mx-auto">
                   <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Suggested Actions</p>
                   <div className="space-y-2">
-                    <Link href="/ai-tasks" className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
-                      <PhoneCall className="w-4 h-4 text-emerald-500" />
-                      <span>Who should I call today?</span>
+                    <Link href="/ai-tasks" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 hover:text-emerald-700 dark:hover:text-emerald-400 transition-all hover:shadow-sm group">
+                      <PhoneCall className="w-5 h-5 text-emerald-500 group-hover:scale-110 transition-transform" />
+                      <span className="font-medium">Who should I call today?</span>
                     </Link>
-                    <Link href="/quotes" className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
-                      <FileText className="w-4 h-4 text-purple-500" />
-                      <span>Follow up on pending quotes</span>
+                    <Link href="/quotes" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-400 transition-all hover:shadow-sm group">
+                      <FileText className="w-5 h-5 text-purple-500 group-hover:scale-110 transition-transform" />
+                      <span className="font-medium">Follow up on pending quotes</span>
                     </Link>
-                    <Link href="/training" className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
-                      <Award className="w-4 h-4 text-blue-500" />
-                      <span>Complete training modules</span>
+                    <Link href="/training" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-400 transition-all hover:shadow-sm group">
+                      <Award className="w-5 h-5 text-blue-500 group-hover:scale-110 transition-transform" />
+                      <span className="font-medium">Complete training modules</span>
                     </Link>
                   </div>
                 </div>
@@ -550,7 +551,7 @@ function StatCard({
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
             <div className="flex items-baseline gap-2 flex-wrap">
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">{value}</p>
+              <p className="text-4xl font-extrabold text-gray-900 dark:text-white leading-none">{value}</p>
               {change && (
                 <span className={cn(
                   "text-xs font-medium flex items-center gap-0.5 px-1.5 py-0.5 rounded-full",
@@ -643,12 +644,23 @@ function TeamPresenceCard({ member }: { member: TeamMember }) {
       getStatusBg(member.status)
     )} title={`${member.name} - ${getStatusLabel(member.status)}`}>
       <div className="relative">
-        <div className={cn(
-          "w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center ring-3",
-          getStatusRing(member.status)
-        )}>
-          <span className="text-white text-sm font-semibold">{initials}</span>
-        </div>
+        {member.avatarUrl ? (
+          <img
+            src={member.avatarUrl}
+            alt={member.name}
+            className={cn(
+              "w-12 h-12 rounded-full object-cover ring-3",
+              getStatusRing(member.status)
+            )}
+          />
+        ) : (
+          <div className={cn(
+            "w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center ring-3",
+            getStatusRing(member.status)
+          )}>
+            <span className="text-white text-sm font-semibold">{initials}</span>
+          </div>
+        )}
         <div className={cn(
           "absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white dark:border-gray-800",
           getStatusColor(member.status)

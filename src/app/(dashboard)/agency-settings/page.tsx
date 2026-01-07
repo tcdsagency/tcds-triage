@@ -98,6 +98,10 @@ export default function AgencySettingsPage() {
   // JSON Import state
   const [showJsonImport, setShowJsonImport] = useState(false);
   const [jsonImportText, setJsonImportText] = useState("");
+
+  // Logo upload state
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
   const [jsonImportLoading, setJsonImportLoading] = useState(false);
   const [jsonImportError, setJsonImportError] = useState<string | null>(null);
 
@@ -136,6 +140,9 @@ export default function AgencySettingsPage() {
               zip: data.settings.agency.address?.zip || "",
               website: data.settings.agency.website || "",
             });
+            if (data.settings.agency.logoUrl) {
+              setLogoUrl(data.settings.agency.logoUrl);
+            }
           }
           if (data.settings.afterHours) {
             setAfterHours(data.settings.afterHours);
@@ -529,6 +536,57 @@ export default function AgencySettingsPage() {
     }
   };
 
+  // Handle logo upload
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file (PNG, JPG, etc.)');
+      return;
+    }
+
+    // Validate file size (2MB max)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('File size must be less than 2MB');
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      // Convert to base64 for simple storage (could use object storage for production)
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+
+        // Save to settings
+        const res = await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agency: {
+              ...agency,
+              logoUrl: base64,
+            },
+          }),
+        });
+
+        if (res.ok) {
+          setLogoUrl(base64);
+        } else {
+          alert('Failed to upload logo');
+        }
+        setLogoUploading(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Logo upload error:', err);
+      alert('Failed to upload logo');
+      setLogoUploading(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -766,11 +824,45 @@ export default function AgencySettingsPage() {
               <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">Agency Logo</h3>
                 <div className="flex items-center gap-4">
-                  <div className="w-24 h-24 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                    <Building2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+                  <div className="w-24 h-24 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center overflow-hidden">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt="Agency Logo" className="w-full h-full object-cover" />
+                    ) : (
+                      <Building2 className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+                    )}
                   </div>
                   <div>
-                    <Button variant="outline" size="sm">Upload Logo</Button>
+                    <input
+                      type="file"
+                      id="logo-upload"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      className="hidden"
+                    />
+                    <label htmlFor="logo-upload">
+                      <Button variant="outline" size="sm" asChild disabled={logoUploading}>
+                        <span className="cursor-pointer">
+                          {logoUploading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Uploading...
+                            </>
+                          ) : (
+                            logoUrl ? "Change Logo" : "Upload Logo"
+                          )}
+                        </span>
+                      </Button>
+                    </label>
+                    {logoUrl && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-2 text-red-500 hover:text-red-600"
+                        onClick={() => setLogoUrl(null)}
+                      >
+                        Remove
+                      </Button>
+                    )}
                     <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 2MB. Recommended: 200x200px</p>
                   </div>
                 </div>
