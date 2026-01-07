@@ -557,6 +557,152 @@ export const properties = pgTable('properties', {
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
+// PROPERTY LOOKUPS (Cache for Property Intelligence searches)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const propertyLookups = pgTable('property_lookups', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Address & Geocoding
+  address: text('address').notNull(),
+  formattedAddress: text('formatted_address'),
+  latitude: decimal('latitude', { precision: 10, scale: 7 }).notNull(),
+  longitude: decimal('longitude', { precision: 10, scale: 7 }).notNull(),
+
+  // Nearmap Data (cached)
+  nearmapData: jsonb('nearmap_data').$type<{
+    surveyDate: string;
+    building: {
+      footprintArea: number;
+      count: number;
+      polygons: any[];
+    };
+    roof: {
+      material: string;
+      condition: string;
+      conditionScore: number;
+      area: number;
+      age?: number;
+    };
+    pool: {
+      present: boolean;
+      type?: 'in-ground' | 'above-ground';
+      fenced?: boolean;
+    };
+    solar: {
+      present: boolean;
+      panelCount?: number;
+      area?: number;
+    };
+    vegetation: {
+      treeCount: number;
+      coveragePercent: number;
+      proximityToStructure: 'none' | 'minor' | 'moderate' | 'significant';
+    };
+    hazards: {
+      trampoline: boolean;
+      debris: boolean;
+      construction: boolean;
+    };
+    tileUrl: string;
+  }>(),
+
+  // RPR Data (cached)
+  rprData: jsonb('rpr_data').$type<{
+    propertyId: string;
+    beds: number;
+    baths: number;
+    sqft: number;
+    stories: number;
+    yearBuilt: number;
+    roofType: string;
+    foundation: string;
+    exteriorWalls: string;
+    hvac: string;
+    lotSqft: number;
+    lotAcres: number;
+    ownerName: string;
+    ownerOccupied: boolean;
+    mailingAddress: string;
+    assessedValue: number;
+    estimatedValue: number;
+    taxAmount: number;
+    lastSaleDate: string;
+    lastSalePrice: number;
+    schools: {
+      district: string;
+      elementary: string;
+      middle: string;
+      high: string;
+    };
+    listing?: {
+      active: boolean;
+      price: number;
+      daysOnMarket: number;
+      agent: string;
+    };
+  }>(),
+
+  // AI Analysis (cached)
+  aiAnalysis: jsonb('ai_analysis').$type<{
+    roofScore: number;
+    roofIssues: string[];
+    roofAgeEstimate: string;
+    roofConditionSummary: string;
+    hazardScan: {
+      trampoline: { detected: boolean; confidence: number };
+      unfencedPool: { detected: boolean; confidence: number };
+      debris: { detected: boolean; confidence: number };
+      treeOverhang: { detected: boolean; severity: 'none' | 'minor' | 'moderate' | 'significant' };
+    };
+    underwritingNotes: string;
+    riskLevel: 'low' | 'medium' | 'high';
+    recommendedAction: string;
+  }>(),
+
+  // Historical Surveys
+  historicalSurveys: jsonb('historical_surveys').$type<Array<{
+    date: string;
+    imageUrl: string;
+  }>>().default([]),
+
+  // Historical Comparison
+  historicalComparison: jsonb('historical_comparison').$type<{
+    comparedDates: { current: string; previous: string };
+    changesDetected: boolean;
+    changes: Array<{
+      type: string;
+      severity: 'minor' | 'major';
+      description: string;
+    }>;
+  }>(),
+
+  // Oblique Views
+  obliqueViews: jsonb('oblique_views').$type<{
+    north: string;
+    south: string;
+    east: string;
+    west: string;
+  }>(),
+
+  // Lookup Metadata
+  lookupSource: varchar('lookup_source', { length: 20 }).default('manual'), // 'manual', 'quote', 'policy'
+  linkedQuoteId: uuid('linked_quote_id'),
+  linkedPropertyId: uuid('linked_property_id'),
+
+  // Cache TTL
+  expiresAt: timestamp('expires_at'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('property_lookups_tenant_idx').on(table.tenantId),
+  index('property_lookups_address_idx').on(table.tenantId, table.address),
+  index('property_lookups_coords_idx').on(table.latitude, table.longitude),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
 // CALLS
 // ═══════════════════════════════════════════════════════════════════════════
 
