@@ -83,6 +83,7 @@ export default function IdCardsPage() {
   // Vehicle editing state
   const [editableVehicles, setEditableVehicles] = useState<Vehicle[]>([]);
   const [spouseName, setSpouseName] = useState("");
+  const [showEditor, setShowEditor] = useState(false);
 
   // PDF state
   const [generating, setGenerating] = useState(false);
@@ -453,7 +454,8 @@ export default function IdCardsPage() {
   // RENDER
   // ==========================================================================
 
-  const autoPolicies = hawkSoftData?.policies.filter((p) => p.isAutoPolicy) || [];
+  // Only show active auto policies
+  const autoPolicies = hawkSoftData?.policies.filter((p) => p.isAutoPolicy && p.isActive) || [];
 
   return (
     <div className="h-full flex flex-col">
@@ -567,7 +569,7 @@ export default function IdCardsPage() {
                 </div>
               ) : autoPolicies.length === 0 ? (
                 <div className="p-4 bg-gray-50 text-gray-600 rounded-lg">
-                  No auto policies found for this customer.
+                  No active auto policies found for this customer.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -578,8 +580,8 @@ export default function IdCardsPage() {
                       className={cn(
                         "w-full p-4 rounded-lg border text-left transition-colors",
                         selectedPolicy?.policyId === policy.policyId
-                          ? "border-blue-500 bg-blue-50"
-                          : "hover:bg-gray-50"
+                          ? "border-blue-500 bg-blue-50 ring-2 ring-blue-200"
+                          : "hover:bg-gray-50 hover:border-gray-300"
                       )}
                     >
                       <div className="flex items-start justify-between">
@@ -595,15 +597,8 @@ export default function IdCardsPage() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <span
-                            className={cn(
-                              "px-2 py-1 rounded text-xs font-medium",
-                              policy.isActive
-                                ? "bg-green-100 text-green-700"
-                                : "bg-red-100 text-red-700"
-                            )}
-                          >
-                            {policy.isActive ? "Active" : "Expired"}
+                          <span className="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700">
+                            Active
                           </span>
                           <div className="text-xs text-gray-500 mt-1">
                             {policy.vehicles.length} vehicle(s)
@@ -626,91 +621,24 @@ export default function IdCardsPage() {
             </div>
           )}
 
-          {/* Vehicle Editor */}
+          {/* Generate Button - Show when policy is selected */}
           {selectedPolicy && (
             <div className="bg-white rounded-lg border shadow-sm p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                3. Edit Vehicles & Generate
+                3. Generate ID Card
               </h2>
 
-              {/* Spouse Name */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Spouse/Co-Insured Name (optional)
-                </label>
-                <input
-                  type="text"
-                  value={spouseName}
-                  onChange={(e) => setSpouseName(e.target.value)}
-                  placeholder="Enter spouse name if applicable"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-
-              {/* Vehicles */}
-              <div className="space-y-4">
-                {editableVehicles.map((vehicle, index) => (
-                  <div key={index} className="p-4 bg-gray-50 rounded-lg">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="font-medium text-sm text-gray-700">
-                        Vehicle {index + 1}
-                      </span>
-                      {editableVehicles.length > 1 && (
-                        <button
-                          onClick={() => handleRemoveVehicle(index)}
-                          className="text-sm text-red-600 hover:text-red-700"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-4 gap-3">
-                      <input
-                        type="text"
-                        value={vehicle.year}
-                        onChange={(e) =>
-                          handleVehicleChange(index, "year", e.target.value)
-                        }
-                        placeholder="Year"
-                        className="px-3 py-2 border rounded-lg text-sm"
-                      />
-                      <input
-                        type="text"
-                        value={vehicle.make}
-                        onChange={(e) =>
-                          handleVehicleChange(index, "make", e.target.value)
-                        }
-                        placeholder="Make"
-                        className="px-3 py-2 border rounded-lg text-sm"
-                      />
-                      <input
-                        type="text"
-                        value={vehicle.model}
-                        onChange={(e) =>
-                          handleVehicleChange(index, "model", e.target.value)
-                        }
-                        placeholder="Model"
-                        className="px-3 py-2 border rounded-lg text-sm"
-                      />
-                      <input
-                        type="text"
-                        value={vehicle.vin}
-                        onChange={(e) =>
-                          handleVehicleChange(index, "vin", e.target.value)
-                        }
-                        placeholder="VIN"
-                        className="px-3 py-2 border rounded-lg text-sm font-mono"
-                      />
-                    </div>
-                  </div>
-                ))}
-
-                <button
-                  onClick={handleAddVehicle}
-                  className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-gray-400 hover:text-gray-700"
-                >
-                  + Add Vehicle
-                </button>
+              {/* Policy Summary */}
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <div className="text-sm text-gray-600">
+                  <strong>{hawkSoftData?.insuredName}</strong>
+                </div>
+                <div className="text-sm text-gray-600">
+                  {selectedPolicy.carrier} - {selectedPolicy.policyNumber}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {editableVehicles.length} vehicle(s) | Expires {selectedPolicy.expirationDate}
+                </div>
               </div>
 
               {/* Generate Button */}
@@ -718,7 +646,7 @@ export default function IdCardsPage() {
                 onClick={handleGenerate}
                 disabled={generating || editableVehicles.length === 0}
                 className={cn(
-                  "w-full mt-4 py-3 rounded-lg font-medium text-white transition-colors",
+                  "w-full py-3 rounded-lg font-medium text-white transition-colors",
                   generating || editableVehicles.length === 0
                     ? "bg-gray-400 cursor-not-allowed"
                     : "bg-blue-600 hover:bg-blue-700"
@@ -726,6 +654,99 @@ export default function IdCardsPage() {
               >
                 {generating ? "Generating..." : "Generate ID Card"}
               </button>
+
+              {/* Editor Toggle - Hidden by default */}
+              <button
+                onClick={() => setShowEditor(!showEditor)}
+                className="w-full mt-3 py-2 text-sm text-gray-500 hover:text-gray-700"
+              >
+                {showEditor ? "▲ Hide Editor" : "▼ Edit Vehicle Details (Optional)"}
+              </button>
+
+              {/* Collapsible Editor Section */}
+              {showEditor && (
+                <div className="mt-4 pt-4 border-t">
+                  {/* Spouse Name */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Spouse/Co-Insured Name (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={spouseName}
+                      onChange={(e) => setSpouseName(e.target.value)}
+                      placeholder="Enter spouse name if applicable"
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Vehicles */}
+                  <div className="space-y-4">
+                    {editableVehicles.map((vehicle, index) => (
+                      <div key={index} className="p-4 bg-gray-50 rounded-lg">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="font-medium text-sm text-gray-700">
+                            Vehicle {index + 1}
+                          </span>
+                          {editableVehicles.length > 1 && (
+                            <button
+                              onClick={() => handleRemoveVehicle(index)}
+                              className="text-sm text-red-600 hover:text-red-700"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-4 gap-3">
+                          <input
+                            type="text"
+                            value={vehicle.year}
+                            onChange={(e) =>
+                              handleVehicleChange(index, "year", e.target.value)
+                            }
+                            placeholder="Year"
+                            className="px-3 py-2 border rounded-lg text-sm"
+                          />
+                          <input
+                            type="text"
+                            value={vehicle.make}
+                            onChange={(e) =>
+                              handleVehicleChange(index, "make", e.target.value)
+                            }
+                            placeholder="Make"
+                            className="px-3 py-2 border rounded-lg text-sm"
+                          />
+                          <input
+                            type="text"
+                            value={vehicle.model}
+                            onChange={(e) =>
+                              handleVehicleChange(index, "model", e.target.value)
+                            }
+                            placeholder="Model"
+                            className="px-3 py-2 border rounded-lg text-sm"
+                          />
+                          <input
+                            type="text"
+                            value={vehicle.vin}
+                            onChange={(e) =>
+                              handleVehicleChange(index, "vin", e.target.value)
+                            }
+                            placeholder="VIN"
+                            className="px-3 py-2 border rounded-lg text-sm font-mono"
+                          />
+                        </div>
+                      </div>
+                    ))}
+
+                    <button
+                      onClick={handleAddVehicle}
+                      className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-gray-400 hover:text-gray-700"
+                    >
+                      + Add Vehicle
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
