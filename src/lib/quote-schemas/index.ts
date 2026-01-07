@@ -6,17 +6,19 @@
 export * from './types';
 export { personalAutoSchema } from './personal-auto';
 export { homeownersSchema } from './homeowners';
+export { recreationalSchema } from './recreational';
 
 import { QuoteSchema, QuoteType } from './types';
 import { personalAutoSchema } from './personal-auto';
 import { homeownersSchema } from './homeowners';
+import { recreationalSchema } from './recreational';
 
 // Registry of all available schemas
 export const QUOTE_SCHEMAS: Record<QuoteType, QuoteSchema | null> = {
   personal_auto: personalAutoSchema,
   homeowners: homeownersSchema,
   auto_home_bundle: null,     // TODO: Implement
-  recreational: null,         // TODO: Implement
+  recreational: recreationalSchema,
   mobile_home: null,          // TODO: Implement
   commercial: null,           // TODO: Implement
   flood: null,                // TODO: Implement
@@ -33,7 +35,7 @@ export function getAvailableQuoteTypes(): { type: QuoteType; name: string; icon:
     { type: 'personal_auto', name: 'Personal Auto', icon: '🚗', available: true },
     { type: 'homeowners', name: 'Homeowners', icon: '🏠', available: true },
     { type: 'auto_home_bundle', name: 'Auto + Home Bundle', icon: '🏡', available: false },
-    { type: 'recreational', name: 'Recreational (Boat, RV, etc.)', icon: '🚤', available: false },
+    { type: 'recreational', name: 'Recreational (Boat, RV, etc.)', icon: '🚤', available: true },
     { type: 'mobile_home', name: 'Mobile Home', icon: '🏘️', available: false },
     { type: 'commercial', name: 'Commercial', icon: '🏢', available: false },
     { type: 'flood', name: 'Flood Insurance', icon: '🌊', available: false },

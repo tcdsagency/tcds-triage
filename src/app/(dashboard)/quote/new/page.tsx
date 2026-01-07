@@ -427,6 +427,130 @@ interface WorkersCompEmployee {
   annualPayroll: string;
 }
 
+interface RecreationalOperator {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dob: string;
+  relationship: string;
+  yearsExperience: string;
+  hasBoatingSafetyCourse: boolean;
+}
+
+interface RecreationalFormData {
+  // Customer Information
+  ownershipType: string;
+  firstName: string;
+  lastName: string;
+  dob: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  coOwnerFirstName: string;
+  coOwnerLastName: string;
+  coOwnerDob: string;
+  // Item Selection
+  itemType: string;
+  // Item Details (generic fields used by all types)
+  year: string;
+  make: string;
+  model: string;
+  vin: string;
+  lengthFeet: string;
+  purchasePrice: string;
+  currentValue: string;
+  // Boat-specific
+  boatType: string;
+  hin: string;
+  hullMaterial: string;
+  engineType: string;
+  engineCount: string;
+  totalHorsepower: string;
+  fuelType: string;
+  maxSpeed: string;
+  hasTrailer: boolean;
+  trailerYear: string;
+  trailerMake: string;
+  trailerVin: string;
+  trailerValue: string;
+  // PWC-specific
+  engineCC: string;
+  seatingCapacity: string;
+  // Travel Trailer-specific
+  trailerType: string;
+  slideOuts: string;
+  gvwr: string;
+  isFullTimeResidence: boolean;
+  // UTV-specific
+  isStreetLegal: boolean;
+  hasRollCage: boolean;
+  // Golf Cart-specific
+  serialNumber: string;
+  powerType: string;
+  isLSV: boolean;
+  customizations: string;
+  customizationValue: string;
+  // Motorhome-specific
+  rvClass: string;
+  chassisMake: string;
+  towingVehicle: boolean;
+  toadDescription: string;
+  // Tractor-specific
+  horsepower: string;
+  isDrivenOnRoads: boolean;
+  attachments: string;
+  attachmentsValue: string;
+  primaryUseType: string;
+  // Usage & Storage
+  primaryUse: string;
+  storageLocation: string;
+  storageAddress: string;
+  storageCity: string;
+  storageState: string;
+  storageZip: string;
+  monthsInUse: string;
+  primaryWaterBody: string;
+  oceanUse: boolean;
+  milesFromCoast: string;
+  // Coverage
+  valuationType: string;
+  agreedValue: string;
+  liabilityLimit: string;
+  physicalDamageDeductible: string;
+  medicalPayments: boolean;
+  medicalPaymentsLimit: string;
+  uninsuredWatercraft: boolean;
+  onWaterTowing: boolean;
+  fuelSpillLiability: boolean;
+  personalEffects: boolean;
+  personalEffectsLimit: string;
+  emergencyExpense: boolean;
+  roadsideAssistance: boolean;
+  totalLossReplacement: boolean;
+  // Operators
+  operators: RecreationalOperator[];
+  // Loss History
+  hasPriorLosses: boolean;
+  lossDescription: string;
+  // Current Insurance
+  hasCurrentCoverage: boolean;
+  currentCarrier: string;
+  currentPremium: string;
+  expirationDate: string;
+  reasonForShopping: string;
+  // Financing
+  isFinanced: boolean;
+  lienholderName: string;
+  lienholderAddress: string;
+  loanAccountNumber: string;
+  // Notes
+  agentNotes: string;
+  effectiveDate: string;
+}
+
 // =============================================================================
 // CONSTANTS
 // =============================================================================
@@ -440,7 +564,7 @@ const QUOTE_TYPES: QuoteType[] = [
   { id: "general_liability", name: "General Liability", icon: Shield, description: "Commercial liability", available: true },
   { id: "workers_comp", name: "Workers Comp", icon: User, description: "Employee coverage", available: true },
   { id: "auto_home_bundle", name: "Auto + Home", icon: Home, description: "Bundle discount", available: false },
-  { id: "recreational", name: "Recreational", icon: Ship, description: "Boat, RV, ATV", available: false },
+  { id: "recreational", name: "Recreational", icon: Ship, description: "Boat, RV, ATV", available: true },
   { id: "flood", name: "Flood", icon: Droplets, description: "Flood insurance", available: false },
 ];
 
@@ -637,6 +761,177 @@ const INITIAL_WC_FORM: WorkersCompFormData = {
   // Notes
   agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
 };
+
+// Recreational Operator Helper
+const createRecreationalOperator = (relationship = "self"): RecreationalOperator => ({
+  id: crypto.randomUUID(),
+  firstName: "", lastName: "", dob: "",
+  relationship, yearsExperience: "",
+  hasBoatingSafetyCourse: false
+});
+
+const INITIAL_RECREATIONAL_FORM: RecreationalFormData = {
+  // Customer Information
+  ownershipType: "individual",
+  firstName: "", lastName: "", dob: "", email: "", phone: "",
+  address: "", city: "", state: "", zip: "",
+  coOwnerFirstName: "", coOwnerLastName: "", coOwnerDob: "",
+  // Item Selection
+  itemType: "",
+  // Item Details
+  year: "", make: "", model: "", vin: "", lengthFeet: "",
+  purchasePrice: "", currentValue: "",
+  // Boat-specific
+  boatType: "", hin: "", hullMaterial: "", engineType: "",
+  engineCount: "1", totalHorsepower: "", fuelType: "", maxSpeed: "",
+  hasTrailer: true, trailerYear: "", trailerMake: "", trailerVin: "", trailerValue: "",
+  // PWC-specific
+  engineCC: "", seatingCapacity: "2",
+  // Travel Trailer-specific
+  trailerType: "", slideOuts: "0", gvwr: "", isFullTimeResidence: false,
+  // UTV-specific
+  isStreetLegal: false, hasRollCage: true,
+  // Golf Cart-specific
+  serialNumber: "", powerType: "electric", isLSV: false,
+  customizations: "", customizationValue: "",
+  // Motorhome-specific
+  rvClass: "", chassisMake: "", towingVehicle: false, toadDescription: "",
+  // Tractor-specific
+  horsepower: "", isDrivenOnRoads: false, attachments: "", attachmentsValue: "",
+  primaryUseType: "lawn_care",
+  // Usage & Storage
+  primaryUse: "pleasure", storageLocation: "home_garage",
+  storageAddress: "", storageCity: "", storageState: "", storageZip: "",
+  monthsInUse: "6", primaryWaterBody: "", oceanUse: false, milesFromCoast: "3",
+  // Coverage
+  valuationType: "agreed_value", agreedValue: "",
+  liabilityLimit: "100_300", physicalDamageDeductible: "500",
+  medicalPayments: true, medicalPaymentsLimit: "5000",
+  uninsuredWatercraft: true, onWaterTowing: true, fuelSpillLiability: true,
+  personalEffects: false, personalEffectsLimit: "1500",
+  emergencyExpense: true, roadsideAssistance: true, totalLossReplacement: false,
+  // Operators
+  operators: [createRecreationalOperator("self")],
+  // Loss History
+  hasPriorLosses: false, lossDescription: "",
+  // Current Insurance
+  hasCurrentCoverage: false, currentCarrier: "", currentPremium: "",
+  expirationDate: "", reasonForShopping: "",
+  // Financing
+  isFinanced: false, lienholderName: "", lienholderAddress: "", loanAccountNumber: "",
+  // Notes
+  agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
+};
+
+// Recreational select options
+const RECREATIONAL_ITEM_TYPES = [
+  { value: "boat", label: "Boat" },
+  { value: "pwc", label: "Personal Watercraft (Jet Ski)" },
+  { value: "travel_trailer", label: "Travel Trailer" },
+  { value: "utv", label: "UTV/Side-by-Side" },
+  { value: "golf_cart", label: "Golf Cart" },
+  { value: "motorhome", label: "Motorhome/RV" },
+  { value: "tractor", label: "Tractor" },
+];
+
+const BOAT_TYPES = [
+  { value: "bass_boat", label: "Bass Boat" },
+  { value: "pontoon", label: "Pontoon" },
+  { value: "deck_boat", label: "Deck Boat" },
+  { value: "bowrider", label: "Bowrider" },
+  { value: "center_console", label: "Center Console" },
+  { value: "cabin_cruiser", label: "Cabin Cruiser" },
+  { value: "ski_wakeboard", label: "Ski/Wakeboard Boat" },
+  { value: "fishing", label: "Fishing Boat" },
+  { value: "sailboat", label: "Sailboat" },
+  { value: "jon_boat", label: "Jon Boat" },
+];
+
+const HULL_MATERIALS = [
+  { value: "fiberglass", label: "Fiberglass" },
+  { value: "aluminum", label: "Aluminum" },
+  { value: "wood", label: "Wood" },
+  { value: "steel", label: "Steel" },
+  { value: "inflatable", label: "Inflatable" },
+];
+
+const ENGINE_TYPES = [
+  { value: "outboard", label: "Outboard" },
+  { value: "inboard", label: "Inboard" },
+  { value: "inboard_outboard", label: "Inboard/Outboard" },
+  { value: "jet_drive", label: "Jet Drive" },
+  { value: "electric", label: "Electric" },
+  { value: "none", label: "No Motor" },
+];
+
+const TRAILER_TYPES = [
+  { value: "travel", label: "Travel Trailer" },
+  { value: "fifth_wheel", label: "Fifth Wheel" },
+  { value: "toy_hauler", label: "Toy Hauler" },
+  { value: "popup", label: "Pop-Up Camper" },
+  { value: "teardrop", label: "Teardrop" },
+];
+
+const MOTORHOME_CLASSES = [
+  { value: "class_a", label: "Class A" },
+  { value: "class_b", label: "Class B (Camper Van)" },
+  { value: "class_c", label: "Class C" },
+  { value: "super_c", label: "Super C" },
+];
+
+const STORAGE_LOCATIONS = [
+  { value: "home_garage", label: "Home - Garage" },
+  { value: "home_driveway", label: "Home - Driveway" },
+  { value: "home_yard", label: "Home - Yard" },
+  { value: "marina_wet", label: "Marina - Wet Slip" },
+  { value: "marina_dry", label: "Marina - Dry Storage" },
+  { value: "storage_facility", label: "Storage Facility" },
+  { value: "rv_park", label: "RV Park" },
+];
+
+const REC_LIABILITY_LIMITS = [
+  { value: "25_50", label: "$25K/$50K" },
+  { value: "50_100", label: "$50K/$100K" },
+  { value: "100_300", label: "$100K/$300K" },
+  { value: "250_500", label: "$250K/$500K" },
+  { value: "300_300", label: "$300K/$300K" },
+];
+
+const REC_DEDUCTIBLE_OPTIONS = [
+  { value: "250", label: "$250" },
+  { value: "500", label: "$500" },
+  { value: "1000", label: "$1,000" },
+  { value: "2500", label: "$2,500" },
+];
+
+const REC_MED_PAY_OPTIONS = [
+  { value: "1000", label: "$1,000" },
+  { value: "2500", label: "$2,500" },
+  { value: "5000", label: "$5,000" },
+  { value: "10000", label: "$10,000" },
+];
+
+const OWNERSHIP_TYPES = [
+  { value: "individual", label: "Individual/Personal" },
+  { value: "joint", label: "Joint Ownership (Married)" },
+  { value: "llc", label: "LLC" },
+  { value: "corporation", label: "Corporation" },
+];
+
+const OPERATOR_RELATIONSHIPS = [
+  { value: "self", label: "Self (Named Insured)" },
+  { value: "spouse", label: "Spouse" },
+  { value: "child", label: "Child" },
+  { value: "relative", label: "Other Relative" },
+  { value: "other", label: "Other" },
+];
+
+const TRACTOR_USE_TYPES = [
+  { value: "lawn_care", label: "Lawn Care" },
+  { value: "hobby_farm", label: "Hobby Farm" },
+  { value: "personal_property", label: "Personal Property Maintenance" },
+  { value: "farm_ranch", label: "Farm/Ranch Operations" },
+];
 
 // Renters select options
 const UNIT_TYPES = [
@@ -838,7 +1133,8 @@ export default function QuoteIntakePage() {
   const [bopFormData, setBopFormData] = useState<BOPFormData>(INITIAL_BOP_FORM);
   const [glFormData, setGlFormData] = useState<GeneralLiabilityFormData>(INITIAL_GL_FORM);
   const [wcFormData, setWcFormData] = useState<WorkersCompFormData>(INITIAL_WC_FORM);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["customer", "vehicles", "drivers", "coverage", "property", "propertyDetails", "roof", "rental", "underlying", "business", "location", "operations", "employees"]));
+  const [recreationalFormData, setRecreationalFormData] = useState<RecreationalFormData>(INITIAL_RECREATIONAL_FORM);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["customer", "vehicles", "drivers", "coverage", "property", "propertyDetails", "roof", "rental", "underlying", "business", "location", "operations", "employees", "item", "itemDetails", "usageStorage", "operators"]));
   const [aiProcessing, setAiProcessing] = useState(false);
   const [aiPasteText, setAiPasteText] = useState("");
   const [showAiPaste, setShowAiPaste] = useState(false);
@@ -960,6 +1256,24 @@ export default function QuoteIntakePage() {
     return Math.round((filled / total) * 100);
   }, [wcFormData])();
 
+  // Recreational form completion calculation
+  const recreationalCompletion = useCallback(() => {
+    let filled = 0, total = 12;
+    if (recreationalFormData.firstName) filled++;
+    if (recreationalFormData.lastName) filled++;
+    if (recreationalFormData.phone) filled++;
+    if (recreationalFormData.address) filled++;
+    if (recreationalFormData.city) filled++;
+    if (recreationalFormData.state) filled++;
+    if (recreationalFormData.zip) filled++;
+    if (recreationalFormData.itemType) filled++;
+    if (recreationalFormData.year && recreationalFormData.make) filled++;
+    if (recreationalFormData.currentValue) filled++;
+    if (recreationalFormData.liabilityLimit) filled++;
+    if (recreationalFormData.operators.some(o => o.firstName && o.lastName)) filled++;
+    return Math.round((filled / total) * 100);
+  }, [recreationalFormData])();
+
   const completion =
     selectedType === "homeowners" ? homeownersCompletion :
     selectedType === "renters" ? rentersCompletion :
@@ -967,6 +1281,7 @@ export default function QuoteIntakePage() {
     selectedType === "bop" ? bopCompletion :
     selectedType === "general_liability" ? glCompletion :
     selectedType === "workers_comp" ? wcCompletion :
+    selectedType === "recreational" ? recreationalCompletion :
     autoCompletion;
 
   const toggleSection = (id: string) => {
@@ -1029,6 +1344,17 @@ export default function QuoteIntakePage() {
   const addWCEmployee = () => setWcFormData(prev => ({ ...prev, employees: [...prev.employees, createWCEmployee()] }));
   const removeWCEmployee = (id: string) => wcFormData.employees.length > 1 && setWcFormData(prev => ({ ...prev, employees: prev.employees.filter(e => e.id !== id) }));
   const updateWCEmployee = (id: string, field: keyof WorkersCompEmployee, value: string) => setWcFormData(prev => ({ ...prev, employees: prev.employees.map(e => e.id === id ? { ...e, [field]: value } : e) }));
+
+  // Recreational form field updates
+  const updateRecreationalField = (field: keyof RecreationalFormData, value: any) => {
+    setRecreationalFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
+  };
+
+  // Recreational operator management
+  const addRecreationalOperator = () => setRecreationalFormData(prev => ({ ...prev, operators: [...prev.operators, createRecreationalOperator()] }));
+  const removeRecreationalOperator = (id: string) => recreationalFormData.operators.length > 1 && setRecreationalFormData(prev => ({ ...prev, operators: prev.operators.filter(o => o.id !== id) }));
+  const updateRecreationalOperator = (id: string, field: keyof RecreationalOperator, value: any) => setRecreationalFormData(prev => ({ ...prev, operators: prev.operators.map(o => o.id === id ? { ...o, [field]: value } : o) }));
 
   const decodeVin = async (vehicleId: string, vin: string) => {
     if (vin.length !== 17) return;
@@ -2389,6 +2715,418 @@ export default function QuoteIntakePage() {
                   <textarea value={wcFormData.agentNotes} onChange={(e) => updateWcField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
                 </div>
                 <Field label="Effective Date" value={wcFormData.effectiveDate} onChange={(v: string) => updateWcField("effectiveDate", v)} type="date" />
+              </div>
+            </Section>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* RECREATIONAL FORM */}
+        {/* ========================================================================= */}
+        {selectedType === "recreational" && (
+          <>
+            {/* Ownership Type Warning */}
+            {(recreationalFormData.ownershipType === "llc" || recreationalFormData.ownershipType === "corporation") && (
+              <div className="bg-red-900/30 border border-red-500/50 rounded-xl p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <Shield className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-red-300">Commercial Policy Required</h4>
+                    <p className="text-sm text-red-200/80 mt-1">
+                      LLC/Corporation ownership requires a commercial policy. This quote wizard is for personal coverage only. Please contact our commercial department for business-owned recreational vehicles.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Customer Information */}
+            <Section id="customer" icon={User} title="Customer Information">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Ownership Type" value={recreationalFormData.ownershipType} onChange={(v: string) => updateRecreationalField("ownershipType", v)} options={OWNERSHIP_TYPES} required />
+                <Field label="First Name" value={recreationalFormData.firstName} onChange={(v: string) => updateRecreationalField("firstName", v)} required placeholder="John" error={errors.firstName} />
+                <Field label="Last Name" value={recreationalFormData.lastName} onChange={(v: string) => updateRecreationalField("lastName", v)} required placeholder="Smith" error={errors.lastName} />
+                <Field label="Date of Birth" value={recreationalFormData.dob} onChange={(v: string) => updateRecreationalField("dob", v)} type="date" required />
+                <Field label="Email" value={recreationalFormData.email} onChange={(v: string) => updateRecreationalField("email", v)} type="email" placeholder="john@email.com" />
+                <Field label="Phone" value={recreationalFormData.phone} onChange={(v: string) => updateRecreationalField("phone", v)} type="tel" required placeholder="(555) 555-5555" error={errors.phone} />
+                <Field label="Street Address" value={recreationalFormData.address} onChange={(v: string) => updateRecreationalField("address", v)} placeholder="123 Main St" className="col-span-2" />
+                <Field label="City" value={recreationalFormData.city} onChange={(v: string) => updateRecreationalField("city", v)} placeholder="Dallas" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="State" value={recreationalFormData.state} onChange={(v: string) => updateRecreationalField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="ZIP" value={recreationalFormData.zip} onChange={(v: string) => updateRecreationalField("zip", v)} placeholder="75201" />
+                </div>
+              </div>
+              {recreationalFormData.ownershipType === "joint" && (
+                <div className="mt-6 pt-6 border-t border-gray-700/50">
+                  <h4 className="text-sm font-medium text-gray-300 mb-4">Co-Owner Information</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <Field label="Co-Owner First Name" value={recreationalFormData.coOwnerFirstName} onChange={(v: string) => updateRecreationalField("coOwnerFirstName", v)} placeholder="Jane" />
+                    <Field label="Co-Owner Last Name" value={recreationalFormData.coOwnerLastName} onChange={(v: string) => updateRecreationalField("coOwnerLastName", v)} placeholder="Smith" />
+                    <Field label="Co-Owner DOB" value={recreationalFormData.coOwnerDob} onChange={(v: string) => updateRecreationalField("coOwnerDob", v)} type="date" />
+                  </div>
+                </div>
+              )}
+            </Section>
+
+            {/* Item Type Selection */}
+            <Section id="item" icon={Ship} title="Item Type">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="What Type of Item?" value={recreationalFormData.itemType} onChange={(v: string) => updateRecreationalField("itemType", v)} options={[{ value: "", label: "Select type..." }, ...RECREATIONAL_ITEM_TYPES]} required className="col-span-2" />
+              </div>
+            </Section>
+
+            {/* Item Details - Boat */}
+            {recreationalFormData.itemType === "boat" && (
+              <Section id="itemDetails" icon={Ship} title="Boat Information">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Boat Type" value={recreationalFormData.boatType} onChange={(v: string) => updateRecreationalField("boatType", v)} options={[{ value: "", label: "Select..." }, ...BOAT_TYPES]} required />
+                  <Field label="Year" value={recreationalFormData.year} onChange={(v: string) => updateRecreationalField("year", v)} required placeholder="2023" />
+                  <Field label="Make" value={recreationalFormData.make} onChange={(v: string) => updateRecreationalField("make", v)} required placeholder="Sea Ray" />
+                  <Field label="Model" value={recreationalFormData.model} onChange={(v: string) => updateRecreationalField("model", v)} required placeholder="SDX 270" />
+                  <Field label="HIN" value={recreationalFormData.hin} onChange={(v: string) => updateRecreationalField("hin", v)} placeholder="12-character hull ID" />
+                  <Field label="Length (ft)" value={recreationalFormData.lengthFeet} onChange={(v: string) => updateRecreationalField("lengthFeet", v)} placeholder="27" />
+                  <Field label="Hull Material" value={recreationalFormData.hullMaterial} onChange={(v: string) => updateRecreationalField("hullMaterial", v)} options={[{ value: "", label: "Select..." }, ...HULL_MATERIALS]} />
+                  <Field label="Engine Type" value={recreationalFormData.engineType} onChange={(v: string) => updateRecreationalField("engineType", v)} options={[{ value: "", label: "Select..." }, ...ENGINE_TYPES]} />
+                  <Field label="# of Engines" value={recreationalFormData.engineCount} onChange={(v: string) => updateRecreationalField("engineCount", v)} placeholder="1" />
+                  <Field label="Total HP" value={recreationalFormData.totalHorsepower} onChange={(v: string) => updateRecreationalField("totalHorsepower", v)} placeholder="350" />
+                  <Field label="Max Speed (mph)" value={recreationalFormData.maxSpeed} onChange={(v: string) => updateRecreationalField("maxSpeed", v)} placeholder="45" />
+                  <Field label="Purchase Price" value={recreationalFormData.purchasePrice} onChange={(v: string) => updateRecreationalField("purchasePrice", v)} required placeholder="$75,000" />
+                  <Field label="Current Value" value={recreationalFormData.currentValue} onChange={(v: string) => updateRecreationalField("currentValue", v)} required placeholder="$65,000" />
+                </div>
+                <div className="mt-6 pt-6 border-t border-gray-700/50">
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 mb-4">
+                    <input type="checkbox" checked={recreationalFormData.hasTrailer} onChange={(e) => updateRecreationalField("hasTrailer", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Include Trailer</span>
+                  </label>
+                  {recreationalFormData.hasTrailer && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Field label="Trailer Year" value={recreationalFormData.trailerYear} onChange={(v: string) => updateRecreationalField("trailerYear", v)} placeholder="2023" />
+                      <Field label="Trailer Make" value={recreationalFormData.trailerMake} onChange={(v: string) => updateRecreationalField("trailerMake", v)} placeholder="Load Rite" />
+                      <Field label="Trailer VIN" value={recreationalFormData.trailerVin} onChange={(v: string) => updateRecreationalField("trailerVin", v)} placeholder="VIN" />
+                      <Field label="Trailer Value" value={recreationalFormData.trailerValue} onChange={(v: string) => updateRecreationalField("trailerValue", v)} placeholder="$5,000" />
+                    </div>
+                  )}
+                </div>
+              </Section>
+            )}
+
+            {/* Item Details - PWC */}
+            {recreationalFormData.itemType === "pwc" && (
+              <Section id="itemDetails" icon={Ship} title="Personal Watercraft Information">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Year" value={recreationalFormData.year} onChange={(v: string) => updateRecreationalField("year", v)} required placeholder="2023" />
+                  <Field label="Make" value={recreationalFormData.make} onChange={(v: string) => updateRecreationalField("make", v)} required placeholder="Yamaha" />
+                  <Field label="Model" value={recreationalFormData.model} onChange={(v: string) => updateRecreationalField("model", v)} required placeholder="FX Cruiser" />
+                  <Field label="HIN" value={recreationalFormData.hin} onChange={(v: string) => updateRecreationalField("hin", v)} placeholder="Hull ID" />
+                  <Field label="Engine (cc)" value={recreationalFormData.engineCC} onChange={(v: string) => updateRecreationalField("engineCC", v)} placeholder="1800" />
+                  <Field label="Seating Capacity" value={recreationalFormData.seatingCapacity} onChange={(v: string) => updateRecreationalField("seatingCapacity", v)} placeholder="3" />
+                  <Field label="Purchase Price" value={recreationalFormData.purchasePrice} onChange={(v: string) => updateRecreationalField("purchasePrice", v)} required placeholder="$18,000" />
+                  <Field label="Current Value" value={recreationalFormData.currentValue} onChange={(v: string) => updateRecreationalField("currentValue", v)} required placeholder="$15,000" />
+                </div>
+              </Section>
+            )}
+
+            {/* Item Details - Travel Trailer */}
+            {recreationalFormData.itemType === "travel_trailer" && (
+              <Section id="itemDetails" icon={Home} title="Travel Trailer Information">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Trailer Type" value={recreationalFormData.trailerType} onChange={(v: string) => updateRecreationalField("trailerType", v)} options={[{ value: "", label: "Select..." }, ...TRAILER_TYPES]} required />
+                  <Field label="Year" value={recreationalFormData.year} onChange={(v: string) => updateRecreationalField("year", v)} required placeholder="2023" />
+                  <Field label="Make" value={recreationalFormData.make} onChange={(v: string) => updateRecreationalField("make", v)} required placeholder="Airstream" />
+                  <Field label="Model" value={recreationalFormData.model} onChange={(v: string) => updateRecreationalField("model", v)} required placeholder="Flying Cloud" />
+                  <Field label="VIN" value={recreationalFormData.vin} onChange={(v: string) => updateRecreationalField("vin", v)} placeholder="17-character VIN" />
+                  <Field label="Length (ft)" value={recreationalFormData.lengthFeet} onChange={(v: string) => updateRecreationalField("lengthFeet", v)} placeholder="30" />
+                  <Field label="# of Slide-Outs" value={recreationalFormData.slideOuts} onChange={(v: string) => updateRecreationalField("slideOuts", v)} placeholder="2" />
+                  <Field label="GVWR (lbs)" value={recreationalFormData.gvwr} onChange={(v: string) => updateRecreationalField("gvwr", v)} placeholder="8000" />
+                  <Field label="Purchase Price" value={recreationalFormData.purchasePrice} onChange={(v: string) => updateRecreationalField("purchasePrice", v)} required placeholder="$85,000" />
+                  <Field label="Current Value" value={recreationalFormData.currentValue} onChange={(v: string) => updateRecreationalField("currentValue", v)} required placeholder="$75,000" />
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                    <input type="checkbox" checked={recreationalFormData.isFullTimeResidence} onChange={(e) => updateRecreationalField("isFullTimeResidence", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Used as Full-Time Residence</span>
+                  </label>
+                </div>
+              </Section>
+            )}
+
+            {/* Item Details - UTV */}
+            {recreationalFormData.itemType === "utv" && (
+              <Section id="itemDetails" icon={Car} title="UTV/Side-by-Side Information">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Year" value={recreationalFormData.year} onChange={(v: string) => updateRecreationalField("year", v)} required placeholder="2023" />
+                  <Field label="Make" value={recreationalFormData.make} onChange={(v: string) => updateRecreationalField("make", v)} required placeholder="Polaris" />
+                  <Field label="Model" value={recreationalFormData.model} onChange={(v: string) => updateRecreationalField("model", v)} required placeholder="RZR Pro XP" />
+                  <Field label="VIN" value={recreationalFormData.vin} onChange={(v: string) => updateRecreationalField("vin", v)} placeholder="VIN" />
+                  <Field label="Engine (cc)" value={recreationalFormData.engineCC} onChange={(v: string) => updateRecreationalField("engineCC", v)} placeholder="999" />
+                  <Field label="Seating Capacity" value={recreationalFormData.seatingCapacity} onChange={(v: string) => updateRecreationalField("seatingCapacity", v)} placeholder="2" />
+                  <Field label="Purchase Price" value={recreationalFormData.purchasePrice} onChange={(v: string) => updateRecreationalField("purchasePrice", v)} required placeholder="$28,000" />
+                  <Field label="Current Value" value={recreationalFormData.currentValue} onChange={(v: string) => updateRecreationalField("currentValue", v)} required placeholder="$25,000" />
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={recreationalFormData.isStreetLegal} onChange={(e) => updateRecreationalField("isStreetLegal", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Street Legal / Registered</span>
+                  </label>
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={recreationalFormData.hasRollCage} onChange={(e) => updateRecreationalField("hasRollCage", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Has Roll Cage/ROPS</span>
+                  </label>
+                </div>
+              </Section>
+            )}
+
+            {/* Item Details - Golf Cart */}
+            {recreationalFormData.itemType === "golf_cart" && (
+              <Section id="itemDetails" icon={Car} title="Golf Cart Information">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Year" value={recreationalFormData.year} onChange={(v: string) => updateRecreationalField("year", v)} required placeholder="2023" />
+                  <Field label="Make" value={recreationalFormData.make} onChange={(v: string) => updateRecreationalField("make", v)} required placeholder="Club Car" />
+                  <Field label="Model" value={recreationalFormData.model} onChange={(v: string) => updateRecreationalField("model", v)} placeholder="Onward" />
+                  <Field label="Serial Number" value={recreationalFormData.serialNumber} onChange={(v: string) => updateRecreationalField("serialNumber", v)} placeholder="Serial #" />
+                  <Field label="Power Type" value={recreationalFormData.powerType} onChange={(v: string) => updateRecreationalField("powerType", v)} options={[{ value: "electric", label: "Electric" }, { value: "gas", label: "Gas" }]} />
+                  <Field label="Seating Capacity" value={recreationalFormData.seatingCapacity} onChange={(v: string) => updateRecreationalField("seatingCapacity", v)} placeholder="4" />
+                  <Field label="Purchase Price" value={recreationalFormData.purchasePrice} onChange={(v: string) => updateRecreationalField("purchasePrice", v)} required placeholder="$12,000" />
+                  <Field label="Current Value" value={recreationalFormData.currentValue} onChange={(v: string) => updateRecreationalField("currentValue", v)} required placeholder="$10,000" />
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={recreationalFormData.isStreetLegal} onChange={(e) => updateRecreationalField("isStreetLegal", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Street Legal / Registered</span>
+                  </label>
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={recreationalFormData.isLSV} onChange={(e) => updateRecreationalField("isLSV", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Low Speed Vehicle (LSV)</span>
+                  </label>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Custom Accessories</label>
+                    <textarea value={recreationalFormData.customizations} onChange={(e) => updateRecreationalField("customizations", e.target.value)} placeholder="Lift kit, wheels, sound system..." rows={2} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                  <Field label="Customization Value" value={recreationalFormData.customizationValue} onChange={(v: string) => updateRecreationalField("customizationValue", v)} placeholder="$3,000" />
+                </div>
+              </Section>
+            )}
+
+            {/* Item Details - Motorhome */}
+            {recreationalFormData.itemType === "motorhome" && (
+              <Section id="itemDetails" icon={Home} title="Motorhome/RV Information">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="RV Class" value={recreationalFormData.rvClass} onChange={(v: string) => updateRecreationalField("rvClass", v)} options={[{ value: "", label: "Select..." }, ...MOTORHOME_CLASSES]} required />
+                  <Field label="Year" value={recreationalFormData.year} onChange={(v: string) => updateRecreationalField("year", v)} required placeholder="2023" />
+                  <Field label="Make" value={recreationalFormData.make} onChange={(v: string) => updateRecreationalField("make", v)} required placeholder="Winnebago" />
+                  <Field label="Model" value={recreationalFormData.model} onChange={(v: string) => updateRecreationalField("model", v)} required placeholder="Vista" />
+                  <Field label="VIN" value={recreationalFormData.vin} onChange={(v: string) => updateRecreationalField("vin", v)} placeholder="17-character VIN" />
+                  <Field label="Chassis Make" value={recreationalFormData.chassisMake} onChange={(v: string) => updateRecreationalField("chassisMake", v)} placeholder="Ford" />
+                  <Field label="Length (ft)" value={recreationalFormData.lengthFeet} onChange={(v: string) => updateRecreationalField("lengthFeet", v)} placeholder="32" />
+                  <Field label="# of Slide-Outs" value={recreationalFormData.slideOuts} onChange={(v: string) => updateRecreationalField("slideOuts", v)} placeholder="2" />
+                  <Field label="Fuel Type" value={recreationalFormData.fuelType} onChange={(v: string) => updateRecreationalField("fuelType", v)} options={[{ value: "gas", label: "Gas" }, { value: "diesel", label: "Diesel" }]} />
+                  <Field label="Purchase Price" value={recreationalFormData.purchasePrice} onChange={(v: string) => updateRecreationalField("purchasePrice", v)} required placeholder="$150,000" />
+                  <Field label="Current Value" value={recreationalFormData.currentValue} onChange={(v: string) => updateRecreationalField("currentValue", v)} required placeholder="$125,000" />
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={recreationalFormData.isFullTimeResidence} onChange={(e) => updateRecreationalField("isFullTimeResidence", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Full-Time Residence</span>
+                  </label>
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={recreationalFormData.towingVehicle} onChange={(e) => updateRecreationalField("towingVehicle", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Towing a Vehicle (Toad)</span>
+                  </label>
+                  {recreationalFormData.towingVehicle && (
+                    <Field label="Towed Vehicle" value={recreationalFormData.toadDescription} onChange={(v: string) => updateRecreationalField("toadDescription", v)} placeholder="2022 Jeep Wrangler" className="col-span-2" />
+                  )}
+                </div>
+              </Section>
+            )}
+
+            {/* Item Details - Tractor */}
+            {recreationalFormData.itemType === "tractor" && (
+              <Section id="itemDetails" icon={Car} title="Tractor Information">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Year" value={recreationalFormData.year} onChange={(v: string) => updateRecreationalField("year", v)} required placeholder="2023" />
+                  <Field label="Make" value={recreationalFormData.make} onChange={(v: string) => updateRecreationalField("make", v)} required placeholder="John Deere" />
+                  <Field label="Model" value={recreationalFormData.model} onChange={(v: string) => updateRecreationalField("model", v)} required placeholder="3038E" />
+                  <Field label="Serial Number" value={recreationalFormData.serialNumber} onChange={(v: string) => updateRecreationalField("serialNumber", v)} placeholder="Serial #" />
+                  <Field label="Horsepower" value={recreationalFormData.horsepower} onChange={(v: string) => updateRecreationalField("horsepower", v)} placeholder="38" />
+                  <Field label="Primary Use" value={recreationalFormData.primaryUseType} onChange={(v: string) => updateRecreationalField("primaryUseType", v)} options={TRACTOR_USE_TYPES} />
+                  <Field label="Purchase Price" value={recreationalFormData.purchasePrice} onChange={(v: string) => updateRecreationalField("purchasePrice", v)} required placeholder="$35,000" />
+                  <Field label="Current Value" value={recreationalFormData.currentValue} onChange={(v: string) => updateRecreationalField("currentValue", v)} required placeholder="$30,000" />
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                    <input type="checkbox" checked={recreationalFormData.isDrivenOnRoads} onChange={(e) => updateRecreationalField("isDrivenOnRoads", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Driven on Public Roads</span>
+                  </label>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Attachments/Implements</label>
+                    <textarea value={recreationalFormData.attachments} onChange={(e) => updateRecreationalField("attachments", e.target.value)} placeholder="Loader, mower, backhoe..." rows={2} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                  <Field label="Attachments Value" value={recreationalFormData.attachmentsValue} onChange={(v: string) => updateRecreationalField("attachmentsValue", v)} placeholder="$8,000" />
+                </div>
+              </Section>
+            )}
+
+            {/* Usage & Storage */}
+            {recreationalFormData.itemType && (
+              <Section id="usageStorage" icon={Home} title="Usage & Storage">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Storage Location" value={recreationalFormData.storageLocation} onChange={(v: string) => updateRecreationalField("storageLocation", v)} options={STORAGE_LOCATIONS} required />
+                  <Field label="Months Per Year in Use" value={recreationalFormData.monthsInUse} onChange={(v: string) => updateRecreationalField("monthsInUse", v)} placeholder="6" />
+                  {(recreationalFormData.itemType === "boat" || recreationalFormData.itemType === "pwc") && (
+                    <>
+                      <Field label="Primary Body of Water" value={recreationalFormData.primaryWaterBody} onChange={(v: string) => updateRecreationalField("primaryWaterBody", v)} placeholder="Lake Travis" />
+                      <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                        <input type="checkbox" checked={recreationalFormData.oceanUse} onChange={(e) => updateRecreationalField("oceanUse", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                        <span className="text-sm text-gray-300">Ocean/Saltwater Use</span>
+                      </label>
+                      {recreationalFormData.oceanUse && (
+                        <Field label="Max Miles Offshore" value={recreationalFormData.milesFromCoast} onChange={(v: string) => updateRecreationalField("milesFromCoast", v)} placeholder="3" />
+                      )}
+                    </>
+                  )}
+                </div>
+                {!["home_garage", "home_driveway", "home_yard"].includes(recreationalFormData.storageLocation) && (
+                  <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <Field label="Storage Address" value={recreationalFormData.storageAddress} onChange={(v: string) => updateRecreationalField("storageAddress", v)} placeholder="123 Marina Dr" className="col-span-2" />
+                    <Field label="Storage City" value={recreationalFormData.storageCity} onChange={(v: string) => updateRecreationalField("storageCity", v)} placeholder="Austin" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="State" value={recreationalFormData.storageState} onChange={(v: string) => updateRecreationalField("storageState", v)} options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                      <Field label="ZIP" value={recreationalFormData.storageZip} onChange={(v: string) => updateRecreationalField("storageZip", v)} placeholder="78703" />
+                    </div>
+                  </div>
+                )}
+              </Section>
+            )}
+
+            {/* Coverage Options */}
+            {recreationalFormData.itemType && (
+              <Section id="coverage" icon={Shield} title="Coverage Options">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Valuation Type" value={recreationalFormData.valuationType} onChange={(v: string) => updateRecreationalField("valuationType", v)} options={[{ value: "agreed_value", label: "Agreed Value (Recommended)" }, { value: "actual_cash_value", label: "Actual Cash Value" }]} />
+                  {recreationalFormData.valuationType === "agreed_value" && (
+                    <Field label="Agreed Value" value={recreationalFormData.agreedValue} onChange={(v: string) => updateRecreationalField("agreedValue", v)} placeholder="$65,000" />
+                  )}
+                  <Field label="Liability Limits" value={recreationalFormData.liabilityLimit} onChange={(v: string) => updateRecreationalField("liabilityLimit", v)} options={REC_LIABILITY_LIMITS} required />
+                  <Field label="Deductible" value={recreationalFormData.physicalDamageDeductible} onChange={(v: string) => updateRecreationalField("physicalDamageDeductible", v)} options={REC_DEDUCTIBLE_OPTIONS} />
+                </div>
+                <div className="mt-6 pt-6 border-t border-gray-700/50 grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={recreationalFormData.medicalPayments} onChange={(e) => updateRecreationalField("medicalPayments", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Medical Payments</span>
+                  </label>
+                  {recreationalFormData.medicalPayments && (
+                    <Field label="Med Pay Limit" value={recreationalFormData.medicalPaymentsLimit} onChange={(v: string) => updateRecreationalField("medicalPaymentsLimit", v)} options={REC_MED_PAY_OPTIONS} />
+                  )}
+                  {(recreationalFormData.itemType === "boat" || recreationalFormData.itemType === "pwc") && (
+                    <>
+                      <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                        <input type="checkbox" checked={recreationalFormData.uninsuredWatercraft} onChange={(e) => updateRecreationalField("uninsuredWatercraft", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                        <span className="text-sm text-gray-300">Uninsured Watercraft</span>
+                      </label>
+                      <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                        <input type="checkbox" checked={recreationalFormData.onWaterTowing} onChange={(e) => updateRecreationalField("onWaterTowing", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                        <span className="text-sm text-gray-300">On-Water Towing</span>
+                      </label>
+                      <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                        <input type="checkbox" checked={recreationalFormData.fuelSpillLiability} onChange={(e) => updateRecreationalField("fuelSpillLiability", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                        <span className="text-sm text-gray-300">Fuel Spill Liability</span>
+                      </label>
+                    </>
+                  )}
+                  {(recreationalFormData.itemType === "motorhome" || recreationalFormData.itemType === "travel_trailer") && (
+                    <>
+                      <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                        <input type="checkbox" checked={recreationalFormData.emergencyExpense} onChange={(e) => updateRecreationalField("emergencyExpense", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                        <span className="text-sm text-gray-300">Emergency Expense</span>
+                      </label>
+                      <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                        <input type="checkbox" checked={recreationalFormData.roadsideAssistance} onChange={(e) => updateRecreationalField("roadsideAssistance", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                        <span className="text-sm text-gray-300">Roadside Assistance</span>
+                      </label>
+                    </>
+                  )}
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={recreationalFormData.personalEffects} onChange={(e) => updateRecreationalField("personalEffects", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Personal Effects</span>
+                  </label>
+                  <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                    <input type="checkbox" checked={recreationalFormData.totalLossReplacement} onChange={(e) => updateRecreationalField("totalLossReplacement", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                    <span className="text-sm text-gray-300">Total Loss Replacement</span>
+                  </label>
+                </div>
+              </Section>
+            )}
+
+            {/* Operators */}
+            <Section id="operators" icon={User} title="Operators">
+              <div className="space-y-4">
+                {recreationalFormData.operators.map((operator, index) => (
+                  <div key={operator.id} className="bg-gray-900/50 rounded-xl p-4 border border-gray-700/50">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-sm font-medium text-gray-300">Operator {index + 1}</span>
+                      {recreationalFormData.operators.length > 1 && (
+                        <button onClick={() => removeRecreationalOperator(operator.id)} className="text-red-400 hover:text-red-300">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Field label="First Name" value={operator.firstName} onChange={(v: string) => updateRecreationalOperator(operator.id, "firstName", v)} required placeholder="John" />
+                      <Field label="Last Name" value={operator.lastName} onChange={(v: string) => updateRecreationalOperator(operator.id, "lastName", v)} required placeholder="Smith" />
+                      <Field label="Date of Birth" value={operator.dob} onChange={(v: string) => updateRecreationalOperator(operator.id, "dob", v)} type="date" required />
+                      <Field label="Relationship" value={operator.relationship} onChange={(v: string) => updateRecreationalOperator(operator.id, "relationship", v)} options={OPERATOR_RELATIONSHIPS} />
+                      <Field label="Years Experience" value={operator.yearsExperience} onChange={(v: string) => updateRecreationalOperator(operator.id, "yearsExperience", v)} placeholder="5" />
+                      {(recreationalFormData.itemType === "boat" || recreationalFormData.itemType === "pwc") && (
+                        <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                          <input type="checkbox" checked={operator.hasBoatingSafetyCourse} onChange={(e) => updateRecreationalOperator(operator.id, "hasBoatingSafetyCourse", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                          <span className="text-sm text-gray-300">Boating Safety Course</span>
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <Button onClick={addRecreationalOperator} variant="outline" className="w-full border-dashed border-gray-600 text-gray-400 hover:text-white hover:border-gray-500">
+                  <Plus className="w-4 h-4 mr-2" /> Add Operator
+                </Button>
+              </div>
+            </Section>
+
+            {/* Prior Insurance & Loss History */}
+            <Section id="prior" icon={FileText} title="Prior Insurance & Loss History">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Currently Insured?" value={recreationalFormData.hasCurrentCoverage ? "yes" : "no"} onChange={(v: string) => updateRecreationalField("hasCurrentCoverage", v === "yes")} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]} />
+                {recreationalFormData.hasCurrentCoverage && (
+                  <>
+                    <Field label="Current Carrier" value={recreationalFormData.currentCarrier} onChange={(v: string) => updateRecreationalField("currentCarrier", v)} placeholder="Progressive" />
+                    <Field label="Current Premium" value={recreationalFormData.currentPremium} onChange={(v: string) => updateRecreationalField("currentPremium", v)} placeholder="$800/yr" />
+                    <Field label="Expiration Date" value={recreationalFormData.expirationDate} onChange={(v: string) => updateRecreationalField("expirationDate", v)} type="date" />
+                  </>
+                )}
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={recreationalFormData.hasPriorLosses} onChange={(e) => updateRecreationalField("hasPriorLosses", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Claims in Past 5 Years</span>
+                </label>
+                {recreationalFormData.hasPriorLosses && (
+                  <div className="col-span-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Claims Details</label>
+                    <textarea value={recreationalFormData.lossDescription} onChange={(e) => updateRecreationalField("lossDescription", e.target.value)} placeholder="Date, type, and amount for each claim..." rows={3} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            {/* Financing */}
+            <Section id="financing" icon={DollarSign} title="Financing">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Is This Financed?" value={recreationalFormData.isFinanced ? "yes" : "no"} onChange={(v: string) => updateRecreationalField("isFinanced", v === "yes")} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No (Owned Outright)" }]} />
+                {recreationalFormData.isFinanced && (
+                  <>
+                    <Field label="Lienholder/Bank" value={recreationalFormData.lienholderName} onChange={(v: string) => updateRecreationalField("lienholderName", v)} required placeholder="Bank of America" />
+                    <Field label="Lienholder Address" value={recreationalFormData.lienholderAddress} onChange={(v: string) => updateRecreationalField("lienholderAddress", v)} placeholder="P.O. Box 1234" className="col-span-2" />
+                    <Field label="Loan Account #" value={recreationalFormData.loanAccountNumber} onChange={(v: string) => updateRecreationalField("loanAccountNumber", v)} placeholder="Account number" />
+                  </>
+                )}
+              </div>
+            </Section>
+
+            {/* Notes */}
+            <Section id="notes" icon={FileText} title="Agent Notes">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="col-span-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Agent Notes</label>
+                  <textarea value={recreationalFormData.agentNotes} onChange={(e) => updateRecreationalField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                </div>
+                <Field label="Effective Date" value={recreationalFormData.effectiveDate} onChange={(v: string) => updateRecreationalField("effectiveDate", v)} type="date" />
               </div>
             </Section>
           </>
