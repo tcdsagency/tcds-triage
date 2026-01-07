@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { messages } from "@/db/schema";
 import { twilioClient } from "@/lib/twilio";
+import { eq, lte, and } from "drizzle-orm";
 
 // =============================================================================
 // TYPES
@@ -140,7 +141,7 @@ export async function GET(request: NextRequest) {
               externalId: sendResult.messageId,
               sentAt: new Date(),
             })
-            .where((messages: any) => messages.id.equals(msg.id));
+            .where(eq(messages.id, msg.id));
 
           results.push({
             id: msg.id,
@@ -155,7 +156,7 @@ export async function GET(request: NextRequest) {
               scheduleStatus: "failed",
               status: "failed",
             })
-            .where((messages: any) => messages.id.equals(msg.id));
+            .where(eq(messages.id, msg.id));
 
           results.push({
             id: msg.id,

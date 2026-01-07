@@ -109,7 +109,7 @@ export default function PropertyIntelligencePage() {
   const [selectedHistoricalDate, setSelectedHistoricalDate] = useState<string | null>(null);
 
   // ==========================================================================
-  // Google Places Autocomplete
+  // Google Places Autocomplete (via server proxy)
   // ==========================================================================
 
   const handleSearchChange = useCallback(async (value: string) => {
@@ -121,27 +121,17 @@ export default function PropertyIntelligencePage() {
       return;
     }
 
-    // Use Google Places Autocomplete API
     try {
-      const googleMapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-      if (!googleMapsKey) {
-        // Mock suggestions for development
-        setSuggestions([
-          { description: `${value}, Dallas, TX`, place_id: 'mock1' },
-          { description: `${value}, Fort Worth, TX`, place_id: 'mock2' },
-        ]);
-        setShowSuggestions(true);
-        return;
-      }
-
+      // Use our server-side proxy to avoid CORS issues
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(value)}&types=address&components=country:us&key=${googleMapsKey}`
+        `/api/places/autocomplete?input=${encodeURIComponent(value)}`
       );
       const data = await response.json();
       setSuggestions(data.predictions || []);
       setShowSuggestions(true);
     } catch (err) {
       console.error('Autocomplete error:', err);
+      setSuggestions([]);
     }
   }, []);
 
@@ -152,20 +142,22 @@ export default function PropertyIntelligencePage() {
     setError(null);
 
     try {
-      // Get place details for lat/lng
+      // Get place details for lat/lng via server proxy
       let lat = 32.7767; // Default Dallas
       let lng = -96.7970;
+      let formattedAddress = suggestion.description;
 
-      const googleMapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-      if (googleMapsKey && suggestion.place_id !== 'mock1' && suggestion.place_id !== 'mock2') {
-        const detailsResponse = await fetch(
-          `https://maps.googleapis.com/maps/api/place/details/json?place_id=${suggestion.place_id}&fields=geometry&key=${googleMapsKey}`
-        );
-        const details = await detailsResponse.json();
-        if (details.result?.geometry?.location) {
-          lat = details.result.geometry.location.lat;
-          lng = details.result.geometry.location.lng;
-        }
+      const detailsResponse = await fetch(
+        `/api/places/details?place_id=${suggestion.place_id}`
+      );
+      const details = await detailsResponse.json();
+
+      if (details.result?.geometry?.location) {
+        lat = details.result.geometry.location.lat;
+        lng = details.result.geometry.location.lng;
+      }
+      if (details.result?.formatted_address) {
+        formattedAddress = details.result.formatted_address;
       }
 
       // Call our lookup API
@@ -174,7 +166,7 @@ export default function PropertyIntelligencePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           address: suggestion.description,
-          formattedAddress: suggestion.description,
+          formattedAddress,
           lat,
           lng,
         }),

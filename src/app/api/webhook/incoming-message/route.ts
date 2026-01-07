@@ -251,7 +251,7 @@ async function checkAfterHours(tenantId: string): Promise<AfterHoursInfo> {
 
     const currentTime = `${hour}:${minute}`;
     const businessHours = tenant.businessHours as Record<string, any>;
-    const todayHours = businessHours?.[weekday];
+    const todayHours = weekday ? businessHours?.[weekday] : null;
 
     if (!todayHours || todayHours.closed) {
       return {

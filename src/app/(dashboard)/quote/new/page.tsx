@@ -263,6 +263,169 @@ interface UmbrellaFormData {
 }
 
 // =============================================================================
+// COMMERCIAL FORM DATA TYPES
+// =============================================================================
+
+interface BOPFormData {
+  // Business Information
+  businessName: string;
+  dba: string;
+  fein: string;
+  businessType: string;
+  yearsInBusiness: string;
+  // Primary Contact
+  contactName: string;
+  contactTitle: string;
+  phone: string;
+  email: string;
+  // Business Location
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  isOwned: boolean;
+  squareFootage: string;
+  yearBuilt: string;
+  constructionType: string;
+  numStories: string;
+  sprinklerSystem: boolean;
+  burglarAlarm: boolean;
+  // Operations
+  businessDescription: string;
+  naicsCode: string;
+  annualRevenue: string;
+  numEmployees: string;
+  numFullTime: string;
+  numPartTime: string;
+  // Property Coverage
+  buildingCoverage: string;
+  bppCoverage: string;
+  propertyDeductible: string;
+  // Liability Coverage
+  glLimit: string;
+  productsOps: boolean;
+  // Additional Coverages
+  dataBreachCoverage: boolean;
+  employeeDishonesty: boolean;
+  equipmentBreakdown: boolean;
+  // Prior Insurance
+  hasCurrentInsurance: boolean;
+  currentCarrier: string;
+  currentPremium: string;
+  expirationDate: string;
+  hasClaims: boolean;
+  claimsDescription: string;
+  // Notes
+  agentNotes: string;
+  effectiveDate: string;
+}
+
+interface GeneralLiabilityFormData {
+  // Business Information
+  businessName: string;
+  dba: string;
+  fein: string;
+  businessType: string;
+  yearsInBusiness: string;
+  // Primary Contact
+  contactName: string;
+  contactTitle: string;
+  phone: string;
+  email: string;
+  // Business Location
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  // Operations
+  businessDescription: string;
+  naicsCode: string;
+  classCode: string;
+  annualRevenue: string;
+  annualPayroll: string;
+  numEmployees: string;
+  // Additional Locations
+  hasMultipleLocations: boolean;
+  numLocations: string;
+  // Subcontractors
+  usesSubcontractors: boolean;
+  subcontractorCost: string;
+  requiresCOI: boolean;
+  // Coverage Limits
+  eachOccurrence: string;
+  generalAggregate: string;
+  productsCompletedOps: string;
+  personalAdvertising: string;
+  medicalPayments: string;
+  damagePremises: string;
+  // Additional Coverages
+  additionalInsuredNeeded: boolean;
+  waiverOfSubrogation: boolean;
+  // Prior Insurance
+  hasCurrentInsurance: boolean;
+  currentCarrier: string;
+  currentPremium: string;
+  expirationDate: string;
+  hasClaims: boolean;
+  claimsDescription: string;
+  // Notes
+  agentNotes: string;
+  effectiveDate: string;
+}
+
+interface WorkersCompFormData {
+  // Business Information
+  businessName: string;
+  dba: string;
+  fein: string;
+  businessType: string;
+  yearsInBusiness: string;
+  // Primary Contact
+  contactName: string;
+  contactTitle: string;
+  phone: string;
+  email: string;
+  // Business Location
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  governingClassCode: string;
+  // Employees by Class
+  employees: WorkersCompEmployee[];
+  // Experience Mod
+  hasExpMod: boolean;
+  expModRate: string;
+  expModEffective: string;
+  // Ownership
+  includeOwners: boolean;
+  ownerPayroll: string;
+  numOwners: string;
+  // Subcontractors
+  usesSubcontractors: boolean;
+  subcontractorCost: string;
+  hasSubContractorCoverage: boolean;
+  // Prior Insurance
+  hasCurrentInsurance: boolean;
+  currentCarrier: string;
+  currentPremium: string;
+  expirationDate: string;
+  hasClaims: boolean;
+  claimsDescription: string;
+  // Notes
+  agentNotes: string;
+  effectiveDate: string;
+}
+
+interface WorkersCompEmployee {
+  id: string;
+  classCode: string;
+  classDescription: string;
+  numEmployees: string;
+  annualPayroll: string;
+}
+
+// =============================================================================
 // CONSTANTS
 // =============================================================================
 
@@ -271,9 +434,11 @@ const QUOTE_TYPES: QuoteType[] = [
   { id: "homeowners", name: "Homeowners", icon: Home, description: "Home insurance quote", available: true },
   { id: "renters", name: "Renters", icon: Home, description: "Renters insurance", available: true },
   { id: "umbrella", name: "Umbrella", icon: Shield, description: "Excess liability", available: true },
+  { id: "bop", name: "Business Owner's (BOP)", icon: Building2, description: "Property + Liability bundle", available: true },
+  { id: "general_liability", name: "General Liability", icon: Shield, description: "Commercial liability", available: true },
+  { id: "workers_comp", name: "Workers Comp", icon: User, description: "Employee coverage", available: true },
   { id: "auto_home_bundle", name: "Auto + Home", icon: Home, description: "Bundle discount", available: false },
   { id: "recreational", name: "Recreational", icon: Ship, description: "Boat, RV, ATV", available: false },
-  { id: "commercial", name: "Commercial", icon: Building2, description: "Business insurance", available: false },
   { id: "flood", name: "Flood", icon: Droplets, description: "Flood insurance", available: false },
 ];
 
@@ -386,6 +551,87 @@ const INITIAL_UMBRELLA_FORM: UmbrellaFormData = {
   // Prior Insurance
   hasCurrentUmbrella: false, currentCarrier: "", currentPremium: "",
   hasClaims: false, claimsDescription: "",
+  // Notes
+  agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
+};
+
+// Workers Comp Employee Helper
+const createWCEmployee = (): WorkersCompEmployee => ({
+  id: crypto.randomUUID(),
+  classCode: "", classDescription: "", numEmployees: "", annualPayroll: ""
+});
+
+const INITIAL_BOP_FORM: BOPFormData = {
+  // Business Information
+  businessName: "", dba: "", fein: "", businessType: "llc", yearsInBusiness: "",
+  // Primary Contact
+  contactName: "", contactTitle: "", phone: "", email: "",
+  // Business Location
+  address: "", city: "", state: "", zip: "",
+  isOwned: false, squareFootage: "", yearBuilt: "",
+  constructionType: "masonry", numStories: "1",
+  sprinklerSystem: false, burglarAlarm: false,
+  // Operations
+  businessDescription: "", naicsCode: "", annualRevenue: "",
+  numEmployees: "", numFullTime: "", numPartTime: "",
+  // Property Coverage
+  buildingCoverage: "", bppCoverage: "", propertyDeductible: "1000",
+  // Liability Coverage
+  glLimit: "1000000", productsOps: true,
+  // Additional Coverages
+  dataBreachCoverage: false, employeeDishonesty: false, equipmentBreakdown: false,
+  // Prior Insurance
+  hasCurrentInsurance: false, currentCarrier: "", currentPremium: "",
+  expirationDate: "", hasClaims: false, claimsDescription: "",
+  // Notes
+  agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
+};
+
+const INITIAL_GL_FORM: GeneralLiabilityFormData = {
+  // Business Information
+  businessName: "", dba: "", fein: "", businessType: "llc", yearsInBusiness: "",
+  // Primary Contact
+  contactName: "", contactTitle: "", phone: "", email: "",
+  // Business Location
+  address: "", city: "", state: "", zip: "",
+  // Operations
+  businessDescription: "", naicsCode: "", classCode: "",
+  annualRevenue: "", annualPayroll: "", numEmployees: "",
+  // Additional Locations
+  hasMultipleLocations: false, numLocations: "1",
+  // Subcontractors
+  usesSubcontractors: false, subcontractorCost: "", requiresCOI: true,
+  // Coverage Limits
+  eachOccurrence: "1000000", generalAggregate: "2000000",
+  productsCompletedOps: "2000000", personalAdvertising: "1000000",
+  medicalPayments: "10000", damagePremises: "100000",
+  // Additional Coverages
+  additionalInsuredNeeded: false, waiverOfSubrogation: false,
+  // Prior Insurance
+  hasCurrentInsurance: false, currentCarrier: "", currentPremium: "",
+  expirationDate: "", hasClaims: false, claimsDescription: "",
+  // Notes
+  agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
+};
+
+const INITIAL_WC_FORM: WorkersCompFormData = {
+  // Business Information
+  businessName: "", dba: "", fein: "", businessType: "llc", yearsInBusiness: "",
+  // Primary Contact
+  contactName: "", contactTitle: "", phone: "", email: "",
+  // Business Location
+  address: "", city: "", state: "", zip: "", governingClassCode: "",
+  // Employees by Class
+  employees: [createWCEmployee()],
+  // Experience Mod
+  hasExpMod: false, expModRate: "1.00", expModEffective: "",
+  // Ownership
+  includeOwners: false, ownerPayroll: "", numOwners: "1",
+  // Subcontractors
+  usesSubcontractors: false, subcontractorCost: "", hasSubContractorCoverage: false,
+  // Prior Insurance
+  hasCurrentInsurance: false, currentCarrier: "", currentPremium: "",
+  expirationDate: "", hasClaims: false, claimsDescription: "",
   // Notes
   agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
 };
@@ -527,6 +773,55 @@ const HURRICANE_DEDUCTIBLE_OPTIONS = [
   { value: "5", label: "5% of Dwelling" },
 ];
 
+// Commercial form select options
+const BUSINESS_TYPES = [
+  { value: "sole_prop", label: "Sole Proprietorship" },
+  { value: "partnership", label: "Partnership" },
+  { value: "llc", label: "LLC" },
+  { value: "corporation", label: "Corporation" },
+  { value: "s_corp", label: "S-Corporation" },
+  { value: "nonprofit", label: "Non-Profit" },
+];
+
+const COMMERCIAL_CONSTRUCTION_TYPES = [
+  { value: "frame", label: "Frame" },
+  { value: "joisted_masonry", label: "Joisted Masonry" },
+  { value: "masonry", label: "Masonry Non-Combustible" },
+  { value: "non_combustible", label: "Non-Combustible" },
+  { value: "modified_fire_resistive", label: "Modified Fire Resistive" },
+  { value: "fire_resistive", label: "Fire Resistive" },
+];
+
+const BOP_PROPERTY_DEDUCTIBLE_OPTIONS = [
+  { value: "500", label: "$500" },
+  { value: "1000", label: "$1,000" },
+  { value: "2500", label: "$2,500" },
+  { value: "5000", label: "$5,000" },
+];
+
+const GL_LIMIT_OPTIONS = [
+  { value: "500000", label: "$500,000" },
+  { value: "1000000", label: "$1,000,000" },
+  { value: "2000000", label: "$2,000,000" },
+];
+
+const GL_AGGREGATE_OPTIONS = [
+  { value: "1000000", label: "$1,000,000" },
+  { value: "2000000", label: "$2,000,000" },
+  { value: "4000000", label: "$4,000,000" },
+];
+
+const GL_MED_PAY_OPTIONS = [
+  { value: "5000", label: "$5,000" },
+  { value: "10000", label: "$10,000" },
+];
+
+const GL_DAMAGE_PREMISES_OPTIONS = [
+  { value: "50000", label: "$50,000" },
+  { value: "100000", label: "$100,000" },
+  { value: "300000", label: "$300,000" },
+];
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
@@ -538,7 +833,10 @@ export default function QuoteIntakePage() {
   const [homeownersFormData, setHomeownersFormData] = useState<HomeownersFormData>(INITIAL_HOMEOWNERS_FORM);
   const [rentersFormData, setRentersFormData] = useState<RentersFormData>(INITIAL_RENTERS_FORM);
   const [umbrellaFormData, setUmbrellaFormData] = useState<UmbrellaFormData>(INITIAL_UMBRELLA_FORM);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["customer", "vehicles", "drivers", "coverage", "property", "propertyDetails", "roof", "rental", "underlying"]));
+  const [bopFormData, setBopFormData] = useState<BOPFormData>(INITIAL_BOP_FORM);
+  const [glFormData, setGlFormData] = useState<GeneralLiabilityFormData>(INITIAL_GL_FORM);
+  const [wcFormData, setWcFormData] = useState<WorkersCompFormData>(INITIAL_WC_FORM);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["customer", "vehicles", "drivers", "coverage", "property", "propertyDetails", "roof", "rental", "underlying", "business", "location", "operations", "employees"]));
   const [aiProcessing, setAiProcessing] = useState(false);
   const [aiPasteText, setAiPasteText] = useState("");
   const [showAiPaste, setShowAiPaste] = useState(false);
@@ -608,10 +906,61 @@ export default function QuoteIntakePage() {
     return Math.round((filled / total) * 100);
   }, [umbrellaFormData])();
 
+  // BOP form completion calculation
+  const bopCompletion = useCallback(() => {
+    let filled = 0, total = 10;
+    if (bopFormData.businessName) filled++;
+    if (bopFormData.contactName) filled++;
+    if (bopFormData.phone) filled++;
+    if (bopFormData.address) filled++;
+    if (bopFormData.city) filled++;
+    if (bopFormData.state) filled++;
+    if (bopFormData.zip) filled++;
+    if (bopFormData.businessDescription) filled++;
+    if (bopFormData.annualRevenue) filled++;
+    if (bopFormData.glLimit) filled++;
+    return Math.round((filled / total) * 100);
+  }, [bopFormData])();
+
+  // GL form completion calculation
+  const glCompletion = useCallback(() => {
+    let filled = 0, total = 10;
+    if (glFormData.businessName) filled++;
+    if (glFormData.contactName) filled++;
+    if (glFormData.phone) filled++;
+    if (glFormData.address) filled++;
+    if (glFormData.city) filled++;
+    if (glFormData.state) filled++;
+    if (glFormData.zip) filled++;
+    if (glFormData.businessDescription) filled++;
+    if (glFormData.annualRevenue) filled++;
+    if (glFormData.eachOccurrence) filled++;
+    return Math.round((filled / total) * 100);
+  }, [glFormData])();
+
+  // Workers Comp form completion calculation
+  const wcCompletion = useCallback(() => {
+    let filled = 0, total = 10;
+    if (wcFormData.businessName) filled++;
+    if (wcFormData.contactName) filled++;
+    if (wcFormData.phone) filled++;
+    if (wcFormData.address) filled++;
+    if (wcFormData.city) filled++;
+    if (wcFormData.state) filled++;
+    if (wcFormData.zip) filled++;
+    if (wcFormData.fein) filled++;
+    if (wcFormData.governingClassCode) filled++;
+    if (wcFormData.employees.some(e => e.classCode && e.annualPayroll)) filled++;
+    return Math.round((filled / total) * 100);
+  }, [wcFormData])();
+
   const completion =
     selectedType === "homeowners" ? homeownersCompletion :
     selectedType === "renters" ? rentersCompletion :
     selectedType === "umbrella" ? umbrellaCompletion :
+    selectedType === "bop" ? bopCompletion :
+    selectedType === "general_liability" ? glCompletion :
+    selectedType === "workers_comp" ? wcCompletion :
     autoCompletion;
 
   const toggleSection = (id: string) => {
@@ -653,6 +1002,27 @@ export default function QuoteIntakePage() {
     setUmbrellaFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
   };
+
+  // Commercial form field updates
+  const updateBopField = (field: keyof BOPFormData, value: any) => {
+    setBopFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
+  };
+
+  const updateGlField = (field: keyof GeneralLiabilityFormData, value: any) => {
+    setGlFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
+  };
+
+  const updateWcField = (field: keyof WorkersCompFormData, value: any) => {
+    setWcFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
+  };
+
+  // Workers Comp employee management
+  const addWCEmployee = () => setWcFormData(prev => ({ ...prev, employees: [...prev.employees, createWCEmployee()] }));
+  const removeWCEmployee = (id: string) => wcFormData.employees.length > 1 && setWcFormData(prev => ({ ...prev, employees: prev.employees.filter(e => e.id !== id) }));
+  const updateWCEmployee = (id: string, field: keyof WorkersCompEmployee, value: string) => setWcFormData(prev => ({ ...prev, employees: prev.employees.map(e => e.id === id ? { ...e, [field]: value } : e) }));
 
   const decodeVin = async (vehicleId: string, vin: string) => {
     if (vin.length !== 17) return;
@@ -720,6 +1090,24 @@ export default function QuoteIntakePage() {
       if (!umbrellaFormData.lastName) errs.lastName = "Required";
       if (!umbrellaFormData.phone) errs.phone = "Required";
       if (!umbrellaFormData.address) errs.address = "Required";
+    } else if (selectedType === "bop") {
+      if (!bopFormData.businessName) errs.businessName = "Required";
+      if (!bopFormData.contactName) errs.contactName = "Required";
+      if (!bopFormData.phone) errs.phone = "Required";
+      if (!bopFormData.address) errs.address = "Required";
+      if (!bopFormData.businessDescription) errs.businessDescription = "Required";
+    } else if (selectedType === "general_liability") {
+      if (!glFormData.businessName) errs.businessName = "Required";
+      if (!glFormData.contactName) errs.contactName = "Required";
+      if (!glFormData.phone) errs.phone = "Required";
+      if (!glFormData.address) errs.address = "Required";
+      if (!glFormData.businessDescription) errs.businessDescription = "Required";
+    } else if (selectedType === "workers_comp") {
+      if (!wcFormData.businessName) errs.businessName = "Required";
+      if (!wcFormData.contactName) errs.contactName = "Required";
+      if (!wcFormData.phone) errs.phone = "Required";
+      if (!wcFormData.fein) errs.fein = "Required";
+      if (!wcFormData.governingClassCode) errs.governingClassCode = "Required";
     } else {
       if (!autoFormData.firstName) errs.firstName = "Required";
       if (!autoFormData.lastName) errs.lastName = "Required";
@@ -829,11 +1217,17 @@ export default function QuoteIntakePage() {
                 selectedType === "homeowners" ? "bg-emerald-500/20" :
                 selectedType === "renters" ? "bg-purple-500/20" :
                 selectedType === "umbrella" ? "bg-amber-500/20" :
+                selectedType === "bop" ? "bg-orange-500/20" :
+                selectedType === "general_liability" ? "bg-cyan-500/20" :
+                selectedType === "workers_comp" ? "bg-rose-500/20" :
                 "bg-blue-500/20"
               )}>
                 {selectedType === "homeowners" ? <Home className="w-5 h-5 text-emerald-400" /> :
                  selectedType === "renters" ? <Home className="w-5 h-5 text-purple-400" /> :
                  selectedType === "umbrella" ? <Shield className="w-5 h-5 text-amber-400" /> :
+                 selectedType === "bop" ? <Building2 className="w-5 h-5 text-orange-400" /> :
+                 selectedType === "general_liability" ? <Shield className="w-5 h-5 text-cyan-400" /> :
+                 selectedType === "workers_comp" ? <User className="w-5 h-5 text-rose-400" /> :
                  <Car className="w-5 h-5 text-blue-400" />}
               </div>
               <div>
@@ -841,6 +1235,9 @@ export default function QuoteIntakePage() {
                   {selectedType === "homeowners" ? "Homeowners Quote" :
                    selectedType === "renters" ? "Renters Quote" :
                    selectedType === "umbrella" ? "Umbrella Quote" :
+                   selectedType === "bop" ? "Business Owner's Policy (BOP)" :
+                   selectedType === "general_liability" ? "General Liability" :
+                   selectedType === "workers_comp" ? "Workers Compensation" :
                    "Personal Auto Quote"}
                 </h1>
                 <p className="text-sm text-gray-400">Smart Form with AI Assist</p>
@@ -1554,6 +1951,436 @@ export default function QuoteIntakePage() {
                   <textarea value={umbrellaFormData.agentNotes} onChange={(e) => updateUmbrellaField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
                 </div>
                 <Field label="Effective Date" value={umbrellaFormData.effectiveDate} onChange={(v: string) => updateUmbrellaField("effectiveDate", v)} type="date" />
+              </div>
+            </Section>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* BOP FORM */}
+        {/* ========================================================================= */}
+        {selectedType === "bop" && (
+          <>
+            {/* Business Information */}
+            <Section id="business" icon={Building2} title="Business Information">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Business Name" value={bopFormData.businessName} onChange={(v: string) => updateBopField("businessName", v)} required placeholder="ABC Company LLC" className="col-span-2" error={errors.businessName} />
+                <Field label="DBA (if different)" value={bopFormData.dba} onChange={(v: string) => updateBopField("dba", v)} placeholder="Doing Business As" />
+                <Field label="FEIN" value={bopFormData.fein} onChange={(v: string) => updateBopField("fein", v)} placeholder="XX-XXXXXXX" />
+                <Field label="Business Type" value={bopFormData.businessType} onChange={(v: string) => updateBopField("businessType", v)} options={BUSINESS_TYPES} />
+                <Field label="Years in Business" value={bopFormData.yearsInBusiness} onChange={(v: string) => updateBopField("yearsInBusiness", v)} placeholder="5" />
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50">
+                <h4 className="text-sm font-medium text-gray-300 mb-4">Primary Contact</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Contact Name" value={bopFormData.contactName} onChange={(v: string) => updateBopField("contactName", v)} required placeholder="John Smith" error={errors.contactName} />
+                  <Field label="Title" value={bopFormData.contactTitle} onChange={(v: string) => updateBopField("contactTitle", v)} placeholder="Owner" />
+                  <Field label="Phone" value={bopFormData.phone} onChange={(v: string) => updateBopField("phone", v)} type="tel" required placeholder="(555) 555-5555" error={errors.phone} />
+                  <Field label="Email" value={bopFormData.email} onChange={(v: string) => updateBopField("email", v)} type="email" placeholder="john@company.com" />
+                </div>
+              </div>
+            </Section>
+
+            {/* Business Location */}
+            <Section id="location" icon={Home} title="Business Location">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Street Address" value={bopFormData.address} onChange={(v: string) => updateBopField("address", v)} required placeholder="123 Business Way" className="col-span-2" error={errors.address} />
+                <Field label="City" value={bopFormData.city} onChange={(v: string) => updateBopField("city", v)} required placeholder="Dallas" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="State" value={bopFormData.state} onChange={(v: string) => updateBopField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="ZIP" value={bopFormData.zip} onChange={(v: string) => updateBopField("zip", v)} required placeholder="75201" />
+                </div>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={bopFormData.isOwned} onChange={(e) => updateBopField("isOwned", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Building is owned</span>
+                </label>
+                <Field label="Square Footage" value={bopFormData.squareFootage} onChange={(v: string) => updateBopField("squareFootage", v)} placeholder="2,500" />
+                <Field label="Year Built" value={bopFormData.yearBuilt} onChange={(v: string) => updateBopField("yearBuilt", v)} placeholder="1998" />
+                <Field label="Construction Type" value={bopFormData.constructionType} onChange={(v: string) => updateBopField("constructionType", v)} options={COMMERCIAL_CONSTRUCTION_TYPES} />
+                <Field label="Number of Stories" value={bopFormData.numStories} onChange={(v: string) => updateBopField("numStories", v)} options={STORIES_OPTIONS} />
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={bopFormData.sprinklerSystem} onChange={(e) => updateBopField("sprinklerSystem", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Sprinkler System</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={bopFormData.burglarAlarm} onChange={(e) => updateBopField("burglarAlarm", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Burglar Alarm</span>
+                </label>
+              </div>
+            </Section>
+
+            {/* Operations */}
+            <Section id="operations" icon={FileText} title="Business Operations">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="col-span-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Business Description <span className="text-red-400">*</span></label>
+                  <textarea value={bopFormData.businessDescription} onChange={(e) => updateBopField("businessDescription", e.target.value)} placeholder="Describe what the business does..." rows={3} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  {errors.businessDescription && <p className="text-red-400 text-xs mt-1">{errors.businessDescription}</p>}
+                </div>
+                <Field label="NAICS Code" value={bopFormData.naicsCode} onChange={(v: string) => updateBopField("naicsCode", v)} placeholder="541110" />
+                <Field label="Annual Revenue" value={bopFormData.annualRevenue} onChange={(v: string) => updateBopField("annualRevenue", v)} placeholder="$500,000" />
+                <Field label="Total Employees" value={bopFormData.numEmployees} onChange={(v: string) => updateBopField("numEmployees", v)} placeholder="10" />
+                <Field label="Full-Time" value={bopFormData.numFullTime} onChange={(v: string) => updateBopField("numFullTime", v)} placeholder="8" />
+                <Field label="Part-Time" value={bopFormData.numPartTime} onChange={(v: string) => updateBopField("numPartTime", v)} placeholder="2" />
+              </div>
+            </Section>
+
+            {/* Coverage */}
+            <Section id="coverage" icon={Shield} title="Coverage">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <h4 className="col-span-4 text-sm font-medium text-gray-300">Property Coverage</h4>
+                <Field label="Building Coverage" value={bopFormData.buildingCoverage} onChange={(v: string) => updateBopField("buildingCoverage", v)} placeholder="$500,000" />
+                <Field label="Business Personal Property" value={bopFormData.bppCoverage} onChange={(v: string) => updateBopField("bppCoverage", v)} placeholder="$100,000" />
+                <Field label="Property Deductible" value={bopFormData.propertyDeductible} onChange={(v: string) => updateBopField("propertyDeductible", v)} options={BOP_PROPERTY_DEDUCTIBLE_OPTIONS} />
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <h4 className="col-span-4 text-sm font-medium text-gray-300">Liability Coverage</h4>
+                <Field label="General Liability Limit" value={bopFormData.glLimit} onChange={(v: string) => updateBopField("glLimit", v)} options={GL_LIMIT_OPTIONS} />
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={bopFormData.productsOps} onChange={(e) => updateBopField("productsOps", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Products/Completed Ops</span>
+                </label>
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <h4 className="col-span-4 text-sm font-medium text-gray-300">Additional Coverages</h4>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={bopFormData.dataBreachCoverage} onChange={(e) => updateBopField("dataBreachCoverage", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Data Breach/Cyber</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={bopFormData.employeeDishonesty} onChange={(e) => updateBopField("employeeDishonesty", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Employee Dishonesty</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={bopFormData.equipmentBreakdown} onChange={(e) => updateBopField("equipmentBreakdown", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Equipment Breakdown</span>
+                </label>
+              </div>
+            </Section>
+
+            {/* Prior Insurance */}
+            <Section id="prior" icon={FileText} title="Prior Insurance">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Currently Insured?" value={bopFormData.hasCurrentInsurance ? "yes" : "no"} onChange={(v: string) => updateBopField("hasCurrentInsurance", v === "yes")} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]} />
+                {bopFormData.hasCurrentInsurance && (
+                  <>
+                    <Field label="Current Carrier" value={bopFormData.currentCarrier} onChange={(v: string) => updateBopField("currentCarrier", v)} placeholder="Hartford" />
+                    <Field label="Current Premium" value={bopFormData.currentPremium} onChange={(v: string) => updateBopField("currentPremium", v)} placeholder="$2,500/yr" />
+                    <Field label="Expiration Date" value={bopFormData.expirationDate} onChange={(v: string) => updateBopField("expirationDate", v)} type="date" />
+                  </>
+                )}
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={bopFormData.hasClaims} onChange={(e) => updateBopField("hasClaims", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Claims in Past 5 Years</span>
+                </label>
+                {bopFormData.hasClaims && (
+                  <div className="col-span-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Claims Details</label>
+                    <textarea value={bopFormData.claimsDescription} onChange={(e) => updateBopField("claimsDescription", e.target.value)} placeholder="Type, date, and amount for each claim..." rows={3} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            {/* Notes */}
+            <Section id="notes" icon={FileText} title="Agent Notes">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="col-span-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Agent Notes</label>
+                  <textarea value={bopFormData.agentNotes} onChange={(e) => updateBopField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                </div>
+                <Field label="Effective Date" value={bopFormData.effectiveDate} onChange={(v: string) => updateBopField("effectiveDate", v)} type="date" />
+              </div>
+            </Section>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* GENERAL LIABILITY FORM */}
+        {/* ========================================================================= */}
+        {selectedType === "general_liability" && (
+          <>
+            {/* Business Information */}
+            <Section id="business" icon={Building2} title="Business Information">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Business Name" value={glFormData.businessName} onChange={(v: string) => updateGlField("businessName", v)} required placeholder="ABC Contractors LLC" className="col-span-2" error={errors.businessName} />
+                <Field label="DBA (if different)" value={glFormData.dba} onChange={(v: string) => updateGlField("dba", v)} placeholder="Doing Business As" />
+                <Field label="FEIN" value={glFormData.fein} onChange={(v: string) => updateGlField("fein", v)} placeholder="XX-XXXXXXX" />
+                <Field label="Business Type" value={glFormData.businessType} onChange={(v: string) => updateGlField("businessType", v)} options={BUSINESS_TYPES} />
+                <Field label="Years in Business" value={glFormData.yearsInBusiness} onChange={(v: string) => updateGlField("yearsInBusiness", v)} placeholder="5" />
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50">
+                <h4 className="text-sm font-medium text-gray-300 mb-4">Primary Contact</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Contact Name" value={glFormData.contactName} onChange={(v: string) => updateGlField("contactName", v)} required placeholder="John Smith" error={errors.contactName} />
+                  <Field label="Title" value={glFormData.contactTitle} onChange={(v: string) => updateGlField("contactTitle", v)} placeholder="Owner" />
+                  <Field label="Phone" value={glFormData.phone} onChange={(v: string) => updateGlField("phone", v)} type="tel" required placeholder="(555) 555-5555" error={errors.phone} />
+                  <Field label="Email" value={glFormData.email} onChange={(v: string) => updateGlField("email", v)} type="email" placeholder="john@company.com" />
+                </div>
+              </div>
+            </Section>
+
+            {/* Business Location */}
+            <Section id="location" icon={Home} title="Business Location">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Street Address" value={glFormData.address} onChange={(v: string) => updateGlField("address", v)} required placeholder="123 Business Way" className="col-span-2" error={errors.address} />
+                <Field label="City" value={glFormData.city} onChange={(v: string) => updateGlField("city", v)} required placeholder="Dallas" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="State" value={glFormData.state} onChange={(v: string) => updateGlField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="ZIP" value={glFormData.zip} onChange={(v: string) => updateGlField("zip", v)} required placeholder="75201" />
+                </div>
+              </div>
+            </Section>
+
+            {/* Operations */}
+            <Section id="operations" icon={FileText} title="Business Operations">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="col-span-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Business Description <span className="text-red-400">*</span></label>
+                  <textarea value={glFormData.businessDescription} onChange={(e) => updateGlField("businessDescription", e.target.value)} placeholder="Describe what the business does..." rows={3} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  {errors.businessDescription && <p className="text-red-400 text-xs mt-1">{errors.businessDescription}</p>}
+                </div>
+                <Field label="NAICS Code" value={glFormData.naicsCode} onChange={(v: string) => updateGlField("naicsCode", v)} placeholder="541110" />
+                <Field label="Class Code" value={glFormData.classCode} onChange={(v: string) => updateGlField("classCode", v)} placeholder="91555" />
+                <Field label="Annual Revenue" value={glFormData.annualRevenue} onChange={(v: string) => updateGlField("annualRevenue", v)} placeholder="$500,000" />
+                <Field label="Annual Payroll" value={glFormData.annualPayroll} onChange={(v: string) => updateGlField("annualPayroll", v)} placeholder="$200,000" />
+                <Field label="Number of Employees" value={glFormData.numEmployees} onChange={(v: string) => updateGlField("numEmployees", v)} placeholder="10" />
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={glFormData.hasMultipleLocations} onChange={(e) => updateGlField("hasMultipleLocations", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Multiple Locations</span>
+                </label>
+                {glFormData.hasMultipleLocations && (
+                  <Field label="Number of Locations" value={glFormData.numLocations} onChange={(v: string) => updateGlField("numLocations", v)} placeholder="3" />
+                )}
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <h4 className="col-span-4 text-sm font-medium text-gray-300">Subcontractors</h4>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={glFormData.usesSubcontractors} onChange={(e) => updateGlField("usesSubcontractors", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Uses Subcontractors</span>
+                </label>
+                {glFormData.usesSubcontractors && (
+                  <>
+                    <Field label="Annual Subcontractor Cost" value={glFormData.subcontractorCost} onChange={(v: string) => updateGlField("subcontractorCost", v)} placeholder="$100,000" />
+                    <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                      <input type="checkbox" checked={glFormData.requiresCOI} onChange={(e) => updateGlField("requiresCOI", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                      <span className="text-sm text-gray-300">Requires COI from Subs</span>
+                    </label>
+                  </>
+                )}
+              </div>
+            </Section>
+
+            {/* Coverage */}
+            <Section id="coverage" icon={Shield} title="Coverage Limits">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Each Occurrence" value={glFormData.eachOccurrence} onChange={(v: string) => updateGlField("eachOccurrence", v)} options={GL_LIMIT_OPTIONS} />
+                <Field label="General Aggregate" value={glFormData.generalAggregate} onChange={(v: string) => updateGlField("generalAggregate", v)} options={GL_AGGREGATE_OPTIONS} />
+                <Field label="Products/Completed Ops" value={glFormData.productsCompletedOps} onChange={(v: string) => updateGlField("productsCompletedOps", v)} options={GL_AGGREGATE_OPTIONS} />
+                <Field label="Personal & Advertising" value={glFormData.personalAdvertising} onChange={(v: string) => updateGlField("personalAdvertising", v)} options={GL_LIMIT_OPTIONS} />
+                <Field label="Medical Payments" value={glFormData.medicalPayments} onChange={(v: string) => updateGlField("medicalPayments", v)} options={GL_MED_PAY_OPTIONS} />
+                <Field label="Damage to Premises" value={glFormData.damagePremises} onChange={(v: string) => updateGlField("damagePremises", v)} options={GL_DAMAGE_PREMISES_OPTIONS} />
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <h4 className="col-span-4 text-sm font-medium text-gray-300">Additional Requirements</h4>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={glFormData.additionalInsuredNeeded} onChange={(e) => updateGlField("additionalInsuredNeeded", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Additional Insured Needed</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={glFormData.waiverOfSubrogation} onChange={(e) => updateGlField("waiverOfSubrogation", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Waiver of Subrogation</span>
+                </label>
+              </div>
+            </Section>
+
+            {/* Prior Insurance */}
+            <Section id="prior" icon={FileText} title="Prior Insurance">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Currently Insured?" value={glFormData.hasCurrentInsurance ? "yes" : "no"} onChange={(v: string) => updateGlField("hasCurrentInsurance", v === "yes")} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]} />
+                {glFormData.hasCurrentInsurance && (
+                  <>
+                    <Field label="Current Carrier" value={glFormData.currentCarrier} onChange={(v: string) => updateGlField("currentCarrier", v)} placeholder="Hartford" />
+                    <Field label="Current Premium" value={glFormData.currentPremium} onChange={(v: string) => updateGlField("currentPremium", v)} placeholder="$3,500/yr" />
+                    <Field label="Expiration Date" value={glFormData.expirationDate} onChange={(v: string) => updateGlField("expirationDate", v)} type="date" />
+                  </>
+                )}
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={glFormData.hasClaims} onChange={(e) => updateGlField("hasClaims", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Claims in Past 5 Years</span>
+                </label>
+                {glFormData.hasClaims && (
+                  <div className="col-span-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Claims Details</label>
+                    <textarea value={glFormData.claimsDescription} onChange={(e) => updateGlField("claimsDescription", e.target.value)} placeholder="Type, date, and amount for each claim..." rows={3} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            {/* Notes */}
+            <Section id="notes" icon={FileText} title="Agent Notes">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="col-span-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Agent Notes</label>
+                  <textarea value={glFormData.agentNotes} onChange={(e) => updateGlField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                </div>
+                <Field label="Effective Date" value={glFormData.effectiveDate} onChange={(v: string) => updateGlField("effectiveDate", v)} type="date" />
+              </div>
+            </Section>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* WORKERS COMP FORM */}
+        {/* ========================================================================= */}
+        {selectedType === "workers_comp" && (
+          <>
+            {/* Business Information */}
+            <Section id="business" icon={Building2} title="Business Information">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Business Name" value={wcFormData.businessName} onChange={(v: string) => updateWcField("businessName", v)} required placeholder="ABC Company LLC" className="col-span-2" error={errors.businessName} />
+                <Field label="DBA (if different)" value={wcFormData.dba} onChange={(v: string) => updateWcField("dba", v)} placeholder="Doing Business As" />
+                <Field label="FEIN" value={wcFormData.fein} onChange={(v: string) => updateWcField("fein", v)} required placeholder="XX-XXXXXXX" error={errors.fein} />
+                <Field label="Business Type" value={wcFormData.businessType} onChange={(v: string) => updateWcField("businessType", v)} options={BUSINESS_TYPES} />
+                <Field label="Years in Business" value={wcFormData.yearsInBusiness} onChange={(v: string) => updateWcField("yearsInBusiness", v)} placeholder="5" />
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50">
+                <h4 className="text-sm font-medium text-gray-300 mb-4">Primary Contact</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Contact Name" value={wcFormData.contactName} onChange={(v: string) => updateWcField("contactName", v)} required placeholder="John Smith" error={errors.contactName} />
+                  <Field label="Title" value={wcFormData.contactTitle} onChange={(v: string) => updateWcField("contactTitle", v)} placeholder="Owner" />
+                  <Field label="Phone" value={wcFormData.phone} onChange={(v: string) => updateWcField("phone", v)} type="tel" required placeholder="(555) 555-5555" error={errors.phone} />
+                  <Field label="Email" value={wcFormData.email} onChange={(v: string) => updateWcField("email", v)} type="email" placeholder="john@company.com" />
+                </div>
+              </div>
+            </Section>
+
+            {/* Business Location */}
+            <Section id="location" icon={Home} title="Business Location">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Street Address" value={wcFormData.address} onChange={(v: string) => updateWcField("address", v)} placeholder="123 Business Way" className="col-span-2" />
+                <Field label="City" value={wcFormData.city} onChange={(v: string) => updateWcField("city", v)} placeholder="Dallas" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="State" value={wcFormData.state} onChange={(v: string) => updateWcField("state", v)} required options={[{ value: "", label: "..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="ZIP" value={wcFormData.zip} onChange={(v: string) => updateWcField("zip", v)} placeholder="75201" />
+                </div>
+                <Field label="Governing Class Code" value={wcFormData.governingClassCode} onChange={(v: string) => updateWcField("governingClassCode", v)} required placeholder="8810" error={errors.governingClassCode} />
+              </div>
+            </Section>
+
+            {/* Employees */}
+            <Section id="employees" icon={User} title="Employee Classifications">
+              <div className="space-y-4">
+                {wcFormData.employees.map((employee, index) => (
+                  <div key={employee.id} className="bg-gray-900/50 rounded-xl p-4 border border-gray-700/50">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-sm font-medium text-gray-300">Classification {index + 1}</span>
+                      {wcFormData.employees.length > 1 && (
+                        <button onClick={() => removeWCEmployee(employee.id)} className="text-red-400 hover:text-red-300">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Field label="Class Code" value={employee.classCode} onChange={(v: string) => updateWCEmployee(employee.id, "classCode", v)} placeholder="8810" />
+                      <Field label="Description" value={employee.classDescription} onChange={(v: string) => updateWCEmployee(employee.id, "classDescription", v)} placeholder="Clerical Office" className="col-span-2" />
+                      <Field label="# Employees" value={employee.numEmployees} onChange={(v: string) => updateWCEmployee(employee.id, "numEmployees", v)} placeholder="5" />
+                      <Field label="Annual Payroll" value={employee.annualPayroll} onChange={(v: string) => updateWCEmployee(employee.id, "annualPayroll", v)} placeholder="$150,000" className="col-span-2" />
+                    </div>
+                  </div>
+                ))}
+                <Button onClick={addWCEmployee} variant="outline" className="w-full border-dashed border-gray-600 text-gray-400 hover:text-white hover:border-gray-500">
+                  <Plus className="w-4 h-4 mr-2" /> Add Classification
+                </Button>
+              </div>
+            </Section>
+
+            {/* Experience Mod */}
+            <Section id="expmod" icon={DollarSign} title="Experience Modification">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={wcFormData.hasExpMod} onChange={(e) => updateWcField("hasExpMod", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Has Experience Mod</span>
+                </label>
+                {wcFormData.hasExpMod && (
+                  <>
+                    <Field label="Mod Rate" value={wcFormData.expModRate} onChange={(v: string) => updateWcField("expModRate", v)} placeholder="1.00" />
+                    <Field label="Effective Date" value={wcFormData.expModEffective} onChange={(v: string) => updateWcField("expModEffective", v)} type="date" />
+                  </>
+                )}
+              </div>
+            </Section>
+
+            {/* Ownership */}
+            <Section id="owners" icon={User} title="Ownership">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={wcFormData.includeOwners} onChange={(e) => updateWcField("includeOwners", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Include Owners/Officers</span>
+                </label>
+                {wcFormData.includeOwners && (
+                  <>
+                    <Field label="Number of Owners" value={wcFormData.numOwners} onChange={(v: string) => updateWcField("numOwners", v)} placeholder="2" />
+                    <Field label="Combined Owner Payroll" value={wcFormData.ownerPayroll} onChange={(v: string) => updateWcField("ownerPayroll", v)} placeholder="$100,000" />
+                  </>
+                )}
+              </div>
+            </Section>
+
+            {/* Subcontractors */}
+            <Section id="subs" icon={FileText} title="Subcontractors">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={wcFormData.usesSubcontractors} onChange={(e) => updateWcField("usesSubcontractors", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Uses Subcontractors</span>
+                </label>
+                {wcFormData.usesSubcontractors && (
+                  <>
+                    <Field label="Annual Subcontractor Cost" value={wcFormData.subcontractorCost} onChange={(v: string) => updateWcField("subcontractorCost", v)} placeholder="$100,000" />
+                    <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                      <input type="checkbox" checked={wcFormData.hasSubContractorCoverage} onChange={(e) => updateWcField("hasSubContractorCoverage", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                      <span className="text-sm text-gray-300">Require WC from Subs</span>
+                    </label>
+                  </>
+                )}
+              </div>
+            </Section>
+
+            {/* Prior Insurance */}
+            <Section id="prior" icon={FileText} title="Prior Insurance">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Currently Insured?" value={wcFormData.hasCurrentInsurance ? "yes" : "no"} onChange={(v: string) => updateWcField("hasCurrentInsurance", v === "yes")} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]} />
+                {wcFormData.hasCurrentInsurance && (
+                  <>
+                    <Field label="Current Carrier" value={wcFormData.currentCarrier} onChange={(v: string) => updateWcField("currentCarrier", v)} placeholder="Texas Mutual" />
+                    <Field label="Current Premium" value={wcFormData.currentPremium} onChange={(v: string) => updateWcField("currentPremium", v)} placeholder="$8,500/yr" />
+                    <Field label="Expiration Date" value={wcFormData.expirationDate} onChange={(v: string) => updateWcField("expirationDate", v)} type="date" />
+                  </>
+                )}
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={wcFormData.hasClaims} onChange={(e) => updateWcField("hasClaims", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Claims in Past 5 Years</span>
+                </label>
+                {wcFormData.hasClaims && (
+                  <div className="col-span-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Claims Details</label>
+                    <textarea value={wcFormData.claimsDescription} onChange={(e) => updateWcField("claimsDescription", e.target.value)} placeholder="Date, type, and reserve/paid for each claim..." rows={3} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            {/* Notes */}
+            <Section id="notes" icon={FileText} title="Agent Notes">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="col-span-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Agent Notes</label>
+                  <textarea value={wcFormData.agentNotes} onChange={(e) => updateWcField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                </div>
+                <Field label="Effective Date" value={wcFormData.effectiveDate} onChange={(v: string) => updateWcField("effectiveDate", v)} type="date" />
               </div>
             </Section>
           </>

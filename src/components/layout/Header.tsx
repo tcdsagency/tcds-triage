@@ -1,75 +1,40 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Bell, Search, Menu, LogOut, User, MessageSquare, Check, ExternalLink } from 'lucide-react';
+import { Bell, Search, Menu, LogOut, User, MessageSquare, Check, ExternalLink, Wifi, WifiOff } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { useSMSStream } from '@/hooks/useSMSStream';
 
 interface HeaderProps {
   user: SupabaseUser;
 }
 
-interface SMSMessage {
-  id: string;
-  fromNumber: string;
-  body: string;
-  contactName: string | null;
-  createdAt: string;
-  isAcknowledged: boolean;
-}
-
 export function Header({ user }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [unreadMessages, setUnreadMessages] = useState<SMSMessage[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loadingMessages, setLoadingMessages] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
-  // Fetch unread messages
-  const fetchUnreadMessages = useCallback(async () => {
-    try {
-      const res = await fetch('/api/messages?filter=unread&limit=5');
-      const data = await res.json();
-      if (data.success) {
-        setUnreadMessages(data.messages);
-        setUnreadCount(data.unreadCount);
-      }
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-    }
-  }, []);
-
-  // Poll for new messages every 30 seconds
-  useEffect(() => {
-    fetchUnreadMessages();
-    const interval = setInterval(fetchUnreadMessages, 30000);
-    return () => clearInterval(interval);
-  }, [fetchUnreadMessages]);
+  // Use real-time SSE stream for SMS notifications
+  const {
+    messages: unreadMessages,
+    unreadCount,
+    isConnected,
+    acknowledgeMessage,
+    acknowledgeAll,
+  } = useSMSStream(true);
 
   // Acknowledge a single message
   const handleAcknowledge = async (messageId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    try {
-      await fetch(`/api/messages/${messageId}/read`, { method: 'POST' });
-      setUnreadMessages(prev => prev.filter(m => m.id !== messageId));
-      setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch (error) {
-      console.error('Error acknowledging message:', error);
-    }
+    await acknowledgeMessage(messageId);
   };
 
   // Acknowledge all messages
   const handleAcknowledgeAll = async () => {
-    try {
-      await fetch('/api/messages/acknowledge-all', { method: 'POST' });
-      setUnreadMessages([]);
-      setUnreadCount(0);
-    } catch (error) {
-      console.error('Error acknowledging all messages:', error);
-    }
+    await acknowledgeAll();
   };
 
   const handleSignOut = async () => {
@@ -148,15 +113,31 @@ export function Header({ user }: HeaderProps) {
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
+              {/* Connection status indicator */}
+              <span
+                className={`absolute bottom-0.5 right-0.5 h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-gray-400'}`}
+                title={isConnected ? 'Real-time connected' : 'Reconnecting...'}
+              />
             </button>
 
             {/* Notifications Dropdown */}
             {showNotifications && (
               <div className="absolute right-0 z-50 mt-2 w-80 origin-top-right rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5">
                 <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-                  <h3 className="text-sm font-semibold text-gray-900">
-                    Messages {unreadCount > 0 && `(${unreadCount})`}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-gray-900">
+                      Messages {unreadCount > 0 && `(${unreadCount})`}
+                    </h3>
+                    {isConnected ? (
+                      <span className="flex items-center gap-1 text-[10px] text-emerald-600">
+                        <Wifi className="h-3 w-3" /> Live
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] text-gray-400">
+                        <WifiOff className="h-3 w-3" /> Offline
+                      </span>
+                    )}
+                  </div>
                   {unreadCount > 0 && (
                     <button
                       onClick={handleAcknowledgeAll}
