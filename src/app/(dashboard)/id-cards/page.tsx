@@ -473,7 +473,7 @@ export default function IdCardsPage() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Customer Search */}
-          <div className="bg-white rounded-lg border shadow-sm p-6">
+          <div className="bg-white rounded-lg border shadow-sm p-6 overflow-visible">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               1. Search for Customer
             </h2>
@@ -516,7 +516,7 @@ export default function IdCardsPage() {
                 )}
 
                 {searchResults.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
                     {searchResults.map((result) => (
                       <button
                         key={`${result.type}-${result.id}`}
