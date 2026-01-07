@@ -1,13 +1,13 @@
-// Form Guidance Configuration
-// Section-by-section tips for quote forms
+// Form-Based Agent Assist Guidance
+// Section-by-section tips for quote intake forms
 
-import { FormSectionGuidance, QuoteType } from './types';
+import type { FormSectionGuidance, QuoteType } from './types';
 
 // =============================================================================
 // PERSONAL AUTO QUOTE GUIDANCE
 // =============================================================================
 
-const PERSONAL_AUTO_GUIDANCE: FormSectionGuidance[] = [
+const personalAutoGuidance: FormSectionGuidance[] = [
   {
     id: 'customer-info',
     title: 'Customer Information',
@@ -15,24 +15,45 @@ const PERSONAL_AUTO_GUIDANCE: FormSectionGuidance[] = [
       {
         type: 'script',
         title: 'Opening',
-        content: "Thank you for calling [Agency Name]! I'd be happy to help you with an auto quote. To get started, may I have your full name?",
+        content: "Thank you for calling TCDS Agency. I'd be happy to help you with an auto insurance quote today. Can I start with your name?"
       },
       {
         type: 'script',
         title: 'Verification',
-        content: "Can I verify your date of birth and current address?",
+        content: "Can I verify your date of birth and current address?"
       },
       {
         type: 'tip',
         title: 'Build Rapport',
-        content: "If the customer seems rushed, acknowledge it: \"I'll make this as quick as possible for you.\"",
+        content: "If they seem rushed: 'I'll make this as quick as possible for you.'"
       },
       {
         type: 'checklist',
-        title: 'Required Info',
-        content: ['Full legal name', 'Date of birth', 'Current address', 'Phone number', 'Email address'],
+        title: 'Required Information',
+        content: ['Full legal name', 'Date of birth', 'Current address', 'Phone number', 'Email address']
+      }
+    ]
+  },
+  {
+    id: 'current-coverage',
+    title: 'Current Coverage',
+    tips: [
+      {
+        type: 'script',
+        title: 'Ask About Current Insurance',
+        content: "Do you currently have auto insurance? Who is your current carrier and when does that policy expire?"
       },
-    ],
+      {
+        type: 'tip',
+        title: 'Continuous Coverage',
+        content: "Note any gaps in coverage - this affects rates significantly."
+      },
+      {
+        type: 'warning',
+        title: 'Lapse Impact',
+        content: "More than 30 days without coverage = higher rates. Document reason for any gaps."
+      }
+    ]
   },
   {
     id: 'vehicles',
@@ -41,24 +62,24 @@ const PERSONAL_AUTO_GUIDANCE: FormSectionGuidance[] = [
       {
         type: 'script',
         title: 'VIN Request',
-        content: "Do you have the VIN handy? It's usually on your registration or insurance card. If not, I can look it up by year, make, and model.",
+        content: "Can you provide the VIN for each vehicle? It's usually on the driver's side dashboard or door jamb."
       },
       {
         type: 'checklist',
-        title: 'Vehicle Info Needed',
-        content: ['VIN (preferred)', 'Year, Make, Model', 'Current mileage', 'Primary use (commute, pleasure, business)', 'Annual miles driven'],
-      },
-      {
-        type: 'warning',
-        title: 'Ownership Gap',
-        content: "If vehicle was purchased more than 30 days ago without insurance, we may not be able to backdate coverage. Document the gap reason.",
+        title: 'Required Per Vehicle',
+        content: ['VIN (17 characters)', 'Year/Make/Model', 'Current mileage', 'Ownership status', 'Primary use']
       },
       {
         type: 'tip',
-        title: 'Lienholder',
-        content: "Ask: \"Is the vehicle financed or leased?\" If yes, full coverage is typically required.",
+        title: 'Lienholder Info',
+        content: "For financed vehicles, get the lienholder name and address for dec page."
       },
-    ],
+      {
+        type: 'warning',
+        title: 'Coverage Requirement',
+        content: "Financed/leased vehicles MUST have comprehensive and collision coverage."
+      }
+    ]
   },
   {
     id: 'drivers',
@@ -67,50 +88,50 @@ const PERSONAL_AUTO_GUIDANCE: FormSectionGuidance[] = [
       {
         type: 'script',
         title: 'Household Drivers',
-        content: "I'll need information on all licensed drivers in the household over age 15, even if they won't be driving this vehicle regularly.",
+        content: "I need to list all licensed drivers in your household. Who else lives with you that has a driver's license?"
       },
       {
         type: 'checklist',
-        title: 'Driver Info Needed',
-        content: ['Full name', 'Date of birth', 'License number & state', 'Relationship to named insured', 'Any accidents or violations in past 5 years'],
+        title: 'Required Per Driver',
+        content: ['Full name', 'Date of birth', 'License number', 'License state', 'Years licensed', 'Relationship']
       },
       {
         type: 'warning',
         title: 'Excluded Drivers',
-        content: "If customer wants to exclude a household driver, explain they will have NO coverage if that person drives any listed vehicle.",
+        content: "Excluding a household member requires signed exclusion form. They cannot drive ANY vehicle on the policy."
       },
       {
         type: 'tip',
-        title: 'Good Student Discount',
-        content: "For drivers under 25: \"Is this driver a full-time student with a B average or better?\"",
-      },
-    ],
+        title: 'Youthful Drivers',
+        content: "Drivers under 25 - ask about good student discount (3.0 GPA or higher)."
+      }
+    ]
   },
   {
-    id: 'coverage',
+    id: 'coverage-selection',
     title: 'Coverage Selection',
     tips: [
       {
         type: 'script',
-        title: 'Coverage Discussion',
-        content: "Let me explain your coverage options. The main ones are liability, which covers damage you cause to others, and comprehensive/collision, which covers your own vehicle.",
+        title: 'Coverage Review',
+        content: "Let me explain your coverage options. Do you want me to match your current coverage, or would you like to review different options?"
       },
       {
         type: 'tip',
-        title: 'State Minimums',
-        content: "Texas minimums are 30/60/25. Always recommend at least 100/300/100 for better protection.",
-      },
-      {
-        type: 'checklist',
-        title: 'Coverage Options',
-        content: ['Liability limits', 'Uninsured/Underinsured motorist', 'Comprehensive & Collision deductibles', 'Rental reimbursement', 'Roadside assistance'],
+        title: 'Liability Recommendation',
+        content: "Recommend at least 100/300/100 for liability. State minimums leave significant exposure."
       },
       {
         type: 'warning',
-        title: 'Umbrella Gap',
-        content: "If customer has significant assets, mention umbrella policy. Most umbrellas require minimum 250/500 auto liability.",
+        title: 'Underinsured Risk',
+        content: "If choosing state minimum, document that customer declined higher limits recommendation."
       },
-    ],
+      {
+        type: 'checklist',
+        title: 'Coverage Components',
+        content: ['Liability limits', 'Uninsured/Underinsured', 'Comprehensive deductible', 'Collision deductible', 'Rental reimbursement', 'Roadside assistance']
+      }
+    ]
   },
   {
     id: 'discounts',
@@ -119,317 +140,68 @@ const PERSONAL_AUTO_GUIDANCE: FormSectionGuidance[] = [
       {
         type: 'script',
         title: 'Discount Discovery',
-        content: "Let me make sure we're getting you all the discounts you qualify for. Do you own your home? Have any other insurance policies?",
+        content: "Let me make sure you're getting all available discounts. Do you own your home? Have you taken a defensive driving course?"
       },
       {
         type: 'checklist',
-        title: 'Common Discounts',
-        content: [
-          'Multi-policy (home + auto)',
-          'Multi-car',
-          'Good driver (no accidents/violations)',
-          'Defensive driving course',
-          'Good student',
-          'Paid in full',
-          'Paperless/autopay',
-        ],
+        title: 'Ask About',
+        content: ['Homeowner?', 'Multi-policy?', 'Good driver (5 years no accidents/tickets)?', 'Defensive driving course?', 'Good student?', 'Vehicle safety features?', 'Low mileage?', 'Autopay/paperless?']
       },
       {
         type: 'tip',
-        title: 'Bundling',
-        content: "Bundling home and auto typically saves 10-25%. Always ask if they have homeowners insurance elsewhere.",
-      },
-    ],
-  },
+        title: 'Bundle Opportunity',
+        content: "If they own a home, always offer to quote home + auto bundle for additional savings."
+      }
+    ]
+  }
 ];
 
 // =============================================================================
 // HOMEOWNERS QUOTE GUIDANCE
 // =============================================================================
 
-const HOMEOWNERS_GUIDANCE: FormSectionGuidance[] = [
+const homeownersGuidance: FormSectionGuidance[] = [
   {
-    id: 'customer-info',
-    title: 'Customer Information',
+    id: 'property-info',
+    title: 'Property Information',
     tips: [
       {
         type: 'script',
-        title: 'Opening',
-        content: "I'd be happy to help you with a homeowners quote. Is this for a home you currently own, or are you in the process of purchasing?",
+        title: 'Address Verification',
+        content: "Can you confirm the property address? Is this your primary residence?"
       },
       {
         type: 'checklist',
-        title: 'Required Info',
-        content: ['Full legal name', 'Current address', 'Phone & email', 'Property address (if different)'],
-      },
-      {
-        type: 'tip',
-        title: 'New Purchase',
-        content: "If buying: \"What's your closing date? We'll need to have the policy bound before closing.\"",
-      },
-    ],
-  },
-  {
-    id: 'property',
-    title: 'Property Details',
-    tips: [
-      {
-        type: 'script',
-        title: 'Property Lookup',
-        content: "I'll pull up the property details. Can you confirm the address? This helps me get accurate replacement cost estimates.",
-      },
-      {
-        type: 'checklist',
-        title: 'Property Info Needed',
-        content: ['Year built', 'Square footage', 'Number of stories', 'Construction type (frame, brick, etc.)', 'Roof type and age', 'Foundation type'],
+        title: 'Required Information',
+        content: ['Property address', 'Year built', 'Square footage', 'Construction type', 'Roof type and age', 'Number of stories']
       },
       {
         type: 'warning',
         title: 'Roof Age',
-        content: "If roof is 15+ years old, some carriers won't write the policy or will exclude wind/hail. Ask about roof material and last replacement.",
-      },
-      {
-        type: 'tip',
-        title: 'Updates',
-        content: "Ask about updates to electrical, plumbing, HVAC, and roof in last 25 years. These can affect eligibility and rates.",
-      },
-    ],
+        content: "Roofs over 20 years may require inspection or replacement for full coverage."
+      }
+    ]
   },
   {
-    id: 'coverage',
-    title: 'Coverage Selection',
+    id: 'home-details',
+    title: 'Home Details',
     tips: [
       {
         type: 'script',
-        title: 'Coverage Discussion',
-        content: "The main coverage is Dwelling, which protects the structure. This should be enough to rebuild your home, not the purchase price or tax value.",
+        title: 'Updates Question',
+        content: "Have you made any updates to the home - new roof, electrical, plumbing, or HVAC?"
       },
       {
         type: 'checklist',
-        title: 'Coverage Types',
-        content: [
-          'Dwelling (Coverage A)',
-          'Other Structures (Coverage B)',
-          'Personal Property (Coverage C)',
-          'Loss of Use (Coverage D)',
-          'Personal Liability (Coverage E)',
-          'Medical Payments (Coverage F)',
-        ],
+        title: 'Key Features',
+        content: ['Heating type', 'Electrical (fuse/breaker)', 'Plumbing material', 'Pool/spa?', 'Security system?', 'Fire extinguishers?', 'Dog breed?']
       },
       {
         type: 'warning',
-        title: 'Flood Not Included',
-        content: "Standard homeowners does NOT cover flood. If in a flood zone, separate flood policy is needed. Consider even if not required.",
-      },
-      {
-        type: 'tip',
-        title: 'Replacement Cost',
-        content: "Always recommend replacement cost on contents, not actual cash value. Worth the small premium increase.",
-      },
-    ],
-  },
-  {
-    id: 'liability-hazards',
-    title: 'Liability & Hazards',
-    tips: [
-      {
-        type: 'script',
-        title: 'Liability Questions',
-        content: "I have a few questions about your property. Do you have a pool, trampoline, or any dogs? These affect liability coverage.",
-      },
-      {
-        type: 'checklist',
-        title: 'Hazard Checklist',
-        content: ['Swimming pool (in-ground/above-ground)', 'Trampoline', 'Dogs (breed matters)', 'Wood-burning stove/fireplace', 'Home business'],
-      },
-      {
-        type: 'warning',
-        title: 'Excluded Dog Breeds',
-        content: "Many carriers exclude certain breeds (Pit Bull, Rottweiler, etc.). If customer has one, need to find carrier that will write.",
-      },
-      {
-        type: 'tip',
-        title: 'Umbrella',
-        content: "With pool or dog, strongly recommend umbrella policy for extra liability protection.",
-      },
-    ],
-  },
-  {
-    id: 'discounts',
-    title: 'Discounts',
-    tips: [
-      {
-        type: 'checklist',
-        title: 'Common Discounts',
-        content: [
-          'Multi-policy (home + auto)',
-          'Claims-free',
-          'New home',
-          'Protective devices (alarm, smoke detectors)',
-          'New roof',
-          'Gated community',
-          'Impact-resistant roof',
-        ],
-      },
-      {
-        type: 'script',
-        title: 'Discount Discovery',
-        content: "Do you have a monitored alarm system? Central station monitoring typically gets a discount.",
-      },
-      {
-        type: 'tip',
-        title: 'Wind Mitigation',
-        content: "In coastal areas, ask about wind mitigation features: hip roof, secondary water resistance, opening protection. Big discounts available.",
-      },
-    ],
-  },
-];
-
-// =============================================================================
-// COMMERCIAL AUTO GUIDANCE
-// =============================================================================
-
-const COMMERCIAL_AUTO_GUIDANCE: FormSectionGuidance[] = [
-  {
-    id: 'business-info',
-    title: 'Business Information',
-    tips: [
-      {
-        type: 'script',
-        title: 'Opening',
-        content: "I'll help you with a commercial auto quote. First, can you tell me about your business? What do you do?",
-      },
-      {
-        type: 'checklist',
-        title: 'Business Info Needed',
-        content: ['Legal business name', 'Business structure (LLC, Corp, etc.)', 'Years in business', 'Primary business operations', 'Radius of operations'],
-      },
-      {
-        type: 'warning',
-        title: 'For-Hire Exposure',
-        content: "If business involves transporting goods or people for hire (trucking, delivery, rideshare), specialized policy needed.",
-      },
-    ],
-  },
-  {
-    id: 'vehicles',
-    title: 'Vehicles',
-    tips: [
-      {
-        type: 'checklist',
-        title: 'Vehicle Info Needed',
-        content: ['VIN', 'Year, Make, Model', 'Vehicle type (car, truck, van, etc.)', 'GVW for trucks', 'Business use (service, delivery, sales, etc.)'],
-      },
-      {
-        type: 'warning',
-        title: 'Heavy Trucks',
-        content: "Vehicles over 10,000 GVW may need trucking policy. Over 26,000 GVW requires CDL and different coverage.",
-      },
-      {
-        type: 'tip',
-        title: 'Personal Use',
-        content: "If owner uses vehicle for personal use too, can sometimes add personal coverage to commercial policy.",
-      },
-    ],
-  },
-  {
-    id: 'drivers',
-    title: 'Drivers',
-    tips: [
-      {
-        type: 'checklist',
-        title: 'Driver Info Needed',
-        content: ['Full name', 'DOB', 'License number', 'Years of driving experience', 'Years with company', 'MVR violations'],
-      },
-      {
-        type: 'warning',
-        title: 'MVR Requirements',
-        content: "All drivers need acceptable MVRs. Major violations (DUI, reckless driving) may make driver uninsurable.",
-      },
-      {
-        type: 'tip',
-        title: 'Driver Training',
-        content: "Ask about driver training programs. Some carriers offer discounts for documented safety training.",
-      },
-    ],
-  },
-];
-
-// =============================================================================
-// GENERAL LIABILITY GUIDANCE
-// =============================================================================
-
-const GENERAL_LIABILITY_GUIDANCE: FormSectionGuidance[] = [
-  {
-    id: 'business-info',
-    title: 'Business Information',
-    tips: [
-      {
-        type: 'script',
-        title: 'Opening',
-        content: "Let's get you a general liability quote. Tell me about your business - what services or products do you provide?",
-      },
-      {
-        type: 'checklist',
-        title: 'Business Info Needed',
-        content: ['Legal business name', 'Business description', 'Years in business', 'Annual revenue', 'Number of employees'],
-      },
-      {
-        type: 'tip',
-        title: 'Classification',
-        content: "Business classification (class code) significantly affects rates. Get detailed description of operations.",
-      },
-    ],
-  },
-  {
-    id: 'operations',
-    title: 'Operations',
-    tips: [
-      {
-        type: 'checklist',
-        title: 'Operations Questions',
-        content: [
-          'Work at customer locations?',
-          'Subcontractors used?',
-          'Products sold?',
-          'Professional advice given?',
-          'Any hazardous operations?',
-        ],
-      },
-      {
-        type: 'warning',
-        title: 'Subcontractors',
-        content: "If using subcontractors, verify they have their own GL and you get certificates. Your policy may not cover their work.",
-      },
-      {
-        type: 'tip',
-        title: 'Certificate Requirements',
-        content: "Ask if they need certificates for any clients. This affects coverage needs and limits.",
-      },
-    ],
-  },
-];
-
-// =============================================================================
-// RENTERS GUIDANCE
-// =============================================================================
-
-const RENTERS_GUIDANCE: FormSectionGuidance[] = [
-  {
-    id: 'customer-info',
-    title: 'Customer Information',
-    tips: [
-      {
-        type: 'script',
-        title: 'Opening',
-        content: "I'll help you with renters insurance. This protects your belongings and provides liability coverage. Let me get some information.",
-      },
-      {
-        type: 'checklist',
-        title: 'Required Info',
-        content: ['Full legal name', 'Rental address', 'Move-in date', 'Phone & email'],
-      },
-    ],
+        title: 'Restricted Dog Breeds',
+        content: "Pit bulls, Rottweilers, Dobermans, and some other breeds may be excluded or require additional underwriting."
+      }
+    ]
   },
   {
     id: 'coverage',
@@ -437,49 +209,119 @@ const RENTERS_GUIDANCE: FormSectionGuidance[] = [
     tips: [
       {
         type: 'script',
-        title: 'Contents Value',
-        content: "Think about everything you own - furniture, electronics, clothes, kitchen items. What would it cost to replace everything?",
+        title: 'Coverage Explanation',
+        content: "Dwelling coverage is the cost to rebuild your home, not the purchase price or market value."
       },
       {
         type: 'tip',
-        title: 'Typical Coverage',
-        content: "Most renters underestimate. $20,000-30,000 is common for a single person. Families often need $50,000+.",
+        title: 'Replacement Cost',
+        content: "Always recommend replacement cost coverage over actual cash value."
       },
       {
         type: 'warning',
-        title: 'Landlord Policy',
-        content: "Landlord's insurance does NOT cover tenant belongings. Many people don't realize this.",
-      },
-    ],
+        title: 'Flood/Earthquake',
+        content: "Standard policies do NOT cover flood or earthquake. Quote these separately if in risk zones."
+      }
+    ]
   },
+  {
+    id: 'discounts',
+    title: 'Discounts',
+    tips: [
+      {
+        type: 'checklist',
+        title: 'Available Discounts',
+        content: ['Multi-policy (auto bundle)?', 'New home discount?', 'Claims-free discount?', 'Security system?', 'Fire/smoke alarms?', 'Gated community?', 'Age 55+?']
+      },
+      {
+        type: 'tip',
+        title: 'Bundle Savings',
+        content: "Home + Auto bundle typically saves 15-25% on both policies."
+      }
+    ]
+  }
 ];
 
 // =============================================================================
-// EXPORT GUIDANCE BY QUOTE TYPE
+// COMMERCIAL AUTO GUIDANCE
+// =============================================================================
+
+const commercialAutoGuidance: FormSectionGuidance[] = [
+  {
+    id: 'business-info',
+    title: 'Business Information',
+    tips: [
+      {
+        type: 'script',
+        title: 'Business Details',
+        content: "Tell me about your business - what type of work do you do and how do you use your vehicles?"
+      },
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Business name', 'Entity type (LLC, Corp, etc.)', 'Years in business', 'Business description', 'DOT/MC number if applicable']
+      },
+      {
+        type: 'warning',
+        title: 'For-Hire Operations',
+        content: "Uber/Lyft/delivery drivers need commercial or rideshare endorsement - personal auto won't cover."
+      }
+    ]
+  },
+  {
+    id: 'vehicles',
+    title: 'Commercial Vehicles',
+    tips: [
+      {
+        type: 'checklist',
+        title: 'Per Vehicle',
+        content: ['VIN', 'Year/Make/Model', 'GVW (Gross Vehicle Weight)', 'Vehicle use/radius', 'Cost new', 'Customizations']
+      },
+      {
+        type: 'warning',
+        title: 'Weight Limits',
+        content: "Vehicles over 10,000 GVW may require different policy or DOT compliance."
+      }
+    ]
+  },
+  {
+    id: 'drivers',
+    title: 'Commercial Drivers',
+    tips: [
+      {
+        type: 'checklist',
+        title: 'Required Per Driver',
+        content: ['Full name', 'DOB', 'License number', 'CDL if required', 'MVR (Motor Vehicle Report)', 'Years commercial driving experience']
+      },
+      {
+        type: 'warning',
+        title: 'MVR Review',
+        content: "Drivers with DUI/serious violations in past 3 years may be declined or rated up significantly."
+      }
+    ]
+  }
+];
+
+// =============================================================================
+// EXPORT
 // =============================================================================
 
 export const QUOTE_FORM_GUIDANCE: Record<QuoteType, FormSectionGuidance[]> = {
-  personal_auto: PERSONAL_AUTO_GUIDANCE,
-  homeowners: HOMEOWNERS_GUIDANCE,
-  renters: RENTERS_GUIDANCE,
-  commercial_auto: COMMERCIAL_AUTO_GUIDANCE,
-  general_liability: GENERAL_LIABILITY_GUIDANCE,
-  bop: GENERAL_LIABILITY_GUIDANCE, // Use same as GL for now
-  workers_comp: [], // TODO: Add workers comp guidance
+  personal_auto: personalAutoGuidance,
+  homeowners: homeownersGuidance,
+  commercial_auto: commercialAutoGuidance,
+  commercial_property: [], // TODO: Add commercial property guidance
   umbrella: [], // TODO: Add umbrella guidance
+  life: [], // TODO: Add life guidance
 };
 
-// Get guidance for a specific section
-export function getSectionGuidance(
-  quoteType: QuoteType,
-  sectionId: string
-): FormSectionGuidance | undefined {
+// Helper to get guidance for a specific section
+export function getGuidanceForSection(quoteType: QuoteType, sectionId: string): FormSectionGuidance | null {
   const guidance = QUOTE_FORM_GUIDANCE[quoteType];
-  return guidance?.find((g) => g.id === sectionId);
+  return guidance?.find(g => g.id === sectionId) || null;
 }
 
-// Get all sections for a quote type
-export function getAllSectionIds(quoteType: QuoteType): string[] {
-  const guidance = QUOTE_FORM_GUIDANCE[quoteType];
-  return guidance?.map((g) => g.id) || [];
+// Get all section IDs for a quote type
+export function getSectionIds(quoteType: QuoteType): string[] {
+  return QUOTE_FORM_GUIDANCE[quoteType]?.map(g => g.id) || [];
 }

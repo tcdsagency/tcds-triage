@@ -73,17 +73,35 @@ export async function POST(request: NextRequest) {
   try {
     const body: GenerateRequest = await request.json();
 
+    // Debug logging
+    console.log("[ID Cards] Generate request received:", {
+      insuredName: body.insuredName || "(missing)",
+      carrier: body.carrier || "(missing)",
+      policyNumber: body.policyNumber || "(missing)",
+      vehicleCount: body.vehicles?.length || 0,
+    });
+
     // Validate required fields
     if (!body.insuredName || !body.carrier || !body.policyNumber) {
+      console.error("[ID Cards] Validation failed - missing required fields");
       return NextResponse.json(
-        { success: false, error: "Missing required fields: insuredName, carrier, policyNumber" },
+        {
+          success: false,
+          error: "Missing required fields: insuredName, carrier, policyNumber",
+          received: {
+            hasInsuredName: !!body.insuredName,
+            hasCarrier: !!body.carrier,
+            hasPolicyNumber: !!body.policyNumber,
+          }
+        },
         { status: 400 }
       );
     }
 
     if (!body.vehicles || body.vehicles.length === 0) {
+      console.error("[ID Cards] Validation failed - no vehicles");
       return NextResponse.json(
-        { success: false, error: "At least one vehicle is required" },
+        { success: false, error: "At least one vehicle is required", vehiclesReceived: body.vehicles },
         { status: 400 }
       );
     }
