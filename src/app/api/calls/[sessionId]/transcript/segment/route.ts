@@ -7,6 +7,38 @@ import { calls, liveTranscriptSegments } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
+// Push transcript segment to realtime WebSocket server
+async function pushToRealtimeServer(event: {
+  type: string;
+  sessionId: string;
+  speaker: string;
+  text: string;
+  confidence: number;
+  timestamp: string;
+  sequenceNumber: number;
+  segmentId: string;
+  isFinal: boolean;
+}) {
+  const realtimeUrl = process.env.REALTIME_SERVER_URL || "https://realtime.tcdsagency.com";
+
+  try {
+    const response = await fetch(`${realtimeUrl}/api/broadcast`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": process.env.REALTIME_API_KEY || "",
+      },
+      body: JSON.stringify(event),
+    });
+
+    if (!response.ok) {
+      console.error(`[Transcript] Realtime push failed: ${response.status}`);
+    }
+  } catch (error) {
+    console.error("[Transcript] Failed to push to realtime:", error);
+  }
+}
+
 // Verify webhook API key (supports both X-Api-Key and Authorization headers)
 function verifyWebhookKey(request: NextRequest): boolean {
   const webhookKey = process.env.WEBHOOK_API_KEY;
@@ -66,30 +98,58 @@ export async function POST(
       );
     }
 
+    // Helper to check if string is a valid UUID
+    const isValidUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
     // Validate call exists (sessionId is the call ID)
-    const [call] = await db
-      .select()
-      .from(calls)
-      .where(eq(calls.id, sessionId))
-      .limit(1);
+    let call = null;
+
+    // Only query by ID if it's a valid UUID (otherwise Postgres throws)
+    if (isValidUUID(sessionId)) {
+      call = await db
+        .select()
+        .from(calls)
+        .where(eq(calls.id, sessionId))
+        .limit(1)
+        .then(r => r[0]);
+    }
 
     if (!call) {
-      // Try by externalCallId
-      const [callByExternal] = await db
+      // Try by externalCallId (string field, any format OK)
+      call = await db
         .select()
         .from(calls)
         .where(eq(calls.externalCallId, sessionId))
-        .limit(1);
+        .limit(1)
+        .then(r => r[0]);
+    }
 
-      if (!callByExternal) {
-        return NextResponse.json(
-          { error: "Call not found" },
-          { status: 404 }
-        );
+    // If sessionId is a drachtio fallback (drachtio-EXT-timestamp), find most recent active call
+    if (!call && sessionId.startsWith("drachtio-")) {
+      console.log(`[Transcript] Drachtio fallback ID detected: ${sessionId}, finding active call...`);
+      // Find the most recent in_progress call
+      call = await db
+        .select()
+        .from(calls)
+        .where(eq(calls.status, "in_progress"))
+        .orderBy(sql`${calls.startedAt} DESC`)
+        .limit(1)
+        .then(r => r[0]);
+
+      if (call) {
+        console.log(`[Transcript] Mapped drachtio ID to active call: ${call.id}`);
       }
     }
 
-    const callId = call?.id || sessionId;
+    if (!call) {
+      console.warn(`[Transcript] Call not found for sessionId: ${sessionId}`);
+      return NextResponse.json(
+        { error: "Call not found" },
+        { status: 404 }
+      );
+    }
+
+    const callId = call.id;
 
     // Get next sequence number
     const countResult = await db
@@ -117,6 +177,19 @@ export async function POST(
 
     console.log(`[Transcript] Segment ${sequenceNumber} stored for call ${callId}: "${body.text.substring(0, 50)}..."`);
 
+    // Push to realtime WebSocket server for live UI updates
+    pushToRealtimeServer({
+      type: "transcript_segment",
+      sessionId: callId,
+      speaker: body.speaker,
+      text: body.text,
+      confidence: body.confidence ?? 0.9,
+      timestamp: segment.timestamp.toISOString(),
+      sequenceNumber,
+      segmentId: segment.id,
+      isFinal: body.isFinal ?? true,
+    });
+
     return NextResponse.json({
       success: true,
       segmentId: segment.id,
@@ -141,10 +214,38 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const afterSeq = parseInt(searchParams.get("after") || "0");
 
+    // Helper to check if string is a valid UUID
+    const isValidUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+    // Resolve sessionId to actual call UUID
+    let callId = sessionId;
+
+    // If not a valid UUID, look up by externalCallId
+    if (!isValidUUID(sessionId)) {
+      const call = await db
+        .select({ id: calls.id })
+        .from(calls)
+        .where(eq(calls.externalCallId, sessionId))
+        .limit(1)
+        .then(r => r[0]);
+
+      if (call) {
+        callId = call.id;
+        console.log(`[Transcript] Resolved externalCallId ${sessionId} to call ${callId}`);
+      } else {
+        console.log(`[Transcript] No call found for sessionId: ${sessionId}`);
+        return NextResponse.json({
+          success: true,
+          segments: [],
+          total: 0,
+        });
+      }
+    }
+
     const segments = await db
       .select()
       .from(liveTranscriptSegments)
-      .where(eq(liveTranscriptSegments.callId, sessionId))
+      .where(eq(liveTranscriptSegments.callId, callId))
       .orderBy(liveTranscriptSegments.sequenceNumber);
 
     // Filter to only segments after the given sequence number

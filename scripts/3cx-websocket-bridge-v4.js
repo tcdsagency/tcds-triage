@@ -283,6 +283,7 @@ async function processCallEvent(event) {
       });
 
       // POST to webhook - session created (ringing)
+      // NOTE: We do NOT push to browser here - popup only on answer
       await postWebhook('/api/webhook/call-started', {
         callId,
         sessionId: callId,
@@ -294,9 +295,6 @@ async function processCallEvent(event) {
         status: 'ringing',
         callStartTime: new Date().toISOString(),
       });
-
-      // Push to realtime server HTTP endpoint for browser popup
-      pushCallStart(callId, callerNumber, direction, extension);
     } else {
       // Session exists - just add this extension to the ring group
       const session = callSessions.get(callId);
@@ -331,7 +329,8 @@ async function processCallEvent(event) {
         answeredAt: new Date().toISOString(),
       });
 
-      // Note: call_answered not separately broadcast - call already showing
+      // NOW push to browser - popup appears when call is ANSWERED
+      pushCallStart(callId, callerNumber, direction, extension);
     }
   }
 
