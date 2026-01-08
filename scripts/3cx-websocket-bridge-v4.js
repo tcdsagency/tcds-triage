@@ -6,7 +6,61 @@ const config = {
   clientId: process.env.THREECX_CLIENT_ID,
   clientSecret: process.env.THREECX_CLIENT_SECRET,
   webhookBaseUrl: process.env.WEBHOOK_BASE_URL || 'https://tcds-triage.vercel.app',
+  realtimeWsUrl: process.env.REALTIME_WS_URL || 'wss://realtime.tcdsagency.com/ws/calls',
 };
+
+// =============================================================================
+// REALTIME WEBSOCKET - Push events to browser clients
+// =============================================================================
+let realtimeWs = null;
+let realtimeReconnecting = false;
+
+function connectRealtime() {
+  if (realtimeReconnecting) return;
+  realtimeReconnecting = true;
+
+  try {
+    console.log('[Realtime] Connecting to', config.realtimeWsUrl);
+    realtimeWs = new WebSocket(config.realtimeWsUrl);
+
+    realtimeWs.on('open', () => {
+      console.log('[Realtime] Connected to realtime server');
+      realtimeReconnecting = false;
+      // Identify as broadcaster
+      realtimeWs.send(JSON.stringify({ type: 'broadcaster', source: '3cx-bridge' }));
+    });
+
+    realtimeWs.on('close', () => {
+      console.log('[Realtime] Disconnected, reconnecting in 5s');
+      realtimeWs = null;
+      realtimeReconnecting = false;
+      setTimeout(connectRealtime, 5000);
+    });
+
+    realtimeWs.on('error', (e) => {
+      console.error('[Realtime] Error:', e.message);
+      realtimeReconnecting = false;
+    });
+  } catch (e) {
+    console.error('[Realtime] Connect error:', e.message);
+    realtimeReconnecting = false;
+    setTimeout(connectRealtime, 5000);
+  }
+}
+
+function pushToRealtime(event) {
+  if (realtimeWs && realtimeWs.readyState === WebSocket.OPEN) {
+    try {
+      realtimeWs.send(JSON.stringify(event));
+      console.log('[Realtime] Pushed:', event.type);
+    } catch (e) {
+      console.error('[Realtime] Push error:', e.message);
+    }
+  }
+}
+
+// Connect to realtime server
+connectRealtime();
 
 // =============================================================================
 // RING GROUP HANDLING
@@ -180,6 +234,16 @@ async function processCallEvent(event) {
         status: 'ringing',
         callStartTime: new Date().toISOString(),
       });
+
+      // Push to realtime WebSocket for browser popup
+      pushToRealtime({
+        type: 'call_started',
+        sessionId: String(callId),
+        phoneNumber: callerNumber,
+        extension,
+        direction,
+        status: 'ringing',
+      });
     } else {
       // Session exists - just add this extension to the ring group
       const session = callSessions.get(callId);
@@ -212,6 +276,16 @@ async function processCallEvent(event) {
         direction,
         status: 'connected',
         answeredAt: new Date().toISOString(),
+      });
+
+      // Push to realtime WebSocket for browser popup
+      pushToRealtime({
+        type: 'call_answered',
+        sessionId: String(callId),
+        phoneNumber: callerNumber,
+        extension,
+        direction,
+        status: 'connected',
       });
     }
   }
@@ -249,6 +323,14 @@ async function processCallEvent(event) {
           status: 'completed',
           duration,
           endedAt: new Date().toISOString(),
+        });
+
+        // Push to realtime WebSocket for browser popup
+        pushToRealtime({
+          type: 'call_ended',
+          sessionId: String(callId),
+          extension,
+          status: 'completed',
         });
       } else if (!session.ownerExtension && session.extensions.size === 0) {
         // No owner AND no more ringing extensions = missed/abandoned call
