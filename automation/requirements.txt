@@ -1,0 +1,14 @@
+# AgencyZoom Browser Automation Dependencies
+# Install: pip install -r requirements.txt
+
+# Selenium for browser automation
+selenium>=4.15.0
+
+# WebDriver Manager (auto-downloads ChromeDriver)
+webdriver-manager>=4.0.1
+
+# Optional: For async operations
+aiohttp>=3.9.0
+
+# Optional: For better logging
+coloredlogs>=15.0.1
