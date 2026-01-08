@@ -184,7 +184,61 @@ async function processCallEvent(event) {
   const legKey = `${extension}-${participantId}`;
 
   const p = await get3CXParticipant(event.entity);
-  if (!p) return;
+
+  // If participant is gone (API returns null/error), treat as call ended
+  if (!p) {
+    const leg = extensionLegs.get(legKey);
+    if (leg) {
+      console.log(`[3CX] Ext ${extension} participant gone - treating as ended`);
+      const session = callSessions.get(leg.callId);
+      extensionLegs.delete(legKey);
+
+      if (session) {
+        session.extensions.delete(extension);
+
+        if (session.ownerExtension === extension) {
+          // Owner ended
+          const duration = Math.floor((Date.now() - session.startTime) / 1000);
+          console.log(`[Ring Group] ===== CALL ENDED (participant gone) ${extension} (${duration}s) =====`);
+          callSessions.delete(leg.callId);
+
+          await postWebhook('/api/webhook/call-completed', {
+            callId: leg.callId,
+            sessionId: leg.callId,
+            extension,
+            callerPhone: session.callerNumber,
+            callerNumber: session.callerNumber,
+            calledNumber: session.calledNumber,
+            direction: session.direction,
+            status: 'completed',
+            duration,
+            endedAt: new Date().toISOString(),
+          });
+
+          pushCallEnd(leg.callId);
+        } else if (!session.ownerExtension && session.extensions.size === 0) {
+          // Missed call
+          const duration = Math.floor((Date.now() - session.startTime) / 1000);
+          console.log(`[Ring Group] ===== CALL MISSED (participant gone) =====`);
+          callSessions.delete(leg.callId);
+
+          await postWebhook('/api/webhook/call-completed', {
+            callId: leg.callId,
+            sessionId: leg.callId,
+            extension,
+            callerPhone: session.callerNumber,
+            direction: session.direction,
+            status: 'missed',
+            duration,
+            endedAt: new Date().toISOString(),
+          });
+
+          pushCallEnd(leg.callId);
+        }
+      }
+    }
+    return;
+  }
 
   // Extract fields
   const state = p.state || p.State || p.status || p.Status || 'unknown';
