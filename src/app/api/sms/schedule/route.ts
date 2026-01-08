@@ -1,15 +1,18 @@
 // API Route: /api/sms/schedule
-// Schedule SMS for later delivery
+// Schedule SMS for later delivery + Worker to process scheduled messages
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { messages } from "@/db/schema";
 import { twilioClient } from "@/lib/twilio";
+import { sendSmsViaAutomation } from "@/lib/agencyzoom-automation";
 import { eq, lte, and } from "drizzle-orm";
 
 // =============================================================================
 // TYPES
 // =============================================================================
+
+type SendMethod = "twilio" | "agencyzoom-local";
 
 interface ScheduleSMSRequest {
   to: string;
@@ -18,6 +21,7 @@ interface ScheduleSMSRequest {
   contactId?: string;
   contactName?: string;
   contactType?: "customer" | "lead";
+  method?: SendMethod; // Which method to use when sending
 }
 
 // =============================================================================
@@ -124,12 +128,37 @@ export async function GET(request: NextRequest) {
       error?: string;
     }> = [];
 
+    // Determine send method from query param or default to Twilio
+    const searchParams = request.nextUrl.searchParams;
+    const sendMethod = (searchParams.get("method") as SendMethod) || "twilio";
+
     for (const msg of pendingMessages) {
       try {
-        const sendResult = await twilioClient.sendSMS({
-          to: msg.toNumber || "",
-          message: msg.body,
-        });
+        let sendResult: { success: boolean; messageId?: string; error?: string };
+
+        if (sendMethod === "agencyzoom-local") {
+          // Send via local Python/Selenium automation
+          console.log(`[Worker] Sending via AgencyZoom local: ${msg.toNumber}`);
+          const result = await sendSmsViaAutomation(
+            msg.toNumber || "",
+            msg.body,
+            {
+              customerId: msg.contactId || undefined,
+              customerType: msg.contactType as "customer" | "lead" | undefined,
+            }
+          );
+          sendResult = {
+            success: result.success,
+            error: result.error,
+            messageId: `local_${Date.now()}`,
+          };
+        } else {
+          // Send via Twilio (default)
+          sendResult = await twilioClient.sendSMS({
+            to: msg.toNumber || "",
+            message: msg.body,
+          });
+        }
 
         if (sendResult.success) {
           // Update to sent status

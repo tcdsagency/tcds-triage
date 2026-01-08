@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { messages } from "@/db/schema";
 import { twilioClient } from "@/lib/twilio";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { sendSmsViaAutomation } from "@/lib/agencyzoom-automation";
 
 // =============================================================================
 // TYPES
@@ -17,7 +18,7 @@ interface SendSMSRequest {
   contactId?: string;
   contactName?: string;
   contactType?: "customer" | "lead";
-  method?: "twilio" | "agencyzoom"; // Default to twilio
+  method?: "twilio" | "agencyzoom" | "agencyzoom-local"; // Default to twilio
 }
 
 // =============================================================================
@@ -44,8 +45,28 @@ export async function POST(request: NextRequest) {
     const method = body.method || "twilio";
     let sendResult: { success: boolean; messageId?: string; error?: string };
 
-    if (method === "agencyzoom") {
-      // Send via AgencyZoom (tracks in CRM conversation history)
+    if (method === "agencyzoom-local") {
+      // Send via local Python/Selenium automation
+      try {
+        console.log("[SMS] Sending via local AgencyZoom automation...");
+        const result = await sendSmsViaAutomation(body.to, body.message, {
+          customerId: body.contactId,
+          customerType: body.contactType,
+        });
+        sendResult = {
+          success: result.success,
+          error: result.error,
+          messageId: `local_${Date.now()}`,
+        };
+      } catch (error) {
+        console.error("AgencyZoom local automation error:", error);
+        sendResult = {
+          success: false,
+          error: error instanceof Error ? error.message : "Local automation failed",
+        };
+      }
+    } else if (method === "agencyzoom") {
+      // Send via AgencyZoom sidecar (remote session)
       try {
         const azClient = getAgencyZoomClient();
         sendResult = await azClient.sendSMS({
