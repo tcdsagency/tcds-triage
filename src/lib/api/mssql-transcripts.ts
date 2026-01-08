@@ -371,7 +371,7 @@ export class MSSQLTranscriptsClient {
     let records = result.recordset.map((r: any) => this.mapRecordToTranscript(r));
 
     if (params.direction) {
-      records = records.filter(r => r.direction === params.direction);
+      records = records.filter((r: TranscriptRecord) => r.direction === params.direction);
     }
 
     return { records, total };
