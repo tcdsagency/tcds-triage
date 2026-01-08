@@ -1,26 +1,24 @@
-// API Route: /api/sms/import
-// Import historical SMS messages from AgencyZoom
-// Uses app.agencyzoom.com/v1/api/text-thread/* endpoints
+// API Route: /api/sms/sync
+// SMS Thread Sync Service - Track and resync SMS history from AgencyZoom
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { messages } from "@/db/schema";
+import { twilioClient } from "@/lib/twilio";
 
 // =============================================================================
-// TYPES (based on AgencyZoom SMS API)
+// TYPES
 // =============================================================================
 
 interface SMSThread {
   id: string;
   phoneNumber: string;
-  contactId: string;
-  contactType: "customer" | "lead" | "contact";
+  contactId: number;
+  contactType: string | null;
   contactName: string;
-  agentId: string;
-  agentName: string;
   lastMessageDate: string;
   lastMessageDateUTC: string;
-  unreadCount: number;
+  unread: boolean;
 }
 
 interface SMSMessage {
@@ -32,33 +30,28 @@ interface SMSMessage {
   agentName: string | null;
 }
 
-interface ImportProgress {
-  status: "idle" | "running" | "completed" | "failed";
+interface SyncJob {
+  id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  type: "full" | "incremental";
+  startedAt: string;
+  completedAt?: string;
   threadsTotal: number;
   threadsProcessed: number;
   messagesImported: number;
   messagesSkipped: number;
-  currentThread: string;
-  startedAt?: string;
-  completedAt?: string;
-  error?: string;
+  errors: string[];
+  currentThread?: string;
 }
 
-// In-memory progress tracking (would use Redis in production)
-let importProgress: ImportProgress = {
-  status: "idle",
-  threadsTotal: 0,
-  threadsProcessed: 0,
-  messagesImported: 0,
-  messagesSkipped: 0,
-  currentThread: "",
-};
+// In-memory sync history (last 10 jobs)
+const syncHistory: SyncJob[] = [];
+let currentJob: SyncJob | null = null;
 
 // =============================================================================
-// AGENCYZOOM SMS API HELPERS
+// AGENCYZOOM API
 // =============================================================================
 
-// Auth uses api.agencyzoom.com, but SMS endpoints use app.agencyzoom.com
 const AGENCYZOOM_AUTH_URL = "https://api.agencyzoom.com";
 const AGENCYZOOM_SMS_URL = "https://app.agencyzoom.com";
 
@@ -93,15 +86,11 @@ async function getAgencyZoomToken(): Promise<string> {
 
   const data = await response.json();
   cachedToken = data.jwt;
-  tokenExpiry = new Date(Date.now() + 23 * 60 * 60 * 1000); // 23 hours
+  tokenExpiry = new Date(Date.now() + 23 * 60 * 60 * 1000);
 
   return cachedToken!;
 }
 
-/**
- * Fetch SMS threads using POST /v1/api/text-thread/list
- * Uses app.agencyzoom.com (not api.agencyzoom.com)
- */
 async function fetchSMSThreads(
   pageSize: number = 200,
   lastDateUTC: string | number = 0
@@ -117,7 +106,7 @@ async function fetchSMSThreads(
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        status: 0, // 0 = all threads including historical
+        status: 0,
         searchTerm: "",
         agentFilter: "",
         pageSize,
@@ -127,8 +116,6 @@ async function fetchSMSThreads(
   );
 
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[SMS Import] Thread list error: ${response.status}`, errorText);
     throw new Error(`Failed to fetch SMS threads: ${response.status}`);
   }
 
@@ -139,10 +126,6 @@ async function fetchSMSThreads(
   };
 }
 
-/**
- * Fetch messages for a specific thread using text-thread-detail
- * Uses app.agencyzoom.com (not api.agencyzoom.com)
- */
 async function fetchThreadMessages(threadId: string): Promise<SMSMessage[]> {
   const token = await getAgencyZoomToken();
 
@@ -159,14 +142,12 @@ async function fetchThreadMessages(threadId: string): Promise<SMSMessage[]> {
   );
 
   if (!response.ok) {
-    console.warn(`[SMS Import] Failed to fetch messages for thread ${threadId}: ${response.status}`);
     return [];
   }
 
   const data = await response.json();
-
-  // Transform messageInfo to SMSMessage format
   const messageInfo = data.messageInfo || [];
+
   return messageInfo.map((msg: {
     id: number;
     messageId: string;
@@ -190,7 +171,7 @@ async function fetchThreadMessages(threadId: string): Promise<SMSMessage[]> {
 }
 
 // =============================================================================
-// IMPORT LOGIC
+// SYNC LOGIC
 // =============================================================================
 
 function normalizePhone(phone: string): string {
@@ -208,22 +189,18 @@ function isWithinMonths(dateStr: string, months: number): boolean {
   return date >= cutoff;
 }
 
-/**
- * Import messages for a single thread
- */
-async function importThreadMessages(
+async function syncThread(
   tenantId: string,
   thread: SMSThread,
-  threadMessages: SMSMessage[],
   agencyPhone: string,
   months: number
-): Promise<{ imported: number; skipped: number }> {
+): Promise<{ imported: number; skipped: number; errors: string[] }> {
   let imported = 0;
   let skipped = 0;
+  const errors: string[] = [];
 
   const contactPhone = normalizePhone(thread.phoneNumber);
 
-  // Determine contact type
   let contactType: "customer" | "lead" | undefined;
   if (thread.contactType === "customer") {
     contactType = "customer";
@@ -231,86 +208,83 @@ async function importThreadMessages(
     contactType = "lead";
   }
 
-  for (const msg of threadMessages) {
-    // Filter by date
-    if (!isWithinMonths(msg.messageDate, months)) {
-      skipped++;
-      continue;
-    }
+  try {
+    const threadMessages = await fetchThreadMessages(thread.id);
 
-    // Skip empty messages
-    if (!msg.body?.trim()) {
-      skipped++;
-      continue;
-    }
+    for (const msg of threadMessages) {
+      if (!isWithinMonths(msg.messageDate, months)) {
+        skipped++;
+        continue;
+      }
 
-    const direction = msg.direction === "outgoing" ? "outbound" : "inbound";
-    const fromPhone = direction === "outbound" ? agencyPhone : contactPhone;
-    const toPhone = direction === "outbound" ? contactPhone : agencyPhone;
+      if (!msg.body?.trim()) {
+        skipped++;
+        continue;
+      }
 
-    // Use message ID for deduplication
-    const externalId = `az_sms_${msg.id}`;
+      const direction = msg.direction === "outgoing" ? "outbound" : "inbound";
+      const fromPhone = direction === "outbound" ? agencyPhone : contactPhone;
+      const toPhone = direction === "outbound" ? contactPhone : agencyPhone;
+      const externalId = `az_sms_${msg.id}`;
 
-    // Check for duplicate
-    const existing = await db.query.messages.findFirst({
-      where: (messages, { eq }) => eq(messages.externalId, externalId),
-    });
-
-    if (existing) {
-      skipped++;
-      continue;
-    }
-
-    // Insert message
-    try {
-      await db.insert(messages).values({
-        tenantId,
-        type: "sms",
-        direction,
-        fromNumber: fromPhone,
-        toNumber: toPhone,
-        body: msg.body,
-        externalId,
-        status: msg.status || "delivered",
-        contactId: thread.contactId,
-        contactName: thread.contactName,
-        contactType,
-        isAcknowledged: true, // Historical messages are auto-acknowledged
-        sentAt: new Date(msg.messageDate),
+      const existing = await db.query.messages.findFirst({
+        where: (messages, { eq }) => eq(messages.externalId, externalId),
       });
-      imported++;
-    } catch (error) {
-      console.error(`[SMS Import] Error inserting message ${msg.id}:`, error);
+
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        await db.insert(messages).values({
+          tenantId,
+          type: "sms",
+          direction,
+          fromNumber: fromPhone,
+          toNumber: toPhone,
+          body: msg.body,
+          externalId,
+          status: msg.status || "delivered",
+          contactId: thread.contactId?.toString(),
+          contactName: thread.contactName,
+          contactType,
+          isAcknowledged: true,
+          sentAt: new Date(msg.messageDate),
+        });
+        imported++;
+      } catch (error) {
+        errors.push(`Message ${msg.id}: ${error instanceof Error ? error.message : "Insert failed"}`);
+      }
     }
+  } catch (error) {
+    errors.push(`Thread ${thread.id}: ${error instanceof Error ? error.message : "Fetch failed"}`);
   }
 
-  return { imported, skipped };
+  return { imported, skipped, errors };
 }
 
-/**
- * Run the import process
- * 1. Fetch all threads with pagination
- * 2. For each thread, fetch messages
- * 3. Filter to last N months, dedupe, insert
- */
-async function runImport(tenantId: string, months: number = 6) {
-  importProgress = {
+async function runSync(tenantId: string, type: "full" | "incremental", months: number = 6) {
+  const jobId = `sync_${Date.now()}`;
+
+  currentJob = {
+    id: jobId,
     status: "running",
+    type,
+    startedAt: new Date().toISOString(),
     threadsTotal: 0,
     threadsProcessed: 0,
     messagesImported: 0,
     messagesSkipped: 0,
-    currentThread: "",
-    startedAt: new Date().toISOString(),
+    errors: [],
   };
 
   const agencyPhone = normalizePhone(process.env.TWILIO_PHONE_NUMBER || "");
 
   try {
-    console.log(`[SMS Import] Starting import for last ${months} months`);
+    console.log(`[SMS Sync] Starting ${type} sync for last ${months} months`);
 
-    // Step 1: Fetch all threads with pagination
-    console.log("[SMS Import] Fetching threads...");
+    // Fetch all threads
     const allThreads: SMSThread[] = [];
     let hasMore = true;
     let lastDateUTC: string | number = 0;
@@ -319,63 +293,63 @@ async function runImport(tenantId: string, months: number = 6) {
       const result = await fetchSMSThreads(200, lastDateUTC);
       allThreads.push(...result.threads);
 
-      console.log(`[SMS Import] Fetched ${result.threads.length} threads (total: ${allThreads.length})`);
+      console.log(`[SMS Sync] Fetched ${result.threads.length} threads (total: ${allThreads.length})`);
 
       if (result.threads.length < 200) {
         hasMore = false;
       } else {
-        // Use last thread's date for pagination cursor
         const lastThread = result.threads[result.threads.length - 1];
-        lastDateUTC = lastThread.lastMessageDateUTC || `0_${lastThread.lastMessageDate}`;
+        lastDateUTC = lastThread.lastMessageDateUTC;
       }
 
-      // Rate limiting between pages
       await new Promise((r) => setTimeout(r, 300));
     }
 
-    importProgress.threadsTotal = allThreads.length;
-    console.log(`[SMS Import] Found ${allThreads.length} total threads`);
+    currentJob.threadsTotal = allThreads.length;
 
-    // Step 2: Process each thread
-    for (const thread of allThreads) {
-      importProgress.currentThread = thread.contactName || thread.phoneNumber;
+    // For incremental sync, only process threads with recent activity
+    const threadsToProcess = type === "incremental"
+      ? allThreads.filter((t) => isWithinMonths(t.lastMessageDate, 1))
+      : allThreads;
 
-      try {
-        // Fetch messages for this thread
-        const threadMessages = await fetchThreadMessages(thread.id);
+    console.log(`[SMS Sync] Processing ${threadsToProcess.length} threads`);
 
-        // Import messages
-        const { imported, skipped } = await importThreadMessages(
-          tenantId,
-          thread,
-          threadMessages,
-          agencyPhone,
-          months
-        );
+    // Process each thread
+    for (const thread of threadsToProcess) {
+      currentJob.currentThread = thread.contactName || thread.phoneNumber;
 
-        importProgress.messagesImported += imported;
-        importProgress.messagesSkipped += skipped;
-      } catch (error) {
-        console.error(`[SMS Import] Error processing thread ${thread.id}:`, error);
-      }
+      const result = await syncThread(tenantId, thread, agencyPhone, months);
 
-      importProgress.threadsProcessed++;
+      currentJob.messagesImported += result.imported;
+      currentJob.messagesSkipped += result.skipped;
+      currentJob.errors.push(...result.errors);
+      currentJob.threadsProcessed++;
 
-      // Rate limiting between threads
       await new Promise((r) => setTimeout(r, 100));
     }
 
-    importProgress.status = "completed";
-    importProgress.completedAt = new Date().toISOString();
+    currentJob.status = "completed";
+    currentJob.completedAt = new Date().toISOString();
+
     console.log(
-      `[SMS Import] Complete. Threads: ${importProgress.threadsProcessed}, ` +
-      `Imported: ${importProgress.messagesImported}, Skipped: ${importProgress.messagesSkipped}`
+      `[SMS Sync] Complete. Threads: ${currentJob.threadsProcessed}, ` +
+      `Imported: ${currentJob.messagesImported}, Skipped: ${currentJob.messagesSkipped}, ` +
+      `Errors: ${currentJob.errors.length}`
     );
   } catch (error) {
-    importProgress.status = "failed";
-    importProgress.error = error instanceof Error ? error.message : "Unknown error";
-    console.error("[SMS Import] Failed:", error);
+    currentJob.status = "failed";
+    currentJob.completedAt = new Date().toISOString();
+    currentJob.errors.push(error instanceof Error ? error.message : "Unknown error");
+    console.error("[SMS Sync] Failed:", error);
   }
+
+  // Store in history (keep last 10)
+  syncHistory.unshift({ ...currentJob });
+  if (syncHistory.length > 10) {
+    syncHistory.pop();
+  }
+
+  currentJob = null;
 }
 
 // =============================================================================
@@ -383,9 +357,10 @@ async function runImport(tenantId: string, months: number = 6) {
 // =============================================================================
 
 /**
- * POST /api/sms/import - Start historical import
+ * POST /api/sms/sync - Start a sync job
  * Query params:
- *   - months: Number of months to import (default: 6)
+ *   - type: "full" | "incremental" (default: "full")
+ *   - months: Number of months to sync (default: 6)
  */
 export async function POST(request: NextRequest) {
   const tenantId = process.env.DEFAULT_TENANT_ID;
@@ -394,34 +369,80 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
   }
 
-  // Check if already running
-  if (importProgress.status === "running") {
+  if (currentJob) {
     return NextResponse.json(
-      { error: "Import already in progress", progress: importProgress },
+      { error: "Sync already in progress", job: currentJob },
       { status: 409 }
     );
   }
 
-  // Get months parameter (default 6)
   const searchParams = request.nextUrl.searchParams;
+  const type = (searchParams.get("type") as "full" | "incremental") || "full";
   const months = parseInt(searchParams.get("months") || "6", 10);
 
-  // Start import in background
-  runImport(tenantId, months).catch(console.error);
+  // Start sync in background
+  runSync(tenantId, type, months).catch(console.error);
 
   return NextResponse.json({
     success: true,
-    message: `Import started for last ${months} months`,
-    progress: importProgress,
+    message: `${type} sync started for last ${months} months`,
+    jobId: currentJob?.id,
   });
 }
 
 /**
- * GET /api/sms/import - Get import progress
+ * GET /api/sms/sync - Get sync status and history
+ * Query params:
+ *   - jobId: Get specific job status (optional)
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams;
+  const jobId = searchParams.get("jobId");
+
+  if (jobId) {
+    // Find specific job
+    if (currentJob?.id === jobId) {
+      return NextResponse.json({ success: true, job: currentJob });
+    }
+    const historyJob = syncHistory.find((j) => j.id === jobId);
+    if (historyJob) {
+      return NextResponse.json({ success: true, job: historyJob });
+    }
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
+
+  // Return current status and history
   return NextResponse.json({
     success: true,
-    progress: importProgress,
+    currentJob,
+    history: syncHistory,
+  });
+}
+
+/**
+ * DELETE /api/sms/sync - Cancel current sync (if running)
+ */
+export async function DELETE() {
+  if (!currentJob) {
+    return NextResponse.json({ error: "No sync in progress" }, { status: 404 });
+  }
+
+  // Note: We can't actually stop the running Promise, but we mark it as cancelled
+  currentJob.status = "failed";
+  currentJob.completedAt = new Date().toISOString();
+  currentJob.errors.push("Cancelled by user");
+
+  syncHistory.unshift({ ...currentJob });
+  if (syncHistory.length > 10) {
+    syncHistory.pop();
+  }
+
+  const cancelledJob = currentJob;
+  currentJob = null;
+
+  return NextResponse.json({
+    success: true,
+    message: "Sync cancelled",
+    job: cancelledJob,
   });
 }
