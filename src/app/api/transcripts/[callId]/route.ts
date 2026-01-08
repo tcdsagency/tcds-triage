@@ -34,8 +34,8 @@ export async function GET(
       });
     }
 
-    // Get transcript
-    const transcript = await client.getTranscriptByCallId(callId);
+    // Get transcript by Record ID
+    const transcript = await client.getTranscriptById(callId);
 
     if (!transcript) {
       return NextResponse.json(
