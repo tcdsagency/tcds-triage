@@ -788,6 +788,32 @@ export const calls = pgTable('calls', {
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
+// LIVE TRANSCRIPT SEGMENTS - Real-time transcription from VM Bridge
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const liveTranscriptSegments = pgTable('live_transcript_segments', {
+  id: varchar('id', { length: 12 }).primaryKey(), // nanoid
+  callId: uuid('call_id').notNull().references(() => calls.id, { onDelete: 'cascade' }),
+
+  // Segment data
+  speaker: varchar('speaker', { length: 20 }).notNull(), // 'agent', 'customer', 'system'
+  text: text('text').notNull(),
+  confidence: real('confidence').default(0.9),
+
+  // Ordering
+  sequenceNumber: integer('sequence_number').notNull(),
+  timestamp: timestamp('timestamp').defaultNow().notNull(),
+
+  // Status
+  isFinal: boolean('is_final').default(true),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('live_segments_call_idx').on(table.callId),
+  index('live_segments_seq_idx').on(table.callId, table.sequenceNumber),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TRIAGE QUEUE
 // ═══════════════════════════════════════════════════════════════════════════
 
