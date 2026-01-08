@@ -15,6 +15,43 @@ import { eq, or, ilike, and } from "drizzle-orm";
 import { getVMBridgeClient } from "@/lib/api/vm-bridge";
 
 // =============================================================================
+// REALTIME SERVER PUSH
+// =============================================================================
+
+async function notifyRealtimeServer(event: {
+  type: string;
+  sessionId: string;
+  phoneNumber?: string;
+  direction?: string;
+  customerId?: string;
+  customerName?: string;
+  extension?: string;
+  status?: string;
+}) {
+  const realtimeUrl = process.env.REALTIME_SERVER_URL || "https://realtime.tcdsagency.com";
+
+  try {
+    console.log(`[Call-Started] Broadcasting to realtime server: ${event.type}`);
+    const response = await fetch(`${realtimeUrl}/api/broadcast`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": process.env.REALTIME_API_KEY || "",
+      },
+      body: JSON.stringify(event),
+    });
+
+    if (!response.ok) {
+      console.error(`[Call-Started] Realtime server returned ${response.status}`);
+    } else {
+      console.log(`[Call-Started] Broadcasted ${event.type} to realtime server successfully`);
+    }
+  } catch (error) {
+    console.error("[Call-Started] Failed to notify realtime server:", error);
+  }
+}
+
+// =============================================================================
 // AUTHENTICATION
 // =============================================================================
 
@@ -178,7 +215,19 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Call-Started] Created call session: ${call.id}`);
 
-    // 4. Trigger VM Bridge to start transcription
+    // 4. Push to realtime server to notify browser (CallProvider)
+    await notifyRealtimeServer({
+      type: "call_started",
+      sessionId: call.id,
+      phoneNumber: customerPhone,
+      direction,
+      customerId: customer?.id,
+      customerName: customer ? `${customer.firstName} ${customer.lastName}` : undefined,
+      extension,
+      status: "ringing",
+    });
+
+    // 5. Trigger VM Bridge to start transcription
     let transcriptionStarted = false;
     let transcriptionError: string | null = null;
     const threecxCallId = body.callId || body.sessionId; // The 3CX call ID from the bridge

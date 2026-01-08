@@ -495,12 +495,18 @@ export async function POST(request: NextRequest) {
     if (call) {
       matchStatus = "matched";
 
+      // Map status from ring group bridge (completed, missed, abandoned) to our enum
+      const incomingStatus = (body.status || "completed").toLowerCase();
+      const finalStatus = incomingStatus === "missed" ? "missed" :
+                          incomingStatus === "abandoned" ? "missed" :
+                          "completed";
+
       // Update call with VoIPTools data
       const [updated] = await db
         .update(calls)
         .set({
           externalCallId: body.callId,
-          status: "completed",
+          status: finalStatus,
           endedAt: timestamp,
           durationSeconds: body.duration,
           recordingUrl: body.recordingUrl,

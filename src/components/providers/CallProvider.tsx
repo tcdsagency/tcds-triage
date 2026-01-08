@@ -135,74 +135,14 @@ export function CallProvider({ children }: CallProviderProps) {
     };
   }, []);
 
-  // Polling fallback - check 3CX directly for active calls
-  useEffect(() => {
-    const currentExt = myExtensionRef.current || localStorage.getItem('myExtension');
-    if (!currentExt) return;
-
-    console.log("[CallProvider] Starting 3CX polling for extension:", currentExt);
-
-    const pollForCalls = async () => {
-      try {
-        // Poll 3CX directly for active calls
-        const res = await fetch(`/api/3cx/active-calls?extension=${currentExt}`);
-        const data = await res.json();
-
-        if (data.success && data.hasActiveCall && data.calls?.length > 0) {
-          const call = data.calls[0];
-          // Only trigger if we don't already have this call active
-          if (!activeCall || activeCall.sessionId !== call.sessionId) {
-            console.log("[CallProvider] 3CX poll found active call:", call.sessionId);
-            handleCallEvent({
-              type: 'call_started',
-              sessionId: call.sessionId,
-              phoneNumber: call.phoneNumber,
-              direction: call.direction,
-              extension: call.extension,
-              customerId: call.customerId,
-              customerName: call.customerName,
-            });
-          }
-        } else if (activeCall && !data.hasActiveCall) {
-          // Call ended in 3CX but we still have it active
-          console.log("[CallProvider] 3CX poll: call ended");
-          handleCallEvent({
-            type: 'call_ended',
-            sessionId: activeCall.sessionId,
-          });
-        }
-      } catch (e) {
-        // Silent fail - try database fallback
-        try {
-          const res = await fetch(`/api/calls?status=ringing,in_progress&extension=${currentExt}&limit=1`);
-          const data = await res.json();
-          if (data.success && data.calls?.length > 0) {
-            const call = data.calls[0];
-            if (!activeCall || activeCall.sessionId !== call.id) {
-              console.log("[CallProvider] DB fallback found call:", call.id);
-              handleCallEvent({
-                type: call.status === 'ringing' ? 'call_ringing' : 'call_started',
-                sessionId: call.id,
-                phoneNumber: call.fromNumber || call.toNumber,
-                direction: call.direction,
-                extension: currentExt,
-                customerId: call.customerId,
-              });
-            }
-          }
-        } catch {
-          // Both failed, continue
-        }
-      }
-    };
-
-    // Poll every 2 seconds for responsiveness
-    const pollInterval = setInterval(pollForCalls, 2000);
-    // Also poll immediately
-    pollForCalls();
-
-    return () => clearInterval(pollInterval);
-  }, [activeCall]);
+  // Polling DISABLED - relying on WebSocket bridge + webhooks
+  // The 3CX WebSocket bridge on G Cloud PC posts to /api/webhook/call-started
+  // which creates the call record and pushes to realtime server
+  // useEffect(() => {
+  //   const currentExt = myExtensionRef.current || localStorage.getItem('myExtension');
+  //   if (!currentExt) return;
+  //   console.log("[CallProvider] 3CX polling disabled - using WebSocket bridge");
+  // }, [activeCall]);
 
   const handleCallEvent = useCallback((data: any) => {
     console.log("[CallProvider] Event:", data.type, data);
