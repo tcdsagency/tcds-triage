@@ -7,9 +7,8 @@ import { calls, liveTranscriptSegments } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
-// Verify webhook API key
+// Verify webhook API key (supports both X-Api-Key and Authorization headers)
 function verifyWebhookKey(request: NextRequest): boolean {
-  const authHeader = request.headers.get("Authorization");
   const webhookKey = process.env.WEBHOOK_API_KEY;
 
   if (!webhookKey) {
@@ -17,10 +16,22 @@ function verifyWebhookKey(request: NextRequest): boolean {
     return true; // Allow if not configured (dev mode)
   }
 
-  if (!authHeader) return false;
+  // Check X-Api-Key header (VM Bridge format)
+  const xApiKey = request.headers.get("X-Api-Key");
+  if (xApiKey === webhookKey) {
+    return true;
+  }
 
-  const [type, token] = authHeader.split(" ");
-  return type === "Bearer" && token === webhookKey;
+  // Check Authorization: Bearer header
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader) {
+    const [type, token] = authHeader.split(" ");
+    if (type === "Bearer" && token === webhookKey) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 interface SegmentRequest {
