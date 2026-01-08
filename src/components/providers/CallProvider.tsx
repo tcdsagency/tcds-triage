@@ -45,17 +45,40 @@ export function CallProvider({ children }: CallProviderProps) {
   const [myExtension, setMyExtension] = useState<string | null>(null);
   const myExtensionRef = useRef<string | null>(null);
 
-  // Fetch current user's extension on mount
+  // Fetch current user's extension on mount and check for active call
   useEffect(() => {
     fetch('/api/auth/me')
       .then(res => res.json())
-      .then(data => {
+      .then(async data => {
         if (data.success && data.user?.extension) {
           const ext = data.user.extension;
           setMyExtension(ext);
           myExtensionRef.current = ext;
           localStorage.setItem('myExtension', ext);
           console.log('[CallProvider] Agent extension:', ext);
+
+          // Check for active call on page load
+          try {
+            const activeRes = await fetch(`/api/calls/active?extension=${ext}`);
+            if (activeRes.ok) {
+              const activeData = await activeRes.json();
+              if (activeData.call) {
+                console.log('[CallProvider] Found active call on load:', activeData.call.id);
+                const call: ActiveCall = {
+                  sessionId: activeData.call.id,
+                  phoneNumber: activeData.call.fromNumber || activeData.call.toNumber || "Unknown",
+                  direction: activeData.call.direction || "inbound",
+                  status: activeData.call.status === "in_progress" ? "connected" : "ringing",
+                  startTime: new Date(activeData.call.startedAt).getTime(),
+                  customerId: activeData.call.customerId,
+                };
+                setActiveCall(call);
+                setIsPopupVisible(true);
+              }
+            }
+          } catch (e) {
+            console.error('[CallProvider] Error checking active call:', e);
+          }
         } else {
           // Try localStorage fallback
           const stored = localStorage.getItem('myExtension');
