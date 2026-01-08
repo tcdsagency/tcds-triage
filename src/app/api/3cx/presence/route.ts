@@ -73,7 +73,9 @@ export async function GET(request: NextRequest) {
     const voiptoolsClient = await getVoIPToolsRelayClient();
     if (voiptoolsClient) {
       try {
-        const presenceData = await voiptoolsClient.getAllPresence();
+        // Get unique extension numbers from team users
+        const extensionList = [...new Set(teamUsers.map(u => u.extension).filter(Boolean))] as string[];
+        const presenceData = await voiptoolsClient.getAllPresence(extensionList);
 
         // Map VoIPTools presence to our format
         const teamMembers: TeamMember[] = teamUsers.map((user) => {
@@ -82,7 +84,15 @@ export async function GET(request: NextRequest) {
           );
 
           const { status, text } = mapPresenceStatus(extData?.Status);
-          const statusText = extData?.StatusText || text;
+
+          // Clean up the status text from VoIPTools format
+          let statusText = text;
+          const rawStatus = extData?.StatusText || "";
+          if (rawStatus.toLowerCase().includes("isincall: true")) {
+            statusText = "On a call";
+          } else if (rawStatus.toLowerCase().includes("out of office")) {
+            statusText = "Out of Office";
+          }
 
           return {
             id: user.id,

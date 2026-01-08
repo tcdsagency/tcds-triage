@@ -1,8 +1,9 @@
 // =============================================================================
-// VoIPTools Relay API Client - Presence Management (Separate from Native 3CX)
+// VoIPTools Relay API Client - Presence & Call Management
 // =============================================================================
-// VoIPTools provides middleware that sits between your app and 3CX.
-// It runs on a separate server (vt-relay.yourdomain.com:5656) and uses JWT auth.
+// VoIPTools Relay Services provides middleware that sits between your app and 3CX.
+// It runs on the 3CX server (typically port 8801) and uses API key authentication.
+// Auth flow: POST /api/Authenticate with PublicKey/PrivateKey -> JWT Bearer token
 // =============================================================================
 
 import { db } from "@/db";
@@ -14,9 +15,13 @@ import { eq } from "drizzle-orm";
 // =============================================================================
 
 export interface VoIPToolsConfig {
-  relayUrl: string;      // e.g., https://vt-relay.yourdomain.com:5656
-  jwtToken: string;      // JWT for authentication
+  relayUrl: string;           // e.g., https://vt-relay.yourdomain.com:5656
+  privateKey?: string;        // VoIPTools PrivateKey credential
+  publicKey?: string;         // VoIPTools PublicKey credential
+  jwtToken?: string;          // Pre-generated JWT (fallback if no keys provided)
   tokenExpiresAt?: number;
+  cachedToken?: string;       // Cached token from /api/Authenticate
+  cachedTokenExp?: number;    // Cached token expiration
 }
 
 export type VoIPToolsPresenceStatus =
@@ -75,24 +80,120 @@ export class VoIPToolsRelayClient {
 
     // Check database config first, then environment variables
     const relayUrl = voiptoolsConfig.relayUrl || process.env.VOIPTOOLS_RELAY_URL;
+    const privateKey = voiptoolsConfig.privateKey || process.env.VOIPTOOLS_PRIVATE_KEY;
+    const publicKey = voiptoolsConfig.publicKey || process.env.VOIPTOOLS_PUBLIC_KEY;
+
+    // Fallback to static JWT token if no keys provided
     const jwtToken = voiptoolsConfig.jwtToken || process.env.VOIPTOOLS_JWT_TOKEN;
 
-    if (!relayUrl || !jwtToken) {
+    if (!relayUrl) {
+      return null;
+    }
+
+    // Need either pub/priv keys for authentication or static token
+    if ((!privateKey || !publicKey) && !jwtToken) {
+      console.warn("VoIPTools: No public/private keys or JWT token configured");
       return null;
     }
 
     return new VoIPToolsRelayClient(tenantId, {
       relayUrl: relayUrl.replace(/\/$/, ""), // Remove trailing slash
+      privateKey,
+      publicKey,
       jwtToken,
       tokenExpiresAt: voiptoolsConfig.tokenExpiresAt,
     });
   }
 
   // ---------------------------------------------------------------------------
-  // JWT Authentication Check
+  // VoIPTools Authentication - POST to /api/Authenticate to get JWT
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Authenticate with VoIPTools and get a JWT token
+   * Uses the PublicKey/PrivateKey credentials to exchange for a bearer token
+   */
+  private async authenticate(): Promise<string> {
+    if (!this.config.publicKey || !this.config.privateKey) {
+      throw new Error("VoIPTools PublicKey and PrivateKey required for authentication");
+    }
+
+    const url = `${this.config.relayUrl}/api/Authenticate`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        PublicKey: this.config.publicKey,
+        PrivateKey: this.config.privateKey,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`VoIPTools authentication failed: ${response.status} ${errorText}`);
+    }
+
+    const result = await response.text();
+
+    // VoIPTools returns the JWT token directly as text, or as JSON with a token field
+    let token: string;
+    try {
+      const parsed = JSON.parse(result);
+      token = parsed.token || parsed.Token || parsed.jwt || parsed.access_token || result;
+    } catch {
+      token = result.replace(/^"|"$/g, ""); // Remove surrounding quotes if present
+    }
+
+    if (!token) {
+      throw new Error("VoIPTools authentication returned no token");
+    }
+
+    // Cache the token (assume 1 hour validity)
+    this.config.cachedToken = token;
+    this.config.cachedTokenExp = Date.now() + (3600 * 1000);
+
+    return token;
+  }
+
+  /**
+   * Get a valid JWT token - authenticates if needed
+   */
+  private async getValidToken(): Promise<string> {
+    // Check if we have a valid cached token (with 60 second buffer)
+    if (this.config.cachedToken && this.config.cachedTokenExp) {
+      if (Date.now() < this.config.cachedTokenExp - 60000) {
+        return this.config.cachedToken;
+      }
+    }
+
+    // If we have pub/priv keys, authenticate to get a new token
+    if (this.config.publicKey && this.config.privateKey) {
+      return this.authenticate();
+    }
+
+    // Fall back to static token
+    if (this.config.jwtToken) {
+      return this.config.jwtToken;
+    }
+
+    throw new Error("No valid JWT token available");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Token Expiration Check
   // ---------------------------------------------------------------------------
 
   private isTokenExpired(): boolean {
+    // If using key-based authentication, we handle expiry in getValidToken()
+    if (this.config.publicKey && this.config.privateKey) {
+      return false; // Will re-authenticate as needed
+    }
+
+    if (!this.config.jwtToken) return true;
+
     if (!this.config.tokenExpiresAt) {
       // No expiry set, try to decode JWT to check
       try {
@@ -119,18 +220,16 @@ export class VoIPToolsRelayClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T | null> {
-    if (this.isTokenExpired()) {
-      console.warn("VoIPTools JWT token may be expired");
-      // Continue anyway, let server reject if invalid
-    }
-
     const url = `${this.config.relayUrl}${endpoint}`;
 
     try {
+      // Get a valid token (authenticates if needed)
+      const token = await this.getValidToken();
+
       const response = await fetch(url, {
         ...options,
         headers: {
-          Authorization: `Bearer ${this.config.jwtToken}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
           ...options.headers,
         },
@@ -162,16 +261,74 @@ export class VoIPToolsRelayClient {
 
   /**
    * Get the current presence status for an extension
+   * Uses VoIPTools API: /api/GetCurrentUserStatus/{agentExtension}
    */
   async getPresence(extension: string): Promise<VoIPToolsPresence | null> {
-    return this.apiCall<VoIPToolsPresence>(`/api/presence/${extension}`);
+    const status = await this.apiCall<string>(`/api/GetCurrentUserStatus/${extension}`);
+    if (!status) return null;
+
+    // VoIPTools returns status as string, map to our format
+    return {
+      Extension: extension,
+      Status: this.mapVoIPToolsStatus(status),
+      StatusText: status,
+    };
   }
 
   /**
-   * Get presence status for all extensions
+   * Get presence status for multiple extensions
+   * VoIPTools doesn't have a bulk endpoint, so we call GetCurrentUserStatus for each
+   * @param extensions Array of extension numbers to query
    */
-  async getAllPresence(): Promise<VoIPToolsPresence[]> {
-    return (await this.apiCall<VoIPToolsPresence[]>("/api/presence")) || [];
+  async getAllPresence(extensions?: string[]): Promise<VoIPToolsPresence[]> {
+    if (!extensions || extensions.length === 0) {
+      return [];
+    }
+
+    // Query each extension in parallel (but limit concurrency)
+    const results: VoIPToolsPresence[] = [];
+    const batchSize = 5; // Process 5 at a time to avoid overwhelming the server
+
+    for (let i = 0; i < extensions.length; i += batchSize) {
+      const batch = extensions.slice(i, i + batchSize);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (ext) => {
+          const presence = await this.getPresence(ext);
+          return presence;
+        })
+      );
+
+      for (const result of batchResults) {
+        if (result.status === "fulfilled" && result.value) {
+          results.push(result.value);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Map VoIPTools status string to our presence status type
+   * VoIPTools returns: "User Status: Available and IsInCall: False"
+   */
+  private mapVoIPToolsStatus(status: string): VoIPToolsPresenceStatus {
+    const s = status?.toLowerCase() || "";
+
+    // Check if user is on a call first
+    if (s.includes("isincall: true") || s.includes("talking") || s.includes("ringing")) {
+      return "Busy";
+    }
+
+    // Parse the status part
+    if (s.includes("available") || s === "idle") return "Available";
+    if (s.includes("out of office") || s.includes("away") || s.includes("timeout")) return "Away";
+    if (s.includes("dnd") || s.includes("donotdisturb") || s.includes("do not disturb")) return "DoNotDisturb";
+    if (s.includes("busy")) return "Busy";
+    if (s.includes("trip") || s.includes("business")) return "BusinessTrip";
+    if (s.includes("lunch")) return "Lunch";
+    if (s.includes("desk")) return "AwayFromDesk";
+    return "Available"; // Default
   }
 
   /**
@@ -340,7 +497,14 @@ export class VoIPToolsRelayClient {
   }
 
   isConfigured(): boolean {
-    return !!(this.config.relayUrl && this.config.jwtToken);
+    return !!(this.config.relayUrl && ((this.config.publicKey && this.config.privateKey) || this.config.jwtToken));
+  }
+
+  /**
+   * Check if using key-based authentication
+   */
+  isUsingKeyAuth(): boolean {
+    return !!(this.config.publicKey && this.config.privateKey);
   }
 }
 
