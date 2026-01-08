@@ -181,11 +181,12 @@ export async function POST(request: NextRequest) {
     // 4. Trigger VM Bridge to start transcription
     let transcriptionStarted = false;
     let transcriptionError: string | null = null;
+    const threecxCallId = body.callId || body.sessionId; // The 3CX call ID from the bridge
     try {
       const vmBridge = await getVMBridgeClient();
       if (vmBridge) {
-        console.log(`[Call-Started] Triggering VM Bridge for session ${call.id}, extension ${extension}`);
-        const result = await vmBridge.startTranscription(call.id, extension);
+        console.log(`[Call-Started] Triggering VM Bridge for session ${call.id}, extension ${extension}, 3CX callId: ${threecxCallId}`);
+        const result = await vmBridge.startTranscription(call.id, extension, threecxCallId);
         transcriptionStarted = !!result;
         console.log(`[Call-Started] VM Bridge response:`, result);
       } else {
