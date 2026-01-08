@@ -71,7 +71,9 @@ export async function GET(request: NextRequest) {
       try {
         const presence = await voiptools.getPresence(extension);
         const statusText = presence?.StatusText?.toLowerCase() || "";
+        // Check for "isincall: true" (case insensitive - VoIPTools returns "IsInCall: True")
         isOnCallPerVoIP = statusText.includes("isincall: true") ||
+                         statusText.includes("isincall:true") ||
                          statusText.includes("talking") ||
                          statusText.includes("ringing");
         console.log(`[Active Calls] VoIPTools presence: ${statusText}, isOnCall: ${isOnCallPerVoIP}`);
