@@ -85,3 +85,55 @@ export async function GET() {
     description: "Marks calls that are ringing/in_progress for >30 minutes as missed",
   });
 }
+
+// DELETE - Force clean ALL active calls (use with caution)
+export async function DELETE() {
+  try {
+    const tenantId = process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
+
+    // Find ALL active calls
+    const activeCalls = await db
+      .select({ id: calls.id, status: calls.status, startedAt: calls.startedAt })
+      .from(calls)
+      .where(
+        and(
+          eq(calls.tenantId, tenantId),
+          or(
+            eq(calls.status, "ringing"),
+            eq(calls.status, "in_progress")
+          )
+        )
+      );
+
+    if (activeCalls.length === 0) {
+      return NextResponse.json({ success: true, message: "No active calls", cleaned: 0 });
+    }
+
+    // Mark all as missed
+    await db
+      .update(calls)
+      .set({ status: "missed", endedAt: new Date() })
+      .where(
+        and(
+          eq(calls.tenantId, tenantId),
+          or(
+            eq(calls.status, "ringing"),
+            eq(calls.status, "in_progress")
+          )
+        )
+      );
+
+    return NextResponse.json({
+      success: true,
+      message: `Force cleaned ${activeCalls.length} active calls`,
+      cleaned: activeCalls.length,
+      calls: activeCalls,
+    });
+  } catch (error) {
+    console.error("[Cleanup] Error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Cleanup failed" },
+      { status: 500 }
+    );
+  }
+}
