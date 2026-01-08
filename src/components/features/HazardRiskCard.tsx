@@ -51,10 +51,10 @@ const HAZARD_ICONS: Record<string, any> = {
 };
 
 const LEVEL_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  low: { bg: "bg-green-500/10", text: "text-green-400", border: "border-green-500/30" },
-  moderate: { bg: "bg-yellow-500/10", text: "text-yellow-400", border: "border-yellow-500/30" },
-  high: { bg: "bg-orange-500/10", text: "text-orange-400", border: "border-orange-500/30" },
-  severe: { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/30" },
+  low: { bg: "bg-green-50", text: "text-green-600", border: "border-green-200" },
+  moderate: { bg: "bg-yellow-50", text: "text-yellow-600", border: "border-yellow-200" },
+  high: { bg: "bg-orange-50", text: "text-orange-600", border: "border-orange-200" },
+  severe: { bg: "bg-red-50", text: "text-red-600", border: "border-red-200" },
 };
 
 export function HazardRiskCard({
@@ -111,10 +111,10 @@ export function HazardRiskCard({
 
   if (loading) {
     return (
-      <div className="bg-[#1a1f2e] rounded-xl border border-gray-700 p-6">
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />
-          <span className="ml-2 text-gray-400">Calculating risk score...</span>
+          <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+          <span className="ml-2 text-gray-500">Calculating risk score...</span>
         </div>
       </div>
     );
@@ -122,13 +122,13 @@ export function HazardRiskCard({
 
   if (error) {
     return (
-      <div className="bg-[#1a1f2e] rounded-xl border border-gray-700 p-6">
-        <div className="flex items-center gap-3 text-red-400">
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center gap-3 text-red-600">
           <AlertTriangle className="w-5 h-5" />
           <span>{error}</span>
           <button
             onClick={fetchRiskScore}
-            className="ml-auto p-2 hover:bg-gray-700 rounded-lg"
+            className="ml-auto p-2 hover:bg-gray-100 rounded-lg"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
@@ -139,8 +139,8 @@ export function HazardRiskCard({
 
   if (!data) {
     return (
-      <div className="bg-[#1a1f2e] rounded-xl border border-gray-700 p-6">
-        <div className="text-center text-gray-400 py-4">
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="text-center text-gray-500 py-4">
           <AlertTriangle className="w-8 h-8 mx-auto mb-2 opacity-50" />
           <p>No risk data available</p>
           <p className="text-sm mt-1">Provide an address to calculate risk score</p>
@@ -152,7 +152,7 @@ export function HazardRiskCard({
   const colors = getOverallColor(data.level);
 
   return (
-    <div className="bg-[#1a1f2e] rounded-xl border border-gray-700 overflow-hidden">
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       {/* Header */}
       <div
         className={`p-4 ${colors.bg} border-b ${colors.border} cursor-pointer`}
@@ -161,14 +161,14 @@ export function HazardRiskCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
-              className={`w-12 h-12 rounded-full ${colors.bg} border-2 ${colors.border} flex items-center justify-center`}
+              className={`w-12 h-12 rounded-full bg-white border-2 ${colors.border} flex items-center justify-center`}
             >
               <span className={`text-xl font-bold ${colors.text}`}>
                 {data.overall}
               </span>
             </div>
             <div>
-              <h3 className="font-semibold text-white">Hazard Risk Score</h3>
+              <h3 className="font-semibold text-gray-900">Hazard Risk Score</h3>
               <p className={`text-sm ${colors.text}`}>
                 {getLevelLabel(data.level)} Risk
               </p>
@@ -180,16 +180,16 @@ export function HazardRiskCard({
                 e.stopPropagation();
                 fetchRiskScore();
               }}
-              className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               title="Refresh"
             >
-              <RefreshCw className="w-4 h-4 text-gray-400" />
+              <RefreshCw className="w-4 h-4 text-gray-500" />
             </button>
             {compact && (
               expanded ? (
-                <ChevronUp className="w-5 h-5 text-gray-400" />
+                <ChevronUp className="w-5 h-5 text-gray-500" />
               ) : (
-                <ChevronDown className="w-5 h-5 text-gray-400" />
+                <ChevronDown className="w-5 h-5 text-gray-500" />
               )
             )}
           </div>
