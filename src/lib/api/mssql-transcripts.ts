@@ -1,8 +1,8 @@
 // =============================================================================
-// MSSQL Transcripts Client - Post-Call Transcript Storage
+// MSSQL Transcripts Client - VoIPTools 3CX Recording Manager
 // =============================================================================
-// Connects to SQL Server database containing VoIPTools transcripts.
-// Used for retrieving completed call transcripts after they've been processed.
+// Connects to SQL Server database containing VoIPTools call recordings/transcripts.
+// Table: dbo.Recordings
 // =============================================================================
 
 import { db } from "@/db";
@@ -16,43 +16,28 @@ import { eq } from "drizzle-orm";
 export interface MSSQLConfig {
   server: string;         // SQL Server host
   port: number;           // SQL Server port (default 1433)
-  database: string;       // Database name (e.g., transcription_db)
+  database: string;       // Database name (e.g., 3CX Recording Manager)
   user: string;           // SQL user
   password: string;       // SQL password
   encrypt: boolean;       // Use TLS encryption
   trustServerCertificate: boolean;
 }
 
+// VoIPTools Recording record from dbo.Recordings table
 export interface TranscriptRecord {
-  id: string;
-  callId: string;
-  externalCallId?: string;  // 3CX call ID
-  extension: string;
-  agentName?: string;
-  callerNumber: string;
-  calledNumber: string;
-  direction: "inbound" | "outbound";
-  startTime: Date;
-  endTime: Date;
-  duration: number;         // seconds
-  transcript: string;       // Full transcript text
-  transcriptJson?: TranscriptSegment[];  // Parsed segments
-  sentiment?: {
-    overall: "positive" | "neutral" | "negative";
-    score: number;
-  };
-  keywords?: string[];
-  summary?: string;
-  createdAt: Date;
-  updatedAt?: Date;
-}
-
-export interface TranscriptSegment {
-  speaker: "agent" | "customer" | "unknown";
-  text: string;
-  startTime: number;
-  endTime: number;
-  confidence?: number;
+  id: string;                 // RecordId
+  extension: string;          // Ext - agent extension
+  callerName?: string;        // CallerName - caller ID name
+  callerNumber: string;       // CallerExt - number that initiated call
+  calledNumber: string;       // DialedNum - number that was dialed
+  direction: "inbound" | "outbound";  // Derived from CallerExt/DialedNum
+  recordingDate: Date;        // RecordingDate
+  duration: string;           // Duration (format: "00:05:32")
+  durationSeconds: number;    // Computed from duration
+  transcript: string;         // Transcription text
+  score?: number;             // Score (sentiment/quality)
+  fileName?: string;          // FileName
+  archive?: string;           // Archive path
 }
 
 export interface TranscriptSearchParams {
@@ -72,7 +57,7 @@ export interface TranscriptStats {
   avgDuration: number;
   inboundCalls: number;
   outboundCalls: number;
-  avgSentiment?: number;
+  avgScore?: number;
 }
 
 // =============================================================================
@@ -106,10 +91,13 @@ export class MSSQLTranscriptsClient {
 
     // Check database config first, then environment variables
     const server = mssqlConfig.server || process.env.MSSQL_SERVER;
-    const port = parseInt(mssqlConfig.port || process.env.MSSQL_PORT || "1433");
+    const port = parseInt(mssqlConfig.port || process.env.MSSQL_PORT || "1433", 10);
     const database = mssqlConfig.database || process.env.MSSQL_DATABASE;
     const user = mssqlConfig.user || process.env.MSSQL_USER;
     const password = mssqlConfig.password || process.env.MSSQL_PASSWORD;
+    const encrypt = (mssqlConfig.encrypt || process.env.MSSQL_ENCRYPT) === "true";
+    const trustServerCertificate =
+      (mssqlConfig.trustServerCertificate || process.env.MSSQL_TRUST_SERVER_CERTIFICATE) !== "false";
 
     if (!server || !database || !user || !password) {
       return null;
@@ -121,9 +109,8 @@ export class MSSQLTranscriptsClient {
       database,
       user,
       password,
-      encrypt: mssqlConfig.encrypt ?? (process.env.MSSQL_ENCRYPT === "true"),
-      trustServerCertificate: mssqlConfig.trustServerCertificate ??
-        (process.env.MSSQL_TRUST_SERVER_CERTIFICATE === "true"),
+      encrypt,
+      trustServerCertificate,
     });
   }
 
@@ -131,39 +118,39 @@ export class MSSQLTranscriptsClient {
   // Connection Management
   // ---------------------------------------------------------------------------
 
-  private async getPool(): Promise<any> {
+  private async getPool() {
     if (this.pool) return this.pool;
 
+    // Dynamic import to avoid issues if mssql not installed
     try {
-      // Dynamic import to avoid issues if mssql package not installed
-      // Uses require to avoid TypeScript compilation issues
-      try {
-        this.mssql = require("mssql");
-      } catch {
-        throw new Error(
-          "MSSQL package not installed. Run: npm install mssql"
-        );
-      }
+      this.mssql = require("mssql");
+    } catch {
+      throw new Error(
+        "MSSQL package not installed. Run: npm install mssql"
+      );
+    }
 
-      const config = {
-        server: this.config.server,
-        port: this.config.port,
-        database: this.config.database,
-        user: this.config.user,
-        password: this.config.password,
-        options: {
-          encrypt: this.config.encrypt,
-          trustServerCertificate: this.config.trustServerCertificate,
-          enableArithAbort: true,
-        },
-        pool: {
-          max: 10,
-          min: 0,
-          idleTimeoutMillis: 30000,
-        },
-      };
+    const poolConfig = {
+      server: this.config.server,
+      port: this.config.port,
+      database: this.config.database,
+      user: this.config.user,
+      password: this.config.password,
+      options: {
+        encrypt: this.config.encrypt,
+        trustServerCertificate: this.config.trustServerCertificate,
+      },
+      pool: {
+        max: 5,
+        min: 0,
+        idleTimeoutMillis: 30000,
+      },
+      connectionTimeout: 15000,
+      requestTimeout: 15000,
+    };
 
-      this.pool = await this.mssql.connect(config);
+    try {
+      this.pool = await this.mssql.connect(poolConfig);
       return this.pool;
     } catch (error) {
       console.error("MSSQL connection error:", error);
@@ -173,7 +160,7 @@ export class MSSQLTranscriptsClient {
     }
   }
 
-  async close(): Promise<void> {
+  async close() {
     if (this.pool) {
       await this.pool.close();
       this.pool = null;
@@ -181,26 +168,92 @@ export class MSSQLTranscriptsClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Direction Detection (from VoIPTools schema)
+  // ---------------------------------------------------------------------------
+
+  private determineDirection(callerExt: string, dialedNum: string, agentExt: string): "inbound" | "outbound" {
+    // Rule 1: CallerExt is external (10+ digits) → INBOUND
+    if (callerExt && callerExt.replace(/\D/g, "").length >= 10) {
+      return "inbound";
+    }
+
+    // Rule 2: CallerExt matches agent → OUTBOUND
+    if (callerExt === agentExt) {
+      return "outbound";
+    }
+
+    // Rule 3: DialedNum matches agent → INBOUND
+    if (dialedNum === agentExt) {
+      return "inbound";
+    }
+
+    // Rule 4: Short caller + long dialed → OUTBOUND
+    if (callerExt && callerExt.length <= 4 && dialedNum && dialedNum.replace(/\D/g, "").length >= 10) {
+      return "outbound";
+    }
+
+    // Default: INBOUND
+    return "inbound";
+  }
+
+  private parseDuration(duration: string): number {
+    // Parse "HH:MM:SS" format to seconds
+    if (!duration) return 0;
+    const parts = duration.split(":").map(Number);
+    if (parts.length === 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    if (parts.length === 2) {
+      return parts[0] * 60 + parts[1];
+    }
+    return parseInt(duration, 10) || 0;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Record Mapping
+  // ---------------------------------------------------------------------------
+
+  private mapRecordToTranscript(record: any): TranscriptRecord {
+    const direction = this.determineDirection(
+      record.CallerExt || "",
+      record.DialedNum || "",
+      record.Ext || ""
+    );
+
+    return {
+      id: String(record.RecordId),
+      extension: record.Ext || "",
+      callerName: record.CallerName || undefined,
+      callerNumber: record.CallerExt || "",
+      calledNumber: record.DialedNum || "",
+      direction,
+      recordingDate: record.RecordingDate ? new Date(record.RecordingDate) : new Date(),
+      duration: record.Duration || "00:00:00",
+      durationSeconds: this.parseDuration(record.Duration),
+      transcript: record.Transcription || "",
+      score: record.Score ? Number(record.Score) : undefined,
+      fileName: record.FileName || undefined,
+      archive: record.Archive || undefined,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // Transcript Retrieval
   // ---------------------------------------------------------------------------
 
   /**
-   * Get transcript by call ID
+   * Get transcript by Record ID
    */
-  async getTranscriptByCallId(callId: string): Promise<TranscriptRecord | null> {
+  async getTranscriptById(id: string): Promise<TranscriptRecord | null> {
     const pool = await this.getPool();
 
     const result = await pool.request()
-      .input("callId", this.mssql.VarChar, callId)
+      .input("id", this.mssql.Int, parseInt(id, 10))
       .query(`
-        SELECT
-          id, call_id, external_call_id, extension, agent_name,
-          caller_number, called_number, direction,
-          start_time, end_time, duration_seconds,
-          transcript_text, transcript_json, sentiment, keywords, summary,
-          created_at, updated_at
-        FROM transcripts
-        WHERE call_id = @callId OR external_call_id = @callId
+        SELECT RecordId, Ext, CallerName, CallerExt, DialedNum,
+               RecordingDate, Duration, Transcription, Score, FileName, Archive
+        FROM Recordings
+        WHERE RecordId = @id
       `);
 
     if (result.recordset.length === 0) return null;
@@ -209,23 +262,51 @@ export class MSSQLTranscriptsClient {
   }
 
   /**
-   * Get transcript by database ID
+   * Find transcript by phone number, extension, and time window
    */
-  async getTranscriptById(id: string): Promise<TranscriptRecord | null> {
+  async findTranscript(params: {
+    callerNumber?: string;
+    agentExtension?: string;
+    startTime?: Date;
+    endTime?: Date;
+  }): Promise<TranscriptRecord | null> {
     const pool = await this.getPool();
+    const request = pool.request();
 
-    const result = await pool.request()
-      .input("id", this.mssql.VarChar, id)
-      .query(`
-        SELECT
-          id, call_id, external_call_id, extension, agent_name,
-          caller_number, called_number, direction,
-          start_time, end_time, duration_seconds,
-          transcript_text, transcript_json, sentiment, keywords, summary,
-          created_at, updated_at
-        FROM transcripts
-        WHERE id = @id
-      `);
+    let whereConditions: string[] = ["Transcription IS NOT NULL"];
+
+    if (params.callerNumber) {
+      const phone = params.callerNumber.replace(/\D/g, "");
+      request.input("phone", this.mssql.VarChar, `%${phone.slice(-10)}%`);
+      whereConditions.push("(CallerExt LIKE @phone OR DialedNum LIKE @phone)");
+    }
+
+    if (params.agentExtension) {
+      request.input("ext", this.mssql.VarChar, params.agentExtension);
+      whereConditions.push("Ext = @ext");
+    }
+
+    if (params.startTime) {
+      // Add 5 minute buffer before
+      const bufferedStart = new Date(params.startTime.getTime() - 5 * 60 * 1000);
+      request.input("startTime", this.mssql.DateTime, bufferedStart);
+      whereConditions.push("RecordingDate >= @startTime");
+    }
+
+    if (params.endTime) {
+      // Add 5 minute buffer after
+      const bufferedEnd = new Date(params.endTime.getTime() + 5 * 60 * 1000);
+      request.input("endTime", this.mssql.DateTime, bufferedEnd);
+      whereConditions.push("RecordingDate <= @endTime");
+    }
+
+    const result = await request.query(`
+      SELECT TOP 1 RecordId, Ext, CallerName, CallerExt, DialedNum,
+             RecordingDate, Duration, Transcription, Score, FileName, Archive
+      FROM Recordings
+      WHERE ${whereConditions.join(" AND ")}
+      ORDER BY RecordingDate DESC
+    `);
 
     if (result.recordset.length === 0) return null;
 
@@ -240,84 +321,77 @@ export class MSSQLTranscriptsClient {
     total: number;
   }> {
     const pool = await this.getPool();
-    const request = pool.request();
 
-    let whereConditions: string[] = ["1=1"];
-    let countWhere: string[] = ["1=1"];
+    let whereConditions: string[] = ["Transcription IS NOT NULL"];
 
+    // Build WHERE conditions
     if (params.extension) {
-      request.input("extension", this.mssql.VarChar, params.extension);
-      whereConditions.push("extension = @extension");
-      countWhere.push("extension = @extension");
+      whereConditions.push(`Ext = '${params.extension.replace(/'/g, "''")}'`);
     }
 
     if (params.callerNumber) {
-      request.input("callerNumber", this.mssql.VarChar, `%${params.callerNumber}%`);
-      whereConditions.push("(caller_number LIKE @callerNumber OR called_number LIKE @callerNumber)");
-      countWhere.push("(caller_number LIKE @callerNumber OR called_number LIKE @callerNumber)");
+      const phone = params.callerNumber.replace(/\D/g, "");
+      whereConditions.push(`(CallerExt LIKE '%${phone}%' OR DialedNum LIKE '%${phone}%')`);
     }
 
     if (params.startDate) {
-      request.input("startDate", this.mssql.DateTime, params.startDate);
-      whereConditions.push("start_time >= @startDate");
-      countWhere.push("start_time >= @startDate");
+      whereConditions.push(`RecordingDate >= '${params.startDate.toISOString()}'`);
     }
 
     if (params.endDate) {
-      request.input("endDate", this.mssql.DateTime, params.endDate);
-      whereConditions.push("start_time <= @endDate");
-      countWhere.push("start_time <= @endDate");
-    }
-
-    if (params.direction) {
-      request.input("direction", this.mssql.VarChar, params.direction);
-      whereConditions.push("direction = @direction");
-      countWhere.push("direction = @direction");
+      whereConditions.push(`RecordingDate <= '${params.endDate.toISOString()}'`);
     }
 
     if (params.searchText) {
-      request.input("searchText", this.mssql.VarChar, `%${params.searchText}%`);
-      whereConditions.push("transcript_text LIKE @searchText");
-      countWhere.push("transcript_text LIKE @searchText");
+      whereConditions.push(`Transcription LIKE '%${params.searchText.replace(/'/g, "''")}%'`);
     }
 
+    const whereClause = whereConditions.join(" AND ");
     const limit = params.limit || 50;
     const offset = params.offset || 0;
 
     // Get total count
-    const countResult = await request.query(`
-      SELECT COUNT(*) as total FROM transcripts WHERE ${countWhere.join(" AND ")}
+    const countResult = await pool.request().query(`
+      SELECT COUNT(*) as total FROM Recordings WHERE ${whereClause}
     `);
     const total = countResult.recordset[0].total;
 
     // Get paginated results
-    const result = await pool.request()
-      .input("extension", this.mssql.VarChar, params.extension)
-      .input("callerNumber", this.mssql.VarChar, params.callerNumber ? `%${params.callerNumber}%` : null)
-      .input("startDate", this.mssql.DateTime, params.startDate)
-      .input("endDate", this.mssql.DateTime, params.endDate)
-      .input("direction", this.mssql.VarChar, params.direction)
-      .input("searchText", this.mssql.VarChar, params.searchText ? `%${params.searchText}%` : null)
-      .input("offset", this.mssql.Int, offset)
-      .input("limit", this.mssql.Int, limit)
-      .query(`
-        SELECT
-          id, call_id, external_call_id, extension, agent_name,
-          caller_number, called_number, direction,
-          start_time, end_time, duration_seconds,
-          transcript_text, transcript_json, sentiment, keywords, summary,
-          created_at, updated_at
-        FROM transcripts
-        WHERE ${whereConditions.join(" AND ")}
-        ORDER BY start_time DESC
-        OFFSET @offset ROWS
-        FETCH NEXT @limit ROWS ONLY
-      `);
+    const result = await pool.request().query(`
+      SELECT RecordId, Ext, CallerName, CallerExt, DialedNum,
+             RecordingDate, Duration, Transcription, Score, FileName, Archive
+      FROM Recordings
+      WHERE ${whereClause}
+      ORDER BY RecordingDate DESC
+      OFFSET ${offset} ROWS
+      FETCH NEXT ${limit} ROWS ONLY
+    `);
 
-    return {
-      records: result.recordset.map(this.mapRecordToTranscript),
-      total,
-    };
+    // Filter by direction after fetching (since it's computed)
+    let records = result.recordset.map((r: any) => this.mapRecordToTranscript(r));
+
+    if (params.direction) {
+      records = records.filter(r => r.direction === params.direction);
+    }
+
+    return { records, total };
+  }
+
+  /**
+   * Get most recent transcripts
+   */
+  async getRecentTranscripts(limit: number = 20): Promise<TranscriptRecord[]> {
+    const pool = await this.getPool();
+
+    const result = await pool.request().query(`
+      SELECT TOP ${limit} RecordId, Ext, CallerName, CallerExt, DialedNum,
+             RecordingDate, Duration, Transcription, Score, FileName, Archive
+      FROM Recordings
+      WHERE Transcription IS NOT NULL
+      ORDER BY RecordingDate DESC
+    `);
+
+    return result.recordset.map((r: any) => this.mapRecordToTranscript(r));
   }
 
   /**
@@ -327,142 +401,72 @@ export class MSSQLTranscriptsClient {
     extension: string,
     startDate?: Date,
     endDate?: Date,
-    limit: number = 100
+    limit: number = 50
   ): Promise<TranscriptRecord[]> {
-    const result = await this.searchTranscripts({
+    return (await this.searchTranscripts({
       extension,
       startDate,
       endDate,
       limit,
-    });
-    return result.records;
+    })).records;
   }
 
   /**
-   * Get most recent transcripts
-   */
-  async getRecentTranscripts(limit: number = 20): Promise<TranscriptRecord[]> {
-    const pool = await this.getPool();
-
-    const result = await pool.request()
-      .input("limit", this.mssql.Int, limit)
-      .query(`
-        SELECT TOP (@limit)
-          id, call_id, external_call_id, extension, agent_name,
-          caller_number, called_number, direction,
-          start_time, end_time, duration_seconds,
-          transcript_text, transcript_json, sentiment, keywords, summary,
-          created_at, updated_at
-        FROM transcripts
-        ORDER BY start_time DESC
-      `);
-
-    return result.recordset.map(this.mapRecordToTranscript);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Statistics
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Get transcript statistics for a date range
+   * Get statistics for transcripts
    */
   async getStats(startDate?: Date, endDate?: Date): Promise<TranscriptStats> {
     const pool = await this.getPool();
-    const request = pool.request();
 
-    let whereConditions = ["1=1"];
-
+    let whereConditions = ["Transcription IS NOT NULL"];
     if (startDate) {
-      request.input("startDate", this.mssql.DateTime, startDate);
-      whereConditions.push("start_time >= @startDate");
+      whereConditions.push(`RecordingDate >= '${startDate.toISOString()}'`);
     }
-
     if (endDate) {
-      request.input("endDate", this.mssql.DateTime, endDate);
-      whereConditions.push("start_time <= @endDate");
+      whereConditions.push(`RecordingDate <= '${endDate.toISOString()}'`);
     }
 
-    const result = await request.query(`
+    const whereClause = whereConditions.join(" AND ");
+
+    const result = await pool.request().query(`
       SELECT
-        COUNT(*) as total_calls,
-        SUM(duration_seconds) as total_duration,
-        AVG(duration_seconds) as avg_duration,
-        SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as inbound_calls,
-        SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outbound_calls,
-        AVG(CASE WHEN sentiment IS NOT NULL THEN JSON_VALUE(sentiment, '$.score') ELSE NULL END) as avg_sentiment
-      FROM transcripts
-      WHERE ${whereConditions.join(" AND ")}
+        COUNT(*) as totalCalls,
+        AVG(Score) as avgScore
+      FROM Recordings
+      WHERE ${whereClause}
     `);
 
-    const row = result.recordset[0];
+    // Get all records to compute direction counts and duration
+    const records = await pool.request().query(`
+      SELECT Ext, CallerExt, DialedNum, Duration
+      FROM Recordings
+      WHERE ${whereClause}
+    `);
+
+    let totalDuration = 0;
+    let inboundCalls = 0;
+    let outboundCalls = 0;
+
+    for (const record of records.recordset) {
+      totalDuration += this.parseDuration(record.Duration);
+      const direction = this.determineDirection(record.CallerExt, record.DialedNum, record.Ext);
+      if (direction === "inbound") inboundCalls++;
+      else outboundCalls++;
+    }
+
+    const totalCalls = result.recordset[0].totalCalls || 0;
+
     return {
-      totalCalls: row.total_calls || 0,
-      totalDuration: row.total_duration || 0,
-      avgDuration: Math.round(row.avg_duration || 0),
-      inboundCalls: row.inbound_calls || 0,
-      outboundCalls: row.outbound_calls || 0,
-      avgSentiment: row.avg_sentiment,
+      totalCalls,
+      totalDuration,
+      avgDuration: totalCalls > 0 ? Math.round(totalDuration / totalCalls) : 0,
+      inboundCalls,
+      outboundCalls,
+      avgScore: result.recordset[0].avgScore || undefined,
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // Write Operations (if needed)
-  // ---------------------------------------------------------------------------
-
   /**
-   * Save a transcript to the database
-   * Used when VM Bridge processes are complete
-   */
-  async saveTranscript(transcript: Omit<TranscriptRecord, "id" | "createdAt">): Promise<string> {
-    const pool = await this.getPool();
-
-    const result = await pool.request()
-      .input("callId", this.mssql.VarChar, transcript.callId)
-      .input("externalCallId", this.mssql.VarChar, transcript.externalCallId)
-      .input("extension", this.mssql.VarChar, transcript.extension)
-      .input("agentName", this.mssql.VarChar, transcript.agentName)
-      .input("callerNumber", this.mssql.VarChar, transcript.callerNumber)
-      .input("calledNumber", this.mssql.VarChar, transcript.calledNumber)
-      .input("direction", this.mssql.VarChar, transcript.direction)
-      .input("startTime", this.mssql.DateTime, transcript.startTime)
-      .input("endTime", this.mssql.DateTime, transcript.endTime)
-      .input("duration", this.mssql.Int, transcript.duration)
-      .input("transcript", this.mssql.NVarChar, transcript.transcript)
-      .input("transcriptJson", this.mssql.NVarChar,
-        transcript.transcriptJson ? JSON.stringify(transcript.transcriptJson) : null)
-      .input("sentiment", this.mssql.NVarChar,
-        transcript.sentiment ? JSON.stringify(transcript.sentiment) : null)
-      .input("keywords", this.mssql.NVarChar,
-        transcript.keywords ? JSON.stringify(transcript.keywords) : null)
-      .input("summary", this.mssql.NVarChar, transcript.summary)
-      .query(`
-        INSERT INTO transcripts (
-          call_id, external_call_id, extension, agent_name,
-          caller_number, called_number, direction,
-          start_time, end_time, duration_seconds,
-          transcript_text, transcript_json, sentiment, keywords, summary,
-          created_at
-        )
-        OUTPUT INSERTED.id
-        VALUES (
-          @callId, @externalCallId, @extension, @agentName,
-          @callerNumber, @calledNumber, @direction,
-          @startTime, @endTime, @duration,
-          @transcript, @transcriptJson, @sentiment, @keywords, @summary,
-          GETDATE()
-        )
-      `);
-
-    return result.recordset[0].id;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Health & Status
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Check if MSSQL is reachable
+   * Health check - verify connection and get basic info
    */
   async healthCheck(): Promise<{
     connected: boolean;
@@ -472,9 +476,8 @@ export class MSSQLTranscriptsClient {
   }> {
     try {
       const pool = await this.getPool();
-
       const result = await pool.request().query(`
-        SELECT DB_NAME() as db_name, COUNT(*) as record_count FROM transcripts
+        SELECT DB_NAME() as db_name, COUNT(*) as record_count FROM Recordings
       `);
 
       return {
@@ -488,54 +491,6 @@ export class MSSQLTranscriptsClient {
         error: error instanceof Error ? error.message : "Connection failed",
       };
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private Helpers
-  // ---------------------------------------------------------------------------
-
-  private mapRecordToTranscript(row: any): TranscriptRecord {
-    return {
-      id: row.id,
-      callId: row.call_id,
-      externalCallId: row.external_call_id,
-      extension: row.extension,
-      agentName: row.agent_name,
-      callerNumber: row.caller_number,
-      calledNumber: row.called_number,
-      direction: row.direction,
-      startTime: new Date(row.start_time),
-      endTime: new Date(row.end_time),
-      duration: row.duration_seconds,
-      transcript: row.transcript_text,
-      transcriptJson: row.transcript_json ? JSON.parse(row.transcript_json) : undefined,
-      sentiment: row.sentiment ? JSON.parse(row.sentiment) : undefined,
-      keywords: row.keywords ? JSON.parse(row.keywords) : undefined,
-      summary: row.summary,
-      createdAt: new Date(row.created_at),
-      updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
-    };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Configuration Access
-  // ---------------------------------------------------------------------------
-
-  getServer(): string {
-    return this.config.server;
-  }
-
-  getDatabase(): string {
-    return this.config.database;
-  }
-
-  isConfigured(): boolean {
-    return !!(
-      this.config.server &&
-      this.config.database &&
-      this.config.user &&
-      this.config.password
-    );
   }
 }
 
