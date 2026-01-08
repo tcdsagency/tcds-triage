@@ -145,6 +145,40 @@ export function CallProvider({ children }: CallProviderProps) {
     }
   }, [activeCall]);
 
+  // Expose test function to window for debugging (dev only)
+  useEffect(() => {
+    if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+      (window as any).__triggerTestCall = (phoneNumber?: string, direction?: "inbound" | "outbound") => {
+        const testEvent = {
+          type: "call_ringing",
+          sessionId: `test_${Date.now()}`,
+          phoneNumber: phoneNumber || "+12059990360",
+          direction: direction || "inbound",
+          customerId: null,
+        };
+        console.log("[CallProvider] Triggering test call:", testEvent);
+        handleCallEvent(testEvent);
+      };
+
+      (window as any).__endTestCall = () => {
+        if (activeCall) {
+          handleCallEvent({ type: "call_ended", sessionId: activeCall.sessionId });
+        }
+      };
+
+      console.log("[CallProvider] Test functions available:");
+      console.log("  __triggerTestCall(phoneNumber?, direction?) - Simulate incoming call");
+      console.log("  __endTestCall() - End current test call");
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        delete (window as any).__triggerTestCall;
+        delete (window as any).__endTestCall;
+      }
+    };
+  }, [handleCallEvent, activeCall]);
+
   const openPopup = useCallback((call: ActiveCall) => {
     setActiveCall(call);
     setIsPopupVisible(true);
