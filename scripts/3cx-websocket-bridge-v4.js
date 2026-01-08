@@ -163,7 +163,7 @@ async function get3CXParticipant(path) {
           resolve(JSON.parse(data));
         } catch (e) {
           console.error('[3CX API] Parse error:', e.message);
-          resolve(null);
+          resolve(undefined); // Return undefined on parse error (not null)
         }
       });
     });
@@ -185,8 +185,13 @@ async function processCallEvent(event) {
 
   const p = await get3CXParticipant(event.entity);
 
-  // If participant is gone (API returns null/error), treat as call ended
-  if (!p) {
+  // Skip if undefined (parse error) - don't treat as call ended
+  if (p === undefined) {
+    return;
+  }
+
+  // If participant is gone (API returns null), treat as call ended
+  if (p === null) {
     const leg = extensionLegs.get(legKey);
     if (leg) {
       console.log(`[3CX] Ext ${extension} participant gone - treating as ended`);
