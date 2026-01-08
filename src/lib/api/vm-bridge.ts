@@ -110,8 +110,10 @@ export class VMBridgeClient {
         "Content-Type": "application/json",
       };
 
+      // Add authorization header - VM Bridge requires Bearer token
       if (this.config.apiKey) {
-        headers["X-API-Key"] = this.config.apiKey;
+        headers["Authorization"] = `Bearer ${this.config.apiKey}`;
+        headers["X-API-Key"] = this.config.apiKey; // Keep for backwards compatibility
       }
 
       const response = await fetch(url, {
@@ -148,22 +150,26 @@ export class VMBridgeClient {
   /**
    * Start transcription for a call
    * VM Bridge API: POST /api/transcription/start
-   * @param callId The 3CX call ID (becomes sessionId in VM Bridge)
+   * @param sessionId Our internal session UUID
    * @param extension The agent's extension
+   * @param threecxCallId Optional 3CX call ID for audio capture
    */
   async startTranscription(
-    callId: string,
-    extension: string
+    sessionId: string,
+    extension: string,
+    threecxCallId?: string
   ): Promise<VMBridgeSession | null> {
     // VM Bridge expects /api/transcription/start with extension and webhook URL
     return this.apiCall<VMBridgeSession>("/api/transcription/start", {
       method: "POST",
       body: JSON.stringify({
-        sessionId: callId,
+        sessionId,
         extension,
+        callId: threecxCallId || sessionId, // 3CX call ID for audio capture
+        threecxCallId: threecxCallId || sessionId, // Alternative field name
         // Webhook URL where VM Bridge will POST transcript segments
         webhookUrl: process.env.WEBHOOK_CALLBACK_URL ||
-          `https://tcds-triage.vercel.app/api/calls/${callId}/transcript/segment`,
+          `https://tcds-triage.vercel.app/api/calls/${sessionId}/transcript/segment`,
         // Deepgram config
         deepgramApiKey: this.config.deepgramApiKey,
         options: {
