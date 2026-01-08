@@ -77,11 +77,12 @@ class NearmapClient {
       throw new Error('NEARMAP_API_KEY not configured');
     }
 
-    const url = `${NEARMAP_API_URL}${endpoint}`;
+    // Nearmap uses apikey query parameter, not Bearer token
+    const separator = endpoint.includes('?') ? '&' : '?';
+    const url = `${NEARMAP_API_URL}${endpoint}${separator}apikey=${this.apiKey}`;
     const response = await fetch(url, {
       ...options,
       headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
         ...options.headers,
       },
