@@ -1529,6 +1529,8 @@ export default function QuoteIntakePage() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+    // Update current section for Agent Assist sidebar
+    setCurrentFormSection(id);
   };
 
   // Auto form field updates
@@ -1852,6 +1854,9 @@ export default function QuoteIntakePage() {
               </div>
               <span className="text-sm font-medium text-gray-300">{completion}%</span>
             </div>
+            <Button variant="outline" size="sm" onClick={() => setShowAgentAssist(!showAgentAssist)} className={cn("border-purple-500/50 text-purple-400 hover:bg-purple-500/10", showAgentAssist && "bg-purple-500/20")}>
+              <HelpCircle className="w-4 h-4 mr-2" />Assist
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setShowAiPaste(true)} className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10">
               <Wand2 className="w-4 h-4 mr-2" />AI Fill
             </Button>
