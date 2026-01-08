@@ -77,8 +77,8 @@ export async function GET(request: NextRequest) {
         const extensionList = [...new Set(teamUsers.map(u => u.extension).filter(Boolean))] as string[];
         const presenceData = await voiptoolsClient.getAllPresence(extensionList);
 
-        // Map VoIPTools presence to our format
-        const teamMembers: TeamMember[] = teamUsers.map((user) => {
+        // Map VoIPTools presence to our format (only users with extensions)
+        const teamMembers: TeamMember[] = teamUsers.filter(u => u.extension).map((user) => {
           const extData = presenceData.find(
             (p) => p.Extension === user.extension
           );
@@ -122,8 +122,8 @@ export async function GET(request: NextRequest) {
       try {
         const presenceData = await threecxClient.getAllExtensionStatuses();
 
-        // Map 3CX presence to our format
-        const teamMembers: TeamMember[] = teamUsers.map((user) => {
+        // Map 3CX presence to our format (only users with extensions)
+        const teamMembers: TeamMember[] = teamUsers.filter(u => u.extension).map((user) => {
           const extData = presenceData.find(
             (ext) => ext.Extension === user.extension || ext.Number === user.extension
           );
@@ -157,8 +157,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Return mock/demo data if 3CX not configured or API failed
-    const mockTeam: TeamMember[] = teamUsers.map((user, index) => {
+    // Return mock/demo data if 3CX not configured or API failed (only users with extensions)
+    const mockTeam: TeamMember[] = teamUsers.filter(u => u.extension).map((user, index) => {
       // Generate varied statuses for demo
       const statuses: { status: PresenceStatus; text: string }[] = [
         { status: "available", text: "Available" },
