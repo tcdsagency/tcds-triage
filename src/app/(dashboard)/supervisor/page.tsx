@@ -20,6 +20,8 @@ import {
   CheckCircle,
   Pause,
   Play,
+  FileText,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +75,15 @@ interface Stats {
   agentsOnCall: number;
 }
 
+interface TranscriptSegment {
+  id: string;
+  speaker: "agent" | "customer" | "system";
+  text: string;
+  timestamp: string;
+  confidence: number;
+  sequenceNumber: number;
+}
+
 // =============================================================================
 // Component
 // =============================================================================
@@ -87,6 +98,11 @@ export default function SupervisorPage() {
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
+
+  // Transcript viewing
+  const [viewingCall, setViewingCall] = useState<ActiveCall | null>(null);
+  const [transcriptSegments, setTranscriptSegments] = useState<TranscriptSegment[]>([]);
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
 
   // Auto-refresh interval
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -166,6 +182,46 @@ export default function SupervisorPage() {
       setActionLoading(null);
     }
   };
+
+  // ==========================================================================
+  // Transcript Viewing
+  // ==========================================================================
+
+  const openTranscript = (call: ActiveCall) => {
+    setViewingCall(call);
+    setTranscriptSegments([]);
+    setTranscriptLoading(true);
+  };
+
+  const closeTranscript = () => {
+    setViewingCall(null);
+    setTranscriptSegments([]);
+  };
+
+  // Fetch transcript segments when viewing a call
+  useEffect(() => {
+    if (!viewingCall) return;
+
+    const fetchTranscript = async () => {
+      try {
+        const res = await fetch(`/api/calls/${viewingCall.id}/transcript/segment`);
+        const data = await res.json();
+        if (data.success && data.segments) {
+          setTranscriptSegments(data.segments);
+        }
+      } catch (error) {
+        console.error("Failed to fetch transcript:", error);
+      } finally {
+        setTranscriptLoading(false);
+      }
+    };
+
+    fetchTranscript();
+
+    // Poll every 2 seconds for live updates
+    const interval = setInterval(fetchTranscript, 2000);
+    return () => clearInterval(interval);
+  }, [viewingCall]);
 
   // ==========================================================================
   // Helpers
@@ -380,6 +436,15 @@ export default function SupervisorPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => openTranscript(call)}
+                          title="View Live Transcript"
+                          className="text-gray-500 hover:text-emerald-600"
+                        >
+                          <FileText className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => handleAction("listen", call.id)}
                           disabled={actionLoading === `listen-${call.id}`}
                           title="Silent Listen"
@@ -571,6 +636,84 @@ export default function SupervisorPage() {
       <div className="text-center text-xs text-gray-400">
         Last updated: {new Date(lastUpdated).toLocaleTimeString()}
       </div>
+
+      {/* Live Transcript Modal */}
+      {viewingCall && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-emerald-500" />
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Live Transcript
+                  </h2>
+                  <span className="flex items-center gap-1 text-xs text-emerald-600">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Live
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  {viewingCall.agentName} (ext {viewingCall.agentExtension}) → {viewingCall.customerPhone}
+                </p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={closeTranscript}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+
+            {/* Transcript Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-3">
+              {transcriptLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Activity className="w-6 h-6 animate-spin text-emerald-500" />
+                </div>
+              ) : transcriptSegments.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p>No transcript segments yet</p>
+                  <p className="text-sm">Waiting for speech...</p>
+                </div>
+              ) : (
+                transcriptSegments.map((segment) => (
+                  <div
+                    key={segment.id}
+                    className={cn(
+                      "flex gap-3",
+                      segment.speaker === "agent" ? "justify-end" : "justify-start"
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "max-w-[80%] rounded-lg px-4 py-2",
+                        segment.speaker === "agent"
+                          ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-100"
+                          : "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      )}
+                    >
+                      <div className="text-xs font-medium mb-1 opacity-70">
+                        {segment.speaker === "agent" ? "Agent" : "Customer"}
+                      </div>
+                      <p className="text-sm">{segment.text}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
+              <span className="text-xs text-gray-500">
+                {transcriptSegments.length} segments
+              </span>
+              <span className="text-xs text-gray-500">
+                Duration: {formatDuration(viewingCall.duration)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
