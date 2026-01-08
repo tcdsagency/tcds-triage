@@ -1,10 +1,12 @@
 // API Route: /api/webhook/call-answered
 // Called when an agent answers a ringing call (assigns ownership)
+// Also triggers live transcription via VM Bridge
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { getVMBridgeClient } from "@/lib/api/vm-bridge";
 
 // Notify realtime server
 async function notifyRealtimeServer(event: Record<string, unknown>) {
@@ -74,6 +76,22 @@ export async function POST(request: NextRequest) {
       .where(eq(calls.id, existingCall.id));
 
     console.log(`[Call-Answered] Updated call ${existingCall.id} - answered by ext ${extension}`);
+
+    // Start live transcription via VM Bridge
+    try {
+      const vmBridge = await getVMBridgeClient();
+      if (vmBridge) {
+        const threecxCallId = body.callId || body.sessionId;
+        console.log(`[Call-Answered] Starting transcription for session ${existingCall.id}, ext ${extension}, 3CX callId ${threecxCallId}`);
+        await vmBridge.startTranscription(existingCall.id, extension, String(threecxCallId));
+        console.log(`[Call-Answered] Transcription started successfully`);
+      } else {
+        console.warn(`[Call-Answered] VM Bridge not configured - transcription skipped`);
+      }
+    } catch (transcriptionError) {
+      console.error(`[Call-Answered] Failed to start transcription:`, transcriptionError);
+      // Don't fail the webhook - transcription is optional
+    }
 
     // Broadcast to realtime server
     await notifyRealtimeServer({

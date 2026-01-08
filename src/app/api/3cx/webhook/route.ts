@@ -292,10 +292,8 @@ export async function POST(request: NextRequest) {
           extension,
         });
 
-        // Start VM Bridge transcription
-        if (extension) {
-          await startTranscription(call.id, extension);
-        }
+        // Note: Transcription is started on call_answered, not call_ringing
+        // VoIPTools Listen2 requires the call to be active first
 
         return NextResponse.json({
           success: true,
@@ -325,6 +323,25 @@ export async function POST(request: NextRequest) {
             sessionId: call.id,
             status: "connected", // UI uses 'connected' for display
           });
+
+          // Start VM Bridge transcription now that call is answered
+          // VoIPTools Listen2 requires an active call
+          let agentExtension = extension;
+
+          // If extension not in event, try to look it up from agent
+          if (!agentExtension && call.agentId) {
+            const [agent] = await db
+              .select({ extension: users.extension })
+              .from(users)
+              .where(eq(users.id, call.agentId))
+              .limit(1);
+            agentExtension = agent?.extension || "";
+          }
+
+          if (agentExtension) {
+            console.log(`[3CX Webhook] Starting transcription for call ${call.id}, extension ${agentExtension}`);
+            await startTranscription(call.id, agentExtension);
+          }
         }
 
         return NextResponse.json({

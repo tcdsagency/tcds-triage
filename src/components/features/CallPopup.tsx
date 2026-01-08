@@ -105,6 +105,9 @@ export default function CallPopup({
   const [showWrapUp, setShowWrapUp] = useState(false);
   const [wrapupLoading, setWrapupLoading] = useState(false);
   const [wrapupStatus, setWrapupStatus] = useState<string | null>(null);
+
+  // End Call State
+  const [endingCall, setEndingCall] = useState(false);
   const [wrapupData, setWrapupData] = useState<{
     summary?: string;
     aiCleanedSummary?: string;
@@ -425,6 +428,31 @@ export default function CallPopup({
   }, [draftNotes, profile, direction]);
 
   // =========================================================================
+  // End Call Manually
+  // =========================================================================
+  const handleEndCall = useCallback(async () => {
+    setEndingCall(true);
+    try {
+      const res = await fetch(`/api/calls/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "end" }),
+      });
+
+      if (res.ok) {
+        // Close the popup after ending the call
+        onClose();
+      } else {
+        console.error("Failed to end call:", await res.text());
+      }
+    } catch (err) {
+      console.error("Error ending call:", err);
+    } finally {
+      setEndingCall(false);
+    }
+  }, [sessionId, onClose]);
+
+  // =========================================================================
   // Fetch Wrap-Up Data (from wrapupDrafts table - already has AI summary)
   // =========================================================================
   const fetchWrapupData = useCallback(async () => {
@@ -571,6 +599,16 @@ export default function CallPopup({
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {callStatus !== "ended" && (
+            <button
+              onClick={handleEndCall}
+              disabled={endingCall}
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded text-sm font-medium flex items-center gap-1"
+              title="End Call"
+            >
+              {endingCall ? "⏳" : "📞"} End Call
+            </button>
+          )}
           <button
             onClick={() => { setIsMinimized(true); onMinimize(); }}
             className="p-2 hover:bg-gray-700 rounded"

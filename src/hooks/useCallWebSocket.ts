@@ -264,6 +264,70 @@ export function useCallWebSocket(sessionId: string, enabled: boolean = true) {
     };
   }, [sessionId, enabled]);
 
+  // Polling fallback - fetch transcripts and call status from API
+  useEffect(() => {
+    if (!enabled || !sessionId) return;
+
+    let pollInterval: NodeJS.Timeout | null = null;
+    let lastSequence = 0;
+
+    const pollData = async () => {
+      try {
+        // Poll for transcripts
+        const transcriptResponse = await fetch(`/api/calls/${sessionId}/transcript/segment?after=${lastSequence}`);
+        if (transcriptResponse.ok) {
+          const data = await transcriptResponse.json();
+          if (data.segments && data.segments.length > 0) {
+            console.log(`[useCallWebSocket] Polling: got ${data.segments.length} new segments`);
+
+            setTranscript(prev => {
+              const existingIds = new Set(prev.map(s => s.segmentId));
+              const newSegments = data.segments
+                .filter((s: { id: string }) => !existingIds.has(s.id))
+                .map((s: { speaker: "agent" | "customer" | "system"; text: string; timestamp: string; confidence: number; isFinal: boolean; id: string; sequenceNumber: number }) => ({
+                  speaker: s.speaker,
+                  text: s.text,
+                  timestamp: new Date(s.timestamp).getTime(),
+                  confidence: s.confidence,
+                  isFinal: s.isFinal,
+                  segmentId: s.id,
+                }));
+
+              if (newSegments.length > 0) {
+                lastSequence = Math.max(...data.segments.map((s: { sequenceNumber: number }) => s.sequenceNumber));
+                return [...prev, ...newSegments];
+              }
+              return prev;
+            });
+          }
+        }
+
+        // Poll for call status
+        const statusResponse = await fetch(`/api/calls/${sessionId}`);
+        if (statusResponse.ok) {
+          const callData = await statusResponse.json();
+          if (callData.call?.status === "completed" || callData.call?.status === "missed") {
+            console.log(`[useCallWebSocket] Call ended: ${callData.call.status}`);
+            setCallStatus("ended");
+          }
+        }
+      } catch (error) {
+        console.error("[useCallWebSocket] Polling error:", error);
+      }
+    };
+
+    // Start polling after a short delay (give WebSocket a chance first)
+    const startPoll = setTimeout(() => {
+      pollData(); // Initial poll
+      pollInterval = setInterval(pollData, 2000); // Poll every 2 seconds
+    }, 1000);
+
+    return () => {
+      clearTimeout(startPoll);
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [sessionId, enabled]);
+
   return {
     transcript,
     coaching,

@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Get all users/agents
+    // Get all users with extensions (they handle calls)
     const agents = await db
       .select({
         id: users.id,
@@ -94,8 +94,8 @@ export async function GET(request: NextRequest) {
       console.log("[Supervisor] Could not fetch presence data:", e);
     }
 
-    // Calculate agent stats
-    const agentStats: AgentStatus[] = agents.map((agent) => {
+    // Calculate agent stats (only for users with extensions - they handle calls)
+    const agentStats: AgentStatus[] = agents.filter(a => a.extension).map((agent) => {
       const agentCalls = todaysCalls.filter(
         (c) => c.agentId === agent.id
       );
@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
       const presenceStatus = agent.extension ? presenceMap.get(agent.extension) : null;
 
       if (presenceStatus) {
-        // Map 3CX/VoIPTools presence to our status enum
+        // Map 3CX/VoIPTools presence to our status enum (this is the source of truth)
         if (presenceStatus === "on_call" || presenceStatus === "talking" || presenceStatus === "ringing") {
           status = "on_call";
         } else if (presenceStatus === "away" || presenceStatus === "dnd") {
@@ -127,8 +127,17 @@ export async function GET(request: NextRequest) {
           status = "available";
         }
       } else if (activeCall) {
-        // Fallback to DB call status
-        status = "on_call";
+        // Fallback to DB call status only if call is recent (within last 30 minutes)
+        // Stale calls without endedAt are likely failed webhook updates
+        const callAge = activeCall.startedAt
+          ? Date.now() - new Date(activeCall.startedAt).getTime()
+          : Infinity;
+        const thirtyMinutes = 30 * 60 * 1000;
+
+        if (callAge < thirtyMinutes) {
+          status = "on_call";
+        }
+        // If call is older than 30 minutes, leave status as "available" (stale data)
       }
 
       return {
@@ -143,9 +152,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Get active calls
+    // Get active calls (filter out stale calls older than 30 minutes without endedAt)
+    const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
     const activeCalls: ActiveCall[] = todaysCalls
-      .filter((c) => !c.endedAt)
+      .filter((c) => !c.endedAt && c.startedAt && new Date(c.startedAt).getTime() > thirtyMinutesAgo)
       .map((call) => {
         const agent = agents.find((a) => a.id === call.agentId);
         const duration = call.startedAt
