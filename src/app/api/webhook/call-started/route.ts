@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, customers, users } from "@/db/schema";
 import { eq, or, ilike, and } from "drizzle-orm";
+import { getVMBridgeClient } from "@/lib/api/vm-bridge";
 
 // =============================================================================
 // AUTHENTICATION
@@ -177,6 +178,24 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Call-Started] Created call session: ${call.id}`);
 
+    // 4. Trigger VM Bridge to start transcription
+    let transcriptionStarted = false;
+    let transcriptionError: string | null = null;
+    try {
+      const vmBridge = await getVMBridgeClient();
+      if (vmBridge) {
+        console.log(`[Call-Started] Triggering VM Bridge for session ${call.id}, extension ${extension}`);
+        const result = await vmBridge.startTranscription(call.id, extension);
+        transcriptionStarted = !!result;
+        console.log(`[Call-Started] VM Bridge response:`, result);
+      } else {
+        console.log(`[Call-Started] VM Bridge not configured`);
+      }
+    } catch (err) {
+      transcriptionError = err instanceof Error ? err.message : String(err);
+      console.error(`[Call-Started] VM Bridge error:`, transcriptionError);
+    }
+
     const processingTime = Date.now() - startTime;
     console.log(`[Call-Started] Processed in ${processingTime}ms`);
 
@@ -195,6 +214,8 @@ export async function POST(request: NextRequest) {
       agentName: agent ? `${agent.firstName} ${agent.lastName}` : null,
       status: "ringing",
       startTime: timestamp.toISOString(),
+      transcriptionStarted,
+      transcriptionError,
       processingTimeMs: processingTime,
     });
   } catch (error) {
