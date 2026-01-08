@@ -115,6 +115,28 @@ export const wrapupStatusEnum = pgEnum('wrapup_status', [
   'posted',
 ]);
 
+export const policyChangeTypeEnum = pgEnum('policy_change_type', [
+  'add_vehicle',
+  'remove_vehicle',
+  'replace_vehicle',
+  'add_driver',
+  'remove_driver',
+  'address_change',
+  'add_mortgagee',
+  'remove_mortgagee',
+  'coverage_change',
+  'cancel_policy',
+]);
+
+export const policyChangeStatusEnum = pgEnum('policy_change_status', [
+  'pending',        // Submitted, awaiting processing
+  'in_review',      // Being reviewed by agent
+  'submitted_to_carrier', // Sent to carrier
+  'completed',      // Change processed
+  'rejected',       // Rejected by carrier or agent
+  'cancelled',      // Cancelled by user
+]);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MULTI-TENANCY: TENANTS (Agencies)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2509,6 +2531,51 @@ export const reviewRequests = pgTable('review_requests', {
   scheduledForIdx: index('review_requests_scheduled_for_idx').on(table.scheduledFor),
   customerPhoneIdx: index('review_requests_customer_phone_idx').on(table.customerPhone),
   customerIdIdx: index('review_requests_customer_id_idx').on(table.customerId),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// POLICY CHANGE REQUESTS - Track policy modification requests
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const policyChangeRequests = pgTable('policy_change_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Policy reference
+  policyId: uuid('policy_id').references(() => policies.id, { onDelete: 'set null' }),
+  policyNumber: varchar('policy_number', { length: 50 }).notNull(),
+
+  // Customer reference
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+
+  // Change details
+  changeType: policyChangeTypeEnum('change_type').notNull(),
+  status: policyChangeStatusEnum('status').default('pending').notNull(),
+  effectiveDate: date('effective_date').notNull(),
+
+  // Form data (varies by change type)
+  formData: jsonb('form_data').$type<Record<string, any>>().notNull(),
+
+  // Processing
+  notes: text('notes'),
+  agentNotes: text('agent_notes'),
+  carrierResponse: text('carrier_response'),
+
+  // Tracking
+  submittedBy: uuid('submitted_by').references(() => users.id, { onDelete: 'set null' }),
+  processedBy: uuid('processed_by').references(() => users.id, { onDelete: 'set null' }),
+  processedAt: timestamp('processed_at'),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('policy_change_requests_tenant_idx').on(table.tenantId),
+  policyIdIdx: index('policy_change_requests_policy_id_idx').on(table.policyId),
+  customerIdIdx: index('policy_change_requests_customer_id_idx').on(table.customerId),
+  statusIdx: index('policy_change_requests_status_idx').on(table.status),
+  changeTypeIdx: index('policy_change_requests_change_type_idx').on(table.changeType),
+  createdAtIdx: index('policy_change_requests_created_at_idx').on(table.createdAt),
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════
