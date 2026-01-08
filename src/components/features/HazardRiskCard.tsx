@@ -200,13 +200,13 @@ export function HazardRiskCard({
       {(!compact || expanded) && (
         <div className="p-4 space-y-4">
           {/* Risk Gauge */}
-          <div className="relative h-3 bg-gray-700 rounded-full overflow-hidden">
+          <div className="relative h-3 bg-gray-200 rounded-full overflow-hidden">
             <div
               className="absolute inset-y-0 left-0 bg-gradient-to-r from-green-500 via-yellow-500 via-orange-500 to-red-500"
               style={{ width: "100%" }}
             />
             <div
-              className="absolute top-1/2 -translate-y-1/2 w-3 h-5 bg-white rounded border-2 border-gray-800 shadow-lg transition-all"
+              className="absolute top-1/2 -translate-y-1/2 w-3 h-5 bg-white rounded border-2 border-gray-400 shadow-lg transition-all"
               style={{ left: `calc(${data.overall}% - 6px)` }}
             />
           </div>
@@ -219,7 +219,7 @@ export function HazardRiskCard({
 
           {/* Individual Hazards */}
           <div className="space-y-2 mt-4">
-            <h4 className="text-sm font-medium text-gray-400 mb-2">
+            <h4 className="text-sm font-medium text-gray-500 mb-2">
               Risk Breakdown
             </h4>
             {data.hazards.map((hazard) => {
@@ -229,21 +229,21 @@ export function HazardRiskCard({
               return (
                 <div
                   key={hazard.category}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800/50 transition-colors group"
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors group"
                 >
                   <div className={`p-1.5 rounded ${hColors.bg}`}>
                     <Icon className={`w-4 h-4 ${hColors.text}`} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-white">
+                      <span className="text-sm font-medium text-gray-900">
                         {hazard.category}
                       </span>
                       <span className={`text-sm font-medium ${hColors.text}`}>
                         {hazard.score}
                       </span>
                     </div>
-                    <div className="h-1.5 bg-gray-700 rounded-full mt-1 overflow-hidden">
+                    <div className="h-1.5 bg-gray-200 rounded-full mt-1 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${
                           hazard.level === "low"
@@ -260,7 +260,7 @@ export function HazardRiskCard({
                   </div>
                   {/* Tooltip on hover */}
                   <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Info className="w-4 h-4 text-gray-500" />
+                    <Info className="w-4 h-4 text-gray-400" />
                   </div>
                 </div>
               );
@@ -269,8 +269,8 @@ export function HazardRiskCard({
 
           {/* Recommendations */}
           {data.recommendations.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-700">
-              <h4 className="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <h4 className="text-sm font-medium text-gray-500 mb-2 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4" />
                 Recommendations
               </h4>
@@ -278,9 +278,9 @@ export function HazardRiskCard({
                 {data.recommendations.map((rec, idx) => (
                   <li
                     key={idx}
-                    className="text-sm text-gray-300 flex items-start gap-2"
+                    className="text-sm text-gray-700 flex items-start gap-2"
                   >
-                    <span className="text-blue-400 mt-0.5">•</span>
+                    <span className="text-blue-500 mt-0.5">•</span>
                     <span>{rec}</span>
                   </li>
                 ))}

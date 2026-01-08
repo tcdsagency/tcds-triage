@@ -71,13 +71,14 @@ export async function GET(request: NextRequest) {
         }
 
         // Agent is on a call - return active call with presence info
+        // Use a stable session ID based on extension (not timestamp) so polling works
         return NextResponse.json({
           success: true,
           hasActiveCall: true,
           calls: [{
-            sessionId: `voip_active_${Date.now()}`,
+            sessionId: `voip_${extension}_active`,
             direction: "inbound",
-            phoneNumber: "Unknown",
+            phoneNumber: "Active Call",
             extension,
             status: "in_progress",
             startTime: new Date().toISOString(),
