@@ -135,14 +135,9 @@ export function CallProvider({ children }: CallProviderProps) {
     };
   }, []);
 
-  // Polling DISABLED - relying on WebSocket bridge + webhooks
-  // The 3CX WebSocket bridge on G Cloud PC posts to /api/webhook/call-started
-  // which creates the call record and pushes to realtime server
-  // useEffect(() => {
-  //   const currentExt = myExtensionRef.current || localStorage.getItem('myExtension');
-  //   if (!currentExt) return;
-  //   console.log("[CallProvider] 3CX polling disabled - using WebSocket bridge");
-  // }, [activeCall]);
+  // Note: Realtime push via WebSocket - broadcasts come from realtime.tcdsagency.com
+  // The 3CX bridge posts to webhooks, which should push to realtime server
+  // If popup not showing, check if realtime server has /api/broadcast endpoint
 
   const handleCallEvent = useCallback((data: any) => {
     console.log("[CallProvider] Event:", data.type, data);
