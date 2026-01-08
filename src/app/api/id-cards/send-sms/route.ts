@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { generatedIdCards } from "@/db/schema";
 import { twilioClient } from "@/lib/twilio";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { createClient } from "@supabase/supabase-js";
 
 // Twilio sender number for ID cards
 const TWILIO_ID_CARD_NUMBER = "+12058475616";
@@ -48,41 +49,80 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // Upload media to get a public URL for MMS
+    // Upload media to Supabase Storage to get a public URL for MMS
     // Twilio MMS requires a publicly accessible URL
     let mediaUrl = "";
-    const storageEndpoint = process.env.STORAGE_UPLOAD_ENDPOINT;
-    const storagePublicUrl = process.env.STORAGE_PUBLIC_URL;
 
-    if (storageEndpoint) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (supabaseUrl && supabaseServiceKey) {
       try {
-        // Upload as PNG image for better MMS compatibility
-        const filename = `id_cards/${Date.now()}_${body.policyNumber.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        const response = await fetch(storageEndpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filename,
-            data: body.pdfBase64,
+        // Convert base64 to buffer
+        const pdfBuffer = Buffer.from(body.pdfBase64, "base64");
+        const filename = `id-cards/${Date.now()}_${body.policyNumber.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+
+        console.log("[ID Cards] Uploading to Supabase Storage:", filename, "size:", pdfBuffer.length);
+
+        // Upload to Supabase Storage
+        const { data, error } = await supabase.storage
+          .from("public-files")
+          .upload(filename, pdfBuffer, {
             contentType: "application/pdf",
-          }),
-        });
+            upsert: true,
+          });
 
-        if (response.ok) {
-          const result = await response.json();
-          mediaUrl = result.url || (storagePublicUrl ? `${storagePublicUrl}/${filename}` : "");
+        if (error) {
+          console.error("[ID Cards] Supabase upload error:", error.message);
+
+          // If bucket doesn't exist, try to create it
+          if (error.message?.includes("not found") || error.message?.includes("Bucket") || error.message?.includes("bucket")) {
+            console.log("[ID Cards] Bucket not found, attempting to create...");
+            const { error: bucketError } = await supabase.storage.createBucket("public-files", {
+              public: true,
+              allowedMimeTypes: ["application/pdf", "image/png", "image/jpeg"],
+            });
+
+            if (bucketError) {
+              console.error("[ID Cards] Failed to create bucket:", bucketError.message);
+            } else {
+              console.log("[ID Cards] Bucket created, retrying upload...");
+              // Retry upload
+              const { data: retryData, error: retryError } = await supabase.storage
+                .from("public-files")
+                .upload(filename, pdfBuffer, {
+                  contentType: "application/pdf",
+                  upsert: true,
+                });
+
+              if (retryError) {
+                console.error("[ID Cards] Retry upload failed:", retryError.message);
+              } else if (retryData) {
+                const { data: urlData } = supabase.storage.from("public-files").getPublicUrl(filename);
+                mediaUrl = urlData.publicUrl;
+                console.log("[ID Cards] Upload successful (after retry):", mediaUrl);
+              }
+            }
+          }
+        } else if (data) {
+          const { data: urlData } = supabase.storage.from("public-files").getPublicUrl(filename);
+          mediaUrl = urlData.publicUrl;
+          console.log("[ID Cards] Upload successful:", mediaUrl);
         }
-      } catch (err) {
-        console.error("[ID Cards] Storage upload error:", err);
+      } catch (err: any) {
+        console.error("[ID Cards] Storage upload error:", err.message || err);
       }
+    } else {
+      console.error("[ID Cards] Supabase not configured - missing URL or service key");
     }
 
-    // If no storage configured, return error
+    // If no storage configured or upload failed, return error
     if (!mediaUrl) {
       return NextResponse.json({
         success: false,
-        error: "Media storage not configured. Set STORAGE_UPLOAD_ENDPOINT to enable MMS delivery.",
+        error: "Failed to upload ID card for MMS delivery. Please check Supabase Storage configuration.",
       }, { status: 500 });
     }
 
