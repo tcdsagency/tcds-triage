@@ -174,6 +174,91 @@ interface HomeownersFormData {
   effectiveDate: string;
 }
 
+interface MobileHomeFormData {
+  // Primary Insured
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  dob: string;
+  maritalStatus: string;
+  // Secondary Insured
+  hasSecondaryInsured: boolean;
+  secondaryFirstName: string;
+  secondaryLastName: string;
+  secondaryDob: string;
+  // Location
+  lotType: string;
+  parkName: string;
+  lotNumber: string;
+  propertyAddress: string;
+  propertyCity: string;
+  propertyState: string;
+  propertyZip: string;
+  // Home Details
+  yearManufactured: string;
+  manufacturer: string;
+  modelName: string;
+  serialNumber: string;
+  width: string;
+  widthFeet: string;
+  lengthFeet: string;
+  squareFootage: string;
+  bedrooms: string;
+  bathrooms: string;
+  // Foundation
+  foundationType: string;
+  isPermanentFoundation: boolean;
+  tieDownType: string;
+  tieDownCount: string;
+  skirtingType: string;
+  // Roof
+  roofType: string;
+  roofAge: string;
+  hasRoofOver: boolean;
+  // Systems
+  heatingType: string;
+  hasAC: boolean;
+  acType: string;
+  // Additions
+  hasAdditions: boolean;
+  porchValue: string;
+  deckValue: string;
+  carportValue: string;
+  shedValue: string;
+  // Safety
+  hasSmokeDetectors: boolean;
+  hasSecuritySystem: boolean;
+  hasDog: boolean;
+  dogBreed: string;
+  // Financing
+  isFinanced: boolean;
+  lienholderName: string;
+  lienholderAddress: string;
+  loanNumber: string;
+  // Coverage
+  dwellingCoverage: string;
+  otherStructures: string;
+  personalProperty: string;
+  liability: string;
+  medicalPayments: string;
+  deductible: string;
+  // Prior Insurance
+  hasCurrentInsurance: boolean;
+  currentCarrier: string;
+  currentPremium: string;
+  hasClaims: boolean;
+  claimsDescription: string;
+  // Discounts
+  wantsBundleAuto: boolean;
+  claimFree: boolean;
+  hasAutoPay: boolean;
+  hasPaperless: boolean;
+  // Notes
+  agentNotes: string;
+  effectiveDate: string;
+}
+
 interface RentersFormData {
   // Primary Insured
   firstName: string;
@@ -558,6 +643,7 @@ interface RecreationalFormData {
 const QUOTE_TYPES: QuoteType[] = [
   { id: "personal_auto", name: "Personal Auto", icon: Car, description: "Auto insurance quote", available: true },
   { id: "homeowners", name: "Homeowners", icon: Home, description: "Home insurance quote", available: true },
+  { id: "mobile_home", name: "Mobile Home", icon: Home, description: "Manufactured home", available: true },
   { id: "renters", name: "Renters", icon: Home, description: "Renters insurance", available: true },
   { id: "umbrella", name: "Umbrella", icon: Shield, description: "Excess liability", available: true },
   { id: "bop", name: "Business Owner's (BOP)", icon: Building2, description: "Property + Liability bundle", available: true },
@@ -565,7 +651,7 @@ const QUOTE_TYPES: QuoteType[] = [
   { id: "workers_comp", name: "Workers Comp", icon: User, description: "Employee coverage", available: true },
   { id: "auto_home_bundle", name: "Auto + Home", icon: Home, description: "Bundle discount", available: false },
   { id: "recreational", name: "Recreational", icon: Ship, description: "Boat, RV, ATV", available: true },
-  { id: "flood", name: "Flood", icon: Droplets, description: "Flood insurance", available: false },
+  { id: "flood", name: "Flood", icon: Droplets, description: "Flood insurance", available: true },
 ];
 
 const STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
@@ -634,6 +720,43 @@ const INITIAL_HOMEOWNERS_FORM: HomeownersFormData = {
   // Discounts
   wantsBundleAuto: false, claimFree: true, newPurchaseDiscount: false,
   hasAutoPay: true, hasPaperless: true,
+  // Notes
+  agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
+};
+
+const INITIAL_MOBILE_HOME_FORM: MobileHomeFormData = {
+  // Primary Insured
+  firstName: "", lastName: "", email: "", phone: "", dob: "", maritalStatus: "single",
+  // Secondary Insured
+  hasSecondaryInsured: false, secondaryFirstName: "", secondaryLastName: "", secondaryDob: "",
+  // Location
+  lotType: "owned", parkName: "", lotNumber: "",
+  propertyAddress: "", propertyCity: "", propertyState: "", propertyZip: "",
+  // Home Details
+  yearManufactured: "", manufacturer: "", modelName: "", serialNumber: "",
+  width: "single", widthFeet: "", lengthFeet: "", squareFootage: "",
+  bedrooms: "2", bathrooms: "2",
+  // Foundation
+  foundationType: "piers", isPermanentFoundation: false,
+  tieDownType: "frame", tieDownCount: "4", skirtingType: "vinyl",
+  // Roof
+  roofType: "metal", roofAge: "", hasRoofOver: false,
+  // Systems
+  heatingType: "central_electric", hasAC: true, acType: "central",
+  // Additions
+  hasAdditions: false, porchValue: "", deckValue: "", carportValue: "", shedValue: "",
+  // Safety
+  hasSmokeDetectors: true, hasSecuritySystem: false, hasDog: false, dogBreed: "",
+  // Financing
+  isFinanced: false, lienholderName: "", lienholderAddress: "", loanNumber: "",
+  // Coverage
+  dwellingCoverage: "", otherStructures: "", personalProperty: "",
+  liability: "100000", medicalPayments: "1000", deductible: "1000",
+  // Prior Insurance
+  hasCurrentInsurance: false, currentCarrier: "", currentPremium: "",
+  hasClaims: false, claimsDescription: "",
+  // Discounts
+  wantsBundleAuto: false, claimFree: true, hasAutoPay: true, hasPaperless: true,
   // Notes
   agentNotes: "", effectiveDate: new Date().toISOString().split("T")[0]
 };
@@ -1144,6 +1267,7 @@ export default function QuoteIntakePage() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [autoFormData, setAutoFormData] = useState<AutoFormData>(INITIAL_AUTO_FORM);
   const [homeownersFormData, setHomeownersFormData] = useState<HomeownersFormData>(INITIAL_HOMEOWNERS_FORM);
+  const [mobileHomeFormData, setMobileHomeFormData] = useState<MobileHomeFormData>(INITIAL_MOBILE_HOME_FORM);
   const [rentersFormData, setRentersFormData] = useState<RentersFormData>(INITIAL_RENTERS_FORM);
   const [umbrellaFormData, setUmbrellaFormData] = useState<UmbrellaFormData>(INITIAL_UMBRELLA_FORM);
   const [bopFormData, setBopFormData] = useState<BOPFormData>(INITIAL_BOP_FORM);
@@ -1370,8 +1494,27 @@ export default function QuoteIntakePage() {
     return Math.round((filled / total) * 100);
   }, [recreationalFormData])();
 
+  // Mobile Home form completion calculation
+  const mobileHomeCompletion = useCallback(() => {
+    let filled = 0, total = 12;
+    if (mobileHomeFormData.firstName) filled++;
+    if (mobileHomeFormData.lastName) filled++;
+    if (mobileHomeFormData.phone) filled++;
+    if (mobileHomeFormData.propertyAddress) filled++;
+    if (mobileHomeFormData.propertyCity) filled++;
+    if (mobileHomeFormData.propertyState) filled++;
+    if (mobileHomeFormData.propertyZip) filled++;
+    if (mobileHomeFormData.yearManufactured) filled++;
+    if (mobileHomeFormData.width) filled++;
+    if (mobileHomeFormData.tieDownType && mobileHomeFormData.tieDownType !== "none") filled++;
+    if (mobileHomeFormData.dwellingCoverage) filled++;
+    if (mobileHomeFormData.lotType) filled++;
+    return Math.round((filled / total) * 100);
+  }, [mobileHomeFormData])();
+
   const completion =
     selectedType === "homeowners" ? homeownersCompletion :
+    selectedType === "mobile_home" ? mobileHomeCompletion :
     selectedType === "renters" ? rentersCompletion :
     selectedType === "umbrella" ? umbrellaCompletion :
     selectedType === "bop" ? bopCompletion :
@@ -1405,6 +1548,12 @@ export default function QuoteIntakePage() {
   // Homeowners form field updates
   const updateHomeownersField = (field: keyof HomeownersFormData, value: any) => {
     setHomeownersFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
+  };
+
+  // Mobile Home form field updates
+  const updateMobileHomeField = (field: keyof MobileHomeFormData, value: any) => {
+    setMobileHomeFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
   };
 
@@ -2405,6 +2554,235 @@ export default function QuoteIntakePage() {
                   <textarea value={umbrellaFormData.agentNotes} onChange={(e) => updateUmbrellaField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
                 </div>
                 <Field label="Effective Date" value={umbrellaFormData.effectiveDate} onChange={(v: string) => updateUmbrellaField("effectiveDate", v)} type="date" />
+              </div>
+            </Section>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* MOBILE HOME FORM */}
+        {/* ========================================================================= */}
+        {selectedType === "mobile_home" && (
+          <>
+            {/* Primary Insured */}
+            <Section id="customer" icon={User} title="Primary Insured">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="First Name" value={mobileHomeFormData.firstName} onChange={(v: string) => updateMobileHomeField("firstName", v)} required placeholder="John" error={errors.firstName} />
+                <Field label="Last Name" value={mobileHomeFormData.lastName} onChange={(v: string) => updateMobileHomeField("lastName", v)} required placeholder="Doe" error={errors.lastName} />
+                <Field label="Phone" value={mobileHomeFormData.phone} onChange={(v: string) => updateMobileHomeField("phone", v)} type="tel" required placeholder="(555) 555-5555" error={errors.phone} />
+                <Field label="Email" value={mobileHomeFormData.email} onChange={(v: string) => updateMobileHomeField("email", v)} type="email" placeholder="john@example.com" />
+                <Field label="Date of Birth" value={mobileHomeFormData.dob} onChange={(v: string) => updateMobileHomeField("dob", v)} type="date" />
+                <Field label="Marital Status" value={mobileHomeFormData.maritalStatus} onChange={(v: string) => updateMobileHomeField("maritalStatus", v)} options={[{ value: "", label: "Select status..." }, { value: "single", label: "Single" }, { value: "married", label: "Married" }, { value: "divorced", label: "Divorced" }, { value: "widowed", label: "Widowed" }]} />
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-700/50">
+                <div className="flex items-center gap-3 mb-4">
+                  <input type="checkbox" checked={mobileHomeFormData.hasSecondaryInsured} onChange={(e) => updateMobileHomeField("hasSecondaryInsured", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm font-medium text-gray-300">Add Secondary Insured (Spouse)</span>
+                </div>
+                {mobileHomeFormData.hasSecondaryInsured && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <Field label="Secondary First Name" value={mobileHomeFormData.secondaryFirstName} onChange={(v: string) => updateMobileHomeField("secondaryFirstName", v)} placeholder="Jane" />
+                    <Field label="Secondary Last Name" value={mobileHomeFormData.secondaryLastName} onChange={(v: string) => updateMobileHomeField("secondaryLastName", v)} placeholder="Doe" />
+                    <Field label="Secondary DOB" value={mobileHomeFormData.secondaryDob} onChange={(v: string) => updateMobileHomeField("secondaryDob", v)} type="date" />
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            {/* Property Location */}
+            <Section id="property" icon={Home} title="Property Location">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Lot Type" value={mobileHomeFormData.lotType} onChange={(v: string) => updateMobileHomeField("lotType", v)} options={[{ value: "", label: "Select lot type..." }, { value: "owned", label: "Owned Land" }, { value: "leased", label: "Leased Lot (Park)" }]} required />
+                {mobileHomeFormData.lotType === "leased" && (
+                  <>
+                    <Field label="Park Name" value={mobileHomeFormData.parkName} onChange={(v: string) => updateMobileHomeField("parkName", v)} placeholder="Sunshine Mobile Home Park" />
+                    <Field label="Lot Number" value={mobileHomeFormData.lotNumber} onChange={(v: string) => updateMobileHomeField("lotNumber", v)} placeholder="Lot 42" />
+                  </>
+                )}
+                <Field label="Property Address" value={mobileHomeFormData.propertyAddress} onChange={(v: string) => updateMobileHomeField("propertyAddress", v)} required placeholder="123 Mobile Home Dr" className="col-span-2" error={errors.propertyAddress} />
+                <Field label="City" value={mobileHomeFormData.propertyCity} onChange={(v: string) => updateMobileHomeField("propertyCity", v)} required placeholder="Anytown" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="State" value={mobileHomeFormData.propertyState} onChange={(v: string) => updateMobileHomeField("propertyState", v)} required options={[{ value: "", label: "Select..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
+                  <Field label="ZIP" value={mobileHomeFormData.propertyZip} onChange={(v: string) => updateMobileHomeField("propertyZip", v)} required placeholder="12345" />
+                </div>
+              </div>
+            </Section>
+
+            {/* Home Details */}
+            <Section id="homeDetails" icon={Home} title="Mobile Home Details">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Year Manufactured" value={mobileHomeFormData.yearManufactured} onChange={(v: string) => updateMobileHomeField("yearManufactured", v)} required placeholder="1998" tooltip="Homes pre-1976 may be ineligible" />
+                <Field label="Manufacturer" value={mobileHomeFormData.manufacturer} onChange={(v: string) => updateMobileHomeField("manufacturer", v)} placeholder="Clayton, Fleetwood, etc." />
+                <Field label="Model Name" value={mobileHomeFormData.modelName} onChange={(v: string) => updateMobileHomeField("modelName", v)} placeholder="Model name if known" />
+                <Field label="Serial/HUD #" value={mobileHomeFormData.serialNumber} onChange={(v: string) => updateMobileHomeField("serialNumber", v)} placeholder="VIN or HUD label number" />
+                <Field label="Width Type" value={mobileHomeFormData.width} onChange={(v: string) => updateMobileHomeField("width", v)} options={[{ value: "single", label: "Single Wide" }, { value: "double", label: "Double Wide" }, { value: "triple", label: "Triple Wide" }]} />
+                <Field label="Width (feet)" value={mobileHomeFormData.widthFeet} onChange={(v: string) => updateMobileHomeField("widthFeet", v)} placeholder="14" />
+                <Field label="Length (feet)" value={mobileHomeFormData.lengthFeet} onChange={(v: string) => updateMobileHomeField("lengthFeet", v)} placeholder="70" />
+                <Field label="Square Footage" value={mobileHomeFormData.squareFootage} onChange={(v: string) => updateMobileHomeField("squareFootage", v)} placeholder="980" />
+                <Field label="Bedrooms" value={mobileHomeFormData.bedrooms} onChange={(v: string) => updateMobileHomeField("bedrooms", v)} options={[{ value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }, { value: "4", label: "4+" }]} />
+                <Field label="Bathrooms" value={mobileHomeFormData.bathrooms} onChange={(v: string) => updateMobileHomeField("bathrooms", v)} options={[{ value: "1", label: "1" }, { value: "1.5", label: "1.5" }, { value: "2", label: "2" }, { value: "2.5", label: "2.5+" }]} />
+              </div>
+            </Section>
+
+            {/* Foundation & Anchoring */}
+            <Section id="foundation" icon={Building2} title="Foundation & Anchoring">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Foundation Type" value={mobileHomeFormData.foundationType} onChange={(v: string) => updateMobileHomeField("foundationType", v)} options={[{ value: "piers", label: "Piers/Blocks" }, { value: "runners", label: "Runners" }, { value: "slab", label: "Concrete Slab" }, { value: "basement", label: "Basement" }]} />
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={mobileHomeFormData.isPermanentFoundation} onChange={(e) => updateMobileHomeField("isPermanentFoundation", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Permanent Foundation</span>
+                </label>
+                <Field label="Tie-Down Type" value={mobileHomeFormData.tieDownType} onChange={(v: string) => updateMobileHomeField("tieDownType", v)} options={[{ value: "none", label: "None" }, { value: "frame", label: "Frame Anchors" }, { value: "over_the_top", label: "Over-the-Top Straps" }, { value: "both", label: "Both" }]} tooltip="No tie-downs may result in higher rates or decline" />
+                <Field label="# of Tie-Downs" value={mobileHomeFormData.tieDownCount} onChange={(v: string) => updateMobileHomeField("tieDownCount", v)} placeholder="4" />
+                <Field label="Skirting Type" value={mobileHomeFormData.skirtingType} onChange={(v: string) => updateMobileHomeField("skirtingType", v)} options={[{ value: "none", label: "None" }, { value: "vinyl", label: "Vinyl" }, { value: "metal", label: "Metal" }, { value: "brick", label: "Brick" }, { value: "stucco", label: "Stucco" }]} />
+              </div>
+            </Section>
+
+            {/* Roof */}
+            <Section id="roof" icon={Home} title="Roof Information">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Roof Type" value={mobileHomeFormData.roofType} onChange={(v: string) => updateMobileHomeField("roofType", v)} options={[{ value: "metal", label: "Metal" }, { value: "shingle", label: "Shingle" }, { value: "flat", label: "Flat/Rubber" }]} />
+                <Field label="Roof Age (Years)" value={mobileHomeFormData.roofAge} onChange={(v: string) => updateMobileHomeField("roofAge", v)} placeholder="5" />
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={mobileHomeFormData.hasRoofOver} onChange={(e) => updateMobileHomeField("hasRoofOver", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Roof-Over (shingled over metal)</span>
+                </label>
+              </div>
+            </Section>
+
+            {/* Systems */}
+            <Section id="systems" icon={Shield} title="Home Systems">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Heating Type" value={mobileHomeFormData.heatingType} onChange={(v: string) => updateMobileHomeField("heatingType", v)} options={[{ value: "central_electric", label: "Central Electric" }, { value: "central_gas", label: "Central Gas" }, { value: "heat_pump", label: "Heat Pump" }, { value: "wall_unit", label: "Wall Unit" }, { value: "wood_stove", label: "Wood Stove" }]} />
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={mobileHomeFormData.hasAC} onChange={(e) => updateMobileHomeField("hasAC", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Air Conditioning</span>
+                </label>
+                {mobileHomeFormData.hasAC && (
+                  <Field label="A/C Type" value={mobileHomeFormData.acType} onChange={(v: string) => updateMobileHomeField("acType", v)} options={[{ value: "central", label: "Central" }, { value: "window", label: "Window Unit" }]} />
+                )}
+              </div>
+            </Section>
+
+            {/* Additions */}
+            <Section id="additions" icon={Plus} title="Additions & Other Structures">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={mobileHomeFormData.hasAdditions} onChange={(e) => updateMobileHomeField("hasAdditions", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Has Additions (Porch, Deck, Carport, Shed)</span>
+                </label>
+                {mobileHomeFormData.hasAdditions && (
+                  <>
+                    <Field label="Porch Value" value={mobileHomeFormData.porchValue} onChange={(v: string) => updateMobileHomeField("porchValue", v)} placeholder="$2,000" />
+                    <Field label="Deck Value" value={mobileHomeFormData.deckValue} onChange={(v: string) => updateMobileHomeField("deckValue", v)} placeholder="$3,000" />
+                    <Field label="Carport Value" value={mobileHomeFormData.carportValue} onChange={(v: string) => updateMobileHomeField("carportValue", v)} placeholder="$1,500" />
+                    <Field label="Shed Value" value={mobileHomeFormData.shedValue} onChange={(v: string) => updateMobileHomeField("shedValue", v)} placeholder="$800" />
+                  </>
+                )}
+              </div>
+            </Section>
+
+            {/* Safety & Liability */}
+            <Section id="safety" icon={Shield} title="Safety & Liability">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={mobileHomeFormData.hasSmokeDetectors} onChange={(e) => updateMobileHomeField("hasSmokeDetectors", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Smoke Detectors</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={mobileHomeFormData.hasSecuritySystem} onChange={(e) => updateMobileHomeField("hasSecuritySystem", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Security System</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={mobileHomeFormData.hasDog} onChange={(e) => updateMobileHomeField("hasDog", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Dog(s)</span>
+                </label>
+                {mobileHomeFormData.hasDog && (
+                  <Field label="Dog Breed(s)" value={mobileHomeFormData.dogBreed} onChange={(v: string) => updateMobileHomeField("dogBreed", v)} placeholder="Labrador" />
+                )}
+              </div>
+            </Section>
+
+            {/* Financing */}
+            <Section id="financing" icon={DollarSign} title="Financing">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Is This Financed?" value={mobileHomeFormData.isFinanced ? "yes" : "no"} onChange={(v: string) => updateMobileHomeField("isFinanced", v === "yes")} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No (Owned Outright)" }]} />
+                {mobileHomeFormData.isFinanced && (
+                  <>
+                    <Field label="Lienholder Name" value={mobileHomeFormData.lienholderName} onChange={(v: string) => updateMobileHomeField("lienholderName", v)} placeholder="21st Mortgage" />
+                    <Field label="Lienholder Address" value={mobileHomeFormData.lienholderAddress} onChange={(v: string) => updateMobileHomeField("lienholderAddress", v)} placeholder="Full address" className="col-span-2" />
+                    <Field label="Loan Number" value={mobileHomeFormData.loanNumber} onChange={(v: string) => updateMobileHomeField("loanNumber", v)} placeholder="Account #" />
+                  </>
+                )}
+              </div>
+            </Section>
+
+            {/* Coverage */}
+            <Section id="coverage" icon={Shield} title="Coverage Options">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Dwelling Coverage" value={mobileHomeFormData.dwellingCoverage} onChange={(v: string) => updateMobileHomeField("dwellingCoverage", v)} required placeholder="$85,000" error={errors.dwellingCoverage} />
+                <Field label="Other Structures" value={mobileHomeFormData.otherStructures} onChange={(v: string) => updateMobileHomeField("otherStructures", v)} placeholder="10% of dwelling" />
+                <Field label="Personal Property" value={mobileHomeFormData.personalProperty} onChange={(v: string) => updateMobileHomeField("personalProperty", v)} placeholder="$25,000" />
+                <div />
+                <Field label="Personal Liability" value={mobileHomeFormData.liability} onChange={(v: string) => updateMobileHomeField("liability", v)} options={[{ value: "25000", label: "$25,000" }, { value: "50000", label: "$50,000" }, { value: "100000", label: "$100,000" }, { value: "300000", label: "$300,000" }]} />
+                <Field label="Medical Payments" value={mobileHomeFormData.medicalPayments} onChange={(v: string) => updateMobileHomeField("medicalPayments", v)} options={[{ value: "500", label: "$500" }, { value: "1000", label: "$1,000" }, { value: "2500", label: "$2,500" }]} />
+                <Field label="Deductible" value={mobileHomeFormData.deductible} onChange={(v: string) => updateMobileHomeField("deductible", v)} options={[{ value: "500", label: "$500" }, { value: "1000", label: "$1,000" }, { value: "2500", label: "$2,500" }]} />
+              </div>
+            </Section>
+
+            {/* Prior Insurance */}
+            <Section id="prior" icon={FileText} title="Current Insurance & Claims">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Field label="Currently Insured?" value={mobileHomeFormData.hasCurrentInsurance ? "yes" : "no"} onChange={(v: string) => updateMobileHomeField("hasCurrentInsurance", v === "yes")} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]} />
+                {mobileHomeFormData.hasCurrentInsurance && (
+                  <>
+                    <Field label="Current Carrier" value={mobileHomeFormData.currentCarrier} onChange={(v: string) => updateMobileHomeField("currentCarrier", v)} placeholder="American Modern" />
+                    <Field label="Current Premium" value={mobileHomeFormData.currentPremium} onChange={(v: string) => updateMobileHomeField("currentPremium", v)} placeholder="$800/yr" />
+                  </>
+                )}
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900 col-span-2">
+                  <input type="checkbox" checked={mobileHomeFormData.hasClaims} onChange={(e) => updateMobileHomeField("hasClaims", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Claims in Past 5 Years</span>
+                </label>
+                {mobileHomeFormData.hasClaims && (
+                  <div className="col-span-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Claims Details</label>
+                    <textarea value={mobileHomeFormData.claimsDescription} onChange={(e) => updateMobileHomeField("claimsDescription", e.target.value)} placeholder="Type, date, and amount for each claim..." rows={3} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            {/* Discounts */}
+            <Section id="discounts" icon={DollarSign} title="Potential Discounts">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={mobileHomeFormData.wantsBundleAuto} onChange={(e) => updateMobileHomeField("wantsBundleAuto", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Bundle with Auto</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={mobileHomeFormData.claimFree} onChange={(e) => updateMobileHomeField("claimFree", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Claims-Free</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={mobileHomeFormData.hasPaperless} onChange={(e) => updateMobileHomeField("hasPaperless", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Paperless</span>
+                </label>
+                <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
+                  <input type="checkbox" checked={mobileHomeFormData.hasAutoPay} onChange={(e) => updateMobileHomeField("hasAutoPay", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
+                  <span className="text-sm text-gray-300">Auto-Pay</span>
+                </label>
+              </div>
+            </Section>
+
+            {/* Notes */}
+            <Section id="notes" icon={FileText} title="Notes & Submission">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Agent Notes</label>
+                  <textarea value={mobileHomeFormData.agentNotes} onChange={(e) => updateMobileHomeField("agentNotes", e.target.value)} placeholder="Any additional notes..." rows={4} className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/50" />
+                </div>
+                <Field label="Effective Date" value={mobileHomeFormData.effectiveDate} onChange={(v: string) => updateMobileHomeField("effectiveDate", v)} type="date" />
               </div>
             </Section>
           </>

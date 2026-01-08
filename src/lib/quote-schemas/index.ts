@@ -7,11 +7,17 @@ export * from './types';
 export { personalAutoSchema } from './personal-auto';
 export { homeownersSchema } from './homeowners';
 export { recreationalSchema } from './recreational';
+export { mobileHomeSchema } from './mobile-home';
+export { floodSchema } from './flood';
+export { commercialAutoSchema } from './commercial-auto';
 
 import { QuoteSchema, QuoteType } from './types';
 import { personalAutoSchema } from './personal-auto';
 import { homeownersSchema } from './homeowners';
 import { recreationalSchema } from './recreational';
+import { mobileHomeSchema } from './mobile-home';
+import { floodSchema } from './flood';
+import { commercialAutoSchema } from './commercial-auto';
 
 // Registry of all available schemas
 export const QUOTE_SCHEMAS: Record<QuoteType, QuoteSchema | null> = {
@@ -19,9 +25,9 @@ export const QUOTE_SCHEMAS: Record<QuoteType, QuoteSchema | null> = {
   homeowners: homeownersSchema,
   auto_home_bundle: null,     // TODO: Implement
   recreational: recreationalSchema,
-  mobile_home: null,          // TODO: Implement
-  commercial: null,           // TODO: Implement
-  flood: null,                // TODO: Implement
+  mobile_home: mobileHomeSchema,
+  commercial: commercialAutoSchema,
+  flood: floodSchema,
 };
 
 // Get schema by type
@@ -36,9 +42,9 @@ export function getAvailableQuoteTypes(): { type: QuoteType; name: string; icon:
     { type: 'homeowners', name: 'Homeowners', icon: '🏠', available: true },
     { type: 'auto_home_bundle', name: 'Auto + Home Bundle', icon: '🏡', available: false },
     { type: 'recreational', name: 'Recreational (Boat, RV, etc.)', icon: '🚤', available: true },
-    { type: 'mobile_home', name: 'Mobile Home', icon: '🏘️', available: false },
-    { type: 'commercial', name: 'Commercial', icon: '🏢', available: false },
-    { type: 'flood', name: 'Flood Insurance', icon: '🌊', available: false },
+    { type: 'mobile_home', name: 'Mobile Home', icon: '🏘️', available: true },
+    { type: 'commercial', name: 'Commercial Auto', icon: '🚛', available: true },
+    { type: 'flood', name: 'Flood Insurance', icon: '🌊', available: true },
   ];
 }
 
