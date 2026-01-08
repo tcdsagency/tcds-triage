@@ -29,7 +29,9 @@ import {
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton, SkeletonStatCard } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface TriageItem {
   id: string;
@@ -78,7 +80,6 @@ export default function DashboardPage() {
     todaysCalls: 0,
   });
   const [userName, setUserName] = useState<string>("Agent");
-  const [aiInsight, setAiInsight] = useState<string>("");
   const [teamPresence, setTeamPresence] = useState<TeamMember[]>([]);
   const [presenceConnected, setPresenceConnected] = useState(false);
 
@@ -86,6 +87,22 @@ export default function DashboardPage() {
     try {
       if (showRefresh) setRefreshing(true);
       else setLoading(true);
+
+      // Fetch current user's name
+      try {
+        const userRes = await fetch("/api/auth/me");
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          if (userData.user?.firstName) {
+            setUserName(userData.user.firstName);
+          } else if (userData.user?.email) {
+            // Use email prefix if no first name
+            setUserName(userData.user.email.split("@")[0]);
+          }
+        }
+      } catch (userErr) {
+        console.error("User fetch error:", userErr);
+      }
 
       // Fetch triage items
       const triageRes = await fetch("/api/triage?status=pending&limit=5");
@@ -102,7 +119,7 @@ export default function DashboardPage() {
       if (leadsRes.ok) {
         const leadsData = await leadsRes.json();
         if (leadsData.success) {
-          setStats(prev => ({ ...prev, activeLeads: leadsData.total || leadsData.leads?.length || 0 }));
+          setStats(prev => ({ ...prev, activeLeads: leadsData.counts?.total || leadsData.leads?.length || 0 }));
         }
       }
 
@@ -120,31 +137,15 @@ export default function DashboardPage() {
         console.error("Presence fetch error:", presenceErr);
       }
 
-      // Generate AI insight based on data
-      generateAiInsight();
-
     } catch (err) {
       console.error("Dashboard fetch error:", err);
+      toast.error("Failed to load dashboard data", {
+        description: "Some metrics may be unavailable",
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  const generateAiInsight = () => {
-    const hour = new Date().getHours();
-    const dayOfWeek = new Date().getDay();
-
-    const insights = [
-      "Focus on following up with pending quotes today - conversion rates are highest within 48 hours of initial contact.",
-      "Consider reaching out to customers with renewals coming up in the next 30 days. Early contact improves retention.",
-      "Review any high-priority triage items first. Quick response times lead to better customer satisfaction.",
-      "Check for any missed calls from yesterday - returning calls promptly shows customers you value their business.",
-      "Today is a great day to cross-sell umbrella policies to customers with both auto and home coverage.",
-    ];
-
-    // Pick insight based on day
-    setAiInsight(insights[dayOfWeek % insights.length]);
   };
 
   useEffect(() => {
@@ -179,29 +180,56 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 p-6 animate-pulse">
+      <div className="space-y-6 p-6">
         {/* Header Skeleton */}
-        <div className="bg-gray-200 dark:bg-gray-700 rounded-xl h-32"></div>
+        <div className="bg-gradient-to-r from-gray-800 to-gray-700 rounded-xl p-6">
+          <Skeleton className="h-8 w-64 mb-2 bg-gray-600" />
+          <Skeleton className="h-4 w-96 bg-gray-600" />
+          <div className="flex gap-2 mt-4">
+            <Skeleton className="h-6 w-32 rounded-full bg-gray-600" />
+            <Skeleton className="h-6 w-24 rounded-full bg-gray-600" />
+          </div>
+        </div>
 
         {/* Stats Skeleton */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gray-200 dark:bg-gray-700"></div>
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-20 mb-2"></div>
-                  <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-12"></div>
-                </div>
-              </div>
-            </div>
+            <SkeletonStatCard key={i} />
           ))}
         </div>
 
         {/* Two Column Skeleton */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 h-80"></div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 h-80"></div>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+            <Skeleton className="h-6 w-32 mb-4" />
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="flex items-center gap-3 p-3 border border-gray-100 dark:border-gray-700 rounded-lg">
+                  <Skeleton className="h-8 w-8 rounded-full" />
+                  <div className="flex-1">
+                    <Skeleton className="h-4 w-3/4 mb-1" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+            <Skeleton className="h-6 w-24 mb-4" />
+            <div className="space-y-3">
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="flex items-center gap-3 p-2">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="flex-1">
+                    <Skeleton className="h-4 w-24 mb-1" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                  <Skeleton className="h-3 w-3 rounded-full" />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -327,24 +355,7 @@ export default function DashboardPage() {
                   <CheckCircle2 className="w-8 h-8 text-emerald-500" />
                 </div>
                 <h3 className="font-semibold text-gray-900 dark:text-white mb-1">All caught up!</h3>
-                <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">No pending triage items.</p>
-                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 text-left max-w-sm mx-auto">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Suggested Actions</p>
-                  <div className="space-y-2">
-                    <Link href="/ai-tasks" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 hover:text-emerald-700 dark:hover:text-emerald-400 transition-all hover:shadow-sm group">
-                      <PhoneCall className="w-5 h-5 text-emerald-500 group-hover:scale-110 transition-transform" />
-                      <span className="font-medium">Who should I call today?</span>
-                    </Link>
-                    <Link href="/quotes" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-400 transition-all hover:shadow-sm group">
-                      <FileText className="w-5 h-5 text-purple-500 group-hover:scale-110 transition-transform" />
-                      <span className="font-medium">Follow up on pending quotes</span>
-                    </Link>
-                    <Link href="/training" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-400 transition-all hover:shadow-sm group">
-                      <Award className="w-5 h-5 text-blue-500 group-hover:scale-110 transition-transform" />
-                      <span className="font-medium">Complete training modules</span>
-                    </Link>
-                  </div>
-                </div>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">No pending triage items.</p>
               </div>
             ) : (
               triageItems.map((item) => {
@@ -394,21 +405,21 @@ export default function DashboardPage() {
               </Button>
             </Link>
             <Link href="/customers">
-              <Button variant="outline" className="w-full h-auto py-5 flex flex-col items-center gap-2 border-2 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all hover:scale-[1.02] group">
-                <Search className="w-7 h-7 text-blue-500 group-hover:text-blue-600" />
-                <span className="font-semibold group-hover:text-blue-600">Find Customer</span>
+              <Button variant="outline" className="w-full h-auto py-5 flex flex-col items-center gap-2 border-2 border-blue-200 bg-blue-50 hover:border-blue-500 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 transition-all hover:scale-[1.02] group">
+                <Search className="w-7 h-7 text-blue-600" />
+                <span className="font-semibold text-blue-700 dark:text-blue-300">Find Customer</span>
               </Button>
             </Link>
             <Link href="/ai-tasks">
-              <Button variant="outline" className="w-full h-auto py-5 flex flex-col items-center gap-2 border-2 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all hover:scale-[1.02] group">
-                <PhoneCall className="w-7 h-7 text-emerald-500 group-hover:text-emerald-600" />
-                <span className="font-semibold group-hover:text-emerald-600">Who to Call?</span>
+              <Button variant="outline" className="w-full h-auto py-5 flex flex-col items-center gap-2 border-2 border-emerald-200 bg-emerald-50 hover:border-emerald-500 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 transition-all hover:scale-[1.02] group">
+                <PhoneCall className="w-7 h-7 text-emerald-600" />
+                <span className="font-semibold text-emerald-700 dark:text-emerald-300">Who to Call?</span>
               </Button>
             </Link>
             <Link href="/messages">
-              <Button variant="outline" className="w-full h-auto py-5 flex flex-col items-center gap-2 border-2 hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all hover:scale-[1.02] group">
-                <MessageSquare className="w-7 h-7 text-purple-500 group-hover:text-purple-600" />
-                <span className="font-semibold group-hover:text-purple-600">Messages</span>
+              <Button variant="outline" className="w-full h-auto py-5 flex flex-col items-center gap-2 border-2 border-purple-200 bg-purple-50 hover:border-purple-500 hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/40 transition-all hover:scale-[1.02] group">
+                <MessageSquare className="w-7 h-7 text-purple-600" />
+                <span className="font-semibold text-purple-700 dark:text-purple-300">Messages</span>
               </Button>
             </Link>
           </div>
@@ -464,62 +475,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* AI Morning Briefing */}
-      <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl shadow-sm p-6 text-white">
-        <div className="flex items-start gap-4">
-          <div className="h-12 w-12 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-            <Sparkles className="h-6 w-6" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              AI Daily Insight
-              <Badge className="bg-white/20 text-white text-xs">Beta</Badge>
-            </h3>
-            <p className="mt-2 text-emerald-50 text-sm leading-relaxed">
-              {aiInsight}
-            </p>
-            <div className="mt-4 flex gap-3">
-              <Button
-                size="sm"
-                className="bg-white/20 hover:bg-white/30 text-white border-0"
-              >
-                View Full Briefing
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-white/80 hover:text-white hover:bg-white/10"
-              >
-                Customize Insights
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Activity Preview */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Coming Soon</h2>
-        </div>
-        <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <FeaturePreview
-            title="Call Analytics"
-            description="Real-time call tracking, transcription, and AI summaries"
-            icon={Phone}
-          />
-          <FeaturePreview
-            title="Renewal Dashboard"
-            description="Track upcoming renewals and retention metrics"
-            icon={Calendar}
-          />
-          <FeaturePreview
-            title="Revenue Tracking"
-            description="Monitor premiums, commissions, and growth"
-            icon={DollarSign}
-          />
-        </div>
-      </div>
     </div>
   );
 }
@@ -569,20 +524,6 @@ function StatCard({
         </div>
       </div>
     </Link>
-  );
-}
-
-function FeaturePreview({ title, description, icon: Icon }: { title: string; description: string; icon: any }) {
-  return (
-    <div className="flex items-start gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900/50">
-      <div className="w-10 h-10 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
-        <Icon className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-      </div>
-      <div>
-        <h4 className="font-medium text-gray-900 dark:text-white">{title}</h4>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{description}</p>
-      </div>
-    </div>
   );
 }
 

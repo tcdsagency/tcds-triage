@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Sparkles, Car, Home, Ship, Building2, Droplets,
@@ -1259,6 +1259,80 @@ const GL_DAMAGE_PREMISES_OPTIONS = [
 ];
 
 // =============================================================================
+// FORM FIELD COMPONENT (outside main component to prevent re-mounting)
+// =============================================================================
+
+interface FieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  placeholder?: string;
+  options?: Array<{ value: string; label: string }>;
+  required?: boolean;
+  className?: string;
+  error?: string;
+  tooltip?: string;
+}
+
+function FormField({ label, value, onChange, type = "text", placeholder, options, required, className, error, tooltip }: FieldProps) {
+  return (
+    <div className={className}>
+      <label className="flex items-center gap-1.5 text-sm font-medium text-gray-300 mb-1">
+        {label} {required && <span className="text-red-400">*</span>}
+        {tooltip && (
+          <span className="group relative">
+            <HelpCircle className="w-3.5 h-3.5 text-gray-500 hover:text-amber-400 cursor-help" />
+            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-700 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
+              {tooltip}
+            </span>
+          </span>
+        )}
+      </label>
+      {options ? (
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={cn("w-full px-3 py-2 bg-gray-900 border rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50", error ? "border-red-500" : "border-gray-700")}>
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      ) : (
+        <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={cn("bg-gray-900 border-gray-700 text-white", error && "border-red-500")} />
+      )}
+      {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
+    </div>
+  );
+}
+
+// Section component wrapper
+interface SectionProps {
+  id: string;
+  icon: any;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+function FormSection({ id, icon: Icon, title, subtitle, children, expanded, onToggle }: SectionProps) {
+  return (
+    <div className="bg-gray-800/30 rounded-xl border border-gray-700/50 overflow-hidden">
+      <button onClick={onToggle} className="w-full flex items-center justify-between p-4 bg-gray-800/50 hover:bg-gray-800 transition-colors">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+            <Icon className="w-5 h-5 text-amber-500" />
+          </div>
+          <div className="text-left">
+            <h3 className="font-semibold text-white">{title}</h3>
+            {subtitle && <p className="text-sm text-gray-400">{subtitle}</p>}
+          </div>
+        </div>
+        {expanded ? <ChevronDown className="w-5 h-5 text-gray-400" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
+      </button>
+      {expanded && <div className="p-6 border-t border-gray-700/50">{children}</div>}
+    </div>
+  );
+}
+
+// =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
@@ -1687,6 +1761,16 @@ export default function QuoteIntakePage() {
       if (!wcFormData.phone) errs.phone = "Required";
       if (!wcFormData.fein) errs.fein = "Required";
       if (!wcFormData.governingClassCode) errs.governingClassCode = "Required";
+    } else if (selectedType === "recreational") {
+      if (!recreationalFormData.firstName) errs.firstName = "Required";
+      if (!recreationalFormData.lastName) errs.lastName = "Required";
+      if (!recreationalFormData.phone) errs.phone = "Required";
+      if (!recreationalFormData.itemType) errs.itemType = "Required";
+    } else if (selectedType === "mobile_home") {
+      if (!mobileHomeFormData.firstName) errs.firstName = "Required";
+      if (!mobileHomeFormData.lastName) errs.lastName = "Required";
+      if (!mobileHomeFormData.phone) errs.phone = "Required";
+      if (!mobileHomeFormData.propertyAddress) errs.propertyAddress = "Required";
     } else {
       if (!autoFormData.firstName) errs.firstName = "Required";
       if (!autoFormData.lastName) errs.lastName = "Required";
@@ -1696,9 +1780,185 @@ export default function QuoteIntakePage() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setSaving(true);
     try {
-      await new Promise(r => setTimeout(r, 1000));
+      // Build the payload based on form type
+      let payload: any = {
+        type: selectedType === "recreational" ? "recreational_vehicle" : selectedType,
+      };
+
+      if (selectedType === "homeowners") {
+        payload.contactInfo = {
+          firstName: homeownersFormData.firstName,
+          lastName: homeownersFormData.lastName,
+          email: homeownersFormData.email,
+          phone: homeownersFormData.phone,
+          address: {
+            street: homeownersFormData.propertyAddress,
+            city: homeownersFormData.propertyCity,
+            state: homeownersFormData.propertyState,
+            zip: homeownersFormData.propertyZip,
+          },
+        };
+        payload.property = {
+          address: {
+            street: homeownersFormData.propertyAddress,
+            city: homeownersFormData.propertyCity,
+            state: homeownersFormData.propertyState,
+            zip: homeownersFormData.propertyZip,
+          },
+          yearBuilt: parseInt(homeownersFormData.yearBuilt) || undefined,
+          squareFeet: parseInt(homeownersFormData.squareFootage) || undefined,
+          constructionType: homeownersFormData.constructionType,
+          roofType: homeownersFormData.roofMaterial,
+          roofAge: parseInt(homeownersFormData.roofAge) || undefined,
+        };
+        payload.quoteData = homeownersFormData;
+      } else if (selectedType === "renters") {
+        payload.contactInfo = {
+          firstName: rentersFormData.firstName,
+          lastName: rentersFormData.lastName,
+          email: rentersFormData.email,
+          phone: rentersFormData.phone,
+          address: {
+            street: rentersFormData.rentalAddress,
+            city: rentersFormData.rentalCity,
+            state: rentersFormData.rentalState,
+            zip: rentersFormData.rentalZip,
+          },
+        };
+        payload.quoteData = rentersFormData;
+      } else if (selectedType === "umbrella") {
+        payload.contactInfo = {
+          firstName: umbrellaFormData.firstName,
+          lastName: umbrellaFormData.lastName,
+          email: umbrellaFormData.email,
+          phone: umbrellaFormData.phone,
+          address: {
+            street: umbrellaFormData.address,
+            city: umbrellaFormData.city,
+            state: umbrellaFormData.state,
+            zip: umbrellaFormData.zip,
+          },
+        };
+        payload.quoteData = umbrellaFormData;
+      } else if (selectedType === "mobile_home") {
+        payload.contactInfo = {
+          firstName: mobileHomeFormData.firstName,
+          lastName: mobileHomeFormData.lastName,
+          email: mobileHomeFormData.email,
+          phone: mobileHomeFormData.phone,
+          address: {
+            street: mobileHomeFormData.propertyAddress,
+            city: mobileHomeFormData.propertyCity,
+            state: mobileHomeFormData.propertyState,
+            zip: mobileHomeFormData.propertyZip,
+          },
+        };
+        payload.quoteData = mobileHomeFormData;
+      } else if (selectedType === "bop") {
+        payload.contactInfo = {
+          firstName: bopFormData.contactName.split(" ")[0] || "",
+          lastName: bopFormData.contactName.split(" ").slice(1).join(" ") || "",
+          phone: bopFormData.phone,
+          email: bopFormData.email,
+          address: {
+            street: bopFormData.address,
+            city: bopFormData.city,
+            state: bopFormData.state,
+            zip: bopFormData.zip,
+          },
+        };
+        payload.quoteData = bopFormData;
+      } else if (selectedType === "general_liability") {
+        payload.contactInfo = {
+          firstName: glFormData.contactName.split(" ")[0] || "",
+          lastName: glFormData.contactName.split(" ").slice(1).join(" ") || "",
+          phone: glFormData.phone,
+          email: glFormData.email,
+          address: {
+            street: glFormData.address,
+            city: glFormData.city,
+            state: glFormData.state,
+            zip: glFormData.zip,
+          },
+        };
+        payload.quoteData = glFormData;
+      } else if (selectedType === "workers_comp") {
+        payload.contactInfo = {
+          firstName: wcFormData.contactName.split(" ")[0] || "",
+          lastName: wcFormData.contactName.split(" ").slice(1).join(" ") || "",
+          phone: wcFormData.phone,
+          email: wcFormData.email,
+          address: {
+            street: wcFormData.address,
+            city: wcFormData.city,
+            state: wcFormData.state,
+            zip: wcFormData.zip,
+          },
+        };
+        payload.quoteData = wcFormData;
+      } else if (selectedType === "recreational") {
+        payload.contactInfo = {
+          firstName: recreationalFormData.firstName,
+          lastName: recreationalFormData.lastName,
+          email: recreationalFormData.email,
+          phone: recreationalFormData.phone,
+          address: {
+            street: recreationalFormData.address,
+            city: recreationalFormData.city,
+            state: recreationalFormData.state,
+            zip: recreationalFormData.zip,
+          },
+        };
+        payload.quoteData = recreationalFormData;
+      } else {
+        // Personal auto
+        payload.contactInfo = {
+          firstName: autoFormData.firstName,
+          lastName: autoFormData.lastName,
+          email: autoFormData.email,
+          phone: autoFormData.phone,
+          address: {
+            street: autoFormData.address,
+            city: autoFormData.city,
+            state: autoFormData.state,
+            zip: autoFormData.zip,
+          },
+        };
+        payload.vehicles = autoFormData.vehicles.map(v => ({
+          vin: v.vin,
+          year: parseInt(v.year) || new Date().getFullYear(),
+          make: v.make,
+          model: v.model,
+          use: v.primaryUse,
+          annualMiles: parseInt(v.annualMileage) || 12000,
+        }));
+        payload.drivers = autoFormData.drivers.map(d => ({
+          firstName: d.firstName,
+          lastName: d.lastName,
+          dob: d.dob,
+          licenseNumber: d.licenseNumber,
+          licenseState: d.licenseState,
+        }));
+        payload.quoteData = autoFormData;
+      }
+
+      const res = await fetch("/api/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to create quote");
+      }
+
       router.push("/quotes");
-    } catch (e) { console.error(e); }
+    } catch (e: any) {
+      console.error("Quote submission error:", e);
+      setErrors({ submit: e.message || "Failed to save quote. Please try again." });
+    }
     setSaving(false);
   };
 
@@ -1742,50 +2002,29 @@ export default function QuoteIntakePage() {
   }
 
   // =============================================================================
-  // FORM HELPERS
+  // FORM HELPERS - Using memoized wrappers for stable component references
   // =============================================================================
 
-  const Section = ({ id, icon: Icon, title, subtitle, children }: { id: string; icon: any; title: string; subtitle?: string; children: React.ReactNode }) => (
-    <div className="bg-gray-800/30 rounded-xl border border-gray-700/50 overflow-hidden">
-      <button onClick={() => toggleSection(id)} className="w-full flex items-center justify-between p-4 bg-gray-800/50 hover:bg-gray-800 transition-colors">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
-            <Icon className="w-5 h-5 text-amber-500" />
-          </div>
-          <div className="text-left">
-            <h3 className="font-semibold text-white">{title}</h3>
-            {subtitle && <p className="text-sm text-gray-400">{subtitle}</p>}
-          </div>
-        </div>
-        {expandedSections.has(id) ? <ChevronDown className="w-5 h-5 text-gray-400" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
-      </button>
-      {expandedSections.has(id) && <div className="p-6 border-t border-gray-700/50">{children}</div>}
-    </div>
-  );
+  // Stable Section wrapper using useMemo - prevents re-mounting on state changes
+  const Section = useMemo(() => {
+    return function StableSection({ id, icon, title, subtitle, children }: { id: string; icon: any; title: string; subtitle?: string; children: React.ReactNode }) {
+      return (
+        <FormSection
+          id={id}
+          icon={icon}
+          title={title}
+          subtitle={subtitle}
+          expanded={expandedSections.has(id)}
+          onToggle={() => toggleSection(id)}
+        >
+          {children}
+        </FormSection>
+      );
+    };
+  }, [expandedSections, toggleSection]);
 
-  const Field = ({ label, value, onChange, type = "text", placeholder, options, required, className, error, tooltip }: any) => (
-    <div className={className}>
-      <label className="flex items-center gap-1.5 text-sm font-medium text-gray-300 mb-1">
-        {label} {required && <span className="text-red-400">*</span>}
-        {tooltip && (
-          <span className="group relative">
-            <HelpCircle className="w-3.5 h-3.5 text-gray-500 hover:text-amber-400 cursor-help" />
-            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-700 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
-              {tooltip}
-            </span>
-          </span>
-        )}
-      </label>
-      {options ? (
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={cn("w-full px-3 py-2 bg-gray-900 border rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50", error ? "border-red-500" : "border-gray-700")}>
-          {options.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      ) : (
-        <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={cn("bg-gray-900 border-gray-700 text-white", error && "border-red-500")} />
-      )}
-      {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
-    </div>
-  );
+  // Alias for Field - FormField is already stable since it's defined outside the component
+  const Field = FormField;
 
   // =============================================================================
   // FORM RENDER
@@ -1854,7 +2093,7 @@ export default function QuoteIntakePage() {
               </div>
               <span className="text-sm font-medium text-gray-300">{completion}%</span>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setShowAgentAssist(!showAgentAssist)} className={cn("border-purple-500/50 text-purple-400 hover:bg-purple-500/10", showAgentAssist && "bg-purple-500/20")}>
+            <Button variant="outline" size="sm" onClick={() => setShowAgentAssist(!showAgentAssist)} className={cn("border-indigo-400 text-indigo-300 hover:bg-indigo-500/20 hover:text-indigo-200", showAgentAssist && "bg-indigo-500/30 text-indigo-200")}>
               <HelpCircle className="w-4 h-4 mr-2" />Assist
             </Button>
             <Button variant="outline" size="sm" onClick={() => setShowAiPaste(true)} className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10">
@@ -3642,11 +3881,15 @@ export default function QuoteIntakePage() {
             <AgentAssistSidebar
               quoteType={(selectedType === "personal_auto" ? "personal_auto" :
                          selectedType === "homeowners" ? "homeowners" :
+                         selectedType === "mobile_home" ? "mobile_home" :
                          selectedType === "renters" ? "renters" :
+                         selectedType === "umbrella" ? "umbrella" :
                          selectedType === "commercial_auto" ? "commercial_auto" :
-                         selectedType === "general_liability" ? "general_liability" :
                          selectedType === "bop" ? "bop" :
+                         selectedType === "general_liability" ? "general_liability" :
                          selectedType === "workers_comp" ? "workers_comp" :
+                         selectedType === "recreational" ? "recreational" :
+                         selectedType === "flood" ? "flood" :
                          "personal_auto") as AgentAssistQuoteType}
               currentSection={currentFormSection}
               onSectionClick={(sectionId) => {

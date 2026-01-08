@@ -64,7 +64,20 @@ export interface FormSectionGuidance {
   tips: FormGuidanceTip[];
 }
 
-export type QuoteType = 'personal_auto' | 'homeowners' | 'commercial_auto' | 'commercial_property' | 'umbrella' | 'life';
+export type QuoteType =
+  | 'personal_auto'
+  | 'homeowners'
+  | 'mobile_home'
+  | 'renters'
+  | 'umbrella'
+  | 'commercial_auto'
+  | 'commercial_property'
+  | 'bop'
+  | 'general_liability'
+  | 'workers_comp'
+  | 'recreational'
+  | 'flood'
+  | 'life';
 
 // =============================================================================
 // TELEMETRY TYPES

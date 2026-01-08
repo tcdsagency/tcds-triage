@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from "react";
 import CallPopup from "@/components/features/CallPopup";
 
 interface ActiveCall {
@@ -16,6 +16,7 @@ interface CallContextType {
   activeCall: ActiveCall | null;
   isPopupVisible: boolean;
   isPopupMinimized: boolean;
+  myExtension: string | null;
   openPopup: (call: ActiveCall) => void;
   closePopup: () => void;
   minimizePopup: () => void;
@@ -41,8 +42,41 @@ export function CallProvider({ children }: CallProviderProps) {
   const [isPopupVisible, setIsPopupVisible] = useState(false);
   const [isPopupMinimized, setIsPopupMinimized] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [myExtension, setMyExtension] = useState<string | null>(null);
+  const myExtensionRef = useRef<string | null>(null);
 
-  // WebSocket connection for global call events
+  // Fetch current user's extension on mount
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.user?.extension) {
+          const ext = data.user.extension;
+          setMyExtension(ext);
+          myExtensionRef.current = ext;
+          localStorage.setItem('myExtension', ext);
+          console.log('[CallProvider] Agent extension:', ext);
+        } else {
+          // Try localStorage fallback
+          const stored = localStorage.getItem('myExtension');
+          if (stored) {
+            setMyExtension(stored);
+            myExtensionRef.current = stored;
+          }
+        }
+      })
+      .catch(err => {
+        console.error('[CallProvider] Failed to get agent extension:', err);
+        // Try localStorage fallback
+        const stored = localStorage.getItem('myExtension');
+        if (stored) {
+          setMyExtension(stored);
+          myExtensionRef.current = stored;
+        }
+      });
+  }, []);
+
+  // WebSocket connection for call events
   useEffect(() => {
     const wsUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL || 'wss://realtime.tcdsagency.com/ws/calls';
     let ws: WebSocket | null = null;
@@ -101,12 +135,93 @@ export function CallProvider({ children }: CallProviderProps) {
     };
   }, []);
 
+  // Polling fallback - check 3CX directly for active calls
+  useEffect(() => {
+    const currentExt = myExtensionRef.current || localStorage.getItem('myExtension');
+    if (!currentExt) return;
+
+    console.log("[CallProvider] Starting 3CX polling for extension:", currentExt);
+
+    const pollForCalls = async () => {
+      try {
+        // Poll 3CX directly for active calls
+        const res = await fetch(`/api/3cx/active-calls?extension=${currentExt}`);
+        const data = await res.json();
+
+        if (data.success && data.hasActiveCall && data.calls?.length > 0) {
+          const call = data.calls[0];
+          // Only trigger if we don't already have this call active
+          if (!activeCall || activeCall.sessionId !== call.sessionId) {
+            console.log("[CallProvider] 3CX poll found active call:", call.sessionId);
+            handleCallEvent({
+              type: 'call_started',
+              sessionId: call.sessionId,
+              phoneNumber: call.phoneNumber,
+              direction: call.direction,
+              extension: call.extension,
+              customerId: call.customerId,
+              customerName: call.customerName,
+            });
+          }
+        } else if (activeCall && !data.hasActiveCall) {
+          // Call ended in 3CX but we still have it active
+          console.log("[CallProvider] 3CX poll: call ended");
+          handleCallEvent({
+            type: 'call_ended',
+            sessionId: activeCall.sessionId,
+          });
+        }
+      } catch (e) {
+        // Silent fail - try database fallback
+        try {
+          const res = await fetch(`/api/calls?status=ringing,in_progress&extension=${currentExt}&limit=1`);
+          const data = await res.json();
+          if (data.success && data.calls?.length > 0) {
+            const call = data.calls[0];
+            if (!activeCall || activeCall.sessionId !== call.id) {
+              console.log("[CallProvider] DB fallback found call:", call.id);
+              handleCallEvent({
+                type: call.status === 'ringing' ? 'call_ringing' : 'call_started',
+                sessionId: call.id,
+                phoneNumber: call.fromNumber || call.toNumber,
+                direction: call.direction,
+                extension: currentExt,
+                customerId: call.customerId,
+              });
+            }
+          }
+        } catch {
+          // Both failed, continue
+        }
+      }
+    };
+
+    // Poll every 2 seconds for responsiveness
+    const pollInterval = setInterval(pollForCalls, 2000);
+    // Also poll immediately
+    pollForCalls();
+
+    return () => clearInterval(pollInterval);
+  }, [activeCall]);
+
   const handleCallEvent = useCallback((data: any) => {
     console.log("[CallProvider] Event:", data.type, data);
+
+    // Get extension from event (supports both formats from 3CX)
+    const callExtension = data.extension || data.data?.extension || data.agentExtension;
+    const currentExt = myExtensionRef.current || localStorage.getItem('myExtension');
 
     switch (data.type) {
       case "call_ringing":
       case "call_started":
+        // Filter by extension - only show popup for THIS agent's calls
+        const isMyCall = !callExtension || (currentExt && callExtension === currentExt);
+
+        if (!isMyCall) {
+          console.log(`[CallProvider] Ignoring call for extension ${callExtension} (my extension: ${currentExt})`);
+          return;
+        }
+
         // New incoming/outgoing call - auto-open popup
         const newCall: ActiveCall = {
           sessionId: data.sessionId,
@@ -119,7 +234,7 @@ export function CallProvider({ children }: CallProviderProps) {
         setActiveCall(newCall);
         setIsPopupVisible(true);
         setIsPopupMinimized(false);
-        console.log("[CallProvider] Auto-opened popup for call:", newCall.sessionId);
+        console.log("[CallProvider] Auto-opened popup for call:", newCall.sessionId, "extension:", callExtension);
         break;
 
       case "call_updated":
@@ -148,12 +263,13 @@ export function CallProvider({ children }: CallProviderProps) {
   // Expose test function to window for debugging (dev only)
   useEffect(() => {
     if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-      (window as any).__triggerTestCall = (phoneNumber?: string, direction?: "inbound" | "outbound") => {
+      (window as any).__triggerTestCall = (phoneNumber?: string, direction?: "inbound" | "outbound", extension?: string) => {
         const testEvent = {
           type: "call_ringing",
           sessionId: `test_${Date.now()}`,
           phoneNumber: phoneNumber || "+12059990360",
           direction: direction || "inbound",
+          extension: extension || myExtensionRef.current, // Use agent's extension by default
           customerId: null,
         };
         console.log("[CallProvider] Triggering test call:", testEvent);
@@ -206,6 +322,7 @@ export function CallProvider({ children }: CallProviderProps) {
         activeCall,
         isPopupVisible,
         isPopupMinimized,
+        myExtension,
         openPopup,
         closePopup,
         minimizePopup,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Search, Send, Phone, User, MoreVertical, Plus, Check, CheckCheck,
   Clock, AlertCircle, MessageSquare, Settings, ChevronDown, Paperclip,
@@ -128,6 +129,11 @@ const groupIntoConversations = (messages: SMSMessage[]): Conversation[] => {
 };
 
 export default function MessagesPage() {
+  const searchParams = useSearchParams();
+  const phoneParam = searchParams.get('phone');
+  const nameParam = searchParams.get('name');
+  const customerIdParam = searchParams.get('customerId');
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -136,7 +142,15 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [unreadTotal, setUnreadTotal] = useState(0);
+  const [phoneFromUrl, setPhoneFromUrl] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Track phone from URL on mount
+  useEffect(() => {
+    if (phoneParam) {
+      setPhoneFromUrl(phoneParam.replace(/\D/g, ''));
+    }
+  }, [phoneParam]);
 
   // Fetch messages from API
   const fetchMessages = useCallback(async () => {
@@ -147,6 +161,34 @@ export default function MessagesPage() {
         const grouped = groupIntoConversations(data.messages);
         setConversations(grouped);
         setUnreadTotal(data.unreadCount);
+
+        // If phone from URL, try to find and select that conversation
+        if (phoneFromUrl) {
+          const matchedConv = grouped.find(c => c.id === phoneFromUrl || c.id.endsWith(phoneFromUrl));
+          if (matchedConv) {
+            setSelectedConversation(matchedConv);
+            setPhoneFromUrl(null); // Clear so we don't keep re-selecting
+            return;
+          }
+          // If no existing conversation, create a new one for this phone
+          const newConv: Conversation = {
+            id: phoneFromUrl,
+            contact: {
+              id: customerIdParam || phoneFromUrl,
+              name: nameParam || formatPhone(phoneFromUrl),
+              phone: formatPhone(phoneFromUrl),
+              type: customerIdParam ? 'customer' : 'lead',
+            },
+            lastMessage: '',
+            lastMessageTime: new Date().toISOString(),
+            unreadCount: 0,
+            messages: [],
+          };
+          setConversations([newConv, ...grouped]);
+          setSelectedConversation(newConv);
+          setPhoneFromUrl(null);
+          return;
+        }
 
         // Select first conversation if none selected
         if (!selectedConversation && grouped.length > 0) {
@@ -162,14 +204,14 @@ export default function MessagesPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedConversation]);
+  }, [selectedConversation, phoneFromUrl, nameParam, customerIdParam]);
 
   // Initial fetch and polling
   useEffect(() => {
     fetchMessages();
     const interval = setInterval(fetchMessages, 30000); // Poll every 30s
     return () => clearInterval(interval);
-  }, []);
+  }, [phoneFromUrl]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {

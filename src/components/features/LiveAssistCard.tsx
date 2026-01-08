@@ -20,12 +20,12 @@ interface LiveAssistCardProps {
 // Script tab options
 type ScriptTab = "opening" | "discovery" | "resolution";
 
-// Suggestion type styling
+// Suggestion type styling - dark mode optimized
 const SUGGESTION_STYLES = {
-  knowledge: { bg: "bg-blue-50 border-blue-200", text: "text-blue-800", icon: "📚" },
-  compliance: { bg: "bg-red-50 border-red-200", text: "text-red-800", icon: "🛡️" },
-  upsell: { bg: "bg-green-50 border-green-200", text: "text-green-800", icon: "💰" },
-  next_action: { bg: "bg-purple-50 border-purple-200", text: "text-purple-800", icon: "➡️" },
+  knowledge: { bg: "bg-blue-900/40 border-blue-500/50", text: "text-blue-100", icon: "📚" },
+  compliance: { bg: "bg-red-900/40 border-red-500/50", text: "text-red-100", icon: "🛡️" },
+  upsell: { bg: "bg-emerald-900/40 border-emerald-500/50", text: "text-emerald-100", icon: "💰" },
+  next_action: { bg: "bg-indigo-900/40 border-indigo-500/50", text: "text-indigo-100", icon: "➡️" },
 };
 
 // Domain icons
@@ -55,7 +55,7 @@ export default function LiveAssistCard({
 
   if (isLoading) {
     return (
-      <div className={cn("p-4 text-center text-gray-500", className)}>
+      <div className={cn("p-4 text-center text-gray-400", className)}>
         <div className="text-4xl mb-2 animate-pulse">🔍</div>
         <p className="text-sm">Analyzing conversation...</p>
       </div>
@@ -64,10 +64,10 @@ export default function LiveAssistCard({
 
   if (!playbook) {
     return (
-      <div className={cn("p-4 text-center text-gray-500", className)}>
+      <div className={cn("p-4 text-center text-gray-400", className)}>
         <div className="text-4xl mb-2">🎧</div>
         <p className="text-sm">Listening to the call...</p>
-        <p className="text-xs mt-1">Playbook suggestions will appear as the conversation develops.</p>
+        <p className="text-xs mt-1 text-gray-500">Playbook suggestions will appear as the conversation develops.</p>
       </div>
     );
   }
@@ -111,25 +111,25 @@ export default function LiveAssistCard({
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {/* Confirm Statement */}
-        <div className="p-3 bg-yellow-50 border-b border-yellow-200">
-          <div className="text-xs font-semibold text-yellow-800 mb-1">✓ Confirm Understanding</div>
-          <p className="text-sm text-yellow-900 italic">&quot;{playbook.confirm}&quot;</p>
+        <div className="p-3 bg-amber-900/40 border-b border-amber-500/30">
+          <div className="text-xs font-semibold text-amber-200 mb-1">✓ Confirm Understanding</div>
+          <p className="text-sm text-amber-100 italic">&quot;{playbook.confirm}&quot;</p>
           <button
             onClick={() => handleCopy(playbook.confirm)}
-            className="mt-1 text-xs text-yellow-700 hover:text-yellow-900"
+            className="mt-1 text-xs text-amber-300 hover:text-amber-100"
           >
             Copy
           </button>
         </div>
 
         {/* Scripts Section */}
-        <div className="border-b">
+        <div className="border-b border-gray-700">
           <button
             onClick={() => toggleSection("scripts")}
-            className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50"
+            className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-700/50"
           >
-            <span className="text-sm font-semibold">💬 Say This</span>
-            <span className="text-gray-400">{expandedSection === "scripts" ? "−" : "+"}</span>
+            <span className="text-sm font-semibold text-gray-200">💬 Say This</span>
+            <span className="text-gray-500">{expandedSection === "scripts" ? "−" : "+"}</span>
           </button>
           {expandedSection === "scripts" && (
             <div className="px-3 pb-3">
@@ -143,7 +143,7 @@ export default function LiveAssistCard({
                       "px-2 py-1 text-xs rounded capitalize",
                       scriptTab === tab
                         ? "bg-blue-600 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
                     )}
                   >
                     {tab}
@@ -155,11 +155,11 @@ export default function LiveAssistCard({
                 {playbook.scripts[scriptTab].map((script, i) => (
                   <div
                     key={i}
-                    className="p-2 bg-gray-50 rounded text-sm cursor-pointer hover:bg-gray-100 group"
+                    className="p-2 bg-gray-700/50 rounded text-sm cursor-pointer hover:bg-gray-700 group"
                     onClick={() => handleCopy(script)}
                   >
-                    <span className="text-gray-700">&quot;{script}&quot;</span>
-                    <span className="ml-2 text-xs text-gray-400 opacity-0 group-hover:opacity-100">
+                    <span className="text-gray-200">&quot;{script}&quot;</span>
+                    <span className="ml-2 text-xs text-gray-500 opacity-0 group-hover:opacity-100">
                       Click to copy
                     </span>
                   </div>
@@ -170,23 +170,23 @@ export default function LiveAssistCard({
         </div>
 
         {/* Do / Dont Section */}
-        <div className="border-b">
+        <div className="border-b border-gray-700">
           <button
             onClick={() => toggleSection("guidance")}
-            className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50"
+            className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-700/50"
           >
-            <span className="text-sm font-semibold">📋 Guidance</span>
-            <span className="text-gray-400">{expandedSection === "guidance" ? "−" : "+"}</span>
+            <span className="text-sm font-semibold text-gray-200">📋 Guidance</span>
+            <span className="text-gray-500">{expandedSection === "guidance" ? "−" : "+"}</span>
           </button>
           {expandedSection === "guidance" && (
             <div className="px-3 pb-3 grid grid-cols-2 gap-3">
               {/* Do */}
               <div>
-                <div className="text-xs font-semibold text-green-700 mb-1">✓ DO</div>
+                <div className="text-xs font-semibold text-emerald-400 mb-1">✓ DO</div>
                 <ul className="space-y-1">
                   {playbook.do.map((item, i) => (
-                    <li key={i} className="text-xs text-gray-700 flex items-start gap-1">
-                      <span className="text-green-500 mt-0.5">•</span>
+                    <li key={i} className="text-xs text-gray-300 flex items-start gap-1">
+                      <span className="text-emerald-400 mt-0.5">•</span>
                       <span>{item}</span>
                     </li>
                   ))}
@@ -194,11 +194,11 @@ export default function LiveAssistCard({
               </div>
               {/* Dont */}
               <div>
-                <div className="text-xs font-semibold text-red-700 mb-1">✗ DON&apos;T</div>
+                <div className="text-xs font-semibold text-red-400 mb-1">✗ DON&apos;T</div>
                 <ul className="space-y-1">
                   {playbook.dont.map((item, i) => (
-                    <li key={i} className="text-xs text-gray-700 flex items-start gap-1">
-                      <span className="text-red-500 mt-0.5">•</span>
+                    <li key={i} className="text-xs text-gray-300 flex items-start gap-1">
+                      <span className="text-red-400 mt-0.5">•</span>
                       <span>{item}</span>
                     </li>
                   ))}
@@ -210,19 +210,19 @@ export default function LiveAssistCard({
 
         {/* Escalation Warnings */}
         {playbook.escalateIf.length > 0 && (
-          <div className="border-b">
+          <div className="border-b border-gray-700">
             <button
               onClick={() => toggleSection("escalate")}
-              className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-50"
+              className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-700/50"
             >
-              <span className="text-sm font-semibold text-orange-600">⚠️ Escalate If</span>
-              <span className="text-gray-400">{expandedSection === "escalate" ? "−" : "+"}</span>
+              <span className="text-sm font-semibold text-orange-400">⚠️ Escalate If</span>
+              <span className="text-gray-500">{expandedSection === "escalate" ? "−" : "+"}</span>
             </button>
             {expandedSection === "escalate" && (
               <div className="px-3 pb-3">
                 <ul className="space-y-1">
                   {playbook.escalateIf.map((item, i) => (
-                    <li key={i} className="text-xs text-orange-700 flex items-start gap-1">
+                    <li key={i} className="text-xs text-orange-300 flex items-start gap-1">
                       <span className="mt-0.5">•</span>
                       <span>{item}</span>
                     </li>
@@ -236,7 +236,7 @@ export default function LiveAssistCard({
         {/* AI Suggestions */}
         {suggestions.length > 0 && (
           <div className="p-3">
-            <div className="text-xs font-semibold text-gray-600 mb-2">🤖 AI Suggestions</div>
+            <div className="text-xs font-semibold text-gray-400 mb-2">🤖 AI Suggestions</div>
             <div className="space-y-2">
               {suggestions.map((suggestion) => {
                 const style = SUGGESTION_STYLES[suggestion.type] || SUGGESTION_STYLES.next_action;
@@ -266,11 +266,11 @@ export default function LiveAssistCard({
 
         {/* Compliance Notes */}
         {playbook.complianceNotes && playbook.complianceNotes.length > 0 && (
-          <div className="p-3 bg-gray-50 border-t">
-            <div className="text-xs font-semibold text-gray-600 mb-1">📝 Compliance Notes</div>
+          <div className="p-3 bg-gray-900/50 border-t border-gray-700">
+            <div className="text-xs font-semibold text-gray-400 mb-1">📝 Compliance Notes</div>
             <ul className="space-y-0.5">
               {playbook.complianceNotes.map((note, i) => (
-                <li key={i} className="text-xs text-gray-600">
+                <li key={i} className="text-xs text-gray-400">
                   • {note}
                 </li>
               ))}
@@ -297,15 +297,15 @@ export function LiveAssistCompact({
   }
 
   return (
-    <div className="flex items-center gap-2 px-2 py-1 bg-purple-50 border border-purple-200 rounded-md">
+    <div className="flex items-center gap-2 px-2 py-1 bg-indigo-900/40 border border-indigo-500/50 rounded-md">
       {playbook && (
-        <div className="flex items-center gap-1 text-xs text-purple-700">
+        <div className="flex items-center gap-1 text-xs text-indigo-200">
           <span>{DOMAIN_ICONS[playbook.domain] || "📞"}</span>
           <span className="font-medium truncate max-w-[120px]">{playbook.title}</span>
         </div>
       )}
       {suggestionCount > 0 && (
-        <span className="text-xs bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded">
+        <span className="text-xs bg-indigo-700/50 text-indigo-200 px-1.5 py-0.5 rounded">
           {suggestionCount} tip{suggestionCount !== 1 ? "s" : ""}
         </span>
       )}

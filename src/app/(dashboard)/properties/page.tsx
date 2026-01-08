@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import { HazardRiskCard } from '@/components/features/HazardRiskCard';
 
 // =============================================================================
 // TYPES
@@ -338,8 +339,14 @@ export default function PropertyIntelligencePage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <p className="text-gray-500">No imagery available</p>
+                  <div className="absolute inset-0 flex items-center justify-center bg-amber-50">
+                    <div className="text-center p-4">
+                      <div className="text-4xl mb-2">⚠️</div>
+                      <p className="text-amber-700 font-medium">Nearmap Data Unavailable</p>
+                      <p className="text-xs text-amber-600 mt-1">
+                        Check Nearmap API configuration or coverage for this location
+                      </p>
+                    </div>
                   </div>
                 )}
 
@@ -566,6 +573,15 @@ export default function PropertyIntelligencePage() {
                     />
                   </div>
                 </div>
+              )}
+
+              {/* Environmental Hazard Risk Score */}
+              {lookup && (
+                <HazardRiskCard
+                  address={lookup.formattedAddress}
+                  lat={lookup.lat}
+                  lng={lookup.lng}
+                />
               )}
 
               {/* Nearmap Features */}

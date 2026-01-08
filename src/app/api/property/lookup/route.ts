@@ -151,15 +151,18 @@ async function checkCache(tenantId: string, address: string) {
 
 async function fetchNearmapData(lat: number, lng: number) {
   try {
-    // Try real API first
-    const data = await nearmapClient.getFeatures(lat, lng);
-    if (data) return data;
+    // Check if Nearmap is configured
+    if (!nearmapClient.isConfigured()) {
+      console.log("Nearmap API not configured - no API key found");
+      return null;
+    }
 
-    // Fall back to mock data
-    return getMockNearmapData(lat, lng);
+    // Try real API
+    const data = await nearmapClient.getFeatures(lat, lng);
+    return data; // Returns null if no data available
   } catch (error) {
     console.error("Nearmap fetch error:", error);
-    return getMockNearmapData(lat, lng);
+    return null; // Return null instead of mock data
   }
 }
 

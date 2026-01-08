@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { isIntakeTeamMember, isIntakeRestrictedRoute } from '@/lib/permissions';
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -56,6 +57,16 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';
     return NextResponse.redirect(url);
+  }
+
+  // Check intake team access for restricted routes
+  if (user) {
+    if (isIntakeRestrictedRoute(request.nextUrl.pathname) && !isIntakeTeamMember(user.email)) {
+      // Redirect non-intake users to dashboard
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;

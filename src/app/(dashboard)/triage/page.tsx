@@ -96,9 +96,19 @@ export default function TriagePage() {
   const [statusFilter, setStatusFilter] = useState<string>('pending');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // Mock current user ID (in real app, get from auth)
-  const currentUserId = 'current-user-id';
+  // Fetch current user on mount
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.user?.id) {
+          setCurrentUserId(data.user.id);
+        }
+      })
+      .catch(err => console.error('Failed to fetch current user:', err));
+  }, []);
 
   // =========================================================================
   // Data Fetching
@@ -132,6 +142,10 @@ export default function TriagePage() {
   // =========================================================================
 
   const handleClaim = async (itemId: string) => {
+    if (!currentUserId) {
+      console.error('Cannot claim: user not loaded');
+      return;
+    }
     setActionLoading(itemId);
     try {
       const res = await fetch(`/api/triage/${itemId}`, {
@@ -151,6 +165,10 @@ export default function TriagePage() {
   };
 
   const handleComplete = async (itemId: string, resolution: string) => {
+    if (!currentUserId) {
+      console.error('Cannot complete: user not loaded');
+      return;
+    }
     setActionLoading(itemId);
     try {
       const res = await fetch(`/api/triage/${itemId}`, {

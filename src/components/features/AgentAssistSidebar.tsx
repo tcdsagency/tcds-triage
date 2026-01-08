@@ -19,12 +19,12 @@ interface AgentAssistSidebarProps {
   className?: string;
 }
 
-// Tip type styling - using high contrast colors for readability
+// Tip type styling - using high contrast colors for readability in dark mode
 const TIP_STYLES = {
-  script: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-900", icon: "💬" },
-  tip: { bg: "bg-green-50", border: "border-green-200", text: "text-green-900", icon: "💡" },
-  warning: { bg: "bg-amber-50", border: "border-amber-300", text: "text-amber-900", icon: "⚠️" },
-  checklist: { bg: "bg-slate-50", border: "border-slate-300", text: "text-slate-900", icon: "☑️" },
+  script: { bg: "bg-blue-900/40", border: "border-blue-500/50", text: "text-blue-100", icon: "💬" },
+  tip: { bg: "bg-emerald-900/40", border: "border-emerald-500/50", text: "text-emerald-100", icon: "💡" },
+  warning: { bg: "bg-amber-900/40", border: "border-amber-500/50", text: "text-amber-100", icon: "⚠️" },
+  checklist: { bg: "bg-slate-800/60", border: "border-slate-500/50", text: "text-slate-100", icon: "☑️" },
 };
 
 // Section progress indicator
@@ -36,7 +36,7 @@ function SectionProgress({ total, current }: { total: number; current: number })
           key={i}
           className={cn(
             "w-2 h-2 rounded-full transition-colors",
-            i < current ? "bg-blue-600" : i === current ? "bg-blue-400" : "bg-gray-200"
+            i < current ? "bg-indigo-400" : i === current ? "bg-white" : "bg-indigo-800"
           )}
         />
       ))}
@@ -100,8 +100,8 @@ function TipCard({ tip, fieldCompletion }: { tip: FormGuidanceTip; fieldCompleti
               <span className={cn(
                 "text-xs px-1.5 py-0.5 rounded",
                 completedCount === totalItems
-                  ? "bg-green-200 text-green-800"
-                  : "bg-slate-200 text-slate-600"
+                  ? "bg-emerald-500/30 text-emerald-200"
+                  : "bg-slate-700 text-slate-300"
               )}>
                 {completedCount}/{totalItems}
               </span>
@@ -114,17 +114,17 @@ function TipCard({ tip, fieldCompletion }: { tip: FormGuidanceTip; fieldCompleti
                 return (
                   <li key={i} className="text-xs flex items-center gap-2">
                     {isComplete ? (
-                      <span className="w-3.5 h-3.5 bg-green-500 rounded flex-shrink-0 flex items-center justify-center">
+                      <span className="w-3.5 h-3.5 bg-emerald-500 rounded flex-shrink-0 flex items-center justify-center">
                         <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                         </svg>
                       </span>
                     ) : (
-                      <span className="w-3.5 h-3.5 border-2 border-slate-400 rounded flex-shrink-0 bg-white" />
+                      <span className="w-3.5 h-3.5 border-2 border-slate-500 rounded flex-shrink-0 bg-slate-800" />
                     )}
                     <span className={cn(
                       "font-medium",
-                      isComplete ? "text-green-700 line-through" : "text-slate-800"
+                      isComplete ? "text-emerald-300 line-through" : "text-slate-200"
                     )}>{item}</span>
                   </li>
                 );
@@ -168,21 +168,21 @@ function GuidanceSection({
   fieldCompletion?: FieldCompletionStatus;
 }) {
   return (
-    <div className={cn("border-b last:border-b-0", isActive && "bg-blue-50/50")}>
+    <div className={cn("border-b border-gray-700 last:border-b-0", isActive && "bg-blue-900/30")}>
       <button
         onClick={onToggle}
         className={cn(
-          "w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50 transition-colors",
-          isActive && "bg-blue-50 hover:bg-blue-100"
+          "w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-700/50 transition-colors",
+          isActive && "bg-blue-900/40 hover:bg-blue-900/50"
         )}
       >
         <div className="flex items-center gap-2">
-          {isActive && <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />}
-          <span className={cn("text-sm font-medium", isActive ? "text-blue-800" : "text-gray-700")}>
+          {isActive && <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />}
+          <span className={cn("text-sm font-medium", isActive ? "text-blue-300" : "text-gray-300")}>
             {section.title}
           </span>
         </div>
-        <span className="text-gray-400 text-xs">{isExpanded ? "−" : "+"}</span>
+        <span className="text-gray-500 text-xs">{isExpanded ? "−" : "+"}</span>
       </button>
       {isExpanded && (
         <div className="px-3 pb-3 space-y-2">
@@ -224,8 +224,8 @@ export default function AgentAssistSidebar({
 
   if (guidance.length === 0) {
     return (
-      <div className={cn("w-72 border-l bg-gray-50 p-4", className)}>
-        <div className="text-center text-gray-500">
+      <div className={cn("w-72 border-l border-gray-700 bg-gray-800 p-4", className)}>
+        <div className="text-center text-gray-400">
           <div className="text-3xl mb-2">📋</div>
           <p className="text-sm">No guidance available for this quote type yet.</p>
         </div>
@@ -234,14 +234,14 @@ export default function AgentAssistSidebar({
   }
 
   return (
-    <div className={cn("w-72 border-l bg-white flex flex-col h-full overflow-hidden", className)}>
+    <div className={cn("w-72 border-l border-gray-700 bg-gray-800 flex flex-col h-full overflow-hidden", className)}>
       {/* Header */}
-      <div className="p-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white">
+      <div className="p-3 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-sm">Agent Assist</h3>
           <SectionProgress total={guidance.length} current={currentIndex >= 0 ? currentIndex : 0} />
         </div>
-        <p className="text-xs text-purple-100 mt-1">
+        <p className="text-xs text-indigo-200 mt-1">
           Section {currentIndex + 1} of {guidance.length}
         </p>
       </div>
@@ -261,7 +261,7 @@ export default function AgentAssistSidebar({
       </div>
 
       {/* Footer */}
-      <div className="p-2 border-t bg-gray-50 text-center">
+      <div className="p-2 border-t border-gray-700 bg-gray-900/50 text-center">
         <p className="text-xs text-gray-500">
           Click sections for guidance tips
         </p>

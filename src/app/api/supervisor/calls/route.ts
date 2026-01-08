@@ -76,6 +76,24 @@ export async function GET(request: NextRequest) {
       )
       .orderBy(desc(calls.startedAt));
 
+    // Fetch real-time presence from 3CX/VoIPTools
+    let presenceMap = new Map<string, string>();
+    try {
+      const presenceRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/3cx/presence`);
+      if (presenceRes.ok) {
+        const presenceData = await presenceRes.json();
+        if (presenceData.team) {
+          presenceData.team.forEach((p: any) => {
+            if (p.extension) {
+              presenceMap.set(p.extension, p.status);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.log("[Supervisor] Could not fetch presence data:", e);
+    }
+
     // Calculate agent stats
     const agentStats: AgentStatus[] = agents.map((agent) => {
       const agentCalls = todaysCalls.filter(
@@ -93,8 +111,23 @@ export async function GET(request: NextRequest) {
       // Check if agent is on an active call
       const activeCall = agentCalls.find((c) => !c.endedAt);
 
+      // Get presence status from 3CX/VoIPTools if available, otherwise derive from calls
       let status: AgentStatus["status"] = "available";
-      if (activeCall) {
+      const presenceStatus = agent.extension ? presenceMap.get(agent.extension) : null;
+
+      if (presenceStatus) {
+        // Map 3CX/VoIPTools presence to our status enum
+        if (presenceStatus === "on_call" || presenceStatus === "talking" || presenceStatus === "ringing") {
+          status = "on_call";
+        } else if (presenceStatus === "away" || presenceStatus === "dnd") {
+          status = "away";
+        } else if (presenceStatus === "offline") {
+          status = "offline";
+        } else if (presenceStatus === "available") {
+          status = "available";
+        }
+      } else if (activeCall) {
+        // Fallback to DB call status
         status = "on_call";
       }
 

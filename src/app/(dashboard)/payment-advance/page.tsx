@@ -128,6 +128,23 @@ export default function PaymentAdvancePage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [stats, setStats] = useState({ total: 0, pending: 0, processed: 0, failed: 0 });
 
+  // Fetch current user email on mount to prefill submitterEmail
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.user?.email) {
+          setFormData(prev => ({
+            ...prev,
+            submitterEmail: prev.submitterEmail || data.user.email,
+          }));
+        }
+      })
+      .catch(() => {
+        // Ignore errors - user can still manually enter email
+      });
+  }, []);
+
   // ==========================================================================
   // COMPUTED VALUES
   // ==========================================================================

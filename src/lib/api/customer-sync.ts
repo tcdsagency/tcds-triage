@@ -548,20 +548,55 @@ async function upsertFromAgencyZoom(
   azCustomer: AgencyZoomCustomer,
   dryRun?: boolean
 ): Promise<'created' | 'updated'> {
-  // Build the display name
-  const displayName = azCustomer.businessName 
-    || `${azCustomer.firstName || ''} ${azCustomer.lastName || ''}`.trim()
-    || `Customer ${azCustomer.id}`;
-  
-  // Parse name for individual customers
-  let firstName = azCustomer.firstName || '';
-  let lastName = azCustomer.lastName || '';
-  
+  // AgencyZoom API returns lowercase field names (firstname, lastname)
+  // but TypeScript interface has camelCase - check both
+  const raw = azCustomer as any;
+
+  // Parse name - check both lowercase and camelCase field names
+  let firstName = raw.firstname || raw.firstName || azCustomer.firstName || '';
+  let lastName = raw.lastname || raw.lastName || azCustomer.lastName || '';
+  const businessName = raw.businessname || raw.businessName || azCustomer.businessName || null;
+  const email = raw.email || azCustomer.email || null;
+
+  // Better fallbacks for names - use business name, email domain, or AZ ID
+  if (!firstName && !lastName) {
+    if (businessName) {
+      // Use business name
+      firstName = 'Contact';
+      lastName = businessName;
+    } else if (email) {
+      // Use email local part as name fallback
+      const emailParts = email.split('@');
+      const localPart = emailParts[0] || '';
+      // Try to extract name from email (e.g., john.smith@domain.com)
+      const nameParts = localPart.replace(/[._]/g, ' ').split(' ').filter(Boolean);
+      if (nameParts.length >= 2) {
+        firstName = nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1);
+        lastName = nameParts[1].charAt(0).toUpperCase() + nameParts[1].slice(1);
+      } else if (nameParts.length === 1) {
+        firstName = nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1);
+        lastName = `(AZ-${azCustomer.id})`;
+      }
+    }
+  }
+
   // For businesses, use business name as lastName if no individual name
-  if (azCustomer.customerType === 'business' && azCustomer.businessName && !lastName) {
-    lastName = azCustomer.businessName;
+  if ((raw.customertype || raw.customerType || azCustomer.customerType) === 'business' && businessName && !lastName) {
+    lastName = businessName;
     firstName = firstName || 'Contact';
   }
+
+  // Final check - skip records with no identifiable name (log for debugging)
+  if (!firstName && !lastName) {
+    console.warn(`[AgencyZoom Sync] Customer ${azCustomer.id} has no identifiable name - using ID as fallback`);
+    firstName = 'Customer';
+    lastName = `#${azCustomer.id}`;
+  }
+
+  // Build the display name
+  const displayName = businessName
+    || `${firstName} ${lastName}`.trim()
+    || `Customer ${azCustomer.id}`;
 
   // Check if customer exists by AgencyZoom ID
   const existingByAzId = await db.query.customers.findFirst({
@@ -585,32 +620,50 @@ async function upsertFromAgencyZoom(
   const existing = existingByAzId || existingByHsId;
 
   // Resolve producer and CSR from AgencyZoom IDs to internal user UUIDs
-  const producerId = lookupAgentByAzId(azCustomer.producerId);
-  const csrId = lookupAgentByAzId(azCustomer.csrId);
+  // Check both lowercase and camelCase for producer/csr IDs
+  const azProducerId = raw.producerid || raw.producerId || azCustomer.producerId;
+  const azCsrId = raw.csrid || raw.csrId || azCustomer.csrId;
+  const producerId = lookupAgentByAzId(azProducerId);
+  const csrId = lookupAgentByAzId(azCsrId);
+
+  // Extract other fields with lowercase fallbacks
+  // Note: email already defined above for name fallback
+  const secondaryEmail = raw.secondaryemail || azCustomer.secondaryEmail || null;
+  const phone = raw.phone || azCustomer.phone || raw.phonecell || azCustomer.phoneCell || null;
+  const phoneCell = raw.phonecell || azCustomer.phoneCell || null;
+  const secondaryPhone = raw.secondaryphone || azCustomer.secondaryPhone || null;
+  const address = raw.address || azCustomer.address || null;
+  const city = raw.city || azCustomer.city || '';
+  const state = raw.state || azCustomer.state || '';
+  const zip = raw.zip || azCustomer.zip || '';
+  const dateOfBirth = raw.dateofbirth || raw.dateOfBirth || azCustomer.dateOfBirth || null;
+  const externalId = raw.externalid || raw.externalId || azCustomer.externalId || null;
+  const pipelineStage = raw.pipelinestage || raw.pipelineStage || azCustomer.pipelineStage || null;
+  const leadSource = raw.leadsource || raw.leadSource || azCustomer.leadSource || null;
 
   const customerData = {
     tenantId,
     agencyzoomId: azCustomer.id.toString(),
     // Link to HawkSoft via externalId
-    hawksoftClientCode: azCustomer.externalId || existing?.hawksoftClientCode || null,
-    firstName: firstName || 'Unknown',
-    lastName: lastName || 'Customer',
-    email: azCustomer.email || azCustomer.secondaryEmail,
-    phone: normalizePhone(azCustomer.phone || azCustomer.phoneCell),
-    phoneAlt: normalizePhone(azCustomer.secondaryPhone || (azCustomer.phone && azCustomer.phoneCell ? azCustomer.phoneCell : null)),
-    address: azCustomer.address ? {
-      street: azCustomer.address,
-      city: azCustomer.city || '',
-      state: azCustomer.state || '',
-      zip: azCustomer.zip || '',
+    hawksoftClientCode: externalId || existing?.hawksoftClientCode || null,
+    firstName: firstName || null,
+    lastName: lastName || null,
+    email: email || secondaryEmail,
+    phone: normalizePhone(phone),
+    phoneAlt: normalizePhone(secondaryPhone || (phone && phoneCell ? phoneCell : null)),
+    address: address ? {
+      street: address,
+      city,
+      state,
+      zip,
     } : null,
-    dateOfBirth: azCustomer.dateOfBirth ? new Date(azCustomer.dateOfBirth) : null,
+    dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
     // Agent assignment (resolved from AZ IDs to internal UUIDs)
     producerId: producerId || existing?.producerId || null,
     csrId: csrId || existing?.csrId || null,
     // Pipeline info
-    pipelineStage: azCustomer.pipelineStage,
-    leadSource: azCustomer.leadSource,
+    pipelineStage,
+    leadSource,
     lastSyncedFromAz: new Date(),
     updatedAt: new Date(),
   };
@@ -660,19 +713,28 @@ async function upsertLeadFromAgencyZoom(
     return 'updated';
   }
 
+  // AgencyZoom API returns lowercase field names - check both
+  const raw = azLead as any;
+  const firstName = raw.firstname || raw.firstName || azLead.firstName || '';
+  const lastName = raw.lastname || raw.lastName || azLead.lastName || '';
+  const email = raw.email || azLead.email || null;
+  const phone = raw.phone || azLead.phone || null;
+  const status = raw.status || azLead.status || 'new';
+  const source = raw.source || azLead.source || null;
+
   const leadData = {
     tenantId,
     agencyzoomId: azLead.id.toString(),
     // Leads don't have HawkSoft links
     hawksoftClientCode: null,
-    firstName: azLead.firstName || 'Unknown',
-    lastName: azLead.lastName || 'Lead',
-    email: azLead.email,
-    phone: normalizePhone(azLead.phone),
+    firstName: firstName || 'Unknown',
+    lastName: lastName || 'Lead',
+    email,
+    phone: normalizePhone(phone),
     // Lead-specific fields
     isLead: true,
-    leadStatus: azLead.status,
-    leadSource: azLead.source,
+    leadStatus: status,
+    leadSource: source,
     lastSyncedFromAz: new Date(),
     updatedAt: new Date(),
   };

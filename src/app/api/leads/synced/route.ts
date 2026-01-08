@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { customers, users } from '@/db/schema';
-import { eq, and, desc, ilike, or, sql } from 'drizzle-orm';
+import { eq, and, desc, ilike, or, sql, isNull } from 'drizzle-orm';
 
 /**
- * GET /api/leads/synced - Get leads from AgencyZoom sync
- * These are in the customers table with isLead=true
+ * GET /api/leads/synced - Get UNASSIGNED leads from AgencyZoom sync
+ * These are in the customers table with isLead=true AND producerId is NULL
+ * Leads that have been assigned to an agent in AgencyZoom are filtered out
  */
 export async function GET(request: NextRequest) {
   try {
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
           and(
             eq(customers.tenantId, tenantId),
             eq(customers.isLead, true),
+            isNull(customers.producerId), // Only show unassigned leads
             or(
               ilike(customers.firstName, searchTerm),
               ilike(customers.lastName, searchTerm),
@@ -78,7 +80,8 @@ export async function GET(request: NextRequest) {
         .where(
           and(
             eq(customers.tenantId, tenantId),
-            eq(customers.isLead, true)
+            eq(customers.isLead, true),
+            isNull(customers.producerId) // Only show unassigned leads
           )
         )
         .orderBy(desc(customers.createdAt))
@@ -118,14 +121,15 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    // Get counts by status
+    // Get counts by status (only unassigned leads)
     const allLeads = await db
       .select({ leadStatus: customers.leadStatus })
       .from(customers)
       .where(
         and(
           eq(customers.tenantId, tenantId),
-          eq(customers.isLead, true)
+          eq(customers.isLead, true),
+          isNull(customers.producerId) // Only count unassigned leads
         )
       );
 

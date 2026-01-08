@@ -246,7 +246,15 @@ export default function CustomerProfilePage() {
   };
   
   const handleSMS = (phone: string) => {
-    window.location.href = `sms:${phone.replace(/\D/g, "")}`;
+    // Navigate to in-app messaging with this customer's phone pre-selected
+    const name = profile ? `${profile.firstName} ${profile.lastName}`.trim() : '';
+    const customerId = profile?.id || '';
+    const params = new URLSearchParams({
+      phone: phone.replace(/\D/g, ''),
+      ...(name && { name }),
+      ...(customerId && { customerId }),
+    });
+    router.push(`/messages?${params.toString()}`);
   };
   
   const togglePolicy = (policyId: string) => {
@@ -526,11 +534,19 @@ export default function CustomerProfilePage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {
+                    const name = profile ? `${profile.firstName} ${profile.lastName}`.trim() : '';
+                    const params = new URLSearchParams({ customerId: profile?.id || '' });
+                    if (name) params.set('name', name);
+                    router.push(`/id-cards?${params.toString()}`);
+                  }}>
                     <CreditCard className="w-4 h-4 mr-2" />
                     Send ID Cards
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {
+                    const params = new URLSearchParams({ customerId: profile?.id || '' });
+                    router.push(`/invoice?${params.toString()}`);
+                  }}>
                     <FileText className="w-4 h-4 mr-2" />
                     Send Invoice
                   </DropdownMenuItem>
@@ -539,7 +555,7 @@ export default function CustomerProfilePage() {
                     <FileText className="w-4 h-4 mr-2" />
                     Policy Change
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push('/quote/new')}>
                     <Plus className="w-4 h-4 mr-2" />
                     New Quote
                   </DropdownMenuItem>

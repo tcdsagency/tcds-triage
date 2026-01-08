@@ -421,7 +421,20 @@ function DispositionChart() {
   );
 }
 
-function AgentLeaderboard() {
+function AgentLeaderboard({ agents }: { agents?: { id: string; name: string; calls: number; avgCallTime: string }[] }) {
+  // Use real agent data if available, otherwise show placeholder
+  if (!agents || agents.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+        <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+        <h3 className="font-semibold text-gray-900 mb-2">Agent Performance</h3>
+        <p className="text-gray-500 text-sm">
+          Detailed agent analytics will be available once more call data is collected.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="p-5 border-b border-gray-100">
@@ -438,27 +451,12 @@ function AgentLeaderboard() {
                 Calls
               </th>
               <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                Conversions
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                Conv. Rate
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                Revenue
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
                 Avg Time
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                CSAT
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                Trend
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {AGENT_PERFORMANCE.map((agent, idx) => (
+            {agents.map((agent, idx) => (
               <tr key={agent.id} className="hover:bg-gray-50">
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-3">
@@ -492,44 +490,8 @@ function AgentLeaderboard() {
                 <td className="px-4 py-4 text-center text-sm text-gray-900">
                   {agent.calls}
                 </td>
-                <td className="px-4 py-4 text-center text-sm text-gray-900">
-                  {agent.conversions}
-                </td>
-                <td className="px-4 py-4 text-center">
-                  <span
-                    className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                      agent.conversionRate >= 35
-                        ? "bg-green-100 text-green-700"
-                        : agent.conversionRate >= 30
-                        ? "bg-yellow-100 text-yellow-700"
-                        : "bg-red-100 text-red-700"
-                    }`}
-                  >
-                    {agent.conversionRate}%
-                  </span>
-                </td>
-                <td className="px-4 py-4 text-center text-sm font-medium text-gray-900">
-                  ${agent.revenue.toLocaleString()}
-                </td>
                 <td className="px-4 py-4 text-center text-sm text-gray-600">
                   {agent.avgCallTime}
-                </td>
-                <td className="px-4 py-4 text-center">
-                  <div className="flex items-center justify-center gap-1">
-                    <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                    <span className="text-sm font-medium">
-                      {agent.satisfaction}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-4 text-center">
-                  {agent.trend === "up" ? (
-                    <TrendingUp className="h-5 w-5 text-green-500 mx-auto" />
-                  ) : agent.trend === "down" ? (
-                    <TrendingDown className="h-5 w-5 text-red-500 mx-auto" />
-                  ) : (
-                    <div className="h-0.5 w-5 bg-gray-300 mx-auto" />
-                  )}
                 </td>
               </tr>
             ))}
@@ -539,6 +501,75 @@ function AgentLeaderboard() {
     </div>
   );
 }
+
+// Placeholder components for charts that need real data
+function TrendChartPlaceholder() {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+      <BarChart3 className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+      <h3 className="font-semibold text-gray-900 mb-2">Call Volume Trends</h3>
+      <p className="text-gray-500 text-sm">
+        Historical call data visualization will populate as more calls are logged.
+      </p>
+    </div>
+  );
+}
+
+function DispositionChartPlaceholder() {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+      <PieChart className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+      <h3 className="font-semibold text-gray-900 mb-2">Call Dispositions</h3>
+      <p className="text-gray-500 text-sm">
+        Disposition breakdown will be available once call outcomes are tracked.
+      </p>
+    </div>
+  );
+}
+
+function CarrierPlaceholder() {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+      <FileText className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+      <h3 className="font-semibold text-gray-900 mb-2">Carrier Analytics</h3>
+      <p className="text-gray-500 text-sm">
+        Carrier performance data will be available once policy data is synced from HawkSoft.
+      </p>
+    </div>
+  );
+}
+
+// Keep the old components but mark them as legacy - remove references to dummy data
+function TrendChartLegacy() {
+  // This component previously used HOURLY_DATA - now shows placeholder
+  return <TrendChartPlaceholder />;
+}
+
+function DispositionChartLegacy() {
+  // This component previously used CALL_DISPOSITIONS - now shows placeholder
+  return <DispositionChartPlaceholder />;
+}
+
+function AgentComparisonLegacy() {
+  // This component previously used AGENT_PERFORMANCE - now shows placeholder
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+      <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+      <h3 className="font-semibold text-gray-900 mb-2">Agent Comparison</h3>
+      <p className="text-gray-500 text-sm">
+        Comparative analytics coming soon.
+      </p>
+    </div>
+  );
+}
+
+function CarrierBreakdownLegacy() {
+  // This component previously used CARRIER_STATS - now shows placeholder
+  return <CarrierPlaceholder />;
+}
+
+// Note: Old functions below use hardcoded AGENT_PERFORMANCE and CARRIER_STATS data
+// These are kept for reference but the render now uses placeholders
 
 function CarrierBreakdown() {
   const maxPremium = Math.max(...CARRIER_STATS.map((c) => c.premium));
@@ -903,14 +934,14 @@ export default function ReportsPage() {
 
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <TrendChart />
-            <DispositionChart />
+            <TrendChartPlaceholder />
+            <DispositionChartPlaceholder />
           </div>
 
           {/* Tables Row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
-              <AgentLeaderboard />
+              <AgentLeaderboard agents={stats?.agentPerformance} />
             </div>
             <RecentActivity />
           </div>
@@ -920,34 +951,10 @@ export default function ReportsPage() {
       {/* Agents Tab */}
       {activeTab === "agents" && (
         <div className="space-y-6">
-          <AgentLeaderboard />
+          <AgentLeaderboard agents={stats?.agentPerformance} />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <TrendChart />
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="font-semibold text-gray-900 mb-4">
-                Agent Comparison
-              </h3>
-              <div className="space-y-4">
-                {AGENT_PERFORMANCE.slice(0, 5).map((agent) => (
-                  <div key={agent.id} className="flex items-center gap-4">
-                    <div className="w-24 text-sm font-medium text-gray-700 truncate">
-                      {agent.name.split(" ")[0]}
-                    </div>
-                    <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-indigo-500 rounded-full"
-                        style={{
-                          width: `${(agent.revenue / 55000) * 100}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="w-20 text-sm font-medium text-gray-900 text-right">
-                      ${(agent.revenue / 1000).toFixed(1)}K
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <TrendChartPlaceholder />
+            <AgentComparisonLegacy />
           </div>
         </div>
       )}
@@ -955,72 +962,10 @@ export default function ReportsPage() {
       {/* Carriers Tab */}
       {activeTab === "carriers" && (
         <div className="space-y-6">
-          <CarrierBreakdown />
+          <CarrierPlaceholder />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="font-semibold text-gray-900 mb-4">
-                Premium Distribution
-              </h3>
-              <div className="space-y-3">
-                {CARRIER_STATS.map((carrier) => {
-                  const totalPremium = CARRIER_STATS.reduce(
-                    (sum, c) => sum + c.premium,
-                    0
-                  );
-                  const percentage = (carrier.premium / totalPremium) * 100;
-                  return (
-                    <div key={carrier.carrier}>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-700">{carrier.carrier}</span>
-                        <span className="font-medium text-gray-900">
-                          {percentage.toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-indigo-500 rounded-full"
-                          style={{ width: `${percentage}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="font-semibold text-gray-900 mb-4">
-                Retention by Carrier
-              </h3>
-              <div className="space-y-3">
-                {CARRIER_STATS.sort((a, b) => b.retention - a.retention).map(
-                  (carrier) => (
-                    <div
-                      key={carrier.carrier}
-                      className="flex items-center gap-3"
-                    >
-                      <div className="w-24 text-sm text-gray-700">
-                        {carrier.carrier}
-                      </div>
-                      <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            carrier.retention >= 93
-                              ? "bg-green-500"
-                              : carrier.retention >= 90
-                              ? "bg-yellow-500"
-                              : "bg-red-500"
-                          }`}
-                          style={{ width: `${carrier.retention}%` }}
-                        />
-                      </div>
-                      <div className="w-12 text-sm font-medium text-gray-900 text-right">
-                        {carrier.retention}%
-                      </div>
-                    </div>
-                  )
-                )}
-              </div>
-            </div>
+            <CarrierPlaceholder />
+            <CarrierPlaceholder />
           </div>
         </div>
       )}
@@ -1029,8 +974,8 @@ export default function ReportsPage() {
       {activeTab === "calls" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <TrendChart />
-            <DispositionChart />
+            <TrendChartPlaceholder />
+            <DispositionChartPlaceholder />
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="font-semibold text-gray-900 mb-4">
