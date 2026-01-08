@@ -17,7 +17,11 @@ export async function GET(request: NextRequest) {
 
     const filters = [eq(wrapupDrafts.tenantId, tenantId)];
     if (status && status !== 'all') {
-      filters.push(eq(wrapupDrafts.status, status));
+      // Cast status to the enum type
+      const validStatuses = ['pending_review', 'pending_ai_processing', 'posted', 'completed'] as const;
+      if (validStatuses.includes(status as any)) {
+        filters.push(eq(wrapupDrafts.status, status as typeof validStatuses[number]));
+      }
     }
 
     const drafts = await db

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { customers, policies, vehicles, drivers, users, properties } from '@/db/schema';
-import { eq, or, ilike, sql, and, desc } from 'drizzle-orm';
+import { eq, or, ilike, sql, and, desc, ne, isNull } from 'drizzle-orm';
 import { getPolicyTypeFromLineOfBusiness } from '@/types/customer-profile';
 
 // GET /api/customers/search?q=query&limit=20
@@ -35,6 +35,13 @@ export async function GET(request: NextRequest) {
 
     let results;
 
+    // Base filters: tenant, not archived, not "Unknown Customer" placeholder
+    const baseFilters = and(
+      eq(customers.tenantId, tenantId),
+      or(eq(customers.isArchived, false), isNull(customers.isArchived)),
+      ne(customers.firstName, 'Unknown') // Exclude placeholder records
+    );
+
     if (phone) {
       const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
       results = await db
@@ -42,7 +49,7 @@ export async function GET(request: NextRequest) {
         .from(customers)
         .where(
           and(
-            eq(customers.tenantId, tenantId),
+            baseFilters,
             or(
               sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ${'%' + normalizedPhone}`,
               sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phoneAlt}, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ${'%' + normalizedPhone}`
@@ -58,7 +65,7 @@ export async function GET(request: NextRequest) {
         .from(customers)
         .where(
           and(
-            eq(customers.tenantId, tenantId),
+            baseFilters,
             or(
               ilike(customers.firstName, searchTerm),
               ilike(customers.lastName, searchTerm),
@@ -73,7 +80,7 @@ export async function GET(request: NextRequest) {
       results = await db
         .select(selectFields)
         .from(customers)
-        .where(eq(customers.tenantId, tenantId))
+        .where(baseFilters)
         .orderBy(desc(customers.updatedAt))
         .limit(limit);
     }

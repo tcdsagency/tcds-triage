@@ -147,18 +147,24 @@ export class VMBridgeClient {
 
   /**
    * Start transcription for a call
-   * @param callId The 3CX call ID
+   * VM Bridge API: POST /api/transcription/start
+   * @param callId The 3CX call ID (becomes sessionId in VM Bridge)
    * @param extension The agent's extension
    */
   async startTranscription(
     callId: string,
     extension: string
   ): Promise<VMBridgeSession | null> {
-    return this.apiCall<VMBridgeSession>("/api/sessions/start", {
+    // VM Bridge expects /api/transcription/start with extension and webhook URL
+    return this.apiCall<VMBridgeSession>("/api/transcription/start", {
       method: "POST",
       body: JSON.stringify({
-        callId,
+        sessionId: callId,
         extension,
+        // Webhook URL where VM Bridge will POST transcript segments
+        webhookUrl: process.env.WEBHOOK_CALLBACK_URL ||
+          `https://tcds-triage.vercel.app/api/calls/${callId}/transcript/segment`,
+        // Deepgram config
         deepgramApiKey: this.config.deepgramApiKey,
         options: {
           language: "en-US",
@@ -175,11 +181,13 @@ export class VMBridgeClient {
 
   /**
    * Stop transcription for a session
+   * VM Bridge API: POST /api/transcription/stop
    */
   async stopTranscription(sessionId: string): Promise<boolean> {
     try {
-      await this.apiCall(`/api/sessions/${sessionId}/stop`, {
+      await this.apiCall(`/api/transcription/stop`, {
         method: "POST",
+        body: JSON.stringify({ sessionId }),
       });
       return true;
     } catch {

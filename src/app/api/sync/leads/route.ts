@@ -46,18 +46,19 @@ export async function POST(request: NextRequest) {
     }
     log(`Agent map: ${agentMap.size} users`);
 
-    // Get existing leads (by AZ ID)
+    // Get existing leads (by AZ ID) - include isLead flag to skip converted customers
     const existingLeads = await db.select({
       id: customers.id,
       agencyzoomId: customers.agencyzoomId,
+      isLead: customers.isLead,
     })
       .from(customers)
       .where(eq(customers.tenantId, tenantId));
 
-    const existingMap = new Map<string, string>();
+    const existingMap = new Map<string, { id: string; isLead: boolean | null }>();
     for (const c of existingLeads) {
       if (c.agencyzoomId) {
-        existingMap.set(c.agencyzoomId, c.id);
+        existingMap.set(c.agencyzoomId, { id: c.id, isLead: c.isLead });
       }
     }
     log(`Existing records: ${existingMap.size}`);
@@ -90,6 +91,10 @@ export async function POST(request: NextRequest) {
         const firstName = raw.firstname || raw.firstName || lead.firstName || '';
         const lastName = raw.lastname || raw.lastName || lead.lastName || '';
         
+        // Map AZ producer to our user ID if assigned
+        const azProducerId = raw.producerId || raw.producer_id || raw.assignedTo || null;
+        const producerId = azProducerId ? agentMap.get(azProducerId.toString()) || null : null;
+
         const data = {
           tenantId,
           agencyzoomId: azId,
@@ -102,19 +107,27 @@ export async function POST(request: NextRequest) {
           pipelineStage: raw.pipelinestage || raw.stageName || null,
           isLead: true,
           leadStatus: raw.status || lead.status || 'new',
+          producerId, // Set producer if assigned in AgencyZoom
           lastSyncedFromAz: new Date(),
         };
 
-        const existingId = existingMap.get(azId);
+        const existing = existingMap.get(azId);
 
         try {
-          if (existingId) {
+          if (existing) {
+            // Skip if this record was converted to a customer (no longer a lead)
+            if (existing.isLead === false) {
+              continue; // Don't overwrite customer records
+            }
             await db.update(customers)
               .set(data)
-              .where(eq(customers.id, existingId));
+              .where(eq(customers.id, existing.id));
             totalUpdated++;
           } else {
-            await db.insert(customers).values(data);
+            await db.insert(customers).values({
+              ...data,
+              createdAt: new Date(), // Add createdAt for new leads
+            });
             totalCreated++;
           }
         } catch (err) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Phone,
   PhoneIncoming,
@@ -59,177 +59,11 @@ type DateFilter = "today" | "yesterday" | "7d" | "30d" | "custom";
 type DirectionFilter = "all" | "inbound" | "outbound";
 type StatusFilter = "all" | "completed" | "missed" | "voicemail";
 
-// =============================================================================
-// DATA
-// =============================================================================
-
-const SAMPLE_CALLS: CallRecord[] = [
-  {
-    id: "call-001",
-    direction: "inbound",
-    status: "completed",
-    phoneNumber: "(205) 555-1234",
-    customerName: "John Smith",
-    customerId: "cust-123",
-    agentName: "Sarah Mitchell",
-    agentId: "agent-1",
-    startTime: "2024-01-15T10:23:00",
-    endTime: "2024-01-15T10:31:45",
-    duration: 525,
-    disposition: "Quoted - Auto",
-    sentiment: 0.7,
-    qaScore: 92,
-    hasRecording: true,
-    hasTranscript: true,
-    summary:
-      "Customer called for auto insurance quote. Quoted $142/mo for full coverage. Customer to review and call back.",
-    tags: ["new-quote", "auto"],
-  },
-  {
-    id: "call-002",
-    direction: "outbound",
-    status: "completed",
-    phoneNumber: "(205) 555-5678",
-    customerName: "Mary Johnson",
-    customerId: "cust-456",
-    agentName: "Mike Rodriguez",
-    agentId: "agent-2",
-    startTime: "2024-01-15T09:45:00",
-    endTime: "2024-01-15T09:58:30",
-    duration: 810,
-    disposition: "Bound - Home",
-    sentiment: 0.9,
-    qaScore: 88,
-    hasRecording: true,
-    hasTranscript: true,
-    summary:
-      "Follow-up call on home insurance quote. Customer decided to proceed. Policy bound - HO3 $1,450/yr.",
-    tags: ["follow-up", "home", "bound"],
-  },
-  {
-    id: "call-003",
-    direction: "inbound",
-    status: "missed",
-    phoneNumber: "(205) 555-9012",
-    customerName: "Robert Williams",
-    customerId: "cust-789",
-    agentName: "Unassigned",
-    agentId: "",
-    startTime: "2024-01-15T09:30:00",
-    duration: 0,
-    hasRecording: false,
-    hasTranscript: false,
-    tags: ["callback-needed"],
-  },
-  {
-    id: "call-004",
-    direction: "inbound",
-    status: "completed",
-    phoneNumber: "(205) 555-3456",
-    customerName: "Patricia Brown",
-    customerId: "cust-012",
-    agentName: "Lisa Chen",
-    agentId: "agent-3",
-    startTime: "2024-01-15T11:15:00",
-    endTime: "2024-01-15T11:22:00",
-    duration: 420,
-    disposition: "Service - Billing",
-    sentiment: -0.3,
-    qaScore: 78,
-    hasRecording: true,
-    hasTranscript: true,
-    summary:
-      "Customer called about billing discrepancy. Issue resolved - double charge was refunded. Customer still seemed frustrated.",
-    tags: ["billing", "complaint"],
-  },
-  {
-    id: "call-005",
-    direction: "outbound",
-    status: "voicemail",
-    phoneNumber: "(205) 555-7890",
-    customerName: "James Davis",
-    customerId: "cust-345",
-    agentName: "Sarah Mitchell",
-    agentId: "agent-1",
-    startTime: "2024-01-15T08:30:00",
-    duration: 35,
-    disposition: "Voicemail Left",
-    hasRecording: true,
-    hasTranscript: false,
-    tags: ["renewal", "voicemail"],
-  },
-  {
-    id: "call-006",
-    direction: "inbound",
-    status: "completed",
-    phoneNumber: "(205) 555-2345",
-    customerName: "Jennifer Wilson",
-    customerId: "cust-678",
-    agentName: "John Davis",
-    agentId: "agent-4",
-    startTime: "2024-01-15T14:00:00",
-    endTime: "2024-01-15T14:25:00",
-    duration: 1500,
-    disposition: "Claim Filed",
-    sentiment: 0.2,
-    qaScore: 95,
-    hasRecording: true,
-    hasTranscript: true,
-    summary:
-      "Customer reported auto accident. FNOL completed. Claim #CLM-2024-001234 opened. Adjuster to contact within 24 hours.",
-    tags: ["claim", "auto"],
-  },
-  {
-    id: "call-007",
-    direction: "inbound",
-    status: "transferred",
-    phoneNumber: "(205) 555-8901",
-    customerName: "Michael Lee",
-    customerId: "cust-901",
-    agentName: "Emily Park",
-    agentId: "agent-5",
-    startTime: "2024-01-15T13:30:00",
-    endTime: "2024-01-15T13:35:00",
-    duration: 300,
-    disposition: "Transferred to Commercial",
-    sentiment: 0.5,
-    hasRecording: true,
-    hasTranscript: true,
-    summary:
-      "Customer inquiring about commercial fleet insurance. Transferred to commercial team.",
-    tags: ["commercial", "transferred"],
-  },
-  {
-    id: "call-008",
-    direction: "outbound",
-    status: "completed",
-    phoneNumber: "(205) 555-4567",
-    customerName: "Linda Martinez",
-    customerId: "cust-234",
-    agentName: "Mike Rodriguez",
-    agentId: "agent-2",
-    startTime: "2024-01-15T15:45:00",
-    endTime: "2024-01-15T15:52:00",
-    duration: 420,
-    disposition: "Retention Save",
-    sentiment: 0.8,
-    qaScore: 91,
-    hasRecording: true,
-    hasTranscript: true,
-    summary:
-      "Renewal call - customer was shopping around. Matched competitor rate and added bundling discount. Customer staying.",
-    tags: ["renewal", "retention", "save"],
-  },
-];
-
-const AGENTS = [
-  { id: "all", name: "All Agents" },
-  { id: "agent-1", name: "Sarah Mitchell" },
-  { id: "agent-2", name: "Mike Rodriguez" },
-  { id: "agent-3", name: "Lisa Chen" },
-  { id: "agent-4", name: "John Davis" },
-  { id: "agent-5", name: "Emily Park" },
-];
+// Agents loaded from API
+interface Agent {
+  id: string;
+  name: string;
+}
 
 // =============================================================================
 // HELPERS
@@ -620,12 +454,26 @@ function CallDetailsSidebar({
   );
 }
 
-function StatsBar() {
+function StatsBar({ calls }: { calls: CallRecord[] }) {
+  // Calculate real statistics from calls data
+  const totalCalls = calls.length;
+  const answered = calls.filter(c => c.status === "completed" || c.status === "transferred").length;
+  const missed = calls.filter(c => c.status === "missed" || c.status === "voicemail").length;
+
+  // Calculate average duration for completed calls
+  const completedCalls = calls.filter(c => c.status === "completed" && c.duration > 0);
+  const avgDurationSeconds = completedCalls.length > 0
+    ? Math.round(completedCalls.reduce((sum, c) => sum + c.duration, 0) / completedCalls.length)
+    : 0;
+  const avgMins = Math.floor(avgDurationSeconds / 60);
+  const avgSecs = avgDurationSeconds % 60;
+  const avgDuration = avgDurationSeconds > 0 ? `${avgMins}:${avgSecs.toString().padStart(2, "0")}` : "-";
+
   const stats = [
-    { label: "Total Calls", value: "2,847", trend: "+12%" },
-    { label: "Answered", value: "2,456", trend: "+8%" },
-    { label: "Missed", value: "391", trend: "-5%" },
-    { label: "Avg Duration", value: "4:32", trend: "-15s" },
+    { label: "Total Calls", value: totalCalls.toLocaleString() },
+    { label: "Answered", value: answered.toLocaleString() },
+    { label: "Missed", value: missed.toLocaleString() },
+    { label: "Avg Duration", value: avgDuration },
   ];
 
   return (
@@ -635,19 +483,6 @@ function StatsBar() {
           <p className="text-sm text-gray-500">{stat.label}</p>
           <div className="flex items-baseline gap-2 mt-1">
             <span className="text-2xl font-bold text-gray-900">{stat.value}</span>
-            <span
-              className={`text-xs font-medium ${
-                stat.trend.startsWith("+")
-                  ? stat.label === "Missed"
-                    ? "text-red-600"
-                    : "text-green-600"
-                  : stat.label === "Missed"
-                  ? "text-green-600"
-                  : "text-red-600"
-              }`}
-            >
-              {stat.trend}
-            </span>
           </div>
         </div>
       ))}
@@ -667,9 +502,54 @@ export default function CallsPage() {
   const [agentFilter, setAgentFilter] = useState("all");
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null);
   const [showLiveCall, setShowLiveCall] = useState(false);
+  const [liveCallPhone, setLiveCallPhone] = useState("");
 
-  // Filter calls
-  const filteredCalls = SAMPLE_CALLS.filter((call) => {
+  // Handle new call button - prompt for phone number
+  const handleNewCall = () => {
+    const phone = window.prompt("Enter phone number to call:");
+    if (phone && phone.trim()) {
+      setLiveCallPhone(phone.trim());
+      setShowLiveCall(true);
+    }
+  };
+
+  // Live data from API
+  const [calls, setCalls] = useState<CallRecord[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([{ id: "all", name: "All Agents" }]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch calls from API
+  const fetchCalls = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (directionFilter !== "all") params.set("direction", directionFilter);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (agentFilter !== "all") params.set("agentId", agentFilter);
+      if (dateFilter !== "custom") params.set("dateRange", dateFilter);
+
+      const res = await fetch(`/api/calls?${params}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setCalls(data.calls || []);
+        if (data.agents) {
+          setAgents(data.agents);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch calls:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [directionFilter, statusFilter, agentFilter, dateFilter]);
+
+  useEffect(() => {
+    fetchCalls();
+  }, [fetchCalls]);
+
+  // Filter calls by search (client-side for instant feedback)
+  const filteredCalls = calls.filter((call) => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       if (
@@ -678,15 +558,6 @@ export default function CallsPage() {
       ) {
         return false;
       }
-    }
-    if (directionFilter !== "all" && call.direction !== directionFilter) {
-      return false;
-    }
-    if (statusFilter !== "all" && call.status !== statusFilter) {
-      return false;
-    }
-    if (agentFilter !== "all" && call.agentId !== agentFilter) {
-      return false;
     }
     return true;
   });
@@ -702,7 +573,7 @@ export default function CallsPage() {
           </p>
         </div>
         <button
-          onClick={() => setShowLiveCall(true)}
+          onClick={handleNewCall}
           className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
         >
           <Phone className="h-4 w-4" />
@@ -711,7 +582,7 @@ export default function CallsPage() {
       </div>
 
       {/* Stats */}
-      <StatsBar />
+      <StatsBar calls={calls} />
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -770,7 +641,7 @@ export default function CallsPage() {
             onChange={(e) => setAgentFilter(e.target.value)}
             className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            {AGENTS.map((agent) => (
+            {agents.map((agent) => (
               <option key={agent.id} value={agent.id}>
                 {agent.name}
               </option>
@@ -855,13 +726,16 @@ export default function CallsPage() {
       )}
 
       {/* Live Call Popup */}
-      {showLiveCall && (
+      {showLiveCall && liveCallPhone && (
         <CallPopup
           sessionId={`call-${Date.now()}`}
-          phoneNumber="(205) 555-1234"
+          phoneNumber={liveCallPhone}
           direction="outbound"
           isVisible={showLiveCall}
-          onClose={() => setShowLiveCall(false)}
+          onClose={() => {
+            setShowLiveCall(false);
+            setLiveCallPhone("");
+          }}
           onMinimize={() => {}}
         />
       )}

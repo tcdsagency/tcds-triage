@@ -89,8 +89,19 @@ export default function AfterHoursQueuePage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [callbackNote, setCallbackNote] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  const currentUserId = 'current-user-id'; // Get from auth in real app
+  // Fetch current user on mount
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.user?.id) {
+          setCurrentUserId(data.user.id);
+        }
+      })
+      .catch(err => console.error('Failed to fetch current user:', err));
+  }, []);
 
   // =========================================================================
   // Data Fetching
@@ -144,6 +155,10 @@ export default function AfterHoursQueuePage() {
   // =========================================================================
 
   const handleClaim = async (itemId: string) => {
+    if (!currentUserId) {
+      console.error('Cannot claim: user not loaded');
+      return;
+    }
     setActionLoading(itemId);
     try {
       const res = await fetch(`/api/triage/${itemId}`, {
@@ -162,6 +177,10 @@ export default function AfterHoursQueuePage() {
   };
 
   const handleResolve = async (itemId: string, resolution: string) => {
+    if (!currentUserId) {
+      console.error('Cannot resolve: user not loaded');
+      return;
+    }
     setActionLoading(itemId);
     try {
       const res = await fetch(`/api/triage/${itemId}`, {
@@ -186,6 +205,10 @@ export default function AfterHoursQueuePage() {
   };
 
   const handleDismiss = async (itemId: string) => {
+    if (!currentUserId) {
+      console.error('Cannot dismiss: user not loaded');
+      return;
+    }
     if (!confirm('Dismiss this item without callback?')) return;
 
     setActionLoading(itemId);

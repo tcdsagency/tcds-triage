@@ -386,7 +386,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     success: true,
     message: `${type} sync started for last ${months} months`,
-    jobId: currentJob?.id,
+    jobId: (currentJob as SyncJob | null)?.id,
   });
 }
 

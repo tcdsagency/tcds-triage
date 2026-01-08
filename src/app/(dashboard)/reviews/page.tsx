@@ -181,7 +181,7 @@ export default function ReviewManagerPage() {
   // Reject request
   const handleReject = async (id: string) => {
     try {
-      const res = await fetch(`/api/review-requests/${id}/approve`, { method: "DELETE" });
+      const res = await fetch(`/api/review-requests/${id}/cancel`, { method: "POST" });
       const data = await res.json();
       if (data.success) {
         fetchData();

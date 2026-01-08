@@ -309,9 +309,16 @@ const commercialAutoGuidance: FormSectionGuidance[] = [
 export const QUOTE_FORM_GUIDANCE: Record<QuoteType, FormSectionGuidance[]> = {
   personal_auto: personalAutoGuidance,
   homeowners: homeownersGuidance,
+  mobile_home: [], // TODO: Add mobile home guidance
+  renters: [], // TODO: Add renters guidance
+  umbrella: [], // TODO: Add umbrella guidance
   commercial_auto: commercialAutoGuidance,
   commercial_property: [], // TODO: Add commercial property guidance
-  umbrella: [], // TODO: Add umbrella guidance
+  bop: [], // TODO: Add BOP guidance
+  general_liability: [], // TODO: Add general liability guidance
+  workers_comp: [], // TODO: Add workers comp guidance
+  recreational: [], // TODO: Add recreational guidance
+  flood: [], // TODO: Add flood guidance
   life: [], // TODO: Add life guidance
 };
 

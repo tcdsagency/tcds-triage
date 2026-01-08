@@ -469,6 +469,20 @@ export default function CallPopup({
     }
   }, [showWrapUp, wrapupData, wrapupLoading, fetchWrapupData]);
 
+  // Auto-poll for transcript/processing when in pending state
+  useEffect(() => {
+    // Only poll if modal is open and we're in a pending state
+    if (!showWrapUp) return;
+    if (wrapupStatus !== "pending_transcript" && wrapupStatus !== "pending_processing") return;
+
+    const pollInterval = setInterval(() => {
+      console.log(`[Wrapup] Polling for transcript (status: ${wrapupStatus})...`);
+      fetchWrapupData();
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [showWrapUp, wrapupStatus, fetchWrapupData]);
+
   // =========================================================================
   // Helpers
   // =========================================================================
@@ -964,23 +978,33 @@ export default function CallPopup({
                   </div>
                 ) : wrapupStatus === "pending_transcript" ? (
                   <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span>⏳</span>
-                      <span className="font-medium text-amber-800">Waiting for Transcript</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="animate-pulse">⏳</span>
+                        <span className="font-medium text-amber-800">Waiting for Transcript</span>
+                      </div>
+                      <span className="text-xs text-amber-600 flex items-center gap-1">
+                        <span className="animate-spin">↻</span> Auto-checking...
+                      </span>
                     </div>
                     <p className="text-sm text-amber-700">
-                      The call transcript is still being fetched from the phone system.
-                      You can write notes manually below, or wait a moment and refresh.
+                      The call transcript is being fetched from the phone system.
+                      This will update automatically when ready.
                     </p>
                   </div>
                 ) : wrapupStatus === "pending_processing" ? (
                   <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="animate-pulse">🤖</span>
-                      <span className="font-medium text-blue-800">AI Processing</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="animate-pulse">🤖</span>
+                        <span className="font-medium text-blue-800">AI Processing</span>
+                      </div>
+                      <span className="text-xs text-blue-600 flex items-center gap-1">
+                        <span className="animate-spin">↻</span> Auto-checking...
+                      </span>
                     </div>
                     <p className="text-sm text-blue-700">
-                      The transcript is being processed by AI. The summary will appear shortly.
+                      The transcript is being analyzed by AI. The summary will appear automatically.
                     </p>
                   </div>
                 ) : wrapupData ? (

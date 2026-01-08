@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 // =============================================================================
 // TYPES
@@ -66,11 +68,16 @@ interface HistoryRecord {
 // =============================================================================
 
 export default function IdCardsPage() {
+  const searchParams = useSearchParams();
+  const customerIdParam = searchParams.get('customerId');
+  const customerNameParam = searchParams.get('name');
+
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<SearchResult | null>(null);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   // HawkSoft data state
   const [hawkSoftData, setHawkSoftData] = useState<HawkSoftData | null>(null);
@@ -101,6 +108,33 @@ export default function IdCardsPage() {
   // History state
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Load customer from URL params on mount
+  useEffect(() => {
+    if (customerIdParam && !initialLoadDone) {
+      setInitialLoadDone(true);
+      // Fetch customer details and auto-select
+      fetch(`/api/customers/${customerIdParam}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.customer) {
+            const c = data.customer;
+            const customer: SearchResult = {
+              id: c.id,
+              agencyzoomId: c.agencyzoomId,
+              type: c.isLead ? 'lead' : 'customer',
+              firstName: c.firstName,
+              lastName: c.lastName,
+              email: c.email,
+              phone: c.phone,
+              hawksoftClientNumber: c.hawksoftClientCode,
+            };
+            handleSelectCustomer(customer);
+          }
+        })
+        .catch(err => console.error('Error loading customer from URL:', err));
+    }
+  }, [customerIdParam, initialLoadDone]);
 
   // ==========================================================================
   // SEARCH
@@ -189,12 +223,16 @@ export default function IdCardsPage() {
         // Load history
         loadHistory(customer.id.toString());
       } else {
-        setHawkSoftError(data.error || "Failed to fetch policy data");
+        const errMsg = data.error || "Failed to fetch policy data";
+        setHawkSoftError(errMsg);
         setHawkSoftData(null);
+        toast.error("Failed to load policies", { description: errMsg });
       }
     } catch (error: any) {
-      setHawkSoftError(error.message || "Failed to fetch policy data");
+      const errMsg = error.message || "Failed to fetch policy data";
+      setHawkSoftError(errMsg);
       setHawkSoftData(null);
+      toast.error("Failed to load policies", { description: errMsg });
     } finally {
       setHawkSoftLoading(false);
     }
@@ -255,23 +293,60 @@ export default function IdCardsPage() {
   // ==========================================================================
 
   const handleGenerate = async () => {
-    if (!selectedPolicy || !hawkSoftData || editableVehicles.length === 0) return;
+    // Debug: Check why button might not work
+    if (!selectedPolicy) {
+      toast.error("No policy selected", { description: "Please select a policy first" });
+      return;
+    }
+    if (!hawkSoftData) {
+      toast.error("No HawkSoft data", { description: "Please search for a customer first" });
+      return;
+    }
+    if (editableVehicles.length === 0) {
+      toast.error("No vehicles", { description: "Please add at least one vehicle" });
+      return;
+    }
 
     setGenerating(true);
     setDeliveryError(null);
+    toast.loading("Generating ID card...", { id: "generate" });
+
+    // Build insured name from hawkSoftData or selectedCustomer
+    const insuredName = hawkSoftData?.insuredName ||
+      (selectedCustomer ? `${selectedCustomer.firstName || ''} ${selectedCustomer.lastName || ''}`.trim() : '');
+
+    // Validate required fields before submitting
+    if (!insuredName) {
+      toast.error("Missing insured name", { id: "generate" });
+      setDeliveryError("Insured name is required");
+      setGenerating(false);
+      return;
+    }
+    if (!selectedPolicy?.carrier) {
+      toast.error("Missing carrier", { id: "generate" });
+      setDeliveryError("Carrier is required");
+      setGenerating(false);
+      return;
+    }
+    if (!selectedPolicy?.policyNumber) {
+      toast.error("Missing policy number", { id: "generate" });
+      setDeliveryError("Policy number is required");
+      setGenerating(false);
+      return;
+    }
 
     try {
       const res = await fetch("/api/id-cards/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          insuredName: hawkSoftData.insuredName,
+          insuredName,
           spouseName: spouseName || undefined,
           carrier: selectedPolicy.carrier,
-          carrierNaic: selectedPolicy.naic,
+          carrierNaic: selectedPolicy.naic || '',
           policyNumber: selectedPolicy.policyNumber,
-          effectiveDate: selectedPolicy.effectiveDate,
-          expirationDate: selectedPolicy.expirationDate,
+          effectiveDate: selectedPolicy.effectiveDate || '',
+          expirationDate: selectedPolicy.expirationDate || '',
           vehicles: editableVehicles,
         }),
       });
@@ -281,11 +356,15 @@ export default function IdCardsPage() {
       if (data.success) {
         setPdfBase64(data.pdf);
         setPdfFilename(data.filename);
+        toast.success("ID card generated!", { id: "generate" });
       } else {
         setDeliveryError(data.error || "Failed to generate PDF");
+        toast.error("Generation failed", { id: "generate", description: data.error });
       }
     } catch (error: any) {
-      setDeliveryError(error.message || "Failed to generate PDF");
+      const msg = error.message || "Failed to generate PDF";
+      setDeliveryError(msg);
+      toast.error("Generation failed", { id: "generate", description: msg });
     } finally {
       setGenerating(false);
     }

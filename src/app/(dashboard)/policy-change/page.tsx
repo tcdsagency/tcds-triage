@@ -343,13 +343,67 @@ export default function PolicyChangePage() {
   };
 
   const submitChange = async () => {
+    if (!selectedPolicy || !selectedChangeType) return;
+
     setSubmitting(true);
     try {
-      // TODO: Submit to API
-      await new Promise(r => setTimeout(r, 1000));
-      router.push('/customers');
+      // Get the appropriate form data based on change type
+      let data: Record<string, any> = {};
+      switch (selectedChangeType) {
+        case 'add_vehicle':
+          data = addVehicleData;
+          break;
+        case 'remove_vehicle':
+          data = removeVehicleData;
+          break;
+        case 'replace_vehicle':
+          data = replaceVehicleData;
+          break;
+        case 'add_driver':
+          data = addDriverData;
+          break;
+        case 'remove_driver':
+          data = removeDriverData;
+          break;
+        case 'address_change':
+          data = addressData;
+          break;
+        case 'add_mortgagee':
+        case 'remove_mortgagee':
+          data = mortgageeData;
+          break;
+        case 'coverage_change':
+          data = coverageData;
+          break;
+        case 'cancel_policy':
+          data = cancelData;
+          break;
+      }
+
+      const res = await fetch('/api/policy-change', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          policyId: selectedPolicy.id,
+          policyNumber: selectedPolicy.policyNumber,
+          changeType: selectedChangeType,
+          effectiveDate: data.effectiveDate || new Date().toISOString().split('T')[0],
+          data,
+          notes: data.notes || '',
+        }),
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        alert(`Change request submitted!\n\nID: ${result.changeRequestId}\n${result.summary}\n\nEstimated processing: ${result.estimatedProcessingTime}`);
+        router.push('/customers');
+      } else {
+        alert(`Error: ${result.error || 'Failed to submit change request'}`);
+      }
     } catch (e) {
       console.error(e);
+      alert('Failed to submit change request. Please try again.');
     }
     setSubmitting(false);
   };

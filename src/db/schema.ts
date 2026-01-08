@@ -108,6 +108,13 @@ export const messageTypeEnum = pgEnum('message_type', ['sms', 'mms', 'email']);
 
 export const messageDirectionEnum = pgEnum('message_direction', ['inbound', 'outbound']);
 
+export const wrapupStatusEnum = pgEnum('wrapup_status', [
+  'pending_ai_processing',
+  'pending_review',
+  'completed',
+  'posted',
+]);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MULTI-TENANCY: TENANTS (Agencies)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -327,8 +334,8 @@ export const customers = pgTable('customers', {
   ssn: varchar('ssn_last4', { length: 4 }), // Last 4 only
   
   // Assignment
-  producerId: uuid('producer_id').references(() => users.id),
-  csrId: uuid('csr_id').references(() => users.id),
+  producerId: uuid('producer_id').references(() => users.id, { onDelete: 'set null' }),
+  csrId: uuid('csr_id').references(() => users.id, { onDelete: 'set null' }),
   
   // Pipeline (from AgencyZoom)
   pipelineStage: varchar('pipeline_stage', { length: 50 }),
@@ -692,8 +699,8 @@ export const propertyLookups = pgTable('property_lookups', {
 
   // Lookup Metadata
   lookupSource: varchar('lookup_source', { length: 20 }).default('manual'), // 'manual', 'quote', 'policy'
-  linkedQuoteId: uuid('linked_quote_id'),
-  linkedPropertyId: uuid('linked_property_id'),
+  linkedQuoteId: uuid('linked_quote_id').references(() => quotes.id, { onDelete: 'set null' }),
+  linkedPropertyId: uuid('linked_property_id').references(() => properties.id, { onDelete: 'set null' }),
 
   // Cache TTL
   expiresAt: timestamp('expires_at'),
@@ -715,8 +722,8 @@ export const calls = pgTable('calls', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   
   // Participants
-  customerId: uuid('customer_id').references(() => customers.id),
-  agentId: uuid('agent_id').references(() => users.id),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+  agentId: uuid('agent_id').references(() => users.id, { onDelete: 'set null' }),
   
   // Call Direction - THREE STAGE PATTERN
   // directionLive: Set at call creation from WebSocket - IMMUTABLE, never changed
@@ -827,12 +834,12 @@ export const triageItems = pgTable('triage_items', {
   priority: triagePriorityEnum('priority').default('medium'),
   
   // Related Entities
-  customerId: uuid('customer_id').references(() => customers.id),
-  callId: uuid('call_id').references(() => calls.id),
-  quoteId: uuid('quote_id').references(() => quotes.id),
-  
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+  callId: uuid('call_id').references(() => calls.id, { onDelete: 'set null' }),
+  quoteId: uuid('quote_id').references(() => quotes.id, { onDelete: 'set null' }),
+
   // Assignment
-  assignedToId: uuid('assigned_to_id').references(() => users.id),
+  assignedToId: uuid('assigned_to_id').references(() => users.id, { onDelete: 'set null' }),
   assignedAt: timestamp('assigned_at'),
   
   // Content
@@ -850,7 +857,7 @@ export const triageItems = pgTable('triage_items', {
   
   // Resolution
   resolvedAt: timestamp('resolved_at'),
-  resolvedById: uuid('resolved_by_id').references(() => users.id),
+  resolvedById: uuid('resolved_by_id').references(() => users.id, { onDelete: 'set null' }),
   resolution: text('resolution'),
   
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -860,6 +867,7 @@ export const triageItems = pgTable('triage_items', {
   index('triage_status_idx').on(table.tenantId, table.status),
   index('triage_assigned_idx').on(table.assignedToId),
   index('triage_priority_idx').on(table.tenantId, table.priority, table.status),
+  index('triage_ai_score_idx').on(table.tenantId, table.aiPriorityScore, table.createdAt),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1320,7 +1328,7 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   agentName: text('agent_name'),
   
   // Status workflow
-  status: text('status').notNull().default('pending_ai_processing'),
+  status: wrapupStatusEnum('status').notNull().default('pending_ai_processing'),
   
   // Customer info (extracted)
   customerName: text('customer_name'),

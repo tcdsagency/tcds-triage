@@ -214,13 +214,12 @@ class NearmapClient {
         ]);
       }
 
-      // If we got real data, use it; otherwise generate intelligent estimates based on survey
+      // If we got real data, use it; otherwise return null (no mock data)
       const hasRealData = roofData || buildingData || poolData || solarData;
 
       if (!hasRealData) {
-        // Generate mock data based on survey metadata
-        console.log('Nearmap: Using estimated data based on survey metadata');
-        return getMockNearmapData(lat, lng, latestSurvey.captureDate);
+        console.log('Nearmap: No AI feature data available for this location');
+        return null;
       }
 
       return {

@@ -14,6 +14,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 import { PolicyType } from "@/types/customer-profile";
 
 interface Coverage {
@@ -224,6 +226,9 @@ export default function CustomersPage() {
       }
     } catch (err) {
       console.error("Search failed:", err);
+      toast.error("Search failed", {
+        description: "Unable to search customers. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
@@ -375,7 +380,23 @@ export default function CustomersPage() {
 
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="p-4 text-center text-gray-500">Loading...</div>
+            <div className="p-2 space-y-1">
+              {[1, 2, 3, 4, 5, 6].map(i => (
+                <div key={i} className="p-4 border-b border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="w-10 h-10 rounded-full" />
+                    <div className="flex-1">
+                      <Skeleton className="h-4 w-32 mb-2" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                    <div className="flex -space-x-1">
+                      <Skeleton className="w-6 h-6 rounded-full" />
+                      <Skeleton className="w-6 h-6 rounded-full" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : filteredCustomers.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               <p>Type at least 2 characters to search</p>
@@ -458,7 +479,7 @@ export default function CustomersPage() {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon">
+                  <Button variant="ghost" size="icon" aria-label="Customer actions menu">
                     <MoreVertical className="w-4 h-4" />
                   </Button>
                 </DropdownMenuTrigger>
