@@ -10,57 +10,63 @@ const config = {
 };
 
 // =============================================================================
-// REALTIME WEBSOCKET - Push events to browser clients
+// REALTIME HTTP - Push events to browser clients via HTTP endpoints
 // =============================================================================
-let realtimeWs = null;
-let realtimeReconnecting = false;
+const realtimeBaseUrl = process.env.REALTIME_HTTP_URL || 'http://localhost:5002';
 
-function connectRealtime() {
-  if (realtimeReconnecting) return;
-  realtimeReconnecting = true;
-
+async function pushCallStart(sessionId, phoneNumber, direction, extension) {
   try {
-    console.log('[Realtime] Connecting to', config.realtimeWsUrl);
-    realtimeWs = new WebSocket(config.realtimeWsUrl);
-
-    realtimeWs.on('open', () => {
-      console.log('[Realtime] Connected to realtime server');
-      realtimeReconnecting = false;
-      // Identify as broadcaster
-      realtimeWs.send(JSON.stringify({ type: 'broadcaster', source: '3cx-bridge' }));
+    const body = JSON.stringify({
+      sessionId: String(sessionId),
+      phoneNumber,
+      callerNumber: phoneNumber,
+      direction,
+      agentExtension: extension,
     });
 
-    realtimeWs.on('close', () => {
-      console.log('[Realtime] Disconnected, reconnecting in 5s');
-      realtimeWs = null;
-      realtimeReconnecting = false;
-      setTimeout(connectRealtime, 5000);
+    const url = new URL(`${realtimeBaseUrl}/api/call/start`);
+    const req = require('http').request({
+      hostname: url.hostname,
+      port: url.port || 5002,
+      path: url.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => console.log('[Realtime] call/start response:', res.statusCode));
     });
-
-    realtimeWs.on('error', (e) => {
-      console.error('[Realtime] Error:', e.message);
-      realtimeReconnecting = false;
-    });
+    req.on('error', (e) => console.error('[Realtime] call/start error:', e.message));
+    req.write(body);
+    req.end();
   } catch (e) {
-    console.error('[Realtime] Connect error:', e.message);
-    realtimeReconnecting = false;
-    setTimeout(connectRealtime, 5000);
+    console.error('[Realtime] pushCallStart error:', e.message);
   }
 }
 
-function pushToRealtime(event) {
-  if (realtimeWs && realtimeWs.readyState === WebSocket.OPEN) {
-    try {
-      realtimeWs.send(JSON.stringify(event));
-      console.log('[Realtime] Pushed:', event.type);
-    } catch (e) {
-      console.error('[Realtime] Push error:', e.message);
-    }
+async function pushCallEnd(sessionId) {
+  try {
+    const body = JSON.stringify({ sessionId: String(sessionId), status: 'ended' });
+
+    const url = new URL(`${realtimeBaseUrl}/api/transcription/status`);
+    const req = require('http').request({
+      hostname: url.hostname,
+      port: url.port || 5002,
+      path: url.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => console.log('[Realtime] call/end response:', res.statusCode));
+    });
+    req.on('error', (e) => console.error('[Realtime] call/end error:', e.message));
+    req.write(body);
+    req.end();
+  } catch (e) {
+    console.error('[Realtime] pushCallEnd error:', e.message);
   }
 }
-
-// Connect to realtime server
-connectRealtime();
 
 // =============================================================================
 // RING GROUP HANDLING
@@ -235,15 +241,8 @@ async function processCallEvent(event) {
         callStartTime: new Date().toISOString(),
       });
 
-      // Push to realtime WebSocket for browser popup
-      pushToRealtime({
-        type: 'call_started',
-        sessionId: String(callId),
-        phoneNumber: callerNumber,
-        extension,
-        direction,
-        status: 'ringing',
-      });
+      // Push to realtime server HTTP endpoint for browser popup
+      pushCallStart(callId, callerNumber, direction, extension);
     } else {
       // Session exists - just add this extension to the ring group
       const session = callSessions.get(callId);
@@ -278,15 +277,7 @@ async function processCallEvent(event) {
         answeredAt: new Date().toISOString(),
       });
 
-      // Push to realtime WebSocket for browser popup
-      pushToRealtime({
-        type: 'call_answered',
-        sessionId: String(callId),
-        phoneNumber: callerNumber,
-        extension,
-        direction,
-        status: 'connected',
-      });
+      // Note: call_answered not separately broadcast - call already showing
     }
   }
 
@@ -325,13 +316,8 @@ async function processCallEvent(event) {
           endedAt: new Date().toISOString(),
         });
 
-        // Push to realtime WebSocket for browser popup
-        pushToRealtime({
-          type: 'call_ended',
-          sessionId: String(callId),
-          extension,
-          status: 'completed',
-        });
+        // Push to realtime server HTTP endpoint for browser popup
+        pushCallEnd(callId);
       } else if (!session.ownerExtension && session.extensions.size === 0) {
         // No owner AND no more ringing extensions = missed/abandoned call
         const duration = Math.floor((Date.now() - session.startTime) / 1000);
