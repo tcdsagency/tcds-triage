@@ -273,31 +273,26 @@ export default function PolicyChangePage() {
     if (!searchQuery.trim()) return;
     setSearching(true);
     try {
-      // TODO: Replace with actual API call
-      await new Promise(r => setTimeout(r, 500));
-      // Mock results for now
-      setSearchResults([
-        {
-          id: '1',
-          policyNumber: 'AUTO-2024-001234',
-          type: 'Personal Auto',
-          carrier: 'Progressive',
-          insuredName: searchQuery.includes('@') ? 'John Doe' : searchQuery,
-          effectiveDate: '2024-01-15',
-          expirationDate: '2025-01-15',
-        },
-        {
-          id: '2',
-          policyNumber: 'HOME-2024-005678',
-          type: 'Homeowners',
-          carrier: 'State Auto',
-          insuredName: searchQuery.includes('@') ? 'John Doe' : searchQuery,
-          effectiveDate: '2024-03-01',
-          expirationDate: '2025-03-01',
-        },
-      ]);
+      const res = await fetch(`/api/policy/search?q=${encodeURIComponent(searchQuery)}&limit=20`);
+      const data = await res.json();
+
+      if (data.success && data.results) {
+        setSearchResults(data.results.map((p: any) => ({
+          id: p.id,
+          policyNumber: p.policyNumber,
+          type: p.type || 'Unknown',
+          carrier: p.carrier || 'Unknown Carrier',
+          insuredName: p.insuredName || 'Unknown',
+          effectiveDate: p.effectiveDate,
+          expirationDate: p.expirationDate,
+        })));
+      } else {
+        setSearchResults([]);
+        console.error('Policy search failed:', data.error);
+      }
     } catch (e) {
-      console.error(e);
+      console.error('Policy search error:', e);
+      setSearchResults([]);
     }
     setSearching(false);
   };
@@ -413,38 +408,38 @@ export default function PolicyChangePage() {
   // =============================================================================
 
   const Section = ({ id, icon: Icon, title, subtitle, children }: any) => (
-    <div className="bg-gray-800/30 rounded-xl border border-gray-700/50 overflow-hidden">
-      <button onClick={() => toggleSection(id)} className="w-full flex items-center justify-between p-4 bg-gray-800/50 hover:bg-gray-800 transition-colors">
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+      <button onClick={() => toggleSection(id)} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
-            <Icon className="w-5 h-5 text-amber-500" />
+          <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+            <Icon className="w-5 h-5 text-emerald-600" />
           </div>
           <div className="text-left">
-            <h3 className="font-semibold text-white">{title}</h3>
-            {subtitle && <p className="text-sm text-gray-400">{subtitle}</p>}
+            <h3 className="font-semibold text-gray-900">{title}</h3>
+            {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
           </div>
         </div>
         {expandedSections.has(id) ? <ChevronDown className="w-5 h-5 text-gray-400" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
       </button>
-      {expandedSections.has(id) && <div className="p-6 border-t border-gray-700/50">{children}</div>}
+      {expandedSections.has(id) && <div className="p-6 border-t border-gray-200">{children}</div>}
     </div>
   );
 
   const Field = ({ label, value, onChange, type = "text", placeholder, options, required, className, error, disabled }: any) => (
     <div className={className}>
-      <label className="flex items-center gap-1 text-sm font-medium text-gray-300 mb-1">
-        {label} {required && <span className="text-red-400">*</span>}
+      <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1">
+        {label} {required && <span className="text-red-500">*</span>}
       </label>
       {options ? (
-        <select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={cn("w-full px-3 py-2 bg-gray-900 border rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50", error ? "border-red-500" : "border-gray-700", disabled && "opacity-50")}>
+        <select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={cn("w-full px-3 py-2 bg-white border rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/50", error ? "border-red-500" : "border-gray-300", disabled && "opacity-50")}>
           {options.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       ) : type === "textarea" ? (
-        <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} className={cn("w-full px-3 py-2 bg-gray-900 border rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 min-h-[80px]", error ? "border-red-500" : "border-gray-700")} />
+        <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} className={cn("w-full px-3 py-2 bg-white border rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 min-h-[80px]", error ? "border-red-500" : "border-gray-300")} />
       ) : (
-        <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} className={cn("bg-gray-900 border-gray-700 text-white", error && "border-red-500")} />
+        <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} className={cn("bg-white border-gray-300 text-gray-900", error && "border-red-500")} />
       )}
-      {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </div>
   );
 
@@ -454,34 +449,34 @@ export default function PolicyChangePage() {
 
   if (step === 'search') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
+      <div className="min-h-screen bg-gray-50 p-6">
         <div className="max-w-2xl mx-auto">
-          <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-gray-400 hover:text-white mb-6">
+          <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-gray-600 hover:text-gray-900 mb-6">
             <ArrowLeft className="w-4 h-4 mr-2" />Back
           </Button>
 
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-white mb-2">Policy Change Request</h1>
-            <p className="text-gray-400">Search for the policy you want to modify</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Policy Change Request</h1>
+            <p className="text-gray-500">Search for the policy you want to modify</p>
           </div>
 
-          <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
             <div className="flex gap-3 mb-6">
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by name, policy number, phone, or email..."
-                className="bg-gray-900 border-gray-700 text-white"
+                className="bg-white border-gray-300 text-gray-900"
                 onKeyDown={(e) => e.key === 'Enter' && searchPolicies()}
               />
-              <Button onClick={searchPolicies} disabled={searching} className="bg-amber-600 hover:bg-amber-700">
+              <Button onClick={searchPolicies} disabled={searching} className="bg-emerald-600 hover:bg-emerald-700">
                 {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               </Button>
             </div>
 
             {searchResults.length > 0 && (
               <div className="space-y-3">
-                <p className="text-sm text-gray-400 mb-3">Select a policy:</p>
+                <p className="text-sm text-gray-500 mb-3">Select a policy:</p>
                 {searchResults.map((policy) => (
                   <button
                     key={policy.id}
@@ -489,18 +484,18 @@ export default function PolicyChangePage() {
                       setSelectedPolicy(policy);
                       setStep('select_type');
                     }}
-                    className="w-full p-4 bg-gray-900/50 rounded-lg border border-gray-700 hover:border-amber-500/50 transition-colors text-left"
+                    className="w-full p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-emerald-500 transition-colors text-left"
                   >
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-white">{policy.policyNumber}</span>
+                          <span className="font-semibold text-gray-900">{policy.policyNumber}</span>
                           <Badge variant="secondary" className="text-xs">{policy.type}</Badge>
                         </div>
-                        <p className="text-sm text-gray-400 mt-1">{policy.insuredName} • {policy.carrier}</p>
+                        <p className="text-sm text-gray-600 mt-1">{policy.insuredName} • {policy.carrier}</p>
                         <p className="text-xs text-gray-500 mt-1">Effective: {policy.effectiveDate} - {policy.expirationDate}</p>
                       </div>
-                      <ChevronRight className="w-5 h-5 text-gray-500" />
+                      <ChevronRight className="w-5 h-5 text-gray-400" />
                     </div>
                   </button>
                 ))}
@@ -526,35 +521,35 @@ export default function PolicyChangePage() {
     };
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
+      <div className="min-h-screen bg-gray-50 p-6">
         <div className="max-w-3xl mx-auto">
-          <Button variant="ghost" size="sm" onClick={() => setStep('search')} className="text-gray-400 hover:text-white mb-6">
+          <Button variant="ghost" size="sm" onClick={() => setStep('search')} className="text-gray-600 hover:text-gray-900 mb-6">
             <ArrowLeft className="w-4 h-4 mr-2" />Back
           </Button>
 
           {selectedPolicy && (
-            <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-4 mb-6">
+            <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-white">{selectedPolicy.policyNumber}</span>
+                    <span className="font-semibold text-gray-900">{selectedPolicy.policyNumber}</span>
                     <Badge variant="secondary">{selectedPolicy.type}</Badge>
                   </div>
-                  <p className="text-sm text-gray-400">{selectedPolicy.insuredName} • {selectedPolicy.carrier}</p>
+                  <p className="text-sm text-gray-600">{selectedPolicy.insuredName} • {selectedPolicy.carrier}</p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setStep('search')} className="text-gray-400">
+                <Button variant="ghost" size="sm" onClick={() => setStep('search')} className="text-gray-600">
                   Change
                 </Button>
               </div>
             </div>
           )}
 
-          <h2 className="text-2xl font-bold text-white mb-6">What would you like to change?</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">What would you like to change?</h2>
 
           <div className="space-y-6">
             {/* Vehicle Changes */}
             <div>
-              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
                 <Car className="w-4 h-4" /> Vehicle Changes
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -565,11 +560,11 @@ export default function PolicyChangePage() {
                       setSelectedChangeType(change.id);
                       setStep('form');
                     }}
-                    className="p-4 bg-gray-800/50 rounded-xl border border-gray-700 hover:border-amber-500/50 transition-colors text-left"
+                    className="p-4 bg-white rounded-lg border border-gray-200 hover:border-amber-500 hover:shadow-md transition-all text-left"
                   >
-                    <change.icon className="w-6 h-6 text-amber-500 mb-2" />
-                    <h4 className="font-medium text-white">{change.name}</h4>
-                    <p className="text-xs text-gray-400 mt-1">{change.description}</p>
+                    <change.icon className="w-6 h-6 text-amber-600 mb-2" />
+                    <h4 className="font-medium text-gray-900">{change.name}</h4>
+                    <p className="text-xs text-gray-500 mt-1">{change.description}</p>
                   </button>
                 ))}
               </div>
@@ -577,7 +572,7 @@ export default function PolicyChangePage() {
 
             {/* Driver Changes */}
             <div>
-              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
                 <User className="w-4 h-4" /> Driver Changes
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -588,11 +583,11 @@ export default function PolicyChangePage() {
                       setSelectedChangeType(change.id);
                       setStep('form');
                     }}
-                    className="p-4 bg-gray-800/50 rounded-xl border border-gray-700 hover:border-amber-500/50 transition-colors text-left"
+                    className="p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all text-left"
                   >
-                    <change.icon className="w-6 h-6 text-blue-500 mb-2" />
-                    <h4 className="font-medium text-white">{change.name}</h4>
-                    <p className="text-xs text-gray-400 mt-1">{change.description}</p>
+                    <change.icon className="w-6 h-6 text-blue-600 mb-2" />
+                    <h4 className="font-medium text-gray-900">{change.name}</h4>
+                    <p className="text-xs text-gray-500 mt-1">{change.description}</p>
                   </button>
                 ))}
               </div>
@@ -600,7 +595,7 @@ export default function PolicyChangePage() {
 
             {/* Property Changes */}
             <div>
-              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
                 <Home className="w-4 h-4" /> Property & Address
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -611,11 +606,11 @@ export default function PolicyChangePage() {
                       setSelectedChangeType(change.id);
                       setStep('form');
                     }}
-                    className="p-4 bg-gray-800/50 rounded-xl border border-gray-700 hover:border-emerald-500/50 transition-colors text-left"
+                    className="p-4 bg-white rounded-lg border border-gray-200 hover:border-emerald-500 hover:shadow-md transition-all text-left"
                   >
-                    <change.icon className="w-6 h-6 text-emerald-500 mb-2" />
-                    <h4 className="font-medium text-white">{change.name}</h4>
-                    <p className="text-xs text-gray-400 mt-1">{change.description}</p>
+                    <change.icon className="w-6 h-6 text-emerald-600 mb-2" />
+                    <h4 className="font-medium text-gray-900">{change.name}</h4>
+                    <p className="text-xs text-gray-500 mt-1">{change.description}</p>
                   </button>
                 ))}
               </div>
@@ -623,7 +618,7 @@ export default function PolicyChangePage() {
 
             {/* Coverage Changes */}
             <div>
-              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
                 <Shield className="w-4 h-4" /> Coverage
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -634,11 +629,11 @@ export default function PolicyChangePage() {
                       setSelectedChangeType(change.id);
                       setStep('form');
                     }}
-                    className="p-4 bg-gray-800/50 rounded-xl border border-gray-700 hover:border-purple-500/50 transition-colors text-left"
+                    className="p-4 bg-white rounded-lg border border-gray-200 hover:border-purple-500 hover:shadow-md transition-all text-left"
                   >
-                    <change.icon className="w-6 h-6 text-purple-500 mb-2" />
-                    <h4 className="font-medium text-white">{change.name}</h4>
-                    <p className="text-xs text-gray-400 mt-1">{change.description}</p>
+                    <change.icon className="w-6 h-6 text-purple-600 mb-2" />
+                    <h4 className="font-medium text-gray-900">{change.name}</h4>
+                    <p className="text-xs text-gray-500 mt-1">{change.description}</p>
                   </button>
                 ))}
               </div>
@@ -646,7 +641,7 @@ export default function PolicyChangePage() {
 
             {/* Admin */}
             <div>
-              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
                 <FileText className="w-4 h-4" /> Administrative
               </h3>
               <div className="grid grid-cols-1 gap-3">
@@ -657,11 +652,11 @@ export default function PolicyChangePage() {
                       setSelectedChangeType(change.id);
                       setStep('form');
                     }}
-                    className="p-4 bg-gray-800/50 rounded-xl border border-red-900/30 hover:border-red-500/50 transition-colors text-left"
+                    className="p-4 bg-white rounded-lg border border-red-200 hover:border-red-500 hover:shadow-md transition-all text-left"
                   >
-                    <change.icon className="w-6 h-6 text-red-500 mb-2" />
-                    <h4 className="font-medium text-white">{change.name}</h4>
-                    <p className="text-xs text-gray-400 mt-1">{change.description}</p>
+                    <change.icon className="w-6 h-6 text-red-600 mb-2" />
+                    <h4 className="font-medium text-gray-900">{change.name}</h4>
+                    <p className="text-xs text-gray-500 mt-1">{change.description}</p>
                   </button>
                 ))}
               </div>
@@ -679,23 +674,23 @@ export default function PolicyChangePage() {
   const changeInfo = CHANGE_TYPES.find(c => c.id === selectedChangeType);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-gray-900/95 backdrop-blur border-b border-gray-800 px-6 py-4">
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={() => setStep('select_type')} className="text-gray-400 hover:text-white">
+            <Button variant="ghost" size="sm" onClick={() => setStep('select_type')} className="text-gray-600 hover:text-gray-900">
               <ArrowLeft className="w-4 h-4 mr-2" />Back
             </Button>
             <div className="flex items-center gap-3">
               {changeInfo && (
-                <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                  <changeInfo.icon className="w-5 h-5 text-amber-500" />
+                <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                  <changeInfo.icon className="w-5 h-5 text-emerald-600" />
                 </div>
               )}
               <div>
-                <h1 className="font-semibold text-white">{changeInfo?.name}</h1>
-                <p className="text-sm text-gray-400">{selectedPolicy?.policyNumber}</p>
+                <h1 className="font-semibold text-gray-900">{changeInfo?.name}</h1>
+                <p className="text-sm text-gray-500">{selectedPolicy?.policyNumber}</p>
               </div>
             </div>
           </div>
@@ -713,21 +708,21 @@ export default function PolicyChangePage() {
             <Section id="main" icon={Car} title="New Vehicle Information">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-300 mb-1">VIN <span className="text-red-400">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">VIN <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
                     <Input
                       value={addVehicleData.vin}
                       onChange={(e) => setAddVehicleData(prev => ({ ...prev, vin: e.target.value.toUpperCase() }))}
                       placeholder="1HGCM82633A123456"
                       maxLength={17}
-                      className="bg-gray-900 border-gray-700 text-white font-mono"
+                      className="bg-white border-gray-300 text-gray-900 font-mono"
                     />
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => decodeVin(addVehicleData.vin, 'add')}
                       disabled={addVehicleData.vin.length !== 17 || vinDecoding}
-                      className="border-gray-600"
+                      className="border-gray-300"
                     >
                       {vinDecoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                     </Button>
@@ -741,15 +736,15 @@ export default function PolicyChangePage() {
                 <Field label="Annual Mileage" value={addVehicleData.annualMileage} onChange={(v: string) => setAddVehicleData(prev => ({ ...prev, annualMileage: v }))} placeholder="12000" />
               </div>
               {(addVehicleData.ownership === 'financed' || addVehicleData.ownership === 'leased') && (
-                <div className="mt-6 pt-6 border-t border-gray-700/50">
-                  <h4 className="text-sm font-medium text-gray-300 mb-4">Lienholder Information</h4>
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h4 className="text-sm font-medium text-gray-700 mb-4">Lienholder Information</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Field label="Lienholder Name" value={addVehicleData.lienholderName} onChange={(v: string) => setAddVehicleData(prev => ({ ...prev, lienholderName: v }))} placeholder="Chase Auto Finance" required />
                     <Field label="Lienholder Address" value={addVehicleData.lienholderAddress} onChange={(v: string) => setAddVehicleData(prev => ({ ...prev, lienholderAddress: v }))} placeholder="P.O. Box 12345, City, ST 12345" required />
                   </div>
                 </div>
               )}
-              <div className="mt-6 pt-6 border-t border-gray-700/50">
+              <div className="mt-6 pt-6 border-t border-gray-200">
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Effective Date" value={addVehicleData.effectiveDate} onChange={(v: string) => setAddVehicleData(prev => ({ ...prev, effectiveDate: v }))} type="date" required />
                   <Field label="Coverage" value={addVehicleData.coverageSelection} onChange={(v: string) => setAddVehicleData(prev => ({ ...prev, coverageSelection: v }))} options={[{ value: 'match_existing', label: 'Match Existing Vehicles' }, { value: 'state_minimum', label: 'State Minimum' }, { value: 'custom', label: 'Custom Selection' }]} />
@@ -768,9 +763,9 @@ export default function PolicyChangePage() {
               <Field label="Reason" value={removeVehicleData.removalReason} onChange={(v: string) => setRemoveVehicleData(prev => ({ ...prev, removalReason: v }))} options={REMOVAL_REASONS} required />
               <Field label="New Owner (if sold)" value={removeVehicleData.newOwnerInfo} onChange={(v: string) => setRemoveVehicleData(prev => ({ ...prev, newOwnerInfo: v }))} placeholder="Buyer name/info" />
             </div>
-            <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-200">If this is the only vehicle on the policy, the policy may need to be cancelled or replaced.</p>
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800">If this is the only vehicle on the policy, the policy may need to be cancelled or replaced.</p>
             </div>
           </Section>
         )}
@@ -782,24 +777,24 @@ export default function PolicyChangePage() {
               <div className="mb-6">
                 <Field label="Vehicle Being Replaced" value={replaceVehicleData.oldVehicle} onChange={(v: string) => setReplaceVehicleData(prev => ({ ...prev, oldVehicle: v }))} placeholder="2020 Toyota Camry" required />
               </div>
-              <h4 className="text-sm font-medium text-gray-300 mb-4">New Vehicle Information</h4>
+              <h4 className="text-sm font-medium text-gray-700 mb-4">New Vehicle Information</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-300 mb-1">VIN <span className="text-red-400">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">VIN <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
                     <Input
                       value={replaceVehicleData.newVin}
                       onChange={(e) => setReplaceVehicleData(prev => ({ ...prev, newVin: e.target.value.toUpperCase() }))}
                       placeholder="1HGCM82633A123456"
                       maxLength={17}
-                      className="bg-gray-900 border-gray-700 text-white font-mono"
+                      className="bg-white border-gray-300 text-gray-900 font-mono"
                     />
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => decodeVin(replaceVehicleData.newVin, 'replace')}
                       disabled={replaceVehicleData.newVin.length !== 17 || vinDecoding}
-                      className="border-gray-600"
+                      className="border-gray-300"
                     >
                       {vinDecoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                     </Button>
@@ -828,15 +823,15 @@ export default function PolicyChangePage() {
               <Field label="Relationship" value={addDriverData.relationship} onChange={(v: string) => setAddDriverData(prev => ({ ...prev, relationship: v }))} options={[{ value: '', label: 'Select...' }, { value: 'spouse', label: 'Spouse' }, { value: 'child', label: 'Child' }, { value: 'parent', label: 'Parent' }, { value: 'other', label: 'Other Household Member' }]} required />
               <Field label="Years Licensed" value={addDriverData.yearsLicensed} onChange={(v: string) => setAddDriverData(prev => ({ ...prev, yearsLicensed: v }))} placeholder="5" />
             </div>
-            <div className="mt-6 pt-6 border-t border-gray-700/50">
+            <div className="mt-6 pt-6 border-t border-gray-200">
               <div className="flex items-center gap-3 mb-4">
                 <input
                   type="checkbox"
                   checked={addDriverData.hasViolations}
                   onChange={(e) => setAddDriverData(prev => ({ ...prev, hasViolations: e.target.checked }))}
-                  className="rounded border-gray-600 bg-gray-900"
+                  className="rounded border-gray-300 bg-white text-emerald-600 focus:ring-emerald-500"
                 />
-                <label className="text-sm text-gray-300">Driver has violations or accidents in past 5 years</label>
+                <label className="text-sm text-gray-700">Driver has violations or accidents in past 5 years</label>
               </div>
               {addDriverData.hasViolations && (
                 <Field label="Violation/Accident Details" value={addDriverData.violationDetails} onChange={(v: string) => setAddDriverData(prev => ({ ...prev, violationDetails: v }))} type="textarea" placeholder="List violations, dates, and details..." />
@@ -858,11 +853,11 @@ export default function PolicyChangePage() {
               <Field label="Reason" value={removeDriverData.removalReason} onChange={(v: string) => setRemoveDriverData(prev => ({ ...prev, removalReason: v }))} options={DRIVER_REMOVAL_REASONS} required />
             </div>
             {removeDriverData.removalReason === 'excluded' && (
-              <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm text-amber-200 font-medium">Exclusion Form Required</p>
-                  <p className="text-sm text-amber-200/80">A signed driver exclusion form is required. The excluded driver cannot operate ANY vehicle on this policy.</p>
+                  <p className="text-sm text-amber-800 font-medium">Exclusion Form Required</p>
+                  <p className="text-sm text-amber-700">A signed driver exclusion form is required. The excluded driver cannot operate ANY vehicle on this policy.</p>
                 </div>
               </div>
             )}
@@ -887,9 +882,9 @@ export default function PolicyChangePage() {
                 type="checkbox"
                 checked={addressData.updateAllPolicies}
                 onChange={(e) => setAddressData(prev => ({ ...prev, updateAllPolicies: e.target.checked }))}
-                className="rounded border-gray-600 bg-gray-900"
+                className="rounded border-gray-300 bg-white text-emerald-600 focus:ring-emerald-500"
               />
-              <label className="text-sm text-gray-300">Update all policies with this new address</label>
+              <label className="text-sm text-gray-700">Update all policies with this new address</label>
             </div>
           </Section>
         )}
@@ -935,11 +930,11 @@ export default function PolicyChangePage() {
         {/* CANCEL POLICY FORM */}
         {selectedChangeType === 'cancel_policy' && (
           <Section id="main" icon={XCircle} title="Policy Cancellation">
-            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg mb-6 flex items-start gap-3">
-              <AlertTriangle className="w-6 h-6 text-red-500 shrink-0" />
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg mb-6 flex items-start gap-3">
+              <AlertTriangle className="w-6 h-6 text-red-600 shrink-0" />
               <div>
-                <p className="text-red-200 font-medium">Important: Cancellation Notice</p>
-                <p className="text-sm text-red-200/80 mt-1">
+                <p className="text-red-800 font-medium">Important: Cancellation Notice</p>
+                <p className="text-sm text-red-700 mt-1">
                   Cancelling this policy will end all coverage. Make sure replacement coverage is in place before the cancellation date.
                 </p>
               </div>
@@ -949,15 +944,15 @@ export default function PolicyChangePage() {
               <Field label="Reason" value={cancelData.reason} onChange={(v: string) => setCancelData(prev => ({ ...prev, reason: v }))} options={[{ value: '', label: 'Select reason...' }, ...CANCELLATION_REASONS]} required />
               <Field label="Additional Details" value={cancelData.reasonDetails} onChange={(v: string) => setCancelData(prev => ({ ...prev, reasonDetails: v }))} type="textarea" placeholder="Any additional information..." className="col-span-2" />
             </div>
-            <div className="mt-6 pt-6 border-t border-gray-700/50">
+            <div className="mt-6 pt-6 border-t border-gray-200">
               <div className="flex items-center gap-3 mb-4">
                 <input
                   type="checkbox"
                   checked={cancelData.hasNewCoverage}
                   onChange={(e) => setCancelData(prev => ({ ...prev, hasNewCoverage: e.target.checked }))}
-                  className="rounded border-gray-600 bg-gray-900"
+                  className="rounded border-gray-300 bg-white text-emerald-600 focus:ring-emerald-500"
                 />
-                <label className="text-sm text-gray-300">Customer has obtained new coverage elsewhere</label>
+                <label className="text-sm text-gray-700">Customer has obtained new coverage elsewhere</label>
               </div>
               {cancelData.hasNewCoverage && (
                 <Field label="New Carrier" value={cancelData.newCarrier} onChange={(v: string) => setCancelData(prev => ({ ...prev, newCarrier: v }))} placeholder="New insurance company name" />

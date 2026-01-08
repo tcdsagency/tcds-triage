@@ -2,7 +2,9 @@
 // Handle policy change requests
 
 import { NextRequest, NextResponse } from "next/server";
-import { nanoid } from "nanoid";
+import { db } from '@/db';
+import { policyChangeRequests, policies } from '@/db/schema';
+import { eq, desc, and } from 'drizzle-orm';
 
 // =============================================================================
 // TYPES
@@ -36,6 +38,11 @@ interface PolicyChangeRequest {
 export async function POST(request: NextRequest) {
   try {
     const body: PolicyChangeRequest = await request.json();
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });
+    }
 
     // Validate required fields
     if (!body.policyNumber || !body.changeType || !body.effectiveDate) {
@@ -59,39 +66,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate change request ID
-    const changeRequestId = nanoid(12);
+    // Look up the policy to get customer ID
+    let customerId: string | null = null;
+    if (body.policyId) {
+      const policy = await db
+        .select({ customerId: policies.customerId })
+        .from(policies)
+        .where(eq(policies.id, body.policyId))
+        .limit(1);
 
-    // Build the change request record
-    const changeRequest = {
-      id: changeRequestId,
-      policyNumber: body.policyNumber,
-      changeType: body.changeType,
-      effectiveDate: body.effectiveDate,
-      status: 'pending',
-      requestedAt: new Date().toISOString(),
-      data: body.data,
-      notes: body.notes || null,
-    };
+      if (policy.length > 0) {
+        customerId = policy[0].customerId;
+      }
+    }
 
-    // Log the change request (in production, save to database)
-    console.log('[PolicyChange] New request:', {
-      id: changeRequestId,
+    // Save to database
+    const [changeRequest] = await db
+      .insert(policyChangeRequests)
+      .values({
+        tenantId,
+        policyId: body.policyId || null,
+        policyNumber: body.policyNumber,
+        customerId,
+        changeType: body.changeType,
+        effectiveDate: body.effectiveDate,
+        formData: body.data,
+        notes: body.notes || null,
+        status: 'pending',
+      })
+      .returning({ id: policyChangeRequests.id });
+
+    // Log the change request
+    console.log('[PolicyChange] New request saved:', {
+      id: changeRequest.id,
       type: body.changeType,
       policy: body.policyNumber,
       effective: body.effectiveDate,
     });
-
-    // TODO: Save to database when policy_change_requests table is created
-    // For now, we'll just return success
-    // await db.insert(policyChangeRequests).values(changeRequest);
 
     // Generate summary based on change type
     const summary = generateChangeSummary(body.changeType, body.data);
 
     return NextResponse.json({
       success: true,
-      changeRequestId,
+      changeRequestId: changeRequest.id,
       message: `Policy change request submitted successfully`,
       summary,
       status: 'pending',
@@ -116,20 +134,57 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const changeRequestId = searchParams.get('id');
     const policyNumber = searchParams.get('policyNumber');
+    const customerId = searchParams.get('customerId');
+    const status = searchParams.get('status');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
 
-    if (!changeRequestId && !policyNumber) {
-      return NextResponse.json(
-        { error: "Must provide either id or policyNumber parameter" },
-        { status: 400 }
-      );
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });
     }
 
-    // TODO: Fetch from database
-    // For now, return mock data
+    const conditions = [eq(policyChangeRequests.tenantId, tenantId)];
+
+    if (changeRequestId) {
+      conditions.push(eq(policyChangeRequests.id, changeRequestId));
+    }
+    if (policyNumber) {
+      conditions.push(eq(policyChangeRequests.policyNumber, policyNumber));
+    }
+    if (customerId) {
+      conditions.push(eq(policyChangeRequests.customerId, customerId));
+    }
+    if (status) {
+      conditions.push(eq(policyChangeRequests.status, status as any));
+    }
+
+    const results = await db
+      .select({
+        id: policyChangeRequests.id,
+        policyNumber: policyChangeRequests.policyNumber,
+        changeType: policyChangeRequests.changeType,
+        status: policyChangeRequests.status,
+        effectiveDate: policyChangeRequests.effectiveDate,
+        formData: policyChangeRequests.formData,
+        notes: policyChangeRequests.notes,
+        createdAt: policyChangeRequests.createdAt,
+        processedAt: policyChangeRequests.processedAt,
+      })
+      .from(policyChangeRequests)
+      .where(and(...conditions))
+      .orderBy(desc(policyChangeRequests.createdAt))
+      .limit(limit);
+
+    const enrichedResults = results.map(r => ({
+      ...r,
+      changeTypeLabel: getChangeTypeLabel(r.changeType),
+      summary: generateChangeSummary(r.changeType, r.formData || {}),
+    }));
+
     return NextResponse.json({
       success: true,
-      changeRequests: [],
-      message: "No change requests found",
+      count: enrichedResults.length,
+      changeRequests: enrichedResults,
     });
 
   } catch (error) {
@@ -139,6 +194,23 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+const CHANGE_TYPE_LABELS: Record<string, string> = {
+  add_vehicle: 'Add Vehicle',
+  remove_vehicle: 'Remove Vehicle',
+  replace_vehicle: 'Replace Vehicle',
+  add_driver: 'Add Driver',
+  remove_driver: 'Remove Driver',
+  address_change: 'Address Change',
+  add_mortgagee: 'Add Mortgagee/Lienholder',
+  remove_mortgagee: 'Remove Mortgagee',
+  coverage_change: 'Coverage Change',
+  cancel_policy: 'Cancel Policy',
+};
+
+function getChangeTypeLabel(changeType: string): string {
+  return CHANGE_TYPE_LABELS[changeType] || changeType;
 }
 
 // =============================================================================
