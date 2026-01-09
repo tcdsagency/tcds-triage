@@ -35,6 +35,12 @@ export default function AgencySettingsPage() {
   const [userSaving, setUserSaving] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
 
+  // Password reset state
+  const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [passwordResetting, setPasswordResetting] = useState(false);
+  const [passwordResetSuccess, setPasswordResetSuccess] = useState(false);
+
   const [agency, setAgency] = useState({
     name: "TCDS Insurance Agency",
     phone: "(205) 555-0100",
@@ -753,6 +759,8 @@ export default function AgencySettingsPage() {
       inLeadRotation: true,
     });
     setUserError(null);
+    setNewPassword("");
+    setPasswordResetSuccess(false);
     setShowUserModal(true);
   };
 
@@ -773,6 +781,8 @@ export default function AgencySettingsPage() {
       inLeadRotation: user.inLeadRotation ?? true,
     });
     setUserError(null);
+    setNewPassword("");
+    setPasswordResetSuccess(false);
     setShowUserModal(true);
   };
 
@@ -803,6 +813,37 @@ export default function AgencySettingsPage() {
       setUserError("Failed to save user");
     } finally {
       setUserSaving(false);
+    }
+  };
+
+  // Reset user password (admin only)
+  const handleResetPassword = async () => {
+    if (!editingUser || !newPassword) return;
+
+    setPasswordResetting(true);
+    setUserError(null);
+    setPasswordResetSuccess(false);
+
+    try {
+      const res = await fetch(`/api/users/${editingUser.id}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setPasswordResetSuccess(true);
+        setNewPassword("");
+        setTimeout(() => setPasswordResetSuccess(false), 3000);
+      } else {
+        setUserError(data.error || "Failed to reset password");
+      }
+    } catch (err) {
+      setUserError("Failed to reset password");
+    } finally {
+      setPasswordResetting(false);
     }
   };
 
@@ -2221,6 +2262,64 @@ export default function AgencySettingsPage() {
                     </div>
                   </label>
                 </div>
+
+                {/* Password Reset (only when editing) */}
+                {editingUser && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                      <Key className="w-4 h-4" />
+                      Reset Password
+                    </h4>
+                    <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3 mb-4 text-sm text-amber-700 dark:text-amber-300">
+                      Set a new password for this user. They will need to use this password on their next login.
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="flex-1 relative">
+                        <Input
+                          type={showNewPassword ? "text" : "password"}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Enter new password (min 8 characters)"
+                          className="pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={handleResetPassword}
+                        disabled={passwordResetting || newPassword.length < 8}
+                        variant="outline"
+                        className="whitespace-nowrap"
+                      >
+                        {passwordResetting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Resetting...
+                          </>
+                        ) : passwordResetSuccess ? (
+                          <>
+                            <Check className="w-4 h-4 mr-2 text-green-500" />
+                            Password Reset!
+                          </>
+                        ) : (
+                          <>
+                            <Key className="w-4 h-4 mr-2" />
+                            Reset Password
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    {newPassword.length > 0 && newPassword.length < 8 && (
+                      <p className="text-xs text-amber-600 mt-2">Password must be at least 8 characters</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

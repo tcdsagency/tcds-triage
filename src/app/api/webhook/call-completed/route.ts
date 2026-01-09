@@ -20,6 +20,28 @@ import { trestleIQClient } from "@/lib/api/trestleiq";
 import { getServiceRequestTypeId } from "@/lib/constants/agencyzoom";
 
 // =============================================================================
+// REALTIME SERVER NOTIFICATION
+// =============================================================================
+
+async function notifyRealtimeServer(event: Record<string, unknown>) {
+  const realtimeUrl = process.env.REALTIME_SERVER_URL || "https://realtime.tcdsagency.com";
+
+  try {
+    await fetch(`${realtimeUrl}/api/broadcast`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": process.env.REALTIME_API_KEY || "",
+      },
+      body: JSON.stringify(event),
+    });
+    console.log(`[Call-Completed] Broadcasted ${event.type} to realtime server`);
+  } catch (error) {
+    console.error("[Call-Completed] Failed to notify realtime server:", error);
+  }
+}
+
+// =============================================================================
 // AUTHENTICATION
 // =============================================================================
 
@@ -800,7 +822,7 @@ export async function POST(request: NextRequest) {
               source: "agencyzoom",
               contactType: az.customerType || "customer",
               contactId: az.id.toString(),
-              contactName: az.businessName || `${az.firstName} ${az.lastName}`.trim(),
+              contactName: az.businessName || `${az.firstName || ''} ${az.lastName || ''}`.trim() || 'Unknown',
               contactPhone: az.phone || az.phoneCell,
               contactEmail: az.email,
               confidence: (1 - index * 0.1).toFixed(2),
@@ -819,7 +841,7 @@ export async function POST(request: NextRequest) {
               source: "agencyzoom",
               contactType: "lead",
               contactId: lead.id.toString(),
-              contactName: `${lead.firstName} ${lead.lastName}`.trim(),
+              contactName: `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Unknown',
               contactPhone: lead.phone,
               contactEmail: lead.email,
               confidence: (0.9 - index * 0.1).toFixed(2), // Leads slightly lower confidence
@@ -882,6 +904,16 @@ export async function POST(request: NextRequest) {
 
     const processingTime = Date.now() - startTime;
     console.log(`[Call-Completed] Processed in ${processingTime}ms`);
+
+    // Broadcast call_ended to realtime server for UI popup closure
+    await notifyRealtimeServer({
+      type: "call_ended",
+      sessionId: call.id,
+      externalCallId: call.externalCallId,
+      extension,
+      duration: body.duration,
+      status: call.status,
+    });
 
     return NextResponse.json({
       success: true,
