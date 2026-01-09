@@ -62,10 +62,8 @@ export function QuoteWizardProvider({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
   // Eligibility checking
-  const eligibility = useEligibility({
-    quoteType,
-    formData,
-    enabled: true,
+  const eligibility = useEligibility(quoteType, formData as unknown as Record<string, unknown>, {
+    evaluateOnMount: true,
   });
 
   // Storage key for auto-save
