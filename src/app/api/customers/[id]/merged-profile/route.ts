@@ -170,39 +170,85 @@ async function fetchAgencyZoomContact(contactId: string): Promise<any | null> {
 }
 
 async function fetchAgencyZoomNotes(contactId: string): Promise<any[]> {
-  try {
-    // Use the v1 API with JWT authentication (this is what works for other AZ calls)
-    const client = getAgencyZoomClient();
-    const notes = await client.getCustomerNotes(parseInt(contactId));
-    
-    if (notes && notes.length > 0) {
-      console.log(`Found ${notes.length} notes for AgencyZoom customer ${contactId}`);
-      return notes;
-    }
-    
-    // Also try to get activities (some notes might be stored as activities)
-    try {
-      const activities = await client.getCustomerActivities(parseInt(contactId));
-      if (activities && activities.length > 0) {
-        console.log(`Found ${activities.length} activities for AgencyZoom customer ${contactId}`);
-        // Filter to note-type activities
-        const noteActivities = activities.filter((a: any) => 
-          a.type?.toLowerCase().includes('note') || 
-          a.activityType?.toLowerCase().includes('note')
-        );
-        return [...(notes || []), ...noteActivities];
+  const allNotes: any[] = [];
+  const seenIds = new Set<string>();
+
+  // Helper to add notes without duplicates
+  const addNotes = (notes: any[]) => {
+    for (const note of notes) {
+      const id = String(note.id || note.activityId || note.noteId);
+      if (id && !seenIds.has(id)) {
+        seenIds.add(id);
+        allNotes.push(note);
       }
-    } catch (activityError) {
-      // Activities endpoint may not exist
-      console.warn(`Activities fetch failed for ${contactId}:`, activityError);
     }
-    
-    console.log(`No notes found for AgencyZoom customer ${contactId}`);
-    return [];
-  } catch (error) {
-    console.warn(`Failed to fetch AgencyZoom notes for ${contactId}:`, error);
-    return [];
+  };
+
+  // 1. Try V1 API with JWT authentication
+  try {
+    const client = getAgencyZoomClient();
+    const v1Notes = await client.getCustomerNotes(parseInt(contactId));
+    if (v1Notes && v1Notes.length > 0) {
+      console.log(`[Notes] V1 API returned ${v1Notes.length} notes for customer ${contactId}`);
+      addNotes(v1Notes);
+    }
+  } catch (v1Error) {
+    console.warn(`[Notes] V1 API notes failed for ${contactId}:`, v1Error);
   }
+
+  // 2. Try V1 API activities (notes might be stored as activities)
+  try {
+    const client = getAgencyZoomClient();
+    const activities = await client.getCustomerActivities(parseInt(contactId));
+    if (activities && activities.length > 0) {
+      // Filter to note-type activities
+      const noteActivities = activities.filter((a: any) => {
+        const type = (a.type || a.activityType || '').toLowerCase();
+        return type.includes('note') || type.includes('call') || a.notes;
+      });
+      if (noteActivities.length > 0) {
+        console.log(`[Notes] V1 activities returned ${noteActivities.length} notes for customer ${contactId}`);
+        addNotes(noteActivities);
+      }
+    }
+  } catch (activityError) {
+    console.warn(`[Notes] V1 activities failed for ${contactId}:`, activityError);
+  }
+
+  // 3. Fallback: Try OpenAPI endpoint with Basic auth (this endpoint stores different notes)
+  try {
+    const username = process.env.AGENCYZOOM_API_USERNAME || process.env.AGENCYZOOM_USERNAME;
+    const password = process.env.AGENCYZOOM_API_PASSWORD || process.env.AGENCYZOOM_PASSWORD;
+
+    if (username && password) {
+      const auth = Buffer.from(`${username}:${password}`).toString("base64");
+
+      const response = await fetch(
+        `https://app.agencyzoom.com/openapi/contacts/${contactId}/activities?type=Note&limit=50`,
+        {
+          headers: {
+            Authorization: `Basic ${auth}`,
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const openApiNotes = data.activities || data || [];
+        if (openApiNotes.length > 0) {
+          console.log(`[Notes] OpenAPI returned ${openApiNotes.length} notes for customer ${contactId}`);
+          addNotes(openApiNotes);
+        }
+      }
+    }
+  } catch (openApiError) {
+    console.warn(`[Notes] OpenAPI fallback failed for ${contactId}:`, openApiError);
+  }
+
+  console.log(`[Notes] Total notes found for ${contactId}: ${allNotes.length}`);
+  return allNotes;
 }
 
 // =============================================================================
