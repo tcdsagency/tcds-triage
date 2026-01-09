@@ -340,6 +340,9 @@ export async function GET(request: NextRequest) {
         const azCustomers = azCustomersResult.data;
         for (const c of azCustomers) {
           if (seenIds.has(c.id?.toString())) continue;
+          // Skip customers without valid name
+          const displayName = `${c.firstName || ''} ${c.lastName || ''}`.trim();
+          if (!displayName) continue;
           seenIds.add(c.id?.toString());
           apiResults.push({
             id: `az-customer-${c.id}`,
@@ -349,7 +352,7 @@ export async function GET(request: NextRequest) {
             email: c.email || null,
             phone: c.phone || null,
             isLead: false,
-            displayName: `${c.firstName || ''} ${c.lastName || ''}`.trim(),
+            displayName,
             policyStatus: 'unknown',
             policyCount: 0,
             policyTypes: [],
@@ -364,6 +367,9 @@ export async function GET(request: NextRequest) {
         const leadsResult = await azClient.getLeads({ searchText: searchQuery, limit: 10 });
         for (const l of leadsResult.data) {
           if (seenIds.has(l.id?.toString())) continue;
+          // Skip leads without valid name
+          const displayName = `${l.firstName || ''} ${l.lastName || ''}`.trim();
+          if (!displayName) continue;
           seenIds.add(l.id?.toString());
           apiResults.push({
             id: `az-lead-${l.id}`,
@@ -373,7 +379,7 @@ export async function GET(request: NextRequest) {
             email: l.email || null,
             phone: l.phone || null,
             isLead: true,
-            displayName: `${l.firstName || ''} ${l.lastName || ''}`.trim(),
+            displayName,
             policyStatus: 'lead',
             policyCount: 0,
             policyTypes: [],

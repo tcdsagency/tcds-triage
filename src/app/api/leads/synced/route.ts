@@ -170,6 +170,9 @@ export async function GET(request: NextRequest) {
         const leadsResult = await azClient.getLeads({ searchText: query, limit: 10 });
         for (const l of leadsResult.data) {
           if (seenIds.has(l.id?.toString())) continue;
+          // Skip leads without valid name
+          const displayName = `${l.firstName || ''} ${l.lastName || ''}`.trim();
+          if (!displayName) continue;
           seenIds.add(l.id?.toString());
           apiLeads.push({
             id: `az-lead-${l.id}`,
@@ -186,7 +189,7 @@ export async function GET(request: NextRequest) {
             csrId: null,
             createdAt: l.createdAt || new Date().toISOString(),
             updatedAt: l.createdAt || new Date().toISOString(),
-            displayName: `${l.firstName || ''} ${l.lastName || ''}`.trim(),
+            displayName,
             producer: null,
             csr: null,
             source: 'agencyzoom',
