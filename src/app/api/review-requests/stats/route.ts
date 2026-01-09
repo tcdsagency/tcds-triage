@@ -40,11 +40,12 @@ export async function GET(request: NextRequest) {
     // Get today's stats
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayIso = today.toISOString();
 
     const [todayStats] = await db
       .select({
-        sent: sql<number>`count(*) filter (where status = 'sent' and sent_at >= ${today})`,
-        scheduled: sql<number>`count(*) filter (where status = 'pending' and scheduled_for >= ${today})`,
+        sent: sql<number>`count(*) filter (where status = 'sent' and sent_at >= ${todayIso}::timestamp)`,
+        scheduled: sql<number>`count(*) filter (where status = 'pending' and scheduled_for >= ${todayIso}::timestamp)`,
       })
       .from(reviewRequests)
       .where(eq(reviewRequests.tenantId, tenantId));
@@ -60,10 +61,10 @@ export async function GET(request: NextRequest) {
         },
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching review request stats:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to fetch stats" },
+      { success: false, error: "Failed to fetch stats", details: error.message },
       { status: 500 }
     );
   }
