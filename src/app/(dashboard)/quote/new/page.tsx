@@ -651,7 +651,7 @@ const QUOTE_TYPES: QuoteType[] = [
   { id: "bop", name: "Business Owner's (BOP)", icon: Building2, description: "Property + Liability bundle", available: true },
   { id: "general_liability", name: "General Liability", icon: Shield, description: "Commercial liability", available: true },
   { id: "workers_comp", name: "Workers Comp", icon: User, description: "Employee coverage", available: true },
-  { id: "auto_home_bundle", name: "Auto + Home", icon: Home, description: "Bundle discount", available: false },
+  { id: "auto_home_bundle", name: "Auto + Home", icon: Home, description: "Bundle discount", available: true },
   { id: "recreational", name: "Recreational", icon: Ship, description: "Boat, RV, ATV", available: true },
   { id: "flood", name: "Flood", icon: Droplets, description: "Flood insurance", available: true },
 ];
