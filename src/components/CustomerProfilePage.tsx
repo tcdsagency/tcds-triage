@@ -575,7 +575,7 @@ export default function CustomerProfilePage() {
                     if (profile?.name) params.set('name', profile.name);
                     if (profile?.contact?.email) params.set('email', profile.contact.email);
                     if (profile?.contact?.phone) params.set('phone', profile.contact.phone);
-                    if (profile?.hawksoftId) params.set('hawksoftId', profile.hawksoftId);
+                    if (profile?.hawksoftId) params.set('hawksoftId', String(profile.hawksoftId));
                     router.push(`/invoice?${params.toString()}`);
                   }}>
                     <FileText className="w-4 h-4 mr-2" />
@@ -588,7 +588,7 @@ export default function CustomerProfilePage() {
                     if (profile?.name) params.set('name', profile.name);
                     if (profile?.contact?.email) params.set('email', profile.contact.email);
                     if (profile?.contact?.phone) params.set('phone', profile.contact.phone);
-                    if (profile?.hawksoftId) params.set('hawksoftId', profile.hawksoftId);
+                    if (profile?.hawksoftId) params.set('hawksoftId', String(profile.hawksoftId));
                     // Pass policy info if they only have one active policy
                     const activePolicies = profile?.policies?.filter(p => p.isActive) || [];
                     if (activePolicies.length === 1) {

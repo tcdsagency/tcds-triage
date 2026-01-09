@@ -3,8 +3,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { customers, users } from "@/db/schema";
+import { eq, and } from "drizzle-orm";
 import {
   getHawkSoftClient,
   FULL_CLIENT_INCLUDES,
@@ -534,6 +534,26 @@ function transformAgencyZoomNotes(azNotes: any[]): Note[] {
 }
 
 // =============================================================================
+// HELPER: Look up user avatarUrl by email
+// =============================================================================
+
+async function getUserAvatarByEmail(email: string | undefined): Promise<string | undefined> {
+  if (!email) return undefined;
+  const tenantId = process.env.DEFAULT_TENANT_ID;
+  if (!tenantId) return undefined;
+  try {
+    const [user] = await db
+      .select({ avatarUrl: users.avatarUrl })
+      .from(users)
+      .where(and(eq(users.tenantId, tenantId), eq(users.email, email)))
+      .limit(1);
+    return user?.avatarUrl || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// =============================================================================
 // MAIN HANDLER
 // =============================================================================
 
@@ -639,11 +659,17 @@ export async function GET(
       .sort()[0] || azContact?.createdDate || null;
     
     // Determine preferred name
-    const preferredName = hsClient?.preferredName || 
+    const preferredName = hsClient?.preferredName ||
                           hsClient?.nickname ||
                           azContact?.preferredName ||
                           null;
-    
+
+    // Look up agent avatars from our users table
+    const [producerAvatarUrl, csrAvatarUrl] = await Promise.all([
+      getUserAvatarByEmail(hsClient?.producer?.email),
+      getUserAvatarByEmail(hsClient?.csr?.email),
+    ]);
+
     // Build merged profile
     const profile: MergedProfile = {
       id: customerId,
@@ -703,12 +729,14 @@ export async function GET(
       producer: hsClient?.producer ? {
         id: String(hsClient.producer.id),
         name: hsClient.producer.name,
-        email: hsClient.producer.email
+        email: hsClient.producer.email,
+        avatarUrl: producerAvatarUrl,
       } : undefined,
       csr: hsClient?.csr ? {
         id: String(hsClient.csr.id),
         name: hsClient.csr.name,
-        email: hsClient.csr.email
+        email: hsClient.csr.email,
+        avatarUrl: csrAvatarUrl,
       } : undefined,
       
       // Dates

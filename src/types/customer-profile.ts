@@ -385,12 +385,14 @@ export interface MergedProfile {
     name: string;
     email?: string;
     phone?: string;
+    avatarUrl?: string;
   };
   csr?: {
     id: string;
     name: string;
     email?: string;
     phone?: string;
+    avatarUrl?: string;
   };
   
   // Dates
