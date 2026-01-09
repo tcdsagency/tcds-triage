@@ -129,7 +129,7 @@ interface MMIData {
   lastUpdated: string;
 }
 
-type TabType = 'overview' | 'analysis' | 'history' | 'market';
+type TabType = 'overview' | 'analysis' | 'market';
 
 // =============================================================================
 // COMPONENT
@@ -353,26 +353,53 @@ export default function PropertyIntelligencePage() {
           <>
             {/* Left: Map Panel - 45% width */}
             <div className="w-[45%] border-r flex flex-col">
-              {/* View Toggle */}
-              <div className="p-2 border-b flex gap-2 bg-gray-50">
-                <button
-                  onClick={() => setViewMode('aerial')}
-                  className={cn(
-                    'flex-1 py-2 px-3 rounded font-medium text-sm transition-colors',
-                    viewMode === 'aerial' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border hover:bg-gray-100'
-                  )}
-                >
-                  🛰️ Aerial View
-                </button>
-                <button
-                  onClick={() => setViewMode('street')}
-                  className={cn(
-                    'flex-1 py-2 px-3 rounded font-medium text-sm transition-colors',
-                    viewMode === 'street' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border hover:bg-gray-100'
-                  )}
-                >
-                  🚗 Street View
-                </button>
+              {/* View Toggle + Date Selector */}
+              <div className="p-2 border-b bg-gray-50">
+                <div className="flex gap-2 mb-2">
+                  <button
+                    onClick={() => setViewMode('aerial')}
+                    className={cn(
+                      'flex-1 py-2 px-3 rounded font-medium text-sm transition-colors',
+                      viewMode === 'aerial' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border hover:bg-gray-100'
+                    )}
+                  >
+                    🛰️ Aerial
+                  </button>
+                  <button
+                    onClick={() => setViewMode('street')}
+                    className={cn(
+                      'flex-1 py-2 px-3 rounded font-medium text-sm transition-colors',
+                      viewMode === 'street' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border hover:bg-gray-100'
+                    )}
+                  >
+                    🚗 Street
+                  </button>
+                </div>
+
+                {/* Historical Date Selector - Only show for aerial view */}
+                {viewMode === 'aerial' && lookup.historicalSurveys && lookup.historicalSurveys.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 font-medium">Date:</span>
+                    <select
+                      value={selectedHistoricalDate || ''}
+                      onChange={(e) => setSelectedHistoricalDate(e.target.value || null)}
+                      className="flex-1 text-sm px-2 py-1.5 border rounded bg-white text-gray-900 focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Latest ({lookup.nearmapData?.surveyDate || 'Current'})</option>
+                      {lookup.historicalSurveys.map((survey, i) => (
+                        <option key={i} value={survey.date}>{survey.date}</option>
+                      ))}
+                    </select>
+                    {selectedHistoricalDate && (
+                      <button
+                        onClick={() => setSelectedHistoricalDate(null)}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Map/Street View */}
@@ -382,7 +409,7 @@ export default function PropertyIntelligencePage() {
                     lat={lookup.lat}
                     lng={lookup.lng}
                     zoom={19}
-                    surveyDate={lookup.nearmapData?.surveyDate}
+                    surveyDate={selectedHistoricalDate || lookup.nearmapData?.surveyDate}
                   />
                 ) : (
                   <iframe
@@ -469,7 +496,6 @@ export default function PropertyIntelligencePage() {
                   { id: 'overview', label: 'Overview', icon: '📋' },
                   { id: 'analysis', label: 'AI Analysis', icon: '🤖' },
                   { id: 'market', label: 'Market Data', icon: '📈' },
-                  { id: 'history', label: 'History', icon: '📅' },
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -744,66 +770,6 @@ export default function PropertyIntelligencePage() {
                   </div>
                 )}
 
-                {activeTab === 'history' && (
-                  <div className="space-y-4">
-                    <div className="bg-white border rounded-lg p-4">
-                      <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">Historical Aerial Imagery <SourceBadge source="Nearmap" /></h3>
-                      {lookup.historicalSurveys && lookup.historicalSurveys.length > 0 ? (
-                        <div className="space-y-2">
-                          {lookup.historicalSurveys.map((survey, i) => (
-                            <button
-                              key={i}
-                              onClick={() => setSelectedHistoricalDate(
-                                selectedHistoricalDate === survey.date ? null : survey.date
-                              )}
-                              className={cn(
-                                'w-full flex items-center justify-between p-3 rounded transition-colors',
-                                selectedHistoricalDate === survey.date
-                                  ? 'bg-blue-100 border-blue-300 border'
-                                  : 'bg-gray-50 hover:bg-gray-100'
-                              )}
-                            >
-                              <div className="flex items-center gap-3">
-                                <span className="text-xl">📅</span>
-                                <div className="text-left">
-                                  <div className="font-medium text-gray-900">{survey.date}</div>
-                                  <div className="text-sm text-gray-600">Aerial Survey</div>
-                                </div>
-                              </div>
-                              <span className={cn(
-                                'text-sm font-medium',
-                                selectedHistoricalDate === survey.date ? 'text-blue-600' : 'text-gray-500'
-                              )}>
-                                {selectedHistoricalDate === survey.date ? 'Selected' : 'View'}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-8 text-gray-500">
-                          No historical surveys available
-                        </div>
-                      )}
-                    </div>
-
-                    {lookup.historicalComparison && (
-                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                        <h3 className="font-bold text-amber-900 mb-3">Changes Detected</h3>
-                        <div className="text-sm text-amber-800 mb-2">
-                          Comparing {lookup.historicalComparison.comparedDates.previous} to {lookup.historicalComparison.comparedDates.current}
-                        </div>
-                        <div className="space-y-2">
-                          {lookup.historicalComparison.changes.map((change, i) => (
-                            <div key={i} className="flex items-start gap-2 text-sm">
-                              <span>{change.severity === 'major' ? '🔴' : '🟡'}</span>
-                              <span className="text-amber-900">{change.description}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
 
               {/* Action Buttons */}

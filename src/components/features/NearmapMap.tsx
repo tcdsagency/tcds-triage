@@ -15,14 +15,28 @@ interface NearmapMapProps {
 export function NearmapMap({ lat, lng, zoom = 19, surveyDate, onError }: NearmapMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [currentDate, setCurrentDate] = useState(surveyDate);
+
+  // Get Nearmap API key
+  const nearmapKey = process.env.NEXT_PUBLIC_NEARMAP_API_KEY || process.env.NEARMAP_API_KEY || '';
+
+  // Build tile URL with optional date parameter
+  const getTileUrl = (date?: string) => {
+    let url = `https://api.nearmap.com/tiles/v3/Vert/{z}/{x}/{y}.jpg?apikey=${nearmapKey}`;
+    if (date) {
+      // Nearmap uses 'until' parameter for historical imagery (format: YYYYMMDD)
+      const formattedDate = date.replace(/-/g, '');
+      url += `&until=${formattedDate}`;
+    }
+    return url;
+  };
 
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
 
-    // Get Nearmap API keys
-    const nearmapKey = process.env.NEXT_PUBLIC_NEARMAP_API_KEY || process.env.NEARMAP_API_KEY || '';
     const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
     // Initialize map
@@ -35,17 +49,15 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, onError }: Nearmap
 
     mapInstance.current = map;
 
-    // Add Nearmap WMS layer if API key available
+    // Add Nearmap tile layer if API key available
     if (nearmapKey) {
-      const nearmapLayer = L.tileLayer(
-        `https://api.nearmap.com/tiles/v3/Vert/{z}/{x}/{y}.jpg?apikey=${nearmapKey}`,
-        {
-          maxZoom: 21,
-          minZoom: 10,
-          attribution: '&copy; <a href="https://nearmap.com">Nearmap</a>',
-        }
-      );
+      const nearmapLayer = L.tileLayer(getTileUrl(surveyDate), {
+        maxZoom: 21,
+        minZoom: 10,
+        attribution: '&copy; <a href="https://nearmap.com">Nearmap</a>',
+      });
 
+      tileLayerRef.current = nearmapLayer;
       nearmapLayer.addTo(map);
       nearmapLayer.on('tileerror', () => {
         setHasError(true);
@@ -67,7 +79,7 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, onError }: Nearmap
       googleLayer.addTo(map);
       setIsLoaded(true);
     } else {
-      // Fallback to OpenStreetMap satellite
+      // Fallback to ESRI satellite
       const osmLayer = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         {
@@ -103,8 +115,31 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, onError }: Nearmap
     return () => {
       map.remove();
       mapInstance.current = null;
+      tileLayerRef.current = null;
     };
   }, [lat, lng, zoom, onError]);
+
+  // Update tile layer when surveyDate changes (for historical imagery)
+  useEffect(() => {
+    if (mapInstance.current && tileLayerRef.current && nearmapKey && surveyDate !== currentDate) {
+      setIsLoaded(false);
+      setCurrentDate(surveyDate);
+
+      // Remove old layer
+      mapInstance.current.removeLayer(tileLayerRef.current);
+
+      // Add new layer with updated date
+      const newLayer = L.tileLayer(getTileUrl(surveyDate), {
+        maxZoom: 21,
+        minZoom: 10,
+        attribution: '&copy; <a href="https://nearmap.com">Nearmap</a>',
+      });
+
+      tileLayerRef.current = newLayer;
+      newLayer.addTo(mapInstance.current);
+      newLayer.on('load', () => setIsLoaded(true));
+    }
+  }, [surveyDate, currentDate, nearmapKey]);
 
   // Update map center when coordinates change
   useEffect(() => {
