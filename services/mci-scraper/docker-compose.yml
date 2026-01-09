@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  mci-scraper:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - API_KEY=${MCI_SCRAPER_API_KEY:-change-me-in-production}
+      - TWO_CAPTCHA_API_KEY=${TWO_CAPTCHA_API_KEY}
+      - BROWSER_POOL_SIZE=${BROWSER_POOL_SIZE:-3}
+      - BROWSER_HEADLESS=${BROWSER_HEADLESS:-true}
+      - PAGE_TIMEOUT_SECONDS=${PAGE_TIMEOUT_SECONDS:-60}
+      - CAPTCHA_TIMEOUT_SECONDS=${CAPTCHA_TIMEOUT_SECONDS:-120}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # For development: mount code for hot reload
+    # volumes:
+    #   - ./app:/app/app

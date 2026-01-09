@@ -67,6 +67,7 @@ const toolsNav = [
   { name: 'Invoice', href: '/invoice', icon: Receipt },
   { name: 'Reviews', href: '/reviews', icon: Star },
   { name: 'Risk Monitor', href: '/risk-monitor', icon: ShieldAlert },
+  { name: 'Mortgagee Payments', href: '/mortgagee-payments', icon: CreditCard },
   // { name: 'Reports', href: '/reports', icon: BarChart3 }, // Temporarily disabled
 ];
 
