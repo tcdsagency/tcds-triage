@@ -10,6 +10,11 @@ import { MergedProfile, Policy, CoverageGap, CLIENT_LEVEL_CONFIG } from "@/types
 
 interface CustomerOverviewRequest {
   profile: MergedProfile;
+  recentNotes?: Array<{
+    content: string;
+    createdAt?: string;
+    createdBy?: string;
+  }>;
 }
 
 interface CustomerOverviewResponse {
@@ -450,10 +455,22 @@ function generatePolicySnapshots(policies: Policy[]): PolicySnapshot[] {
 // GENERATE AI SUMMARY (with OpenAI or fallback)
 // =============================================================================
 
-async function generateAISummary(profile: MergedProfile): Promise<string> {
+async function generateAISummary(
+  profile: MergedProfile,
+  recentNotes?: Array<{ content: string; createdAt?: string; createdBy?: string }>
+): Promise<string> {
   // If OpenAI is configured, use it
   if (process.env.OPENAI_API_KEY) {
     try {
+      // Format recent notes for context (last 5, truncated to 150 chars each)
+      const notes = recentNotes || profile.notes || [];
+      const formattedNotes = notes.length > 0
+        ? notes
+            .slice(0, 5)
+            .map((n) => `[${n.createdBy || "Agent"}]: ${(n.content || "").substring(0, 150)}`)
+            .join("\n")
+        : "No recent notes";
+
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -465,7 +482,7 @@ async function generateAISummary(profile: MergedProfile): Promise<string> {
           messages: [
             {
               role: "system",
-              content: "You are an insurance agency assistant. Generate a brief, professional summary of a customer profile for an agent to quickly understand who this customer is. Be concise - 2-3 sentences max. Focus on key facts that help the agent provide personalized service."
+              content: "You are an insurance agency assistant. Generate a brief, professional summary of a customer profile for an agent to quickly understand who this customer is. Be concise - 2-3 sentences max. Focus on key facts that help the agent provide personalized service. Consider recent notes to understand the customer's recent interactions."
             },
             {
               role: "user",
@@ -479,6 +496,9 @@ Policy types: ${[...new Set(profile.policies.filter(p => p.status === "active").
 Household members: ${profile.household.length}
 ${profile.producer ? `Producer: ${profile.producer.name}` : ""}
 
+Recent Notes:
+${formattedNotes}
+
 Generate a brief summary for the agent.`
             }
           ],
@@ -486,7 +506,7 @@ Generate a brief summary for the agent.`
           temperature: 0.7
         })
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         return data.choices[0]?.message?.content || generateFallbackSummary(profile);
@@ -495,7 +515,7 @@ Generate a brief summary for the agent.`
       console.error("OpenAI summary generation error:", error);
     }
   }
-  
+
   // Fallback to template-based summary
   return generateFallbackSummary(profile);
 }
@@ -610,18 +630,18 @@ function generateAgentTips(profile: MergedProfile, gaps: CoverageGap[], opportun
 export async function POST(request: NextRequest) {
   try {
     const body: CustomerOverviewRequest = await request.json();
-    const { profile } = body;
-    
+    const { profile, recentNotes } = body;
+
     if (!profile) {
       return NextResponse.json({
         success: false,
         error: "Profile data is required"
       }, { status: 400 });
     }
-    
-    // Generate all components
+
+    // Generate all components (pass notes to AI summary)
     const [summary, coverageGaps, crossSellOpportunities, riskFlags, policySnapshots] = await Promise.all([
-      generateAISummary(profile),
+      generateAISummary(profile, recentNotes),
       Promise.resolve(detectCoverageGaps(profile)),
       Promise.resolve(detectCrossSellOpportunities(profile)),
       Promise.resolve(detectRiskFlags(profile)),

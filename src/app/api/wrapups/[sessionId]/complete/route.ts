@@ -68,28 +68,54 @@ function formatCallNote(
     summary: string | null;
     aiCleanedSummary: string | null;
     aiExtraction: unknown;
+    agentName?: string | null;
   },
   noteContent?: string
 ): string {
-  const extraction = wrapup.aiExtraction as { actionItems?: string[] } | null;
+  const extraction = wrapup.aiExtraction as {
+    actionItems?: string[];
+    policyNumbers?: string[];
+  } | null;
   const actionItems = extraction?.actionItems || [];
+  const policyNumbers = extraction?.policyNumbers || [];
+
+  // Format timestamp in Central Time
+  const timestamp = new Date().toLocaleString("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+    timeZone: "America/Chicago",
+  });
+
+  const summaryText = noteContent || wrapup.aiCleanedSummary || wrapup.summary ||
+    `${wrapup.customerName || "Customer"} called regarding policy inquiry.`;
 
   const lines = [
-    `📞 ${wrapup.direction || "Call"} - ${new Date().toLocaleDateString()}`,
-    "",
-    noteContent || wrapup.aiCleanedSummary || wrapup.summary || "No summary available",
-    "",
+    "Call Note:",
+    summaryText,
   ];
 
+  // Add action items if present
   if (actionItems.length > 0) {
+    lines.push("");
     lines.push("Action Items:");
     actionItems.forEach((item) => lines.push(`• ${item}`));
-    lines.push("");
   }
 
-  if (wrapup.requestType) {
-    lines.push(`Request Type: ${wrapup.requestType}`);
-  }
+  // Add policies referenced
+  const policySection = policyNumbers.length > 0
+    ? policyNumbers.join(", ")
+    : "None mentioned";
+  lines.push("");
+  lines.push(`Policies Referenced: ${policySection}`);
+
+  // Add agent info
+  lines.push(`Handled by: ${wrapup.agentName || "Agent"}`);
+  lines.push(`Date/Time: ${timestamp}`);
 
   return lines.join("\n");
 }
