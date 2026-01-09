@@ -32,6 +32,7 @@ interface NearmapData {
   vegetation: { treeCount: number; coveragePercent: number; proximityToStructure: string };
   hazards: { trampoline: boolean; debris: boolean; construction: boolean };
   tileUrl: string;
+  staticImageUrl?: string;
 }
 
 interface RPRData {
@@ -328,22 +329,41 @@ export default function PropertyIntelligencePage() {
             <div className="w-1/2 border-r flex flex-col overflow-hidden">
               {/* Aerial Map */}
               <div className="flex-1 bg-gray-200 relative">
-                {lookup.nearmapData?.tileUrl ? (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
-                    <div className="text-center text-white">
-                      <div className="text-4xl mb-2">🛰️</div>
-                      <p className="text-sm">Aerial Imagery</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Survey: {lookup.nearmapData.surveyDate}
-                      </p>
+                {lookup.nearmapData?.staticImageUrl ? (
+                  <div className="absolute inset-0">
+                    {/* Nearmap Static Map Image */}
+                    <img
+                      src={lookup.nearmapData.staticImageUrl}
+                      alt="Aerial view"
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Fallback to placeholder on error
+                        e.currentTarget.style.display = 'none';
+                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (fallback) fallback.classList.remove('hidden');
+                      }}
+                    />
+                    {/* Fallback placeholder (hidden by default) */}
+                    <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-700">
+                      <div className="text-center text-white">
+                        <div className="text-4xl mb-2">🛰️</div>
+                        <p className="text-sm font-medium">Aerial Imagery</p>
+                        <p className="text-xs text-gray-300 mt-1">
+                          Survey: {lookup.nearmapData.surveyDate}
+                        </p>
+                      </div>
+                    </div>
+                    {/* Survey date overlay */}
+                    <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                      Survey: {lookup.nearmapData.surveyDate}
                     </div>
                   </div>
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center bg-amber-50">
                     <div className="text-center p-4">
                       <div className="text-4xl mb-2">⚠️</div>
-                      <p className="text-amber-700 font-medium">Nearmap Data Unavailable</p>
-                      <p className="text-xs text-amber-600 mt-1">
+                      <p className="text-amber-800 font-medium">Nearmap Data Unavailable</p>
+                      <p className="text-xs text-amber-700 mt-1">
                         Check Nearmap API configuration or coverage for this location
                       </p>
                     </div>
@@ -368,13 +388,29 @@ export default function PropertyIntelligencePage() {
               </div>
 
               {/* Street View */}
-              <div className="h-48 bg-gray-300 border-t relative">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="text-3xl mb-1">🚗</div>
-                    <p className="text-sm text-gray-600">Street View</p>
+              <div className="h-48 bg-gray-100 border-t relative">
+                {lookup.lat && lookup.lng ? (
+                  <a
+                    href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lookup.lat},${lookup.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300 transition-colors group"
+                  >
+                    <div className="text-center">
+                      <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">🚗</div>
+                      <p className="text-sm text-gray-800 font-medium">View Street View</p>
+                      <p className="text-xs text-gray-600 mt-1">Click to open in Google Maps</p>
+                    </div>
+                  </a>
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
+                    <div className="text-center">
+                      <div className="text-3xl mb-1">🚗</div>
+                      <p className="text-sm text-gray-700 font-medium">Street View</p>
+                      <p className="text-xs text-gray-500">No location available</p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Oblique Views */}
