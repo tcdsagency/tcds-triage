@@ -93,7 +93,11 @@ export async function POST(request: NextRequest) {
 
       if (localContact) {
         contactId = localContact.agencyzoomId || localContact.id;
-        contactName = `${localContact.firstName} ${localContact.lastName}`.trim();
+        // Only set name if we have actual name data (not undefined/null)
+        const firstName = localContact.firstName || '';
+        const lastName = localContact.lastName || '';
+        const fullName = `${firstName} ${lastName}`.trim();
+        contactName = fullName || null; // Don't set "undefined undefined" or empty string
         contactType = localContact.isLead ? "lead" : "customer";
         console.log("[Webhook] Found local contact:", contactName, contactType);
       }
@@ -110,7 +114,10 @@ export async function POST(request: NextRequest) {
         const customer = await azClient.findCustomerByPhone(payload.From);
         if (customer) {
           contactId = customer.id.toString();
-          contactName = `${customer.firstName} ${customer.lastName}`.trim();
+          const firstName = customer.firstName || '';
+          const lastName = customer.lastName || '';
+          const fullName = `${firstName} ${lastName}`.trim();
+          contactName = fullName || null;
           contactType = "customer";
           console.log("[Webhook] Found AZ customer:", contactName);
         } else {
@@ -118,7 +125,10 @@ export async function POST(request: NextRequest) {
           const lead = await azClient.findLeadByPhone(payload.From);
           if (lead) {
             contactId = lead.id.toString();
-            contactName = `${lead.firstName} ${lead.lastName}`.trim();
+            const firstName = lead.firstName || '';
+            const lastName = lead.lastName || '';
+            const fullName = `${firstName} ${lastName}`.trim();
+            contactName = fullName || null;
             contactType = "lead";
             console.log("[Webhook] Found AZ lead:", contactName);
           }

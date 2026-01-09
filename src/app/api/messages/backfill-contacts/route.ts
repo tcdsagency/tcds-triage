@@ -113,11 +113,19 @@ export async function POST(request: NextRequest) {
         .limit(1);
 
       if (localContact) {
+        const firstName = localContact.firstName || '';
+        const lastName = localContact.lastName || '';
+        const fullName = `${firstName} ${lastName}`.trim();
         const contactInfo = {
           id: localContact.agencyzoomId || localContact.id,
-          name: `${localContact.firstName} ${localContact.lastName}`.trim(),
+          name: fullName || null, // Don't set empty string
           type: (localContact.isLead ? "lead" : "customer") as "customer" | "lead",
         };
+        // Only update if we have a valid name
+        if (!contactInfo.name) {
+          skipped++;
+          continue;
+        }
         phoneCache.set(normalizedPhone, contactInfo);
 
         await db
@@ -140,45 +148,55 @@ export async function POST(request: NextRequest) {
           // Try customer first
           const customer = await azClient.findCustomerByPhone(phone);
           if (customer) {
-            const contactInfo = {
-              id: customer.id.toString(),
-              name: `${customer.firstName} ${customer.lastName}`.trim(),
-              type: "customer" as const,
-            };
-            phoneCache.set(normalizedPhone, contactInfo);
+            const firstName = customer.firstName || '';
+            const lastName = customer.lastName || '';
+            const fullName = `${firstName} ${lastName}`.trim();
+            if (fullName) {
+              const contactInfo = {
+                id: customer.id.toString(),
+                name: fullName,
+                type: "customer" as const,
+              };
+              phoneCache.set(normalizedPhone, contactInfo);
 
-            await db
-              .update(messages)
-              .set({
-                contactId: contactInfo.id,
-                contactName: contactInfo.name,
-                contactType: contactInfo.type,
-              })
-              .where(eq(messages.id, msg.id));
-            updated++;
-            continue;
+              await db
+                .update(messages)
+                .set({
+                  contactId: contactInfo.id,
+                  contactName: contactInfo.name,
+                  contactType: contactInfo.type,
+                })
+                .where(eq(messages.id, msg.id));
+              updated++;
+              continue;
+            }
           }
 
           // Try lead
           const lead = await azClient.findLeadByPhone(phone);
           if (lead) {
-            const contactInfo = {
-              id: lead.id.toString(),
-              name: `${lead.firstName} ${lead.lastName}`.trim(),
-              type: "lead" as const,
-            };
-            phoneCache.set(normalizedPhone, contactInfo);
+            const firstName = lead.firstName || '';
+            const lastName = lead.lastName || '';
+            const fullName = `${firstName} ${lastName}`.trim();
+            if (fullName) {
+              const contactInfo = {
+                id: lead.id.toString(),
+                name: fullName,
+                type: "lead" as const,
+              };
+              phoneCache.set(normalizedPhone, contactInfo);
 
-            await db
-              .update(messages)
-              .set({
-                contactId: contactInfo.id,
-                contactName: contactInfo.name,
-                contactType: contactInfo.type,
-              })
-              .where(eq(messages.id, msg.id));
-            updated++;
-            continue;
+              await db
+                .update(messages)
+                .set({
+                  contactId: contactInfo.id,
+                  contactName: contactInfo.name,
+                  contactType: contactInfo.type,
+                })
+                .where(eq(messages.id, msg.id));
+              updated++;
+              continue;
+            }
           }
         } catch (error) {
           console.warn("[Backfill] AgencyZoom lookup failed for", phone, error);
