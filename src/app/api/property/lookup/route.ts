@@ -132,13 +132,28 @@ async function checkCache(tenantId: string, address: string) {
   if (cached) {
     const lat = parseFloat(cached.latitude);
     const lng = parseFloat(cached.longitude);
+    const staticImageUrl = nearmapClient.getStaticImageUrl(lat, lng, 800, 600);
 
     // Add staticImageUrl to nearmapData if missing (for cached data before this field existed)
+    // Also create minimal nearmapData if it's null
     let nearmapData = cached.nearmapData;
-    if (nearmapData && !nearmapData.staticImageUrl) {
+    if (!nearmapData) {
+      // Create minimal nearmapData with just the image URL for old cached records
+      nearmapData = {
+        surveyDate: new Date().toISOString().split('T')[0],
+        building: { footprintArea: 0, count: 0, polygons: [] },
+        roof: { material: 'Unknown', condition: 'unknown', conditionScore: 0, area: 0, issues: [] },
+        pool: { present: false },
+        solar: { present: false },
+        vegetation: { treeCount: 0, coveragePercent: 0, proximityToStructure: 'none' as const },
+        hazards: { trampoline: false, debris: false, construction: false },
+        tileUrl: '',
+        staticImageUrl,
+      };
+    } else if (!nearmapData.staticImageUrl) {
       nearmapData = {
         ...nearmapData,
-        staticImageUrl: nearmapClient.getStaticImageUrl(lat, lng, 800, 600),
+        staticImageUrl,
       };
     }
 
