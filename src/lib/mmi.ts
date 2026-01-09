@@ -1,10 +1,43 @@
 // MMI (Market Data) API Client
-// Used for property sale history, ownership data, and estimated values
-// Requires MMI_API_KEY and MMI_API_SECRET environment variables
+// Uses browser automation to extract auth token, then makes REST API calls
+// Base URL: https://api.mmi.run/api/v2
+// Requires MMI_EMAIL and MMI_PASSWORD environment variables
+
+import { spawn } from "child_process";
+import path from "path";
 
 // =============================================================================
 // TYPES
 // =============================================================================
+
+export interface MMIPropertySearchResult {
+  DIMPROPERTYADDRESSID: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+}
+
+export interface MMIListingHistory {
+  LISTING_DATE: string;
+  LIST_PRICE: number;
+  CLOSE_PRICE: number;
+  STATUS: string;
+  LISTING_AGENT: string;
+  LISTING_BROKER: string;
+  DAYS_ON_MARKET?: number;
+}
+
+export interface MMIDeedHistory {
+  DATE: string;
+  LOAN_AMOUNT: number;
+  LENDER: string;
+  LOAN_OFFICER?: string;
+  TRANSACTION_TYPE: string;
+  BUYER_NAME?: string;
+  SELLER_NAME?: string;
+  SALE_PRICE?: number;
+}
 
 export interface MMIPropertyData {
   propertyId: string;
@@ -13,46 +46,12 @@ export interface MMIPropertyData {
     city: string;
     state: string;
     zip: string;
-    county: string;
   };
-  owner: {
-    name: string;
-    type: "individual" | "corporation" | "trust" | "llc" | "other";
-    ownerOccupied: boolean;
-    mailingAddress?: string;
-  };
-  saleHistory: Array<{
-    date: string;
-    price: number;
-    type: "arms_length" | "foreclosure" | "corporate" | "estate" | "other";
-    buyer: string;
-    seller: string;
-  }>;
-  valuation: {
-    estimatedValue: number;
-    estimatedValueLow: number;
-    estimatedValueHigh: number;
-    assessedValue: number;
-    taxAmount: number;
-    lastAssessedDate: string;
-  };
-  propertyDetails: {
-    propertyType: string;
-    yearBuilt: number;
-    sqft: number;
-    lotSqft: number;
-    beds: number;
-    baths: number;
-  };
-  marketStatus: {
-    currentStatus: "off_market" | "active" | "pending" | "sold" | "unknown";
-    listingPrice?: number;
-    listingDate?: string;
-    daysOnMarket?: number;
-    pendingDate?: string;
-    soldDate?: string;
-    soldPrice?: number;
-  };
+  listingHistory: MMIListingHistory[];
+  deedHistory: MMIDeedHistory[];
+  currentStatus: "off_market" | "active" | "pending" | "sold" | "unknown";
+  lastSaleDate?: string;
+  lastSalePrice?: number;
   lastUpdated: string;
 }
 
@@ -63,221 +62,343 @@ export interface MMISearchResult {
   source: "api" | "mock";
 }
 
+interface TokenData {
+  token: string;
+  expiresAt: number;
+}
+
 // =============================================================================
 // MMI API CLIENT
 // =============================================================================
 
 class MMIClient {
-  private apiKey: string;
-  private apiSecret: string;
-  private baseUrl: string = "https://api.mmidata.com/v2"; // Placeholder URL
-
-  constructor() {
-    this.apiKey = process.env.MMI_API_KEY || "";
-    this.apiSecret = process.env.MMI_API_SECRET || "";
-  }
+  private baseUrl: string = "https://api.mmi.run/api/v2";
+  private tokenData: TokenData | null = null;
+  private tokenPromise: Promise<TokenData | null> | null = null;
 
   /**
    * Check if API credentials are configured
    */
   isConfigured(): boolean {
-    return Boolean(this.apiKey && this.apiSecret);
+    return Boolean(process.env.MMI_EMAIL && process.env.MMI_PASSWORD);
   }
 
   /**
-   * Generate auth headers for API requests
+   * Check if current token is valid
    */
-  private getAuthHeaders(): Record<string, string> {
+  private isTokenValid(): boolean {
+    if (!this.tokenData) return false;
+    // Token is valid if it expires more than 1 minute from now
+    return this.tokenData.expiresAt > Date.now() + 60000;
+  }
+
+  /**
+   * Extract token using Python Playwright script
+   */
+  private async extractToken(): Promise<TokenData | null> {
+    return new Promise((resolve) => {
+      const scriptPath = path.join(process.cwd(), "server/scripts/mmi_cookie_extractor.py");
+
+      const env = {
+        ...process.env,
+        MMI_EMAIL: process.env.MMI_EMAIL || "",
+        MMI_PASSWORD: process.env.MMI_PASSWORD || "",
+      };
+
+      console.log("[MMI] Extracting token via browser automation...");
+
+      const python = spawn("python3", [scriptPath], { env });
+
+      let stdout = "";
+      let stderr = "";
+
+      python.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
+
+      python.stderr.on("data", (data) => {
+        stderr += data.toString();
+        console.log("[MMI]", data.toString().trim());
+      });
+
+      python.on("close", (code) => {
+        if (code !== 0) {
+          console.error("[MMI] Token extraction failed with code:", code);
+          console.error("[MMI] stderr:", stderr);
+          resolve(null);
+          return;
+        }
+
+        try {
+          const result = JSON.parse(stdout.trim());
+          if (result.success && result.token) {
+            resolve({
+              token: result.token,
+              expiresAt: result.expiresAt,
+            });
+          } else {
+            console.error("[MMI] Token extraction error:", result.error);
+            resolve(null);
+          }
+        } catch (e) {
+          console.error("[MMI] Failed to parse token response:", stdout);
+          resolve(null);
+        }
+      });
+
+      python.on("error", (err) => {
+        console.error("[MMI] Failed to spawn Python process:", err);
+        resolve(null);
+      });
+    });
+  }
+
+  /**
+   * Get valid token (cached or fresh)
+   */
+  private async getToken(): Promise<string | null> {
+    if (this.isTokenValid() && this.tokenData) {
+      return this.tokenData.token;
+    }
+
+    // If already fetching, wait for that
+    if (this.tokenPromise) {
+      const result = await this.tokenPromise;
+      return result?.token || null;
+    }
+
+    // Start new token fetch
+    this.tokenPromise = this.extractToken();
+    this.tokenData = await this.tokenPromise;
+    this.tokenPromise = null;
+
+    return this.tokenData?.token || null;
+  }
+
+  /**
+   * Make authenticated API request
+   */
+  private async apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T | null> {
+    const token = await this.getToken();
+    if (!token) {
+      console.error("[MMI] No valid token available");
+      return null;
+    }
+
+    const url = `${this.baseUrl}${endpoint}`;
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`[MMI] API error: ${response.status} ${response.statusText}`);
+      if (response.status === 401) {
+        // Token expired, clear it
+        this.tokenData = null;
+      }
+      return null;
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Step 1: Search for property by address
+   */
+  async searchProperty(
+    address: string,
+    city: string,
+    state: string,
+    zipcode: string
+  ): Promise<MMIPropertySearchResult | null> {
+    console.log(`[MMI] Searching for property: ${address}, ${city}, ${state} ${zipcode}`);
+
+    const result = await this.apiRequest<{ data: MMIPropertySearchResult[] }>("/property_search", {
+      method: "POST",
+      body: JSON.stringify({
+        address: address.toUpperCase(),
+        city: city.toUpperCase(),
+        state: state.toUpperCase(),
+        zipcode,
+      }),
+    });
+
+    if (!result?.data?.length) {
+      console.log("[MMI] No property found");
+      return null;
+    }
+
+    return result.data[0];
+  }
+
+  /**
+   * Step 2: Get property history by ID
+   */
+  async getPropertyHistory(propertyAddressId: string): Promise<{
+    listingHistory: MMIListingHistory[];
+    deedHistory: MMIDeedHistory[];
+  } | null> {
+    console.log(`[MMI] Getting property history for ID: ${propertyAddressId}`);
+
+    const result = await this.apiRequest<{
+      listing_history?: MMIListingHistory[];
+      deed_history?: MMIDeedHistory[];
+    }>(`/re/property_histories/${propertyAddressId}`);
+
+    if (!result) {
+      return null;
+    }
+
     return {
-      "X-API-Key": this.apiKey,
-      "X-API-Secret": this.apiSecret,
-      "Content-Type": "application/json",
+      listingHistory: result.listing_history || [],
+      deedHistory: result.deed_history || [],
     };
   }
 
   /**
-   * Look up property by address
+   * Determine property status from listing history
    */
-  async lookupByAddress(address: string): Promise<MMISearchResult> {
+  private determineStatus(
+    listingHistory: MMIListingHistory[]
+  ): "off_market" | "active" | "pending" | "sold" | "unknown" {
+    if (!listingHistory.length) return "off_market";
+
+    // Sort by date descending
+    const sorted = [...listingHistory].sort(
+      (a, b) => new Date(b.LISTING_DATE).getTime() - new Date(a.LISTING_DATE).getTime()
+    );
+
+    const latest = sorted[0];
+    const status = latest.STATUS?.toLowerCase() || "";
+
+    if (status.includes("sold") || status.includes("closed")) return "sold";
+    if (status.includes("pending") || status.includes("under contract")) return "pending";
+    if (status.includes("active") || status.includes("for sale")) return "active";
+
+    // Check if recent (within 6 months)
+    const listingDate = new Date(latest.LISTING_DATE);
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    if (listingDate > sixMonthsAgo) {
+      return latest.CLOSE_PRICE ? "sold" : "active";
+    }
+
+    return "off_market";
+  }
+
+  /**
+   * Look up property by full address string
+   */
+  async lookupByAddress(fullAddress: string): Promise<MMISearchResult> {
     if (!this.isConfigured()) {
       console.log("[MMI] API not configured, returning mock data");
       return {
         success: true,
-        data: this.getMockData(address),
+        data: this.getMockData(fullAddress),
         source: "mock",
       };
     }
 
     try {
-      console.log(`[MMI] Looking up property: ${address}`);
+      // Parse address
+      const parsed = this.parseAddress(fullAddress);
 
-      // Parse address components
-      const parsed = this.parseAddress(address);
+      // Step 1: Search for property
+      const searchResult = await this.searchProperty(
+        parsed.street,
+        parsed.city,
+        parsed.state,
+        parsed.zip
+      );
 
-      const response = await fetch(`${this.baseUrl}/property/search`, {
-        method: "POST",
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({
-          street: parsed.street,
-          city: parsed.city,
-          state: parsed.state,
-          zip: parsed.zip,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        console.error(`[MMI] API error: ${response.status} - ${error}`);
-        return {
-          success: false,
-          error: `API returned ${response.status}`,
-          source: "api",
-        };
-      }
-
-      const data = await response.json();
-
-      if (!data.property) {
-        console.log("[MMI] No property found, returning mock data");
+      if (!searchResult) {
+        console.log("[MMI] Property not found, returning mock data");
         return {
           success: true,
-          data: this.getMockData(address),
+          data: this.getMockData(fullAddress),
           source: "mock",
         };
       }
 
-      // Transform API response to our format
+      // Step 2: Get property history
+      const history = await this.getPropertyHistory(searchResult.DIMPROPERTYADDRESSID);
+
+      if (!history) {
+        return {
+          success: true,
+          data: this.getMockData(fullAddress),
+          source: "mock",
+        };
+      }
+
+      // Determine current status
+      const currentStatus = this.determineStatus(history.listingHistory);
+
+      // Find last sale
+      const lastSale = history.deedHistory
+        .filter((d) => d.SALE_PRICE && d.SALE_PRICE > 0)
+        .sort((a, b) => new Date(b.DATE).getTime() - new Date(a.DATE).getTime())[0];
+
       return {
         success: true,
-        data: this.transformApiResponse(data.property),
+        data: {
+          propertyId: searchResult.DIMPROPERTYADDRESSID,
+          address: {
+            street: parsed.street,
+            city: parsed.city,
+            state: parsed.state,
+            zip: parsed.zip,
+          },
+          listingHistory: history.listingHistory,
+          deedHistory: history.deedHistory,
+          currentStatus,
+          lastSaleDate: lastSale?.DATE,
+          lastSalePrice: lastSale?.SALE_PRICE,
+          lastUpdated: new Date().toISOString(),
+        },
         source: "api",
       };
     } catch (error) {
       console.error("[MMI] Lookup error:", error);
-      // Fall back to mock data on error
       return {
         success: true,
-        data: this.getMockData(address),
+        data: this.getMockData(fullAddress),
         source: "mock",
       };
     }
   }
 
   /**
-   * Look up property by APN (Assessor Parcel Number)
+   * Check property listing status (for risk monitor)
    */
-  async lookupByAPN(apn: string, county: string, state: string): Promise<MMISearchResult> {
-    if (!this.isConfigured()) {
-      console.log("[MMI] API not configured, returning mock data");
-      return {
-        success: true,
-        data: this.getMockData(`${apn}, ${county}, ${state}`),
-        source: "mock",
-      };
-    }
-
-    try {
-      console.log(`[MMI] Looking up property by APN: ${apn}`);
-
-      const response = await fetch(`${this.baseUrl}/property/apn`, {
-        method: "POST",
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({ apn, county, state }),
-      });
-
-      if (!response.ok) {
-        return {
-          success: false,
-          error: `API returned ${response.status}`,
-          source: "api",
-        };
-      }
-
-      const data = await response.json();
-      return {
-        success: true,
-        data: this.transformApiResponse(data.property),
-        source: "api",
-      };
-    } catch (error) {
-      console.error("[MMI] APN lookup error:", error);
-      return {
-        success: true,
-        data: this.getMockData(`${apn}, ${county}, ${state}`),
-        source: "mock",
-      };
-    }
-  }
-
-  /**
-   * Get market status for a property (listing/sale activity)
-   */
-  async getMarketStatus(propertyId: string): Promise<{
+  async checkPropertyByAddress(fullAddress: string): Promise<{
     status: "off_market" | "active" | "pending" | "sold" | "unknown";
-    details?: any;
+    listingPrice?: number;
+    salePrice?: number;
+    lastSaleDate?: string;
+    source: "api" | "mock";
   }> {
-    if (!this.isConfigured()) {
-      // Return random status for mock
-      const statuses: Array<"off_market" | "active" | "pending" | "sold"> = [
-        "off_market",
-        "active",
-        "pending",
-        "sold",
-      ];
-      const hash = this.hashString(propertyId);
-      return {
-        status: statuses[hash % statuses.length],
-        details: { source: "mock" },
-      };
+    const result = await this.lookupByAddress(fullAddress);
+
+    if (!result.success || !result.data) {
+      return { status: "unknown", source: "mock" };
     }
 
-    try {
-      const response = await fetch(`${this.baseUrl}/property/${propertyId}/market-status`, {
-        headers: this.getAuthHeaders(),
-      });
+    const latestListing = result.data.listingHistory[0];
 
-      if (!response.ok) {
-        return { status: "unknown" };
-      }
-
-      const data = await response.json();
-      return {
-        status: data.status || "unknown",
-        details: data,
-      };
-    } catch (error) {
-      console.error("[MMI] Market status error:", error);
-      return { status: "unknown" };
-    }
-  }
-
-  /**
-   * Batch lookup multiple properties
-   */
-  async batchLookup(addresses: string[]): Promise<Map<string, MMISearchResult>> {
-    const results = new Map<string, MMISearchResult>();
-
-    // Process in batches of 10 to avoid rate limits
-    const batchSize = 10;
-    for (let i = 0; i < addresses.length; i += batchSize) {
-      const batch = addresses.slice(i, i + batchSize);
-
-      // Process batch in parallel
-      const batchResults = await Promise.all(
-        batch.map((addr) => this.lookupByAddress(addr))
-      );
-
-      batch.forEach((addr, idx) => {
-        results.set(addr, batchResults[idx]);
-      });
-
-      // Rate limit: wait 1 second between batches
-      if (i + batchSize < addresses.length) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    }
-
-    return results;
+    return {
+      status: result.data.currentStatus,
+      listingPrice: latestListing?.LIST_PRICE,
+      salePrice: latestListing?.CLOSE_PRICE || result.data.lastSalePrice,
+      lastSaleDate: result.data.lastSaleDate,
+      source: result.source,
+    };
   }
 
   /**
@@ -289,19 +410,16 @@ class MMIClient {
     state: string;
     zip: string;
   } {
-    // Basic address parsing - in production would use more robust parsing
     const parts = address.split(",").map((p) => p.trim());
 
     let street = parts[0] || "";
     let city = parts[1] || "";
     let stateZip = parts[2] || "";
 
-    // Parse state and zip
     const stateZipMatch = stateZip.match(/([A-Z]{2})\s*(\d{5})?/i);
     let state = stateZipMatch?.[1]?.toUpperCase() || "";
     let zip = stateZipMatch?.[2] || "";
 
-    // If zip is in separate part
     if (!zip && parts[3]) {
       zip = parts[3].replace(/\D/g, "").slice(0, 5);
     }
@@ -310,76 +428,12 @@ class MMIClient {
   }
 
   /**
-   * Transform API response to our standard format
-   */
-  private transformApiResponse(apiData: any): MMIPropertyData {
-    return {
-      propertyId: apiData.id || `MMI-${Date.now()}`,
-      address: {
-        street: apiData.address?.street || "",
-        city: apiData.address?.city || "",
-        state: apiData.address?.state || "",
-        zip: apiData.address?.zip || "",
-        county: apiData.address?.county || "",
-      },
-      owner: {
-        name: apiData.owner?.name || "Property Owner",
-        type: apiData.owner?.type || "individual",
-        ownerOccupied: apiData.owner?.ownerOccupied ?? true,
-        mailingAddress: apiData.owner?.mailingAddress,
-      },
-      saleHistory: (apiData.saleHistory || []).map((sale: any) => ({
-        date: sale.date,
-        price: sale.price || 0,
-        type: sale.type || "arms_length",
-        buyer: sale.buyer || "Unknown",
-        seller: sale.seller || "Unknown",
-      })),
-      valuation: {
-        estimatedValue: apiData.valuation?.estimatedValue || 0,
-        estimatedValueLow: apiData.valuation?.estimatedValueLow || 0,
-        estimatedValueHigh: apiData.valuation?.estimatedValueHigh || 0,
-        assessedValue: apiData.valuation?.assessedValue || 0,
-        taxAmount: apiData.valuation?.taxAmount || 0,
-        lastAssessedDate: apiData.valuation?.lastAssessedDate || "",
-      },
-      propertyDetails: {
-        propertyType: apiData.propertyDetails?.propertyType || "Single Family",
-        yearBuilt: apiData.propertyDetails?.yearBuilt || 0,
-        sqft: apiData.propertyDetails?.sqft || 0,
-        lotSqft: apiData.propertyDetails?.lotSqft || 0,
-        beds: apiData.propertyDetails?.beds || 0,
-        baths: apiData.propertyDetails?.baths || 0,
-      },
-      marketStatus: {
-        currentStatus: apiData.marketStatus?.currentStatus || "off_market",
-        listingPrice: apiData.marketStatus?.listingPrice,
-        listingDate: apiData.marketStatus?.listingDate,
-        daysOnMarket: apiData.marketStatus?.daysOnMarket,
-        pendingDate: apiData.marketStatus?.pendingDate,
-        soldDate: apiData.marketStatus?.soldDate,
-        soldPrice: apiData.marketStatus?.soldPrice,
-      },
-      lastUpdated: new Date().toISOString(),
-    };
-  }
-
-  /**
-   * Generate consistent mock data based on address
+   * Generate mock data for testing
    */
   private getMockData(address: string): MMIPropertyData {
     const hash = this.hashString(address);
     const parsed = this.parseAddress(address);
 
-    // Generate consistent mock values based on hash
-    const yearBuilt = 1970 + (hash % 50);
-    const sqft = 1200 + (hash % 2800);
-    const beds = 2 + (hash % 4);
-    const baths = 1 + (hash % 3);
-    const assessedValue = 150000 + (hash % 500000);
-    const estimatedValue = Math.round(assessedValue * (1.1 + (hash % 30) / 100));
-
-    // Determine market status based on hash
     const statuses: Array<"off_market" | "active" | "pending" | "sold"> = [
       "off_market",
       "off_market",
@@ -388,92 +442,22 @@ class MMIClient {
       "pending",
       "sold",
     ];
-    const marketStatus = statuses[hash % statuses.length];
 
-    // Generate sale history
-    const saleHistory = [];
-    const saleCount = 1 + (hash % 3);
-    for (let i = 0; i < saleCount; i++) {
-      const yearOffset = 2 + i * 5 + (hash % 3);
-      const saleYear = 2024 - yearOffset;
-      const salePrice = Math.round(assessedValue * (0.7 + i * 0.15 + (hash % 20) / 100));
-      saleHistory.push({
-        date: `${saleYear}-${String(1 + (hash % 12)).padStart(2, "0")}-15`,
-        price: salePrice,
-        type: "arms_length" as const,
-        buyer: i === 0 ? "Current Owner" : "Previous Owner",
-        seller: i === 0 ? "Previous Owner" : "Earlier Owner",
-      });
-    }
-
-    const data: MMIPropertyData = {
-      propertyId: `MMI-${hash}`,
+    return {
+      propertyId: `MMI-MOCK-${hash}`,
       address: {
         street: parsed.street || "123 Main St",
         city: parsed.city || "Austin",
         state: parsed.state || "TX",
         zip: parsed.zip || "78701",
-        county: "Travis",
       },
-      owner: {
-        name: "Property Owner",
-        type: hash % 4 === 0 ? "trust" : "individual",
-        ownerOccupied: hash % 3 !== 0,
-        mailingAddress: hash % 5 === 0 ? "PO Box 1234, Austin, TX 78701" : undefined,
-      },
-      saleHistory,
-      valuation: {
-        estimatedValue,
-        estimatedValueLow: Math.round(estimatedValue * 0.92),
-        estimatedValueHigh: Math.round(estimatedValue * 1.08),
-        assessedValue,
-        taxAmount: Math.round(assessedValue * 0.022),
-        lastAssessedDate: "2024-01-01",
-      },
-      propertyDetails: {
-        propertyType: hash % 5 === 0 ? "Condo" : "Single Family",
-        yearBuilt,
-        sqft,
-        lotSqft: Math.round(sqft * (2.5 + (hash % 20) / 10)),
-        beds,
-        baths,
-      },
-      marketStatus: {
-        currentStatus: marketStatus,
-      },
+      listingHistory: [],
+      deedHistory: [],
+      currentStatus: statuses[hash % statuses.length],
       lastUpdated: new Date().toISOString(),
     };
-
-    // Add listing details if active or pending
-    if (marketStatus === "active") {
-      data.marketStatus.listingPrice = estimatedValue + 15000;
-      data.marketStatus.listingDate = this.getRecentDate(hash % 60);
-      data.marketStatus.daysOnMarket = hash % 60;
-    } else if (marketStatus === "pending") {
-      data.marketStatus.listingPrice = estimatedValue + 10000;
-      data.marketStatus.listingDate = this.getRecentDate(30 + (hash % 30));
-      data.marketStatus.pendingDate = this.getRecentDate(hash % 14);
-      data.marketStatus.daysOnMarket = 30 + (hash % 30);
-    } else if (marketStatus === "sold") {
-      data.marketStatus.soldDate = this.getRecentDate(hash % 30);
-      data.marketStatus.soldPrice = estimatedValue + 5000;
-    }
-
-    return data;
   }
 
-  /**
-   * Get a date N days ago as ISO string
-   */
-  private getRecentDate(daysAgo: number): string {
-    const date = new Date();
-    date.setDate(date.getDate() - daysAgo);
-    return date.toISOString().split("T")[0];
-  }
-
-  /**
-   * Simple hash function for consistent mock data
-   */
   private hashString(str: string): number {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {

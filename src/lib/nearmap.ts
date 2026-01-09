@@ -1,12 +1,12 @@
 // =============================================================================
-// Nearmap API Client - Multi-Key Support
+// Nearmap API Client - Correct API Implementation
 // Documentation: https://developer.nearmap.com/
 // =============================================================================
-// Key routing:
-// - NEARMAP_API_KEY (XDH-Prod): Coverage, surveys, tiles, static maps
-// - NEARMAP_AI_API_KEY: AI features (roof, pool, solar, vegetation)
-// - NEARMAP_D3_API_KEY: D3 Location Insights
-// - NEARMAP_IMAGE_API_KEY: High-res imagery portal
+// Endpoints:
+// - /ai/features/v4/features.json - AI feature detection (building, roof, pool, solar)
+// - /coverage/v2/coord/{lat}/{lon} - Historical survey availability
+// - /tiles/v3/Vert/{z}/{x}/{y}.jpg - Map tile imagery
+// - /staticmap/v3/staticmap - Static aerial images
 // =============================================================================
 
 const NEARMAP_API_URL = 'https://api.nearmap.com';
@@ -17,6 +17,7 @@ const NEARMAP_API_URL = 'https://api.nearmap.com';
 
 export interface NearmapFeatures {
   surveyDate: string;
+  surveyId?: string;
   building: {
     footprintArea: number;
     count: number;
@@ -28,11 +29,13 @@ export interface NearmapFeatures {
     conditionScore: number;
     area: number;
     age?: number;
+    issues: string[];
   };
   pool: {
     present: boolean;
     type?: 'in-ground' | 'above-ground';
     fenced?: boolean;
+    area?: number;
   };
   solar: {
     present: boolean;
@@ -43,6 +46,7 @@ export interface NearmapFeatures {
     treeCount: number;
     coveragePercent: number;
     proximityToStructure: 'none' | 'minor' | 'moderate' | 'significant';
+    treeOverhangArea?: number;
   };
   hazards: {
     trampoline: boolean;
@@ -77,17 +81,38 @@ export interface ObliqueViews {
   west: string;
 }
 
-// =============================================================================
-// API CLIENT - Multi-Key Support
-// =============================================================================
+interface NearmapAPIResponse {
+  credits?: number;
+  resourceId?: string;
+  surveyId?: string;
+  surveyDate?: string;
+  features?: NearmapFeature[];
+}
 
-type ApiKeyType = 'coverage' | 'ai' | 'd3' | 'image';
+interface NearmapFeature {
+  id: string;
+  description: string;
+  confidence: number;
+  areaSqft?: number;
+  areaSqm?: number;
+  geometry: {
+    type: string;
+    coordinates: number[][][];
+  };
+  surveyDate?: string;
+  attributes?: any[];
+  properties?: Record<string, any>;
+}
+
+// =============================================================================
+// API CLIENT
+// =============================================================================
 
 class NearmapClient {
-  private apiKey: string;      // XDH-Prod - Coverage, surveys, tiles
-  private aiApiKey: string;    // AI Feature API - roof, pool, solar
-  private d3ApiKey: string;    // D3 Location Insights
-  private imageApiKey: string; // Image Data Portal
+  private apiKey: string;
+  private aiApiKey: string;
+  private d3ApiKey: string;
+  private imageApiKey: string;
 
   constructor() {
     this.apiKey = process.env.NEARMAP_API_KEY || '';
@@ -100,50 +125,259 @@ class NearmapClient {
    * Get the appropriate API key for an endpoint
    */
   private getKeyForEndpoint(endpoint: string): string {
-    // AI features use AI key
     if (endpoint.includes('/ai/')) {
       return this.aiApiKey || this.apiKey;
     }
-    // D3/insights use D3 key
-    if (endpoint.includes('/d3/') || endpoint.includes('/insights/')) {
-      return this.d3ApiKey || this.apiKey;
-    }
-    // Static maps and high-res imagery can use image key
-    if (endpoint.includes('/staticmap/') || endpoint.includes('/image/')) {
+    if (endpoint.includes('/staticmap/') || endpoint.includes('/tiles/')) {
       return this.imageApiKey || this.apiKey;
     }
-    // Default to main API key
     return this.apiKey;
   }
 
   /**
-   * Make authenticated API request with appropriate key
+   * Make authenticated API request
    */
-  private async fetch(endpoint: string, options: RequestInit = {}) {
+  private async fetch(endpoint: string, options: RequestInit = {}): Promise<any> {
     const apiKey = this.getKeyForEndpoint(endpoint);
 
     if (!apiKey) {
       throw new Error('NEARMAP_API_KEY not configured');
     }
 
-    // Nearmap uses apikey query parameter
     const separator = endpoint.includes('?') ? '&' : '?';
     const url = `${NEARMAP_API_URL}${endpoint}${separator}apikey=${apiKey}`;
+
+    console.log(`[Nearmap] Fetching: ${endpoint.split('?')[0]}`);
 
     const response = await fetch(url, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
+        'Accept': 'application/json',
         ...options.headers,
       },
     });
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new Error(`Nearmap API error: ${response.status} ${response.statusText} - ${text}`);
+      console.error(`[Nearmap] API error: ${response.status} - ${text}`);
+      throw new Error(`Nearmap API error: ${response.status} ${response.statusText}`);
     }
 
     return response.json();
+  }
+
+  /**
+   * Create bounding polygon from lat/lng (approximately 72 feet around point)
+   */
+  private createBoundingPolygon(lat: number, lng: number, offsetDegrees: number = 0.0002): string {
+    const minLng = lng - offsetDegrees;
+    const maxLng = lng + offsetDegrees;
+    const minLat = lat - offsetDegrees;
+    const maxLat = lat + offsetDegrees;
+
+    // Polygon format: lon1,lat1,lon2,lat2,lon3,lat3,lon4,lat4,lon1,lat1 (closed)
+    return `${minLng},${minLat},${maxLng},${minLat},${maxLng},${maxLat},${minLng},${maxLat},${minLng},${minLat}`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Main Features API - Correct Implementation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get comprehensive AI feature analysis for a location
+   * Uses the correct /ai/features/v4/features.json endpoint with polygon
+   */
+  async getFeatures(lat: number, lng: number): Promise<NearmapFeatures | null> {
+    try {
+      // Build bounding polygon (larger area to capture full property)
+      const polygon = this.createBoundingPolygon(lat, lng, 0.0005);
+
+      // Call the main features endpoint (no packs param - returns all available features)
+      const params = new URLSearchParams({
+        polygon: polygon,
+        since: '2020-01-01',
+      });
+
+      const data: NearmapAPIResponse = await this.fetch(
+        `/ai/features/v4/features.json?${params.toString()}`
+      );
+
+      console.log(`[Nearmap] Got ${data.features?.length || 0} features`);
+
+      // Build static image URL
+      const staticImageUrl = this.getStaticImageUrl(lat, lng, 800, 600);
+      const tileUrl = this.getTileUrl(lat, lng, 19);
+
+      // Parse features into structured data
+      const features = data.features || [];
+
+      // Extract building data
+      const buildings = features.filter(f =>
+        f.description?.toLowerCase().includes('building') ||
+        f.description?.toLowerCase().includes('footprint')
+      );
+      const totalBuildingArea = buildings.reduce((sum, f) => sum + (f.areaSqft || f.areaSqm || 0), 0);
+
+      // Extract roof data - based on actual Nearmap API response format
+      const roofIssues: string[] = [];
+      let roofScore = 100;
+      let roofArea = 0;
+      let roofMaterial = 'Unknown';
+      let roofCondition = 'unknown';
+
+      // Get main roof feature
+      const roofFeature = features.find(f => f.description === 'Roof');
+      if (roofFeature) {
+        roofArea = roofFeature.areaSqft || roofFeature.areaSqm || 0;
+      }
+
+      // Get roof material (Shingle, Tile, Metal, etc.)
+      const materialFeature = features.find(f =>
+        ['Shingle', 'Tile', 'Metal', 'Slate', 'Asphalt'].includes(f.description || '')
+      );
+      if (materialFeature) {
+        roofMaterial = materialFeature.description || 'Unknown';
+      }
+
+      // Get roof type (Hip, Flat, Gable, etc.)
+      const roofTypeFeature = features.find(f =>
+        ['Hip', 'Flat', 'Gable'].includes(f.description || '')
+      );
+
+      // Process roof issues
+      for (const f of features) {
+        const desc = f.description || '';
+        const area = f.areaSqft || f.areaSqm || 0;
+
+        if (desc.includes('Staining')) {
+          roofIssues.push(`${desc} (${Math.round(area)} sq ft)`);
+          roofScore -= Math.min(20, area * 0.2);
+        }
+        if (desc.includes('Ponding')) {
+          roofIssues.push(`${desc} (${Math.round(area)} sq ft)`);
+          roofScore -= Math.min(25, area * 0.3);
+        }
+        if (desc.includes('Missing') || desc.includes('Damage')) {
+          roofIssues.push(`${desc} (${Math.round(area)} sq ft)`);
+          roofScore -= Math.min(30, area * 0.5);
+        }
+        if (desc.includes('Debris') || desc.includes('Tarp')) {
+          roofIssues.push(`${desc} (${Math.round(area)} sq ft)`);
+          roofScore -= Math.min(20, area * 0.4);
+        }
+      }
+
+      roofScore = Math.max(0, Math.min(100, roofScore));
+      if (roofScore >= 90) roofCondition = 'excellent';
+      else if (roofScore >= 80) roofCondition = 'good';
+      else if (roofScore >= 70) roofCondition = 'fair';
+      else if (roofScore >= 60) roofCondition = 'poor';
+      else roofCondition = 'severe';
+
+      // Extract pool data
+      const poolFeatures = features.filter(f =>
+        f.description?.toLowerCase().includes('pool') ||
+        f.description?.toLowerCase().includes('swimming')
+      );
+      const hasPool = poolFeatures.length > 0;
+      const poolArea = poolFeatures.reduce((sum, f) => sum + (f.areaSqft || f.areaSqm || 0), 0);
+
+      // Extract solar data
+      const solarFeatures = features.filter(f =>
+        f.description?.toLowerCase().includes('solar')
+      );
+      const hasSolar = solarFeatures.length > 0;
+      const solarArea = solarFeatures.reduce((sum, f) => sum + (f.areaSqft || f.areaSqm || 0), 0);
+
+      // Extract vegetation/tree data
+      const treeFeatures = features.filter(f =>
+        f.description?.toLowerCase().includes('tree') ||
+        f.description?.toLowerCase().includes('vegetation') ||
+        f.description?.toLowerCase().includes('overhang')
+      );
+      const treeOverhangArea = treeFeatures
+        .filter(f => f.description?.toLowerCase().includes('overhang'))
+        .reduce((sum, f) => sum + (f.areaSqft || f.areaSqm || 0), 0);
+
+      let treeProximity: 'none' | 'minor' | 'moderate' | 'significant' = 'none';
+      if (treeOverhangArea > 200) treeProximity = 'significant';
+      else if (treeOverhangArea > 100) treeProximity = 'moderate';
+      else if (treeOverhangArea > 0) treeProximity = 'minor';
+
+      if (treeOverhangArea > 0) {
+        roofIssues.push(`Tree overhang (${Math.round(treeOverhangArea)} sq ft)`);
+        roofScore -= Math.min(15, treeOverhangArea * 0.1);
+        roofScore = Math.max(0, roofScore);
+      }
+
+      // Extract hazards
+      const trampolineFeatures = features.filter(f =>
+        f.description?.toLowerCase().includes('trampoline')
+      );
+      const debrisFeatures = features.filter(f =>
+        f.description?.toLowerCase().includes('debris') &&
+        !f.description?.toLowerCase().includes('roof')
+      );
+
+      return {
+        surveyDate: data.surveyDate || new Date().toISOString().split('T')[0],
+        surveyId: data.surveyId,
+        building: {
+          footprintArea: totalBuildingArea || roofArea,
+          count: buildings.length || 1,
+          polygons: buildings.map(b => b.geometry),
+        },
+        roof: {
+          material: roofMaterial,
+          condition: roofCondition,
+          conditionScore: Math.round(roofScore),
+          area: roofArea || totalBuildingArea,
+          issues: roofIssues,
+        },
+        pool: {
+          present: hasPool,
+          type: poolFeatures[0]?.description?.toLowerCase().includes('above') ? 'above-ground' : 'in-ground',
+          area: poolArea,
+        },
+        solar: {
+          present: hasSolar,
+          panelCount: solarFeatures.length,
+          area: solarArea,
+        },
+        vegetation: {
+          treeCount: treeFeatures.length,
+          coveragePercent: 0,
+          proximityToStructure: treeProximity,
+          treeOverhangArea,
+        },
+        hazards: {
+          trampoline: trampolineFeatures.length > 0,
+          debris: debrisFeatures.length > 0,
+          construction: features.some(f => f.description?.toLowerCase().includes('construction')),
+        },
+        tileUrl,
+        staticImageUrl,
+      };
+    } catch (error) {
+      console.error('[Nearmap] getFeatures error:', error);
+
+      // Return minimal data with just image URLs if API fails
+      const staticImageUrl = this.getStaticImageUrl(lat, lng, 800, 600);
+      if (staticImageUrl) {
+        return {
+          surveyDate: new Date().toISOString().split('T')[0],
+          building: { footprintArea: 0, count: 0, polygons: [] },
+          roof: { material: 'Unknown', condition: 'unknown', conditionScore: 0, area: 0, issues: ['API unavailable'] },
+          pool: { present: false },
+          solar: { present: false },
+          vegetation: { treeCount: 0, coveragePercent: 0, proximityToStructure: 'none' },
+          hazards: { trampoline: false, debris: false, construction: false },
+          tileUrl: this.getTileUrl(lat, lng, 19),
+          staticImageUrl,
+        };
+      }
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -155,290 +389,11 @@ class NearmapClient {
    */
   async getSurveys(lat: number, lng: number): Promise<NearmapSurvey[]> {
     try {
-      const data = await this.fetch(
-        `/coverage/v2/point/${lng},${lat}?resources=tiles,aifeatures`
-      );
+      const data = await this.fetch(`/coverage/v2/coord/${lat}/${lng}`);
       return data.surveys || [];
     } catch (error) {
-      console.error('Nearmap getSurveys error:', error);
+      console.error('[Nearmap] getSurveys error:', error);
       return [];
-    }
-  }
-
-  /**
-   * Get the latest survey date for a location
-   */
-  async getLatestSurveyDate(lat: number, lng: number): Promise<string | null> {
-    const surveys = await this.getSurveys(lat, lng);
-    return surveys[0]?.captureDate || null;
-  }
-
-  // ---------------------------------------------------------------------------
-  // AI Features - Roof, Pool, Solar, Vegetation, Building
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Get comprehensive AI feature analysis for a location
-   * Note: Nearmap AI Features API v4 uses vector tiles, not JSON endpoints.
-   * This method attempts the API and falls back to intelligent mock data based on survey metadata.
-   */
-  async getFeatures(lat: number, lng: number): Promise<NearmapFeatures | null> {
-    try {
-      // Get the latest survey - this tells us what AI features are available
-      const surveys = await this.getSurveys(lat, lng);
-      if (surveys.length === 0) {
-        console.log('Nearmap: No surveys available for location');
-        return null;
-      }
-
-      const latestSurvey = surveys[0];
-
-      // Check if AI features are available for this survey
-      const hasAiFeatures = latestSurvey.resources?.aifeatures && latestSurvey.resources.aifeatures.length > 0;
-
-      // Build tile URL and static image URL
-      const tileUrl = this.getTileUrl(lat, lng, 19);
-      const staticImageUrl = this.getStaticImageUrl(lat, lng, 800, 600);
-
-      // Try to get AI features via polygon endpoint (newer API format)
-      let roofData = null;
-      let buildingData = null;
-      let poolData = null;
-      let solarData = null;
-
-      if (hasAiFeatures) {
-        // Try the features endpoint with polygon/parcel query
-        [roofData, buildingData, poolData, solarData] = await Promise.all([
-          this.getAIFeatureByType(lat, lng, 'roof').catch(() => null),
-          this.getAIFeatureByType(lat, lng, 'building').catch(() => null),
-          this.getAIFeatureByType(lat, lng, 'swimming_pool').catch(() => null),
-          this.getAIFeatureByType(lat, lng, 'solar_panel').catch(() => null),
-        ]);
-      }
-
-      // Return data with whatever we have - at minimum we have survey info and image URLs
-      // AI feature data is optional
-      return {
-        surveyDate: latestSurvey.captureDate,
-        building: {
-          footprintArea: buildingData?.totalArea || 2000,
-          count: buildingData?.count || 1,
-          polygons: buildingData?.polygons || [],
-        },
-        roof: {
-          material: roofData?.material || 'Composition Shingle',
-          condition: roofData?.condition || 'good',
-          conditionScore: roofData?.conditionScore || 75,
-          area: roofData?.area || 2400,
-          age: roofData?.estimatedAge,
-        },
-        pool: {
-          present: poolData?.detected || false,
-          type: poolData?.type as 'in-ground' | 'above-ground' | undefined,
-          fenced: poolData?.fenced,
-        },
-        solar: {
-          present: solarData?.detected || false,
-          panelCount: solarData?.panelCount,
-          area: solarData?.area,
-        },
-        vegetation: {
-          treeCount: 3,
-          coveragePercent: 15,
-          proximityToStructure: 'minor',
-        },
-        hazards: {
-          trampoline: false,
-          debris: false,
-          construction: false,
-        },
-        tileUrl,
-        staticImageUrl,
-      };
-    } catch (error) {
-      console.error('Nearmap getFeatures error:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Try to get AI feature data using the features API with parcel geometry
-   */
-  async getAIFeatureByType(lat: number, lng: number, featureType: string) {
-    try {
-      // Try the parcel-based features endpoint
-      const data = await this.fetch(
-        `/ai/features/v4/${featureType}.json?point=${lng},${lat}&radius=50`
-      );
-
-      if (!data.features || data.features.length === 0) {
-        return null;
-      }
-
-      const feature = data.features[0];
-      const props = feature.properties || {};
-
-      if (featureType === 'roof') {
-        return {
-          material: props.roofMaterial || props.material || 'unknown',
-          condition: props.roofCondition || props.condition || 'unknown',
-          conditionScore: this.conditionToScore(props.roofCondition || props.condition),
-          area: props.roofArea || props.area || 0,
-          estimatedAge: props.estimatedAge || props.age,
-        };
-      } else if (featureType === 'building') {
-        return {
-          count: data.features.length,
-          totalArea: data.features.reduce((sum: number, f: any) => sum + (f.properties?.area || 0), 0),
-          polygons: data.features.map((f: any) => f.geometry),
-        };
-      } else if (featureType === 'swimming_pool') {
-        return {
-          detected: true,
-          type: props.poolType === 'above_ground' ? 'above-ground' : 'in-ground',
-          fenced: props.fenced,
-        };
-      } else if (featureType === 'solar_panel') {
-        return {
-          detected: true,
-          panelCount: data.features.length,
-          area: data.features.reduce((sum: number, f: any) => sum + (f.properties?.area || 0), 0),
-        };
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Get roof analysis from AI Feature API
-   */
-  async getRoofAnalysis(lat: number, lng: number) {
-    try {
-      const data = await this.fetch(
-        `/ai/features/v4/roof.json?point=${lng},${lat}`
-      );
-
-      const roof = data.features?.[0]?.properties;
-      if (!roof) return null;
-
-      return {
-        material: roof.roofMaterial || roof.material || 'unknown',
-        condition: roof.roofCondition || roof.condition || 'unknown',
-        conditionScore: this.conditionToScore(roof.roofCondition || roof.condition),
-        area: roof.roofArea || roof.area || 0,
-        estimatedAge: roof.estimatedAge || roof.age,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Get building footprints
-   */
-  async getBuildingFootprints(lat: number, lng: number) {
-    try {
-      const data = await this.fetch(
-        `/ai/features/v4/building.json?point=${lng},${lat}`
-      );
-
-      const features = data.features || [];
-      return {
-        count: features.length,
-        totalArea: features.reduce((sum: number, f: any) => sum + (f.properties?.area || 0), 0),
-        polygons: features.map((f: any) => f.geometry),
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Get pool detection
-   */
-  async getPoolDetection(lat: number, lng: number) {
-    try {
-      const data = await this.fetch(
-        `/ai/features/v4/swimming_pool.json?point=${lng},${lat}`
-      );
-
-      const pool = data.features?.[0];
-      if (!pool) return { detected: false };
-
-      return {
-        detected: true,
-        type: pool.properties?.poolType === 'above_ground' ? 'above-ground' : 'in-ground',
-        fenced: pool.properties?.fenced,
-        condition: pool.properties?.condition,
-      };
-    } catch {
-      return { detected: false };
-    }
-  }
-
-  /**
-   * Get solar panel detection
-   */
-  async getSolarDetection(lat: number, lng: number) {
-    try {
-      const data = await this.fetch(
-        `/ai/features/v4/solar_panel.json?point=${lng},${lat}`
-      );
-
-      const features = data.features || [];
-      if (features.length === 0) return { detected: false };
-
-      return {
-        detected: true,
-        panelCount: features.length,
-        area: features.reduce((sum: number, f: any) => sum + (f.properties?.area || 0), 0),
-      };
-    } catch {
-      return { detected: false };
-    }
-  }
-
-  /**
-   * Get vegetation/tree analysis
-   */
-  async getVegetationAnalysis(lat: number, lng: number) {
-    try {
-      const data = await this.fetch(
-        `/ai/features/v4/vegetation.json?point=${lng},${lat}`
-      );
-
-      const features = data.features || [];
-      const trees = features.filter((f: any) => f.properties?.type === 'tree' || f.properties?.class === 'tree');
-
-      return {
-        treeCount: trees.length || features.length,
-        coveragePercent: data.coveragePercent || 0,
-        proximity: data.structureProximity || 'none',
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Get trampoline detection
-   */
-  async getTrampolineDetection(lat: number, lng: number) {
-    try {
-      const data = await this.fetch(
-        `/ai/features/v4/trampoline.json?point=${lng},${lat}`
-      );
-
-      const features = data.features || [];
-      return {
-        detected: features.length > 0,
-        count: features.length,
-      };
-    } catch {
-      return { detected: false };
     }
   }
 
@@ -471,15 +426,12 @@ class NearmapClient {
     const key = this.imageApiKey || this.apiKey;
     if (!key) return null;
 
-    const directions = ['N', 'S', 'E', 'W'] as const;
-    const views: Partial<ObliqueViews> = {};
-
-    for (const dir of directions) {
-      views[dir.toLowerCase() as keyof ObliqueViews] =
-        `https://api.nearmap.com/staticmap/v3/staticmap?center=${lat},${lng}&size=400x300&zoom=19&direction=${dir}&apikey=${key}`;
-    }
-
-    return views as ObliqueViews;
+    return {
+      north: `https://api.nearmap.com/staticmap/v3/staticmap?center=${lat},${lng}&size=400x300&zoom=19&direction=N&apikey=${key}`,
+      south: `https://api.nearmap.com/staticmap/v3/staticmap?center=${lat},${lng}&size=400x300&zoom=19&direction=S&apikey=${key}`,
+      east: `https://api.nearmap.com/staticmap/v3/staticmap?center=${lat},${lng}&size=400x300&zoom=19&direction=E&apikey=${key}`,
+      west: `https://api.nearmap.com/staticmap/v3/staticmap?center=${lat},${lng}&size=400x300&zoom=19&direction=W&apikey=${key}`,
+    };
   }
 
   /**
@@ -488,7 +440,6 @@ class NearmapClient {
   async getHistoricalSurveys(lat: number, lng: number): Promise<Array<{ date: string; imageUrl: string }>> {
     try {
       const surveys = await this.getSurveys(lat, lng);
-
       return surveys.slice(0, 10).map(survey => ({
         date: survey.captureDate,
         imageUrl: this.getStaticImageUrl(lat, lng),
@@ -498,30 +449,11 @@ class NearmapClient {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Utilities
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Convert condition string to numeric score (0-100)
-   */
-  private conditionToScore(condition: string): number {
-    const scores: Record<string, number> = {
-      'excellent': 95,
-      'good': 80,
-      'fair': 60,
-      'poor': 40,
-      'severe': 20,
-      'critical': 10,
-    };
-    return scores[condition?.toLowerCase()] || 50;
-  }
-
   /**
    * Check if the client is properly configured
    */
   isConfigured(): boolean {
-    return !!this.apiKey;
+    return !!this.apiKey || !!this.aiApiKey;
   }
 
   /**
@@ -545,7 +477,6 @@ export const nearmapClient = new NearmapClient();
 // =============================================================================
 
 export function getMockNearmapData(lat: number, lng: number, surveyDate?: string): NearmapFeatures {
-  // Generate deterministic mock data based on coordinates
   const hash = Math.abs(Math.round(lat * 1000) + Math.round(lng * 1000)) % 100;
 
   return {
@@ -561,6 +492,7 @@ export function getMockNearmapData(lat: number, lng: number, surveyDate?: string
       conditionScore: 50 + (hash % 40),
       area: 2400 + hash * 15,
       age: 5 + (hash % 20),
+      issues: [],
     },
     pool: {
       present: hash % 4 === 0,

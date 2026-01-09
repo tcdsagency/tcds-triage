@@ -9,7 +9,7 @@ import {
   riskMonitorActivityLog,
   riskMonitorSettings,
 } from "@/db/schema";
-import { eq, and, desc, sql, gte } from "drizzle-orm";
+import { eq, and, desc, sql, gte, or, lt, isNull } from "drizzle-orm";
 
 // GET - Get dashboard statistics
 export async function GET(request: NextRequest) {
@@ -119,7 +119,10 @@ export async function GET(request: NextRequest) {
         and(
           eq(riskMonitorPolicies.tenantId, tenantId),
           eq(riskMonitorPolicies.isActive, true),
-          sql`(${riskMonitorPolicies.lastCheckedAt} IS NULL OR ${riskMonitorPolicies.lastCheckedAt} < ${cutoffDate})`
+          or(
+            isNull(riskMonitorPolicies.lastCheckedAt),
+            lt(riskMonitorPolicies.lastCheckedAt, cutoffDate)
+          )
         )
       );
 

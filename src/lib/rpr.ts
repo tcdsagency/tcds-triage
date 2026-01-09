@@ -1,15 +1,90 @@
-// RPR (Realtors Property Resource) Client
-// Uses Playwright for browser automation to access property data
-// Requires RPR_USERNAME and RPR_PASSWORD environment variables
+// RPR (Realtors Property Resource) API Client
+// Uses browser automation to extract auth token, then makes REST API calls
+// Base URL: https://webapi.narrpr.com
+// Requires RPR_EMAIL and RPR_PASSWORD environment variables
 
-import { chromium, Browser, Page, BrowserContext } from "playwright";
+import { spawn } from "child_process";
+import path from "path";
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
+export interface RPRLocationResult {
+  propertyId: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+}
+
+export interface RPRPropertyCommon {
+  searchResult: {
+    bedrooms: number;
+    bathsFull: number;
+    bathsHalf?: number;
+    livingAreaInSqFt: number;
+    yearBuilt: number;
+    stories?: number;
+    lastSaleDate?: string;
+    lastSalePrice?: number;
+  };
+  owner?: {
+    name: string;
+    occupied: boolean;
+    mailingAddress?: string;
+  };
+  tax?: {
+    assessedValue: number;
+    taxAmount: number;
+    assessedYear?: number;
+  };
+  valuation?: {
+    estimatedValue: number;
+    valuationRangeLow: number;
+    valuationRangeHigh: number;
+  };
+}
+
+export interface RPRPropertyDetails {
+  property: {
+    roofType?: string;
+    foundation?: string;
+    exteriorWalls?: string;
+    heatingType?: string;
+    coolingType?: string;
+    constructionType?: string;
+  };
+  features?: {
+    pool?: string;
+    garageSpaces?: number;
+    fireplaces?: number;
+    basement?: string;
+  };
+  flood?: {
+    floodZone?: string;
+    floodRisk?: string;
+  };
+}
+
+export interface RPRListingData {
+  listPrice: number;
+  daysOnMarket: number;
+  listingDate: string;
+  photos?: string[];
+  listingAgentName?: string;
+  listingOfficeName?: string;
+  status?: string;
+}
+
 export interface RPRPropertyData {
   propertyId: string;
+  address: {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+  };
   beds: number;
   baths: number;
   sqft: number;
@@ -35,343 +110,326 @@ export interface RPRPropertyData {
     middle: string;
     high: string;
   };
+  floodZone?: string;
+  floodRisk?: string;
   listing?: {
     active: boolean;
     price: number;
     daysOnMarket: number;
     agent: string;
+    status: string;
   };
+  currentStatus: "off_market" | "active" | "pending" | "sold" | "unknown";
+}
+
+interface TokenData {
+  token: string;
+  expiresAt: number;
 }
 
 // =============================================================================
-// RPR CLIENT
-// Uses Playwright to automate RPR data retrieval
+// RPR API CLIENT
 // =============================================================================
 
 class RPRClient {
-  private username: string;
-  private password: string;
-  private browser: Browser | null = null;
-  private context: BrowserContext | null = null;
-  private isLoggedIn: boolean = false;
-  private lastLoginTime: Date | null = null;
-  private loginExpiryMinutes: number = 30; // Re-login after 30 minutes
+  private baseUrl: string = "https://webapi.narrpr.com";
+  private tokenData: TokenData | null = null;
+  private tokenPromise: Promise<TokenData | null> | null = null;
 
-  constructor() {
-    this.username = process.env.RPR_USERNAME || "";
-    this.password = process.env.RPR_PASSWORD || "";
+  /**
+   * Check if API credentials are configured
+   */
+  isConfigured(): boolean {
+    return Boolean(process.env.RPR_EMAIL && process.env.RPR_PASSWORD);
   }
 
   /**
-   * Initialize browser if not already running
+   * Check if current token is valid
    */
-  private async initBrowser(): Promise<void> {
-    if (!this.browser) {
-      console.log("[RPR] Launching browser...");
-      this.browser = await chromium.launch({
-        headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      });
-      this.context = await this.browser.newContext({
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        viewport: { width: 1920, height: 1080 },
-      });
-    }
+  private isTokenValid(): boolean {
+    if (!this.tokenData) return false;
+    return this.tokenData.expiresAt > Date.now() + 60000;
   }
 
   /**
-   * Check if we need to re-login
+   * Extract token using Python Playwright script
    */
-  private needsLogin(): boolean {
-    if (!this.isLoggedIn) return true;
-    if (!this.lastLoginTime) return true;
+  private async extractToken(): Promise<TokenData | null> {
+    return new Promise((resolve) => {
+      const scriptPath = path.join(process.cwd(), "server/scripts/rpr_token_extractor.py");
 
-    const minutesSinceLogin =
-      (Date.now() - this.lastLoginTime.getTime()) / 1000 / 60;
-    return minutesSinceLogin > this.loginExpiryMinutes;
-  }
-
-  /**
-   * Login to RPR
-   */
-  private async login(page: Page): Promise<boolean> {
-    try {
-      console.log("[RPR] Navigating to login page...");
-      await page.goto("https://www.narrpr.com/login", {
-        waitUntil: "networkidle",
-        timeout: 30000,
-      });
-
-      // Wait for login form
-      await page.waitForSelector('input[type="email"], input[name="email"]', {
-        timeout: 10000,
-      });
-
-      console.log("[RPR] Entering credentials...");
-      // Enter username
-      await page.fill(
-        'input[type="email"], input[name="email"]',
-        this.username
-      );
-      // Enter password
-      await page.fill(
-        'input[type="password"], input[name="password"]',
-        this.password
-      );
-
-      // Click login button
-      await page.click('button[type="submit"]');
-
-      // Wait for redirect to dashboard or search page
-      await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
-
-      // Verify login success by checking URL or page content
-      const currentUrl = page.url();
-      if (
-        currentUrl.includes("dashboard") ||
-        currentUrl.includes("search") ||
-        !currentUrl.includes("login")
-      ) {
-        console.log("[RPR] Login successful");
-        this.isLoggedIn = true;
-        this.lastLoginTime = new Date();
-        return true;
-      }
-
-      // Check for error messages
-      const errorText = await page
-        .textContent(".error-message, .alert-danger")
-        .catch(() => null);
-      if (errorText) {
-        console.error("[RPR] Login error:", errorText);
-      }
-
-      return false;
-    } catch (error) {
-      console.error("[RPR] Login failed:", error);
-      return false;
-    }
-  }
-
-  /**
-   * Search for property and navigate to details page
-   */
-  private async searchProperty(page: Page, address: string): Promise<boolean> {
-    try {
-      console.log(`[RPR] Searching for: ${address}`);
-
-      // Navigate to search page
-      await page.goto("https://www.narrpr.com/search", {
-        waitUntil: "networkidle",
-        timeout: 30000,
-      });
-
-      // Wait for search input
-      await page.waitForSelector(
-        'input[type="search"], input[name="address"], input[placeholder*="address"]',
-        { timeout: 10000 }
-      );
-
-      // Enter address in search
-      await page.fill(
-        'input[type="search"], input[name="address"], input[placeholder*="address"]',
-        address
-      );
-
-      // Press enter or click search button
-      await page.keyboard.press("Enter");
-
-      // Wait for search results
-      await page.waitForTimeout(3000);
-
-      // Click on first result
-      const firstResult = await page.$(
-        '.search-result:first-child, .property-result:first-child, [data-property-id]:first-child'
-      );
-      if (firstResult) {
-        await firstResult.click();
-        await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
-        return true;
-      }
-
-      // Alternative: Look for direct match link
-      const propertyLink = await page.$('a[href*="/property/"]');
-      if (propertyLink) {
-        await propertyLink.click();
-        await page.waitForNavigation({ timeout: 15000 }).catch(() => {});
-        return true;
-      }
-
-      console.warn("[RPR] No search results found");
-      return false;
-    } catch (error) {
-      console.error("[RPR] Search failed:", error);
-      return false;
-    }
-  }
-
-  /**
-   * Scrape property data from the details page
-   */
-  private async scrapePropertyData(page: Page): Promise<RPRPropertyData | null> {
-    try {
-      console.log("[RPR] Scraping property data...");
-
-      // Wait for property details to load
-      await page.waitForSelector(
-        '.property-details, .property-info, [data-property-details]',
-        { timeout: 10000 }
-      );
-
-      // Helper function to get text content
-      const getText = async (selector: string): Promise<string> => {
-        const element = await page.$(selector);
-        return element ? (await element.textContent())?.trim() || "" : "";
+      const env = {
+        ...process.env,
+        RPR_EMAIL: process.env.RPR_EMAIL || "",
+        RPR_PASSWORD: process.env.RPR_PASSWORD || "",
       };
 
-      // Helper to extract numbers
-      const getNumber = async (selector: string): Promise<number> => {
-        const text = await getText(selector);
-        const num = parseFloat(text.replace(/[^0-9.]/g, ""));
-        return isNaN(num) ? 0 : num;
-      };
+      console.log("[RPR] Extracting token via browser automation...");
 
-      // Extract property ID from URL
-      const url = page.url();
-      const propertyIdMatch = url.match(/property\/([^/]+)/);
-      const propertyId = propertyIdMatch ? propertyIdMatch[1] : `RPR-${Date.now()}`;
+      const python = spawn("python3", [scriptPath], { env });
 
-      // Scrape basic property info
-      const data: RPRPropertyData = {
-        propertyId,
-        beds: await getNumber('[data-beds], .beds, .bedrooms'),
-        baths: await getNumber('[data-baths], .baths, .bathrooms'),
-        sqft: await getNumber('[data-sqft], .sqft, .square-footage'),
-        stories: await getNumber('[data-stories], .stories'),
-        yearBuilt: await getNumber('[data-year-built], .year-built'),
-        roofType: (await getText('[data-roof], .roof-type')) || "Unknown",
-        foundation: (await getText('[data-foundation], .foundation')) || "Unknown",
-        exteriorWalls: (await getText('[data-exterior], .exterior')) || "Unknown",
-        hvac: (await getText('[data-hvac], .hvac')) || "Unknown",
-        lotSqft: await getNumber('[data-lot-sqft], .lot-size'),
-        lotAcres: await getNumber('[data-lot-acres], .lot-acres'),
-        ownerName: (await getText('[data-owner], .owner-name')) || "Property Owner",
-        ownerOccupied: (await getText('[data-occupancy], .occupancy')).toLowerCase().includes("owner"),
-        mailingAddress: (await getText('[data-mailing], .mailing-address')) || "",
-        assessedValue: await getNumber('[data-assessed], .assessed-value'),
-        estimatedValue: await getNumber('[data-estimated], .estimated-value, .avm'),
-        taxAmount: await getNumber('[data-tax], .tax-amount'),
-        lastSaleDate: (await getText('[data-sale-date], .last-sale-date')) || "",
-        lastSalePrice: await getNumber('[data-sale-price], .last-sale-price'),
-        schools: {
-          district: (await getText('[data-school-district], .school-district')) || "Unknown",
-          elementary: (await getText('[data-elementary], .elementary-school')) || "Unknown",
-          middle: (await getText('[data-middle], .middle-school')) || "Unknown",
-          high: (await getText('[data-high], .high-school')) || "Unknown",
-        },
-      };
+      let stdout = "";
+      let stderr = "";
 
-      // Check for active listing
-      const listingPrice = await getNumber('[data-list-price], .list-price');
-      if (listingPrice > 0) {
-        data.listing = {
-          active: true,
-          price: listingPrice,
-          daysOnMarket: await getNumber('[data-dom], .days-on-market'),
-          agent: (await getText('[data-agent], .listing-agent')) || "Unknown",
-        };
-      }
+      python.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
 
-      console.log("[RPR] Data scraped successfully");
-      return data;
-    } catch (error) {
-      console.error("[RPR] Scraping failed:", error);
+      python.stderr.on("data", (data) => {
+        stderr += data.toString();
+        console.log("[RPR]", data.toString().trim());
+      });
+
+      python.on("close", (code) => {
+        if (code !== 0) {
+          console.error("[RPR] Token extraction failed with code:", code);
+          console.error("[RPR] stderr:", stderr);
+          resolve(null);
+          return;
+        }
+
+        try {
+          const result = JSON.parse(stdout.trim());
+          if (result.success && result.token) {
+            resolve({
+              token: result.token,
+              expiresAt: result.expiresAt,
+            });
+          } else {
+            console.error("[RPR] Token extraction error:", result.error);
+            resolve(null);
+          }
+        } catch (e) {
+          console.error("[RPR] Failed to parse token response:", stdout);
+          resolve(null);
+        }
+      });
+
+      python.on("error", (err) => {
+        console.error("[RPR] Failed to spawn Python process:", err);
+        resolve(null);
+      });
+    });
+  }
+
+  /**
+   * Get valid token (cached or fresh)
+   */
+  private async getToken(): Promise<string | null> {
+    if (this.isTokenValid() && this.tokenData) {
+      return this.tokenData.token;
+    }
+
+    if (this.tokenPromise) {
+      const result = await this.tokenPromise;
+      return result?.token || null;
+    }
+
+    this.tokenPromise = this.extractToken();
+    this.tokenData = await this.tokenPromise;
+    this.tokenPromise = null;
+
+    return this.tokenData?.token || null;
+  }
+
+  /**
+   * Make authenticated API request
+   */
+  private async apiRequest<T>(endpoint: string, params?: Record<string, string>): Promise<T | null> {
+    const token = await this.getToken();
+    if (!token) {
+      console.error("[RPR] No valid token available");
       return null;
     }
+
+    const url = new URL(`${this.baseUrl}${endpoint}`);
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        url.searchParams.append(key, value);
+      });
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`[RPR] API error: ${response.status} ${response.statusText}`);
+      if (response.status === 401) {
+        this.tokenData = null;
+      }
+      return null;
+    }
+
+    return response.json();
   }
 
   /**
-   * Look up property by address
-   * Uses Playwright to automate RPR login and search
+   * Search for property by address (autocomplete)
+   */
+  async searchLocation(address: string): Promise<RPRLocationResult | null> {
+    console.log(`[RPR] Searching for location: ${address}`);
+
+    const result = await this.apiRequest<{ locations: RPRLocationResult[] }>(
+      "/LocationSearch/Locations",
+      { term: address }
+    );
+
+    if (!result?.locations?.length) {
+      console.log("[RPR] No location found");
+      return null;
+    }
+
+    return result.locations[0];
+  }
+
+  /**
+   * Get common property data
+   */
+  async getPropertyCommon(propertyId: string): Promise<RPRPropertyCommon | null> {
+    console.log(`[RPR] Getting common data for property: ${propertyId}`);
+
+    return this.apiRequest<RPRPropertyCommon>("/Property/GetCommon", { propertyId });
+  }
+
+  /**
+   * Get detailed property data
+   */
+  async getPropertyDetails(propertyId: string): Promise<RPRPropertyDetails | null> {
+    console.log(`[RPR] Getting details for property: ${propertyId}`);
+
+    return this.apiRequest<RPRPropertyDetails>("/Property/GetDetails", { propertyId });
+  }
+
+  /**
+   * Get listing data if property is active
+   */
+  async getPropertyListing(listingId: string): Promise<RPRListingData | null> {
+    console.log(`[RPR] Getting listing data: ${listingId}`);
+
+    return this.apiRequest<RPRListingData>("/Property/GetListing", { listingId });
+  }
+
+  /**
+   * Look up complete property data by address
    */
   async lookupProperty(address: string): Promise<RPRPropertyData | null> {
-    // Check if credentials are configured
-    if (!this.username || !this.password) {
+    if (!this.isConfigured()) {
       console.log("[RPR] Credentials not configured, returning mock data");
       return this.getMockData(address);
     }
 
-    let page: Page | null = null;
-
     try {
-      // Initialize browser
-      await this.initBrowser();
-
-      if (!this.context) {
-        throw new Error("Browser context not initialized");
+      // Step 1: Search for property
+      const location = await this.searchLocation(address);
+      if (!location) {
+        console.log("[RPR] Location not found, returning mock data");
+        return this.getMockData(address);
       }
 
-      // Create new page
-      page = await this.context.newPage();
+      // Step 2: Get common data
+      const common = await this.getPropertyCommon(location.propertyId);
+      if (!common) {
+        return this.getMockData(address);
+      }
 
-      // Login if needed
-      if (this.needsLogin()) {
-        const loginSuccess = await this.login(page);
-        if (!loginSuccess) {
-          console.log("[RPR] Login failed, returning mock data");
-          return this.getMockData(address);
+      // Step 3: Get details
+      const details = await this.getPropertyDetails(location.propertyId);
+
+      // Determine status
+      let currentStatus: "off_market" | "active" | "pending" | "sold" | "unknown" = "off_market";
+      let listingData: RPRPropertyData["listing"] | undefined;
+
+      // Check if there's an active listing (would need listing ID from common data)
+      // For now, infer from lastSaleDate if recent
+      const lastSaleDate = common.searchResult.lastSaleDate;
+      if (lastSaleDate) {
+        const saleDate = new Date(lastSaleDate);
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        if (saleDate > thirtyDaysAgo) {
+          currentStatus = "sold";
         }
       }
 
-      // Search for property
-      const searchSuccess = await this.searchProperty(page, address);
-      if (!searchSuccess) {
-        console.log("[RPR] Search failed, returning mock data");
-        return this.getMockData(address);
-      }
-
-      // Scrape property data
-      const data = await this.scrapePropertyData(page);
-      if (!data) {
-        console.log("[RPR] Scraping failed, returning mock data");
-        return this.getMockData(address);
-      }
-
-      return data;
+      return {
+        propertyId: location.propertyId,
+        address: {
+          street: location.address,
+          city: location.city,
+          state: location.state,
+          zip: location.zip,
+        },
+        beds: common.searchResult.bedrooms || 0,
+        baths: (common.searchResult.bathsFull || 0) + (common.searchResult.bathsHalf || 0) * 0.5,
+        sqft: common.searchResult.livingAreaInSqFt || 0,
+        stories: common.searchResult.stories || 1,
+        yearBuilt: common.searchResult.yearBuilt || 0,
+        roofType: details?.property?.roofType || "Unknown",
+        foundation: details?.property?.foundation || "Unknown",
+        exteriorWalls: details?.property?.exteriorWalls || "Unknown",
+        hvac: `${details?.property?.heatingType || "Unknown"} / ${details?.property?.coolingType || "Unknown"}`,
+        lotSqft: 0, // Would need from details
+        lotAcres: 0,
+        ownerName: common.owner?.name || "Property Owner",
+        ownerOccupied: common.owner?.occupied ?? true,
+        mailingAddress: common.owner?.mailingAddress || "",
+        assessedValue: common.tax?.assessedValue || 0,
+        estimatedValue: common.valuation?.estimatedValue || 0,
+        taxAmount: common.tax?.taxAmount || 0,
+        lastSaleDate: common.searchResult.lastSaleDate || "",
+        lastSalePrice: common.searchResult.lastSalePrice || 0,
+        schools: {
+          district: "Unknown",
+          elementary: "Unknown",
+          middle: "Unknown",
+          high: "Unknown",
+        },
+        floodZone: details?.flood?.floodZone,
+        floodRisk: details?.flood?.floodRisk,
+        listing: listingData,
+        currentStatus,
+      };
     } catch (error) {
       console.error("[RPR] Lookup error:", error);
       return this.getMockData(address);
-    } finally {
-      // Close the page but keep browser running for reuse
-      if (page) {
-        await page.close().catch(() => {});
-      }
     }
   }
 
   /**
-   * Close browser and cleanup
+   * Check property listing status (for risk monitor)
    */
-  async close(): Promise<void> {
-    if (this.context) {
-      await this.context.close().catch(() => {});
-      this.context = null;
+  async checkPropertyListingStatus(address: string): Promise<{
+    status: "off_market" | "active" | "pending" | "sold" | "unknown";
+    listingPrice?: number;
+    daysOnMarket?: number;
+    listingAgent?: string;
+    source: "api" | "mock";
+  }> {
+    const result = await this.lookupProperty(address);
+
+    if (!result) {
+      return { status: "unknown", source: "mock" };
     }
-    if (this.browser) {
-      await this.browser.close().catch(() => {});
-      this.browser = null;
-    }
-    this.isLoggedIn = false;
-    this.lastLoginTime = null;
+
+    return {
+      status: result.currentStatus,
+      listingPrice: result.listing?.price,
+      daysOnMarket: result.listing?.daysOnMarket,
+      listingAgent: result.listing?.agent,
+      source: this.isConfigured() ? "api" : "mock",
+    };
   }
 
   /**
-   * Generate realistic mock data based on address
+   * Generate mock data for testing
    */
   private getMockData(address: string): RPRPropertyData {
-    // Use address hash for consistent mock data
     const hash = this.hashAddress(address);
+    const parsed = this.parseAddress(address);
 
     const yearBuilt = 1990 + (hash % 30);
     const sqft = 1500 + (hash % 2500);
@@ -381,13 +439,29 @@ class RPRClient {
     const assessedValue = 200000 + (hash % 400000);
     const estimatedValue = Math.round(assessedValue * 1.15);
 
-    const roofTypes = ['Composition Shingle', 'Metal', 'Tile', 'Slate', 'Wood Shake'];
-    const foundations = ['Slab', 'Crawl Space', 'Basement', 'Pier and Beam'];
-    const exteriors = ['Brick', 'Vinyl Siding', 'Stucco', 'Wood', 'Fiber Cement'];
-    const hvacTypes = ['Central A/C', 'Heat Pump', 'Forced Air', 'Radiant'];
+    const roofTypes = ["Composition Shingle", "Metal", "Tile", "Slate", "Wood Shake"];
+    const foundations = ["Slab", "Crawl Space", "Basement", "Pier and Beam"];
+    const exteriors = ["Brick", "Vinyl Siding", "Stucco", "Wood", "Fiber Cement"];
+    const hvacTypes = ["Central A/C", "Heat Pump", "Forced Air", "Radiant"];
+    const statuses: Array<"off_market" | "active" | "pending" | "sold"> = [
+      "off_market",
+      "off_market",
+      "off_market",
+      "active",
+      "pending",
+      "sold",
+    ];
+
+    const currentStatus = statuses[hash % statuses.length];
 
     return {
-      propertyId: `RPR-${hash}`,
+      propertyId: `RPR-MOCK-${hash}`,
+      address: {
+        street: parsed.street || "123 Main St",
+        city: parsed.city || "Austin",
+        state: parsed.state || "TX",
+        zip: parsed.zip || "78701",
+      },
       beds,
       baths,
       sqft,
@@ -399,36 +473,60 @@ class RPRClient {
       hvac: hvacTypes[hash % hvacTypes.length],
       lotSqft: Math.round(lotAcres * 43560),
       lotAcres,
-      ownerName: 'Property Owner',
+      ownerName: "Property Owner",
       ownerOccupied: hash % 3 !== 0,
       mailingAddress: address,
       assessedValue,
       estimatedValue,
       taxAmount: Math.round(assessedValue * 0.025),
-      lastSaleDate: `${2015 + (hash % 8)}-${String(1 + (hash % 12)).padStart(2, '0')}-15`,
+      lastSaleDate: `${2015 + (hash % 8)}-${String(1 + (hash % 12)).padStart(2, "0")}-15`,
       lastSalePrice: Math.round(assessedValue * 0.9),
       schools: {
-        district: 'Local School District',
-        elementary: 'Oak Elementary',
-        middle: 'Central Middle School',
-        high: 'Regional High School',
+        district: "Local School District",
+        elementary: "Oak Elementary",
+        middle: "Central Middle School",
+        high: "Regional High School",
       },
-      listing: hash % 5 === 0 ? {
-        active: true,
-        price: estimatedValue + 10000,
-        daysOnMarket: hash % 60,
-        agent: 'Local Agent',
-      } : undefined,
+      listing:
+        currentStatus === "active"
+          ? {
+              active: true,
+              price: estimatedValue + 10000,
+              daysOnMarket: hash % 60,
+              agent: "Local Agent",
+              status: "Active",
+            }
+          : undefined,
+      currentStatus,
     };
   }
 
-  /**
-   * Simple hash function for consistent mock data
-   */
+  private parseAddress(address: string): {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+  } {
+    const parts = address.split(",").map((p) => p.trim());
+    let street = parts[0] || "";
+    let city = parts[1] || "";
+    let stateZip = parts[2] || "";
+
+    const stateZipMatch = stateZip.match(/([A-Z]{2})\s*(\d{5})?/i);
+    let state = stateZipMatch?.[1]?.toUpperCase() || "";
+    let zip = stateZipMatch?.[2] || "";
+
+    if (!zip && parts[3]) {
+      zip = parts[3].replace(/\D/g, "").slice(0, 5);
+    }
+
+    return { street, city, state, zip };
+  }
+
   private hashAddress(address: string): number {
     let hash = 0;
     for (let i = 0; i < address.length; i++) {
-      hash = ((hash << 5) - hash) + address.charCodeAt(i);
+      hash = (hash << 5) - hash + address.charCodeAt(i);
       hash |= 0;
     }
     return Math.abs(hash);
@@ -440,5 +538,5 @@ export const rprClient = new RPRClient();
 
 // Export mock data generator for testing
 export function getMockRPRData(address: string): RPRPropertyData {
-  return new RPRClient()['getMockData'](address);
+  return new RPRClient()["getMockData"](address);
 }
