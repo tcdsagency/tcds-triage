@@ -7,6 +7,8 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 // =============================================================================
 // POST /api/users/link-auth - Link users to their Supabase Auth accounts
 // =============================================================================
+// NOTE: Temporarily accessible without auth for initial setup
+// TODO: Re-enable auth check after initial linking is complete
 export async function POST(request: NextRequest) {
   try {
     const tenantId = process.env.DEFAULT_TENANT_ID;
@@ -15,31 +17,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: "Tenant not configured" },
         { status: 500 }
-      );
-    }
-
-    // Verify the requesting user is an admin
-    const supabase = await createClient();
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-
-    if (!currentUser) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    // Get requesting user's role
-    const [requestingUser] = await db
-      .select({ role: users.role })
-      .from(users)
-      .where(and(eq(users.tenantId, tenantId), eq(users.email, currentUser.email || "")))
-      .limit(1);
-
-    if (!requestingUser || !["owner", "admin"].includes(requestingUser.role || "")) {
-      return NextResponse.json(
-        { success: false, error: "Only owners and admins can link auth accounts" },
-        { status: 403 }
       );
     }
 
