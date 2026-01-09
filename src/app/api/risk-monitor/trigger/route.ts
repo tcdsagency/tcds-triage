@@ -24,6 +24,12 @@ export async function POST(request: NextRequest) {
     // If ignoreWindow is true, we need to temporarily enable the scheduler
     // and adjust the time window to allow immediate execution
     if (ignoreWindow) {
+      // Get current hour in CST (scheduler uses CST)
+      const now = new Date();
+      const cstOffset = -6; // CST is UTC-6
+      const utcHour = now.getUTCHours();
+      const cstHour = (utcHour + cstOffset + 24) % 24;
+
       // Get or create settings
       const [existing] = await db
         .select()
@@ -32,25 +38,23 @@ export async function POST(request: NextRequest) {
         .limit(1);
 
       if (existing) {
-        // Temporarily set window to current hour
-        const currentHour = new Date().getHours();
+        // Temporarily set window to current CST hour
         await db
           .update(riskMonitorSettings)
           .set({
             isPaused: false,
-            scheduleStartHour: currentHour,
-            scheduleEndHour: (currentHour + 1) % 24,
+            scheduleStartHour: cstHour,
+            scheduleEndHour: (cstHour + 1) % 24,
             ...(maxProperties && { dailyRequestBudget: maxProperties }),
           })
           .where(eq(riskMonitorSettings.tenantId, tenantId));
       } else {
         // Create settings that allow immediate run
-        const currentHour = new Date().getHours();
         await db.insert(riskMonitorSettings).values({
           tenantId,
           isPaused: false,
-          scheduleStartHour: currentHour,
-          scheduleEndHour: (currentHour + 1) % 24,
+          scheduleStartHour: cstHour,
+          scheduleEndHour: (cstHour + 1) % 24,
           dailyRequestBudget: maxProperties || 100,
         });
       }
