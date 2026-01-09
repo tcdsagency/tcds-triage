@@ -12,6 +12,51 @@ import { CustomerProfileData, Gender } from "@/types/lifeInsurance.types";
 export function mapMergedProfileToLifeInsurance(
   profile: MergedProfile
 ): CustomerProfileData {
+  // Extract first/last name - use explicit fields or parse from full name
+  let firstName = profile.firstName;
+  let lastName = profile.lastName;
+
+  // If firstName/lastName not set, try to parse from full name
+  if ((!firstName || !lastName) && profile.name) {
+    const nameParts = profile.name.trim().split(/\s+/);
+    if (nameParts.length >= 2) {
+      firstName = firstName || nameParts[0];
+      lastName = lastName || nameParts[nameParts.length - 1];
+    } else if (nameParts.length === 1) {
+      firstName = firstName || nameParts[0];
+    }
+  }
+
+  // Try to get date of birth from household members if not on main profile
+  let dateOfBirth = profile.dateOfBirth;
+  if (!dateOfBirth && profile.household && profile.household.length > 0) {
+    // Find the primary customer (self) in household
+    const self = profile.household.find(
+      (m) => m.relationship?.toLowerCase() === "self" ||
+             m.relationship?.toLowerCase() === "insured" ||
+             m.name?.toLowerCase() === profile.name?.toLowerCase()
+    );
+    if (self?.dateOfBirth) {
+      dateOfBirth = self.dateOfBirth;
+    }
+  }
+
+  // Also check drivers for DOB
+  if (!dateOfBirth) {
+    for (const policy of profile.policies) {
+      if (policy.drivers && policy.drivers.length > 0) {
+        const primaryDriver = policy.drivers.find(
+          (d) => d.firstName?.toLowerCase() === firstName?.toLowerCase() ||
+                 d.name?.toLowerCase() === profile.name?.toLowerCase()
+        );
+        if (primaryDriver?.dateOfBirth) {
+          dateOfBirth = primaryDriver.dateOfBirth;
+          break;
+        }
+      }
+    }
+  }
+
   // Extract gender from household or drivers if available
   let gender: Gender | undefined;
 
@@ -19,7 +64,8 @@ export function mapMergedProfileToLifeInsurance(
   for (const policy of profile.policies) {
     if (policy.drivers && policy.drivers.length > 0) {
       const primaryDriver = policy.drivers.find(
-        (d) => d.firstName?.toLowerCase() === profile.firstName?.toLowerCase()
+        (d) => d.firstName?.toLowerCase() === firstName?.toLowerCase() ||
+               d.name?.toLowerCase() === profile.name?.toLowerCase()
       );
       if (primaryDriver?.gender) {
         gender = primaryDriver.gender.toLowerCase() === "female" ? Gender.FEMALE : Gender.MALE;
@@ -61,9 +107,9 @@ export function mapMergedProfileToLifeInsurance(
 
   return {
     id: profile.id,
-    firstName: profile.firstName,
-    lastName: profile.lastName,
-    dateOfBirth: profile.dateOfBirth,
+    firstName,
+    lastName,
+    dateOfBirth,
     gender,
     state: state.length === 2 ? state : undefined,
     mortgageBalance,
