@@ -55,7 +55,7 @@ except ImportError:
 
 
 async def extract_mmi_token():
-    """Extract Bearer token from MMI login."""
+    """Extract Bearer token from MMI login by capturing API request headers."""
     if not PLAYWRIGHT_AVAILABLE:
         return {"error": "Playwright not installed"}
 
@@ -65,6 +65,8 @@ async def extract_mmi_token():
     if not email or not password:
         return {"error": "MMI_EMAIL and MMI_PASSWORD required"}
 
+    captured_token = None
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
@@ -72,11 +74,24 @@ async def extract_mmi_token():
         )
 
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080}
         )
 
         page = await context.new_page()
+
+        # Capture Bearer tokens from API requests
+        async def handle_request(request):
+            nonlocal captured_token
+            auth = request.headers.get("authorization", "")
+            if auth.startswith("Bearer ") and "mmi.run" in request.url:
+                token = auth.replace("Bearer ", "")
+                # Only capture tokens that look like API tokens (not cookies)
+                if len(token) > 20:
+                    captured_token = token
+                    print(f"[MMI] Captured token from {request.url}", file=sys.stderr)
+
+        page.on("request", handle_request)
 
         try:
             print("[MMI] Navigating to login...", file=sys.stderr)
@@ -120,21 +135,70 @@ async def extract_mmi_token():
             await page.wait_for_load_state("networkidle", timeout=15000)
             await asyncio.sleep(3)
 
-            cookies = await context.cookies()
-            api_key_cookie = next((c for c in cookies if c["name"] == "api_key"), None)
+            print(f"[MMI] After login URL: {page.url}", file=sys.stderr)
 
-            if not api_key_cookie:
-                return {"error": f"api_key cookie not found. URL: {page.url}"}
+            # If token not captured yet, navigate to dashboard to trigger API calls
+            if not captured_token:
+                print("[MMI] Token not captured from login, navigating to dashboard...", file=sys.stderr)
+                try:
+                    await page.goto("https://new.mmi.run/dashboard", wait_until="networkidle", timeout=20000)
+                    await asyncio.sleep(3)
+                except Exception as e:
+                    print(f"[MMI] Dashboard navigation failed: {e}", file=sys.stderr)
 
-            bearer_token = unquote(api_key_cookie["value"])
+            # If still not captured, try property search page
+            if not captured_token:
+                print("[MMI] Trying property search page...", file=sys.stderr)
+                try:
+                    await page.goto("https://new.mmi.run/property-search", wait_until="networkidle", timeout=20000)
+                    await asyncio.sleep(3)
+                except Exception as e:
+                    print(f"[MMI] Property search navigation failed: {e}", file=sys.stderr)
+
+            # Check localStorage/sessionStorage for token
+            if not captured_token:
+                print("[MMI] Checking storage for token...", file=sys.stderr)
+                token_from_storage = await page.evaluate("""
+                    () => {
+                        const keys = ['token', 'accessToken', 'access_token', 'jwt', 'bearerToken', 'authToken', 'api_key'];
+                        for (const key of keys) {
+                            let t = localStorage.getItem(key) || sessionStorage.getItem(key);
+                            if (t && t.length > 20) return t;
+                        }
+                        // Check all localStorage for JWT-like tokens
+                        for (let i = 0; i < localStorage.length; i++) {
+                            const key = localStorage.key(i);
+                            const val = localStorage.getItem(key);
+                            if (val && val.startsWith('eyJ') && val.length > 50) return val;
+                        }
+                        return null;
+                    }
+                """)
+                if token_from_storage:
+                    captured_token = token_from_storage
+                    print("[MMI] Found token in storage", file=sys.stderr)
+
+            # Fall back to api_key cookie if no Bearer token captured
+            if not captured_token:
+                print("[MMI] Checking cookies for api_key...", file=sys.stderr)
+                cookies = await context.cookies()
+                api_key_cookie = next((c for c in cookies if c["name"] == "api_key"), None)
+                if api_key_cookie:
+                    captured_token = unquote(api_key_cookie["value"])
+                    print("[MMI] Found api_key cookie", file=sys.stderr)
+
+            if not captured_token:
+                print(f"[MMI] Could not capture token. Final URL: {page.url}", file=sys.stderr)
+                return {"error": f"Could not capture token. URL: {page.url}"}
 
             # Default 1 hour expiry
             expires_at = int((datetime.now() + timedelta(hours=1, minutes=-5)).timestamp() * 1000)
 
             print("[MMI] Token extracted successfully", file=sys.stderr)
-            return {"success": True, "token": bearer_token, "expiresAt": expires_at}
+            return {"success": True, "token": captured_token, "expiresAt": expires_at}
 
         except Exception as e:
+            traceback.print_exc()
             return {"error": f"MMI extraction failed: {str(e)}"}
         finally:
             await browser.close()

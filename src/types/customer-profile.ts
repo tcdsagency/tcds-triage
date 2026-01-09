@@ -417,6 +417,38 @@ export interface MergedProfile {
   
   // AI Insights (optional, loaded separately)
   aiOverview?: AIOverview;
+
+  // Donna AI (AgencyIQ/Crux) Data
+  donnaData?: {
+    sentimentScore: number;
+    isPersonalVIP: boolean;
+    isCommercialVIP: boolean;
+    retentionProbability: number;
+    crossSellProbability: number;
+    estimatedWalletSize: number;
+    currentAnnualPremium: number;
+    potentialGap: number;
+    recommendations: Array<{
+      id: string;
+      type: string;
+      priority: 'high' | 'medium' | 'low';
+      title: string;
+      description: string;
+      suggestedAction?: string;
+      estimatedPremium?: number;
+      confidence?: number;
+    }>;
+    activities: Array<{
+      id: string;
+      type: string;
+      createdAt: string;
+      summary: string;
+      priority?: string;
+    }>;
+    lastSyncedAt: string;
+    donnaCustomerId: string;
+  } | null;
+  lastSyncedFromDonna?: string;
 }
 
 // =============================================================================

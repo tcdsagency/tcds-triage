@@ -90,6 +90,24 @@ export async function GET(request: NextRequest) {
       results.leads = { error: String(e) };
     }
 
+    // 4. Sync Donna AI data (customer insights)
+    logs.push('Syncing Donna AI insights...');
+    try {
+      const donnaRes = await fetch(`${getBaseUrl(request)}/api/sync/donna`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          batchSize: 25,
+          staleThresholdHours: 24,
+        }),
+      });
+      results.donna = await donnaRes.json();
+      logs.push(`Donna AI: ${results.donna.synced || 0} synced, ${results.donna.notFound || 0} not found`);
+    } catch (e) {
+      logs.push(`Donna sync error: ${e}`);
+      results.donna = { error: String(e) };
+    }
+
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     logs.push(`Sync complete in ${duration}s`);
 

@@ -71,6 +71,7 @@ import {
 } from "@/types/customer-profile";
 import { LifeInsuranceTab } from "@/components/features/life-insurance";
 import { mapMergedProfileToLifeInsurance, hasLifeInsurance, calculateOpportunityScore } from "@/lib/utils/lifeInsuranceMapper";
+import { DonnaInsightsCard } from "@/components/features/DonnaInsightsCard";
 
 // =============================================================================
 // ICON MAPPING
@@ -225,7 +226,28 @@ export default function CustomerProfilePage() {
       setSyncing(false);
     }
   }, [customerId, hsId, azId]);
-  
+
+  // Donna AI data refresh
+  const refreshDonnaData = useCallback(async () => {
+    if (!profile?.id) return;
+
+    try {
+      const response = await fetch(`/api/donna/customer/${profile.id}?refresh=true`);
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        // Update profile with new Donna data
+        setProfile(prev => prev ? {
+          ...prev,
+          donnaData: data.data,
+          lastSyncedFromDonna: data.lastSyncedAt
+        } : null);
+      }
+    } catch (err) {
+      console.error("Donna data refresh error:", err);
+    }
+  }, [profile?.id]);
+
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
@@ -903,8 +925,18 @@ export default function CustomerProfilePage() {
                 )}
               </div>
             </div>
+
+            {/* Donna AI Insights Card */}
+            {profile.hawksoftClientNumber && (
+              <DonnaInsightsCard
+                customerId={profile.id}
+                donnaData={profile.donnaData || null}
+                lastSyncedAt={profile.lastSyncedFromDonna}
+                onRefresh={refreshDonnaData}
+              />
+            )}
           </div>
-          
+
           {/* Right Column - Tab Content */}
           <div className="lg:col-span-2">
             {activeTab === "overview" && (

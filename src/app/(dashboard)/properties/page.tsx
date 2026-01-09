@@ -398,6 +398,10 @@ export default function PropertyIntelligencePage() {
               {/* Quick Stats Bar */}
               {lookup.nearmapData && (
                 <div className="p-3 border-t bg-white">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-gray-500">Quick Stats</span>
+                    <SourceBadge source="Nearmap AI" />
+                  </div>
                   <div className="grid grid-cols-4 gap-2 text-center">
                     <div className="p-2 bg-gray-50 rounded">
                       <div className="text-lg font-bold text-gray-900">
@@ -489,7 +493,7 @@ export default function PropertyIntelligencePage() {
                     {/* Property Details */}
                     {lookup.rprData && (
                       <div className="bg-white border rounded-lg p-4">
-                        <h3 className="font-bold text-gray-900 mb-3">Property Details</h3>
+                        <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">Property Details <SourceBadge source="RPR" /></h3>
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <InfoRow label="Stories" value={lookup.rprData.stories} />
                           <InfoRow label="Lot Size" value={`${lookup.rprData.lotAcres.toFixed(2)} acres`} />
@@ -513,7 +517,7 @@ export default function PropertyIntelligencePage() {
                     {/* Detected Features */}
                     {lookup.nearmapData && (
                       <div className="bg-white border rounded-lg p-4">
-                        <h3 className="font-bold text-gray-900 mb-3">Detected Features</h3>
+                        <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">Detected Features <SourceBadge source="Nearmap AI" /></h3>
                         <div className="grid grid-cols-3 gap-3">
                           <FeatureCard
                             icon="🏊"
@@ -554,7 +558,7 @@ export default function PropertyIntelligencePage() {
                         ) : lookup.aiAnalysis && (
                           <>
                             <div className="flex items-center justify-between mb-3">
-                              <h3 className="font-bold text-gray-900">Risk Summary</h3>
+                              <h3 className="font-bold text-gray-900 flex items-center gap-2">Risk Summary <SourceBadge source="Claude AI" /></h3>
                               <span className={cn('px-3 py-1 rounded-full text-sm font-bold border', getRiskBadge(lookup.aiAnalysis.riskLevel))}>
                                 {lookup.aiAnalysis.riskLevel.toUpperCase()} RISK
                               </span>
@@ -580,7 +584,7 @@ export default function PropertyIntelligencePage() {
                       <>
                         <div className="bg-white border rounded-lg p-4">
                           <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-bold text-gray-900">Roof Condition</h3>
+                            <h3 className="font-bold text-gray-900 flex items-center gap-2">Roof Condition <SourceBadge source="Claude AI" /></h3>
                             <div className="flex items-center gap-2">
                               <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white font-bold', getScoreColor(lookup.aiAnalysis.roofScore))}>
                                 {lookup.aiAnalysis.roofScore}
@@ -612,7 +616,7 @@ export default function PropertyIntelligencePage() {
 
                         {/* Hazard Detection */}
                         <div className="bg-white border rounded-lg p-4">
-                          <h3 className="font-bold text-gray-900 mb-3">Hazard Detection</h3>
+                          <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">Hazard Detection <SourceBadge source="Claude AI" /></h3>
                           <div className="grid grid-cols-2 gap-3">
                             <HazardCard
                               label="Trampoline"
@@ -669,7 +673,7 @@ export default function PropertyIntelligencePage() {
                         {/* Listing History */}
                         {lookup.mmiData.listingHistory.length > 0 && (
                           <div className="bg-white border rounded-lg p-4">
-                            <h3 className="font-bold text-gray-900 mb-3">Listing History</h3>
+                            <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">Listing History <SourceBadge source="MMI" /></h3>
                             <div className="space-y-2">
                               {lookup.mmiData.listingHistory.map((listing, i) => (
                                 <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded">
@@ -702,7 +706,7 @@ export default function PropertyIntelligencePage() {
                         {/* Deed History */}
                         {lookup.mmiData.deedHistory.length > 0 && (
                           <div className="bg-white border rounded-lg p-4">
-                            <h3 className="font-bold text-gray-900 mb-3">Sale & Loan History</h3>
+                            <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">Sale & Loan History <SourceBadge source="MMI" /></h3>
                             <div className="space-y-2">
                               {lookup.mmiData.deedHistory.map((deed, i) => (
                                 <div key={i} className="p-3 bg-gray-50 rounded">
@@ -743,7 +747,7 @@ export default function PropertyIntelligencePage() {
                 {activeTab === 'history' && (
                   <div className="space-y-4">
                     <div className="bg-white border rounded-lg p-4">
-                      <h3 className="font-bold text-gray-900 mb-3">Historical Aerial Imagery</h3>
+                      <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">Historical Aerial Imagery <SourceBadge source="Nearmap" /></h3>
                       {lookup.historicalSurveys && lookup.historicalSurveys.length > 0 ? (
                         <div className="space-y-2">
                           {lookup.historicalSurveys.map((survey, i) => (
@@ -865,5 +869,21 @@ function HazardCard({ label, detected, warning, severity }: { label: string; det
         )}
       </div>
     </div>
+  );
+}
+
+function SourceBadge({ source }: { source: 'RPR' | 'Nearmap' | 'Nearmap AI' | 'Claude AI' | 'MMI' | 'Google' }) {
+  const colors = {
+    'RPR': 'bg-purple-50 text-purple-600 border-purple-200',
+    'Nearmap': 'bg-sky-50 text-sky-600 border-sky-200',
+    'Nearmap AI': 'bg-sky-50 text-sky-600 border-sky-200',
+    'Claude AI': 'bg-orange-50 text-orange-600 border-orange-200',
+    'MMI': 'bg-emerald-50 text-emerald-600 border-emerald-200',
+    'Google': 'bg-blue-50 text-blue-600 border-blue-200',
+  };
+  return (
+    <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-medium', colors[source])}>
+      {source}
+    </span>
   );
 }
