@@ -13,7 +13,7 @@ import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 
 interface CompleteRequest {
   itemType: 'wrapup' | 'message' | 'lead';
-  action: 'note' | 'ticket' | 'lead' | 'skip' | 'acknowledge';
+  action: 'note' | 'ticket' | 'lead' | 'skip' | 'acknowledge' | 'void';
   customerId?: string;
   noteContent?: string;
   ticketDetails?: {
@@ -136,6 +136,20 @@ export async function POST(
           .where(eq(wrapupDrafts.id, itemId));
 
         return NextResponse.json({ success: true, action: "skip", message: "Wrapup skipped" });
+      }
+
+      if (body.action === 'void') {
+        await db
+          .update(wrapupDrafts)
+          .set({
+            status: "completed",
+            reviewerDecision: "voided",
+            outcome: "voided",
+            completedAt: new Date(),
+          })
+          .where(eq(wrapupDrafts.id, itemId));
+
+        return NextResponse.json({ success: true, action: "void", message: "Wrapup voided" });
       }
 
       const customerId = body.customerId
@@ -269,6 +283,15 @@ export async function POST(
           .where(eq(messages.id, itemId));
 
         return NextResponse.json({ success: true, action: body.action, message: "Message acknowledged" });
+      }
+
+      if (body.action === 'void') {
+        await db
+          .update(messages)
+          .set({ isAcknowledged: true })
+          .where(eq(messages.id, itemId));
+
+        return NextResponse.json({ success: true, action: "void", message: "Message voided" });
       }
 
       const customerId = body.customerId

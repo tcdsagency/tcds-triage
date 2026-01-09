@@ -65,7 +65,8 @@ export interface PendingItemCardProps {
   isChecked?: boolean;
   onSelect?: () => void;
   onCheck?: (checked: boolean) => void;
-  onQuickAction?: (action: 'note' | 'ticket' | 'acknowledge' | 'skip') => void;
+  onQuickAction?: (action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'void') => void;
+  onReviewClick?: () => void;
 }
 
 // =============================================================================
@@ -145,6 +146,7 @@ export default function PendingItemCard({
   onSelect,
   onCheck,
   onQuickAction,
+  onReviewClick,
 }: PendingItemCardProps) {
   const matchConfig = MATCH_STATUS_CONFIG[item.matchStatus] || MATCH_STATUS_CONFIG.unmatched;
   const typeConfig = TYPE_CONFIG[item.type] || TYPE_CONFIG.wrapup;
@@ -318,8 +320,18 @@ export default function PendingItemCard({
           className="flex items-center gap-2 pt-3 border-t border-gray-200 dark:border-gray-700"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Different actions based on match status */}
-          {item.matchStatus === 'matched' && (
+          {/* Review & Post button - opens modal for editing */}
+          {(item.matchStatus === 'matched' || item.agencyzoomCustomerId || item.agencyzoomLeadId) && onReviewClick && (
+            <button
+              onClick={onReviewClick}
+              className="px-3 py-1.5 text-xs rounded-lg font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+            >
+              Review & Post
+            </button>
+          )}
+
+          {/* Quick actions for matched items */}
+          {item.matchStatus === 'matched' && !onReviewClick && (
             <>
               <button
                 onClick={() => onQuickAction('note')}
@@ -331,7 +343,7 @@ export default function PendingItemCard({
                 onClick={() => onQuickAction('ticket')}
                 className="px-3 py-1.5 text-xs rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
               >
-                🎫 Ticket
+                🎫 Service Request
               </button>
             </>
           )}
@@ -356,6 +368,14 @@ export default function PendingItemCard({
               showText={false}
             />
           )}
+
+          {/* Void button */}
+          <button
+            onClick={() => onQuickAction('void')}
+            className="px-3 py-1.5 text-xs rounded-lg font-medium text-red-600 dark:text-red-400 border border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          >
+            Void
+          </button>
 
           <button
             onClick={() => onQuickAction('skip')}
