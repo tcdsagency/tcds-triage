@@ -367,6 +367,14 @@ export class RiskMonitorScheduler {
 
     const priority = priorityMap[result.newStatus] || "4";
 
+    // Extract price information
+    const latestListing = result.mmiData?.listingHistory?.[0];
+    const listingPrice = latestListing?.LIST_PRICE || result.rprData?.listing?.price;
+    const salePrice =
+      latestListing?.CLOSE_PRICE ||
+      result.mmiData?.lastSalePrice ||
+      result.rprData?.listing?.soldPrice;
+
     // Create alert
     await db.insert(riskMonitorAlerts).values({
       tenantId: this.tenantId,
@@ -378,6 +386,9 @@ export class RiskMonitorScheduler {
       newStatus: result.newStatus as any,
       title: this.getAlertTitle(alertType, `${policy.addressLine1}, ${policy.city}`),
       description: this.getAlertDescription(alertType, result),
+      listingPrice: listingPrice || null,
+      salePrice: salePrice || null,
+      dataSource: result.mmiData ? "mmi" : result.rprData ? "rpr" : null,
     });
 
     await this.logEvent("alert_created", policy.id, `Created ${alertType} alert`, {

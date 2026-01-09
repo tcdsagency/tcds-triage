@@ -20,6 +20,7 @@ export interface MMIPropertySearchResult {
 
 export interface MMIListingHistory {
   LISTING_DATE: string;
+  SOLD_DATE?: string;
   LIST_PRICE: number;
   CLOSE_PRICE: number;
   STATUS: string;
@@ -224,18 +225,57 @@ class MMIClient {
   } | null> {
     console.log(`[MMI] Getting property history for ID: ${propertyAddressId}`);
 
+    // The API returns 'transactions' and 'listings' not 'deed_history' and 'listing_history'
     const result = await this.apiRequest<{
-      listing_history?: MMIListingHistory[];
-      deed_history?: MMIDeedHistory[];
+      transactions?: Array<{
+        RECORDINGDATE: string;
+        SALESPRICE: string;
+        LOANAMOUNT: string;
+        LOANTRANSACTIONTYPEMMICATEGORY: string;
+        LENDERNAME: string;
+        PRIMARY_BORROWER_FIRST: string;
+        PRIMARY_BORROWER_LAST: string;
+      }>;
+      listings?: Array<{
+        LIST_DATE: string;
+        SOLD_DATE: string;
+        STATUS: string;
+        LIST_PRICE: string;
+        CLOSE_PRICE: string;
+        AGENT_FULLNAME: string;
+        OFFICENAME: string;
+        DAYS_ON_MARKET: string;
+      }>;
     }>(`/re/property_histories/${propertyAddressId}`);
 
     if (!result) {
       return null;
     }
 
+    // Transform API response to expected format
+    const listingHistory: MMIListingHistory[] = (result.listings || []).map((listing) => ({
+      LISTING_DATE: listing.LIST_DATE,
+      SOLD_DATE: listing.SOLD_DATE,
+      LIST_PRICE: parseInt(listing.LIST_PRICE) || 0,
+      CLOSE_PRICE: parseInt(listing.CLOSE_PRICE) || 0,
+      STATUS: listing.STATUS,
+      LISTING_AGENT: listing.AGENT_FULLNAME || "",
+      LISTING_BROKER: listing.OFFICENAME || "",
+      DAYS_ON_MARKET: parseInt(listing.DAYS_ON_MARKET) || undefined,
+    }));
+
+    const deedHistory: MMIDeedHistory[] = (result.transactions || []).map((tx) => ({
+      DATE: tx.RECORDINGDATE,
+      LOAN_AMOUNT: parseInt(tx.LOANAMOUNT) || 0,
+      LENDER: tx.LENDERNAME || "",
+      TRANSACTION_TYPE: tx.LOANTRANSACTIONTYPEMMICATEGORY || "",
+      BUYER_NAME: `${tx.PRIMARY_BORROWER_FIRST || ""} ${tx.PRIMARY_BORROWER_LAST || ""}`.trim(),
+      SALE_PRICE: parseInt(tx.SALESPRICE) || undefined,
+    }));
+
     return {
-      listingHistory: result.listing_history || [],
-      deedHistory: result.deed_history || [],
+      listingHistory,
+      deedHistory,
     };
   }
 
@@ -247,27 +287,54 @@ class MMIClient {
   ): "off_market" | "active" | "pending" | "sold" | "unknown" {
     if (!listingHistory.length) return "off_market";
 
-    // Sort by date descending
+    // Sort by listing date descending (most recent first)
     const sorted = [...listingHistory].sort(
       (a, b) => new Date(b.LISTING_DATE).getTime() - new Date(a.LISTING_DATE).getTime()
     );
 
-    const latest = sorted[0];
-    const status = latest.STATUS?.toLowerCase() || "";
-
-    if (status.includes("sold") || status.includes("closed")) return "sold";
-    if (status.includes("pending") || status.includes("under contract")) return "pending";
-    if (status.includes("active") || status.includes("for sale")) return "active";
-
-    // Check if recent (within 6 months)
-    const listingDate = new Date(latest.LISTING_DATE);
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    if (listingDate > sixMonthsAgo) {
-      return latest.CLOSE_PRICE ? "sold" : "active";
+    // Find the most recent ACTIVE listing
+    const activeListing = sorted.find(
+      (l) => l.STATUS?.toLowerCase() === "active" || l.STATUS?.toLowerCase() === "for sale"
+    );
+    if (activeListing) {
+      const listDate = new Date(activeListing.LISTING_DATE);
+      if (listDate > sixMonthsAgo) {
+        return "active";
+      }
     }
 
+    // Find the most recent PENDING listing
+    const pendingListing = sorted.find(
+      (l) =>
+        l.STATUS?.toLowerCase() === "pending" ||
+        l.STATUS?.toLowerCase() === "under contract"
+    );
+    if (pendingListing) {
+      const listDate = new Date(pendingListing.LISTING_DATE);
+      if (listDate > sixMonthsAgo) {
+        return "pending";
+      }
+    }
+
+    // Find the most recent SOLD listing with a RECENT sold date
+    const soldListing = sorted.find(
+      (l) => l.STATUS?.toLowerCase() === "sold" || l.STATUS?.toLowerCase() === "closed"
+    );
+    if (soldListing) {
+      // Use SOLD_DATE if available, otherwise use LISTING_DATE
+      const soldDate = soldListing.SOLD_DATE
+        ? new Date(soldListing.SOLD_DATE)
+        : new Date(soldListing.LISTING_DATE);
+      // Only return "sold" if the sale was within the last 6 months
+      if (soldDate > sixMonthsAgo) {
+        return "sold";
+      }
+    }
+
+    // Default to off_market for old listings or no recent activity
     return "off_market";
   }
 
@@ -319,10 +386,55 @@ class MMIClient {
       // Determine current status
       const currentStatus = this.determineStatus(history.listingHistory);
 
-      // Find last sale
-      const lastSale = history.deedHistory
+      // Find last sale from deed history (transactions)
+      const lastDeedSale = history.deedHistory
         .filter((d) => d.SALE_PRICE && d.SALE_PRICE > 0)
         .sort((a, b) => new Date(b.DATE).getTime() - new Date(a.DATE).getTime())[0];
+
+      // Also check listings for sold records with CLOSE_PRICE
+      const lastListingSale = history.listingHistory
+        .filter(
+          (l) =>
+            (l.STATUS?.toLowerCase() === "sold" || l.STATUS?.toLowerCase() === "closed") &&
+            l.CLOSE_PRICE > 0
+        )
+        .sort((a, b) => {
+          const dateA = a.SOLD_DATE || a.LISTING_DATE;
+          const dateB = b.SOLD_DATE || b.LISTING_DATE;
+          return new Date(dateB).getTime() - new Date(dateA).getTime();
+        })[0];
+
+      // Determine the most recent sale (compare deed and listing)
+      let lastSaleDate: string | undefined;
+      let lastSalePrice: number | undefined;
+
+      const deedDate = lastDeedSale?.DATE ? new Date(lastDeedSale.DATE) : null;
+      const listingDate = lastListingSale?.SOLD_DATE
+        ? new Date(lastListingSale.SOLD_DATE)
+        : lastListingSale?.LISTING_DATE
+          ? new Date(lastListingSale.LISTING_DATE)
+          : null;
+
+      if (deedDate && listingDate) {
+        // Use the more recent one
+        if (deedDate >= listingDate) {
+          lastSaleDate = lastDeedSale.DATE;
+          lastSalePrice = lastDeedSale.SALE_PRICE;
+        } else {
+          lastSaleDate = lastListingSale.SOLD_DATE || lastListingSale.LISTING_DATE;
+          lastSalePrice = lastListingSale.CLOSE_PRICE;
+        }
+      } else if (deedDate) {
+        lastSaleDate = lastDeedSale.DATE;
+        lastSalePrice = lastDeedSale.SALE_PRICE;
+      } else if (listingDate) {
+        lastSaleDate = lastListingSale.SOLD_DATE || lastListingSale.LISTING_DATE;
+        lastSalePrice = lastListingSale.CLOSE_PRICE;
+      }
+
+      console.log(
+        `[MMI] Property ${searchResult.DIMPROPERTYADDRESSID}: status=${currentStatus}, lastSaleDate=${lastSaleDate}, lastSalePrice=${lastSalePrice}`
+      );
 
       return {
         success: true,
@@ -337,8 +449,8 @@ class MMIClient {
           listingHistory: history.listingHistory,
           deedHistory: history.deedHistory,
           currentStatus,
-          lastSaleDate: lastSale?.DATE,
-          lastSalePrice: lastSale?.SALE_PRICE,
+          lastSaleDate,
+          lastSalePrice,
           lastUpdated: new Date().toISOString(),
         },
         source: "api",
