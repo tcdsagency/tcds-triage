@@ -143,6 +143,19 @@ export default function RiskMonitorPage() {
   const [showAddPolicy, setShowAddPolicy] = useState(false);
   const [triggeringRun, setTriggeringRun] = useState(false);
 
+  // Run status state for status bar
+  const [runStatus, setRunStatus] = useState<{
+    show: boolean;
+    status: 'running' | 'success' | 'error';
+    message: string;
+    details?: {
+      propertiesChecked: number;
+      alertsCreated: number;
+      duration: number;
+      errors: string[];
+    };
+  } | null>(null);
+
   // New policy form
   const [newPolicy, setNewPolicy] = useState({
     policyNumber: '',
@@ -315,16 +328,54 @@ export default function RiskMonitorPage() {
 
   const handleTriggerRun = async () => {
     setTriggeringRun(true);
+    setRunStatus({
+      show: true,
+      status: 'running',
+      message: 'Running property check...',
+    });
+
     try {
-      await fetch('/api/risk-monitor/trigger', {
+      const res = await fetch('/api/risk-monitor/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ignoreWindow: true }),
       });
+      const data = await res.json();
+
+      if (data.success && data.result) {
+        setRunStatus({
+          show: true,
+          status: 'success',
+          message: `Completed: ${data.result.propertiesChecked} properties checked`,
+          details: {
+            propertiesChecked: data.result.propertiesChecked,
+            alertsCreated: data.result.alertsCreated,
+            duration: data.result.duration,
+            errors: data.result.errors || [],
+          },
+        });
+      } else {
+        setRunStatus({
+          show: true,
+          status: 'error',
+          message: data.message || data.error || 'Run failed',
+        });
+      }
+
       await fetchActivity();
       await fetchStats();
+
+      // Auto-hide success status after 10 seconds
+      setTimeout(() => {
+        setRunStatus((prev) => (prev?.status === 'success' ? null : prev));
+      }, 10000);
     } catch (error) {
       console.error('Error triggering run:', error);
+      setRunStatus({
+        show: true,
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Failed to trigger run',
+      });
     }
     setTriggeringRun(false);
   };
@@ -449,6 +500,64 @@ export default function RiskMonitorPage() {
           </button>
         </div>
       </div>
+
+      {/* Run Status Bar */}
+      {runStatus?.show && (
+        <div
+          className={`rounded-lg border p-4 flex items-center justify-between ${
+            runStatus.status === 'running'
+              ? 'bg-blue-50 border-blue-200'
+              : runStatus.status === 'success'
+              ? 'bg-green-50 border-green-200'
+              : 'bg-red-50 border-red-200'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            {runStatus.status === 'running' ? (
+              <RefreshCw className="h-5 w-5 text-blue-600 animate-spin" />
+            ) : runStatus.status === 'success' ? (
+              <Check className="h-5 w-5 text-green-600" />
+            ) : (
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+            )}
+            <div>
+              <p
+                className={`text-sm font-medium ${
+                  runStatus.status === 'running'
+                    ? 'text-blue-900'
+                    : runStatus.status === 'success'
+                    ? 'text-green-900'
+                    : 'text-red-900'
+                }`}
+              >
+                {runStatus.message}
+              </p>
+              {runStatus.details && (
+                <p className="text-xs text-gray-600 mt-1">
+                  {runStatus.details.alertsCreated > 0 && (
+                    <span className="font-medium text-orange-600">
+                      {runStatus.details.alertsCreated} new alert{runStatus.details.alertsCreated !== 1 && 's'}
+                    </span>
+                  )}
+                  {runStatus.details.alertsCreated > 0 && ' • '}
+                  Duration: {(runStatus.details.duration / 1000).toFixed(1)}s
+                  {runStatus.details.errors.length > 0 && (
+                    <span className="text-red-600"> • {runStatus.details.errors.length} error{runStatus.details.errors.length !== 1 && 's'}</span>
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+          {runStatus.status !== 'running' && (
+            <button
+              onClick={() => setRunStatus(null)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="border-b border-gray-200">
