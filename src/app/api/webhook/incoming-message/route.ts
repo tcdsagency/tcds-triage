@@ -30,19 +30,37 @@ interface TwilioIncomingMessage {
 
 export async function POST(request: NextRequest) {
   try {
-    // Parse form data (Twilio sends as x-www-form-urlencoded)
-    const formData = await request.formData();
+    // Support both JSON and form data (Twilio sends form-urlencoded)
+    const contentType = request.headers.get("content-type") || "";
+    let payload: TwilioIncomingMessage;
 
-    const payload: TwilioIncomingMessage = {
-      MessageSid: formData.get("MessageSid") as string,
-      From: formData.get("From") as string,
-      To: formData.get("To") as string,
-      Body: formData.get("Body") as string,
-      NumMedia: formData.get("NumMedia") as string,
-      MediaUrl0: formData.get("MediaUrl0") as string,
-      MediaContentType0: formData.get("MediaContentType0") as string,
-      AccountSid: formData.get("AccountSid") as string,
-    };
+    if (contentType.includes("application/json")) {
+      // Parse JSON payload (from Zapier, custom integrations, etc.)
+      const json = await request.json();
+      payload = {
+        MessageSid: json.MessageSid || json.externalId || json.messageSid || `custom_${Date.now()}`,
+        From: json.From || json.from || "",
+        To: json.To || json.to || "",
+        Body: json.Body || json.body || "",
+        NumMedia: json.NumMedia || json.numMedia || "0",
+        MediaUrl0: json.MediaUrl0 || json.mediaUrl0,
+        MediaContentType0: json.MediaContentType0 || json.mediaContentType0,
+        AccountSid: json.AccountSid || json.accountSid,
+      };
+    } else {
+      // Parse form data (Twilio sends as x-www-form-urlencoded)
+      const formData = await request.formData();
+      payload = {
+        MessageSid: formData.get("MessageSid") as string,
+        From: formData.get("From") as string,
+        To: formData.get("To") as string,
+        Body: formData.get("Body") as string,
+        NumMedia: formData.get("NumMedia") as string,
+        MediaUrl0: formData.get("MediaUrl0") as string,
+        MediaContentType0: formData.get("MediaContentType0") as string,
+        AccountSid: formData.get("AccountSid") as string,
+      };
+    }
 
     console.log("[Webhook] Incoming SMS:", {
       from: payload.From,
