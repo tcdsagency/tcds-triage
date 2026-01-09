@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { wrapupDrafts, calls, users } from '@/db/schema';
+import { wrapupDrafts, calls } from '@/db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 
 // GET /api/calls/wrapup - Get wrapup drafts queue
@@ -40,15 +40,55 @@ export async function GET(request: NextRequest) {
         summary: wrapupDrafts.summary,
         aiCleanedSummary: wrapupDrafts.aiCleanedSummary,
         aiConfidence: wrapupDrafts.aiConfidence,
+        aiExtraction: wrapupDrafts.aiExtraction,
         matchStatus: wrapupDrafts.matchStatus,
+        trestleData: wrapupDrafts.trestleData,
         reviewerDecision: wrapupDrafts.reviewerDecision,
         outcome: wrapupDrafts.outcome,
         createdAt: wrapupDrafts.createdAt,
+        // Join call data
+        callFromNumber: calls.fromNumber,
+        callToNumber: calls.toNumber,
+        callStartedAt: calls.startedAt,
+        callDurationSeconds: calls.durationSeconds,
+        callTranscription: calls.transcription, // Include actual transcript
       })
       .from(wrapupDrafts)
+      .leftJoin(calls, eq(wrapupDrafts.callId, calls.id))
       .where(and(...filters))
       .orderBy(desc(wrapupDrafts.createdAt))
       .limit(limit);
+
+    // Transform to expected shape
+    const wrapups = drafts.map(d => ({
+      id: d.id,
+      callId: d.callId,
+      status: d.status,
+      direction: d.direction,
+      agentName: d.agentName,
+      customerName: d.customerName,
+      customerPhone: d.customerPhone,
+      customerEmail: d.customerEmail,
+      policyNumbers: d.policyNumbers,
+      insuranceType: d.insuranceType,
+      requestType: d.requestType,
+      summary: d.summary,
+      aiCleanedSummary: d.aiCleanedSummary,
+      aiConfidence: d.aiConfidence,
+      aiExtraction: d.aiExtraction,
+      matchStatus: d.matchStatus,
+      trestleData: d.trestleData,
+      reviewerDecision: d.reviewerDecision,
+      outcome: d.outcome,
+      createdAt: d.createdAt,
+      call: d.callFromNumber ? {
+        fromNumber: d.callFromNumber,
+        toNumber: d.callToNumber,
+        startedAt: d.callStartedAt,
+        durationSeconds: d.callDurationSeconds,
+        transcription: d.callTranscription, // Include actual transcript
+      } : null,
+    }));
 
     // Get counts
     const allDrafts = await db
@@ -67,7 +107,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      drafts,
+      wrapups,
+      drafts: wrapups, // Keep for backwards compat
       counts,
     });
   } catch (error) {
