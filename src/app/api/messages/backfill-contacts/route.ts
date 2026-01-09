@@ -4,11 +4,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { messages, customers } from "@/db/schema";
-import { eq, and, isNull, isNotNull, or, ilike, sql } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, or, ilike, sql, like } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 
+// Helper to check if a string looks like a phone number (not a real name)
+function looksLikePhoneNumber(str: string | null): boolean {
+  if (!str) return true;
+  // Remove all non-alphanumeric chars and check if mostly digits
+  const digitsOnly = str.replace(/\D/g, '');
+  // If string is mostly digits (7+ digits), it's probably a phone number
+  return digitsOnly.length >= 7;
+}
+
 // =============================================================================
-// POST - Backfill contact names for messages with null contactName
+// POST - Backfill contact names for messages with null/phone-number contactName
 // =============================================================================
 
 export async function POST(request: NextRequest) {
@@ -20,22 +29,29 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     const limit = Math.min(body.limit || 100, 500); // Max 500 per run
-    const useApi = body.useApi ?? false; // Whether to also check AgencyZoom API
+    const useApi = body.useApi ?? true; // Default to using AgencyZoom API
+    const force = body.force ?? false; // Force re-lookup even if name exists
 
-    // Find messages with phone numbers but no contact name
+    // Find messages that need contact name lookup
+    // Include messages where contactName is NULL or looks like a phone number
     const messagesToUpdate = await db
       .select({
         id: messages.id,
         fromNumber: messages.fromNumber,
         toNumber: messages.toNumber,
         direction: messages.direction,
+        contactName: messages.contactName,
       })
       .from(messages)
       .where(
         and(
           eq(messages.tenantId, tenantId),
-          isNull(messages.contactName),
-          isNotNull(messages.fromNumber)
+          isNotNull(messages.fromNumber),
+          or(
+            isNull(messages.contactName),
+            // contactName contains only digits, parentheses, dashes, spaces (phone format)
+            sql`${messages.contactName} ~ '^[\\d\\(\\)\\-\\s\\.\\+]+$'`
+          )
         )
       )
       .limit(limit);
@@ -224,8 +240,12 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           eq(messages.tenantId, tenantId),
-          isNull(messages.contactName),
-          isNotNull(messages.fromNumber)
+          isNotNull(messages.fromNumber),
+          or(
+            isNull(messages.contactName),
+            // contactName looks like a phone number (only digits, parens, dashes, spaces)
+            sql`${messages.contactName} ~ '^[\\d\\(\\)\\-\\s\\.\\+]+$'`
+          )
         )
       );
 
