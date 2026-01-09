@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import PendingItemCard, { PendingItemCardSkeleton, type PendingItem } from '@/components/features/PendingItemCard';
 import PendingCountsBar, { type PendingCounts } from '@/components/features/PendingCountsBar';
 import BulkActionBar from '@/components/features/BulkActionBar';
+import ReviewModal from '@/components/features/ReviewModal';
 
 // =============================================================================
 // TYPES
@@ -51,6 +53,7 @@ export default function PendingReviewPage() {
   const [selectedItems, setSelectedItems] = useState<PendingItem[]>([]);
   const [selectedItemForReview, setSelectedItemForReview] = useState<PendingItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [reviewModalItem, setReviewModalItem] = useState<PendingItem | null>(null);
 
   // ==========================================================================
   // DATA FETCHING
@@ -115,8 +118,15 @@ export default function PendingReviewPage() {
 
   const handleQuickAction = async (
     item: PendingItem,
-    action: 'note' | 'ticket' | 'acknowledge' | 'skip'
+    action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'void'
   ) => {
+    // Confirm void action
+    if (action === 'void') {
+      if (!confirm('Are you sure you want to void this item? It will be removed from the queue without any action.')) {
+        return;
+      }
+    }
+
     setActionLoading(true);
     try {
       const res = await fetch(`/api/pending-review/${item.id}/complete`, {
@@ -137,14 +147,72 @@ export default function PendingReviewPage() {
         if (selectedItemForReview?.id === item.id) {
           setSelectedItemForReview(null);
         }
+        // Show success toast
+        const actionMessages: Record<string, string> = {
+          note: 'Note posted to AgencyZoom',
+          ticket: 'Service request created',
+          acknowledge: 'Message acknowledged',
+          skip: 'Item skipped',
+          void: 'Item voided',
+        };
+        toast.success(actionMessages[action] || 'Action completed');
         // Update counts
         fetchItems();
       } else {
-        alert(data.error || 'Action failed');
+        toast.error(data.error || 'Action failed');
       }
     } catch (error) {
       console.error('Action error:', error);
-      alert('Failed to complete action');
+      toast.error('Failed to complete action');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReviewModalAction = async (
+    action: 'note' | 'ticket' | 'void',
+    noteContent?: string
+  ) => {
+    if (!reviewModalItem) return;
+
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/pending-review/${reviewModalItem.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: reviewModalItem.type,
+          action,
+          customerId: reviewModalItem.agencyzoomCustomerId || reviewModalItem.agencyzoomLeadId,
+          noteContent,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // Remove item from list
+        setItems((prev) => prev.filter((i) => i.id !== reviewModalItem.id));
+        setSelectedItems((prev) => prev.filter((i) => i.id !== reviewModalItem.id));
+        if (selectedItemForReview?.id === reviewModalItem.id) {
+          setSelectedItemForReview(null);
+        }
+        // Close modal
+        setReviewModalItem(null);
+        // Show success toast
+        const actionMessages: Record<string, string> = {
+          note: 'Note posted to AgencyZoom',
+          ticket: 'Service request created in AgencyZoom',
+          void: 'Item voided',
+        };
+        toast.success(actionMessages[action] || 'Action completed');
+        // Update counts
+        fetchItems();
+      } else {
+        toast.error(data.error || 'Action failed');
+      }
+    } catch (error) {
+      console.error('Review action error:', error);
+      toast.error('Failed to complete action');
     } finally {
       setActionLoading(false);
     }
@@ -320,6 +388,7 @@ export default function PendingReviewPage() {
               onSelect={() => handleSelectItem(item)}
               onCheck={(checked) => handleCheckItem(item, checked)}
               onQuickAction={(action) => handleQuickAction(item, action)}
+              onReviewClick={() => setReviewModalItem(item)}
             />
           ))}
         </div>
@@ -335,8 +404,16 @@ export default function PendingReviewPage() {
         isLoading={actionLoading}
       />
 
-      {/* TODO: Review Modal */}
-      {/* Will be implemented in next phase */}
+      {/* Review Modal */}
+      {reviewModalItem && (
+        <ReviewModal
+          item={reviewModalItem}
+          isOpen={!!reviewModalItem}
+          onClose={() => setReviewModalItem(null)}
+          onAction={handleReviewModalAction}
+          isLoading={actionLoading}
+        />
+      )}
     </div>
   );
 }
