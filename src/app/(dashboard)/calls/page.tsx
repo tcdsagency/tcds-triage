@@ -37,8 +37,11 @@ import CallPopup from "@/components/features/CallPopup";
 interface CallRecord {
   id: string;
   direction: "inbound" | "outbound";
-  status: "completed" | "missed" | "voicemail" | "transferred";
-  phoneNumber: string;
+  status: "completed" | "missed" | "voicemail" | "transferred" | "ringing" | "in_progress";
+  phoneNumber: string; // Customer's phone (external number)
+  agentPhone?: string; // Agent's phone (our number)
+  fromNumber?: string;
+  toNumber?: string;
   customerName: string;
   customerId?: string;
   agentName: string;
@@ -51,6 +54,7 @@ interface CallRecord {
   qaScore?: number; // 0-100
   hasRecording: boolean;
   hasTranscript: boolean;
+  transcript?: string; // Actual transcript content
   summary?: string;
   tags?: string[];
 }
@@ -106,6 +110,17 @@ function getSentimentLabel(sentiment: number | undefined): string {
   return "Negative";
 }
 
+function formatPhoneNumber(phone: string | undefined | null): string {
+  if (!phone) return "-";
+  // Remove +1 prefix and format as (XXX) XXX-XXXX
+  const cleaned = phone.replace(/^\+1/, '').replace(/\D/g, '');
+  if (cleaned.length === 10) {
+    return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+  }
+  // If not 10 digits, just return cleaned without +1
+  return phone.replace(/^\+1/, '');
+}
+
 // =============================================================================
 // COMPONENTS
 // =============================================================================
@@ -157,7 +172,7 @@ function CallRow({
           <CallStatusIcon call={call} />
           <div>
             <p className="font-medium text-gray-900">{call.customerName}</p>
-            <p className="text-sm text-gray-500">{call.phoneNumber}</p>
+            <p className="text-sm text-gray-500">{formatPhoneNumber(call.phoneNumber)}</p>
           </div>
         </div>
       </td>
@@ -174,7 +189,12 @@ function CallRow({
         {formatDuration(call.duration)}
       </td>
       <td className="px-4 py-4">
-        {call.disposition ? (
+        {call.disposition === "hangup" ? (
+          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-amber-100 text-amber-700">
+            <PhoneMissed className="h-3 w-3" />
+            Hangup
+          </span>
+        ) : call.disposition ? (
           <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700">
             {call.disposition}
           </span>
@@ -258,7 +278,7 @@ function CallDetailsSidebar({
             <h3 className="text-lg font-semibold text-gray-900">
               {call.customerName}
             </h3>
-            <p className="text-gray-600">{call.phoneNumber}</p>
+            <p className="text-gray-600">{formatPhoneNumber(call.phoneNumber)}</p>
           </div>
         </div>
 
@@ -278,6 +298,18 @@ function CallDetailsSidebar({
           <div className="bg-gray-50 rounded-lg p-3">
             <p className="text-xs text-gray-500 mb-1">Status</p>
             <p className="font-medium text-gray-900 capitalize">{call.status}</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-xs text-gray-500 mb-1">Customer Phone</p>
+            <p className="font-medium text-gray-900">
+              {formatPhoneNumber(call.phoneNumber)}
+            </p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-xs text-gray-500 mb-1">Agent Phone</p>
+            <p className="font-medium text-gray-900">
+              {formatPhoneNumber(call.agentPhone)}
+            </p>
           </div>
           <div className="bg-gray-50 rounded-lg p-3">
             <p className="text-xs text-gray-500 mb-1">Date & Time</p>
@@ -406,31 +438,17 @@ function CallDetailsSidebar({
           </div>
         )}
 
-        {/* Transcript Preview */}
-        {call.hasTranscript && (
+        {/* Transcript */}
+        {call.hasTranscript && call.transcript && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <h4 className="font-medium text-gray-900 flex items-center gap-2">
                 <MessageSquare className="h-4 w-4" />
                 Transcript
               </h4>
-              <button className="text-indigo-600 hover:text-indigo-700 text-sm">
-                View Full
-              </button>
             </div>
-            <div className="bg-gray-50 rounded-lg p-4 space-y-3 max-h-48 overflow-y-auto text-sm">
-              <div>
-                <span className="text-xs text-gray-400">Agent</span>
-                <p className="text-gray-700">
-                  Thank you for calling. How can I help you today?
-                </p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-400">Customer</span>
-                <p className="text-gray-700">
-                  Hi, I&apos;m looking to get a quote for auto insurance...
-                </p>
-              </div>
+            <div className="bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto text-sm whitespace-pre-wrap">
+              <p className="text-gray-700">{call.transcript}</p>
             </div>
           </div>
         )}
@@ -524,7 +542,13 @@ export default function CallsPage() {
     try {
       const params = new URLSearchParams();
       if (directionFilter !== "all") params.set("direction", directionFilter);
-      if (statusFilter !== "all") params.set("status", statusFilter);
+      // Default to excluding ringing/in_progress - only show completed calls
+      if (statusFilter !== "all") {
+        params.set("status", statusFilter);
+      } else {
+        // When "all" is selected, exclude ringing and in_progress calls
+        params.set("status", "completed,missed,voicemail,transferred");
+      }
       if (agentFilter !== "all") params.set("agentId", agentFilter);
       if (dateFilter !== "custom") params.set("dateRange", dateFilter);
 
