@@ -7,6 +7,16 @@ import { MergedProfile } from "@/types/customer-profile";
 import { CustomerProfileData, Gender } from "@/types/lifeInsurance.types";
 
 /**
+ * Format date string to YYYY-MM-DD for HTML date input
+ */
+function formatDateForInput(dateStr: string | undefined): string | undefined {
+  if (!dateStr) return undefined;
+  // Handle ISO format like "1988-09-22T00:00:00"
+  const match = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : undefined;
+}
+
+/**
  * Convert a MergedProfile to CustomerProfileData for life insurance quotes
  */
 export function mapMergedProfileToLifeInsurance(
@@ -133,7 +143,7 @@ export function mapMergedProfileToLifeInsurance(
     id: profile.id,
     firstName,
     lastName,
-    dateOfBirth,
+    dateOfBirth: formatDateForInput(dateOfBirth),
     gender,
     state: state.length === 2 ? state : undefined,
     mortgageBalance,
