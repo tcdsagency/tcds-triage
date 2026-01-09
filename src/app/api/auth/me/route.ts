@@ -23,8 +23,13 @@ export async function GET() {
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
+        phone: users.phone,
         extension: users.extension,
+        directDial: users.directDial,
+        currentStatus: users.currentStatus,
+        isAvailable: users.isAvailable,
         role: users.role,
+        avatarUrl: users.avatarUrl,
       })
       .from(users)
       .where(eq(users.email, authUser.email || ""))

@@ -19,6 +19,16 @@ interface SearchResult {
   href: string;
 }
 
+interface UserProfile {
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  directDial?: string;
+  currentStatus?: string;
+  isAvailable?: boolean;
+  extension?: string;
+}
+
 export function Header({ user }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -26,9 +36,26 @@ export function Header({ user }: HeaderProps) {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const supabase = createClient();
+
+  // Fetch user profile
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+        if (data.success && data.user) {
+          setUserProfile(data.user);
+        }
+      } catch (err) {
+        console.error('Error fetching user profile:', err);
+      }
+    };
+    fetchProfile();
+  }, []);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -370,14 +397,32 @@ export function Header({ user }: HeaderProps) {
               onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center gap-x-3 -m-1.5 p-1.5"
             >
-              <div className="h-8 w-8 rounded-full bg-emerald-600 flex items-center justify-center">
-                <span className="text-white text-sm font-medium">
-                  {user.email?.charAt(0).toUpperCase()}
-                </span>
+              <div className="relative">
+                <div className="h-8 w-8 rounded-full bg-emerald-600 flex items-center justify-center">
+                  <span className="text-white text-sm font-medium">
+                    {userProfile?.firstName?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                {/* Status indicator */}
+                <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white ${
+                  userProfile?.isAvailable ? 'bg-green-500' : 'bg-gray-400'
+                }`} />
               </div>
-              <span className="hidden lg:flex lg:items-center">
+              <span className="hidden lg:flex lg:flex-col lg:items-start">
                 <span className="text-sm font-medium text-gray-900">
-                  {user.email}
+                  {userProfile?.firstName && userProfile?.lastName
+                    ? `${userProfile.firstName} ${userProfile.lastName}`
+                    : user.email}
+                </span>
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  {userProfile?.directDial || userProfile?.phone || userProfile?.extension ? (
+                    <>
+                      <Phone className="h-3 w-3" />
+                      {userProfile.directDial || userProfile.phone || `Ext ${userProfile.extension}`}
+                    </>
+                  ) : (
+                    <span className="capitalize">{userProfile?.currentStatus || 'Available'}</span>
+                  )}
                 </span>
               </span>
             </button>

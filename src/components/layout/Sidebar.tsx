@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -159,12 +160,16 @@ export function Sidebar() {
       <div className="flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white px-6 pb-4">
         {/* Logo */}
         <div className="flex h-16 shrink-0 items-center">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-emerald-600 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">TC</span>
-            </div>
-            <span className="text-xl font-bold text-gray-900">TCDS-Triage</span>
-          </div>
+          <Link href="/dashboard" className="flex items-center">
+            <Image
+              src="/tcds-logo.svg"
+              alt="TCDS"
+              width={120}
+              height={68}
+              className="h-10 w-auto"
+              priority
+            />
+          </Link>
         </div>
 
         {/* New Quote Button */}
