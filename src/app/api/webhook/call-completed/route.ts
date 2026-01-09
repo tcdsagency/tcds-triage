@@ -602,13 +602,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Create wrap-up draft with customer matching
+    // 3.5 Auto-void short calls and hangups
+    const isShortCall = (body.duration || 0) < 15; // Less than 15 seconds
+    const isHangup = analysis?.isHangup || isShortCall;
+
+    if (isHangup) {
+      const hangupReason = isShortCall ? "short_call" : "hangup";
+      console.log(`[Call-Completed] Auto-voiding call: ${hangupReason} (duration: ${body.duration}s)`);
+
+      await db
+        .update(calls)
+        .set({
+          disposition: "hangup",
+          aiSummary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),
+          predictedReason: hangupReason,
+        })
+        .where(eq(calls.id, call.id));
+    }
+
+    // 4. Create wrap-up draft with customer matching (skip hangups)
     let wrapupId: string | null = null;
     let customerMatchStatus: "matched" | "multiple_matches" | "unmatched" = "unmatched";
     let matchedAzCustomerId: string | null = null;
     let trestleData: Record<string, unknown> | null = null;
 
-    if (analysis && !analysis.isHangup) {
+    if (analysis && !isHangup) {
       // Get customer phone from call direction
       const customerPhone = direction === "inbound" ? callerNumber : calledNumber;
       const phoneForLookup = analysis.extractedData?.phone || customerPhone;
