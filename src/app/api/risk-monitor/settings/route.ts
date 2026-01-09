@@ -39,6 +39,8 @@ export async function GET(request: NextRequest) {
           delayBetweenChecksMs: 5000,
           emailAlertsEnabled: true,
           alertEmailAddresses: [],
+          rprEnabled: true,
+          mmiEnabled: true,
           ...credentialStatus,
         },
         isDefault: true,
@@ -60,6 +62,8 @@ export async function GET(request: NextRequest) {
         alertEmailAddresses: settings.emailRecipients || [],
         lastRunAt: settings.lastSchedulerRunAt,
         requestsToday: settings.requestsToday,
+        rprEnabled: settings.rprCredentialsValid ?? true,
+        mmiEnabled: settings.mmiCredentialsValid ?? true,
         ...credentialStatus,
       },
       isDefault: false,
@@ -126,6 +130,14 @@ export async function PUT(request: NextRequest) {
       updateData.emailRecipients = body.alertEmailAddresses;
     }
 
+    if (body.rprEnabled !== undefined) {
+      updateData.rprCredentialsValid = body.rprEnabled;
+    }
+
+    if (body.mmiEnabled !== undefined) {
+      updateData.mmiCredentialsValid = body.mmiEnabled;
+    }
+
     // Check if record exists
     const [existing] = await db
       .select()
@@ -172,6 +184,8 @@ export async function PUT(request: NextRequest) {
         delayBetweenChecksMs: settings.delayBetweenCallsMs,
         emailAlertsEnabled: settings.emailNotificationsEnabled,
         alertEmailAddresses: settings.emailRecipients || [],
+        rprEnabled: settings.rprCredentialsValid ?? true,
+        mmiEnabled: settings.mmiCredentialsValid ?? true,
       },
     });
   } catch (error: any) {

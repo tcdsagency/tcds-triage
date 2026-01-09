@@ -2,6 +2,7 @@
 
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 
 function LoginForm() {
@@ -95,11 +96,16 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-xl shadow-lg">
-        <div>
-          <h1 className="text-3xl font-bold text-center text-gray-900">
-            TCDS-Triage
-          </h1>
-          <p className="mt-2 text-center text-gray-600">
+        <div className="flex flex-col items-center">
+          <Image
+            src="/tcds-logo.svg"
+            alt="TCDS"
+            width={180}
+            height={102}
+            className="h-16 w-auto"
+            priority
+          />
+          <p className="mt-4 text-center text-gray-600">
             Sign in to your account
           </p>
         </div>
