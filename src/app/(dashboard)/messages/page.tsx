@@ -143,6 +143,7 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [phoneFromUrl, setPhoneFromUrl] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Track phone from URL on mount
@@ -205,6 +206,24 @@ export default function MessagesPage() {
       setLoading(false);
     }
   }, [selectedConversation, phoneFromUrl, nameParam, customerIdParam]);
+
+  // Resync contacts for messages with unknown names
+  const resyncContacts = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/messages/resync', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        console.log(`Resynced contacts: ${data.updated} updated, ${data.skipped} skipped`);
+        // Refresh messages to show updated names
+        await fetchMessages();
+      }
+    } catch (error) {
+      console.error('Error resyncing contacts:', error);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // Initial fetch and polling
   useEffect(() => {
@@ -340,8 +359,19 @@ export default function MessagesPage() {
               <Button
                 size="sm"
                 variant="ghost"
+                onClick={resyncContacts}
+                disabled={syncing}
+                className="text-gray-500"
+                title="Sync contacts"
+              >
+                <User className={cn("w-4 h-4", syncing && "animate-pulse")} />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
                 onClick={fetchMessages}
                 className="text-gray-500"
+                title="Refresh messages"
               >
                 <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
               </Button>
