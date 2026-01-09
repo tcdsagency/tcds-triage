@@ -4,12 +4,13 @@ import { customers, policies, vehicles, drivers, users, properties } from '@/db/
 import { eq, or, ilike, sql, and, desc, ne, isNull } from 'drizzle-orm';
 import { getPolicyTypeFromLineOfBusiness } from '@/types/customer-profile';
 
-// GET /api/customers/search?q=query&limit=20
+// GET /api/customers/search?q=query&limit=20&assignedTo=userId
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('q') || '';
     const phone = searchParams.get('phone');
+    const assignedTo = searchParams.get('assignedTo'); // Filter by producer or CSR
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
     const tenantId = process.env.DEFAULT_TENANT_ID;
 
@@ -36,11 +37,23 @@ export async function GET(request: NextRequest) {
     let results;
 
     // Base filters: tenant, not archived, not "Unknown Customer" placeholder
-    const baseFilters = and(
+    const baseConditions = [
       eq(customers.tenantId, tenantId),
       or(eq(customers.isArchived, false), isNull(customers.isArchived)),
-      ne(customers.firstName, 'Unknown') // Exclude placeholder records
-    );
+      ne(customers.firstName, 'Unknown'), // Exclude placeholder records
+    ];
+
+    // Add assignedTo filter if provided (matches producer OR CSR)
+    if (assignedTo) {
+      baseConditions.push(
+        or(
+          eq(customers.producerId, assignedTo),
+          eq(customers.csrId, assignedTo)
+        )!
+      );
+    }
+
+    const baseFilters = and(...baseConditions);
 
     if (phone) {
       const normalizedPhone = phone.replace(/\D/g, '').slice(-10);

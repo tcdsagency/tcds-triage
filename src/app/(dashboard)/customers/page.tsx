@@ -170,10 +170,23 @@ export default function CustomersPage() {
   const [expandedPolicies, setExpandedPolicies] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState<"all" | "customer" | "lead">("all");
+  const [filterType, setFilterType] = useState<"all" | "customer" | "lead" | "mine">("all");
   const [recentSearches, setRecentSearches] = useState<Array<{ id: string; name: string; type: string }>>([]);
   const [showRecent, setShowRecent] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch current user on mount
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.user?.id) {
+          setCurrentUserId(data.user.id);
+        }
+      })
+      .catch(console.error);
+  }, []);
 
   // Load recent searches from localStorage
   useEffect(() => {
@@ -207,16 +220,21 @@ export default function CustomersPage() {
     localStorage.removeItem("tcds_recent_customers");
   };
 
-  const searchCustomers = async (query: string) => {
-    if (query.length < 2) {
+  const searchCustomers = async (query: string, assignedUserId?: string | null) => {
+    // For "mine" filter, we can search with empty query
+    if (query.length < 2 && !assignedUserId) {
       setCustomers([]);
       setLoading(false);
       return;
     }
-    
+
     setLoading(true);
     try {
-      const res = await fetch(`/api/customers/search?q=${encodeURIComponent(query)}&limit=50`);
+      let url = `/api/customers/search?q=${encodeURIComponent(query)}&limit=50`;
+      if (assignedUserId) {
+        url += `&assignedTo=${encodeURIComponent(assignedUserId)}`;
+      }
+      const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
         setCustomers(data.results);
@@ -236,14 +254,23 @@ export default function CustomersPage() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      searchCustomers(searchQuery);
+      if (filterType === "mine" && currentUserId) {
+        searchCustomers(searchQuery || "a", currentUserId);
+      } else {
+        searchCustomers(searchQuery);
+      }
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, filterType, currentUserId]);
 
+  // Initial search or when filter changes to "mine"
   useEffect(() => {
-    searchCustomers("a");
-  }, []);
+    if (filterType === "mine" && currentUserId) {
+      searchCustomers("a", currentUserId);
+    } else if (filterType !== "mine") {
+      searchCustomers("a");
+    }
+  }, [filterType, currentUserId]);
 
   const filteredCustomers = customers.filter(c => {
     if (filterType === "customer") return !c.isLead;
@@ -364,15 +391,20 @@ export default function CustomersPage() {
           </div>
 
           <div className="flex gap-2 mt-3">
-            {(["all", "customer", "lead"] as const).map((type) => (
+            {(["mine", "all", "customer", "lead"] as const).map((type) => (
               <Button
                 key={type}
                 variant={filterType === type ? "default" : "outline"}
                 size="sm"
                 onClick={() => setFilterType(type)}
-                className={cn("text-xs capitalize", filterType === type && "bg-emerald-600 hover:bg-emerald-700")}
+                disabled={type === "mine" && !currentUserId}
+                className={cn(
+                  "text-xs",
+                  filterType === type && "bg-emerald-600 hover:bg-emerald-700",
+                  type === "mine" && "font-medium"
+                )}
               >
-                {type}
+                {type === "mine" ? "My Customers" : type.charAt(0).toUpperCase() + type.slice(1)}
               </Button>
             ))}
           </div>
