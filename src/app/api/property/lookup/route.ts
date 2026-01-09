@@ -7,6 +7,7 @@ import { propertyLookups } from "@/db/schema";
 import { eq, and, gte } from "drizzle-orm";
 import { nearmapClient, getMockNearmapData } from "@/lib/nearmap";
 import { rprClient } from "@/lib/rpr";
+import { mmiClient } from "@/lib/mmi";
 
 // =============================================================================
 // TYPES
@@ -55,9 +56,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch data from all sources in parallel
-    const [nearmapData, rprData] = await Promise.all([
+    const [nearmapData, rprData, mmiData] = await Promise.all([
       fetchNearmapData(lat, lng),
       fetchRPRData(formattedAddress || address),
+      fetchMMIData(formattedAddress || address),
     ]);
 
     // Get oblique views and historical surveys
@@ -80,6 +82,7 @@ export async function POST(request: NextRequest) {
         longitude: lng.toString(),
         nearmapData,
         rprData,
+        mmiData,
         obliqueViews,
         historicalSurveys: historicalSurveys || [],
         expiresAt,
@@ -97,6 +100,7 @@ export async function POST(request: NextRequest) {
         lng: parseFloat(lookup.longitude),
         nearmapData: lookup.nearmapData,
         rprData: lookup.rprData,
+        mmiData: lookup.mmiData,
         obliqueViews: lookup.obliqueViews,
         historicalSurveys: lookup.historicalSurveys,
         aiAnalysis: lookup.aiAnalysis,
@@ -165,6 +169,7 @@ async function checkCache(tenantId: string, address: string) {
       lng,
       nearmapData,
       rprData: cached.rprData,
+      mmiData: cached.mmiData,
       obliqueViews: cached.obliqueViews,
       historicalSurveys: cached.historicalSurveys,
       aiAnalysis: cached.aiAnalysis,
@@ -199,6 +204,19 @@ async function fetchRPRData(address: string) {
     return data;
   } catch (error) {
     console.error("RPR fetch error:", error);
+    return null;
+  }
+}
+
+async function fetchMMIData(address: string) {
+  try {
+    const result = await mmiClient.lookupByAddress(address);
+    if (result.success && result.data) {
+      return result.data;
+    }
+    return null;
+  } catch (error) {
+    console.error("MMI fetch error:", error);
     return null;
   }
 }

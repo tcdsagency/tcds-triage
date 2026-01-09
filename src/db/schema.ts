@@ -721,6 +721,34 @@ export const propertyLookups = pgTable('property_lookups', {
     west: string;
   }>(),
 
+  // MMI Data (Market Data - listing/deed history)
+  mmiData: jsonb('mmi_data').$type<{
+    propertyId: string;
+    listingHistory: Array<{
+      LISTING_DATE: string;
+      LIST_PRICE: number;
+      CLOSE_PRICE: number;
+      STATUS: string;
+      LISTING_AGENT: string;
+      LISTING_BROKER: string;
+      DAYS_ON_MARKET?: number;
+    }>;
+    deedHistory: Array<{
+      DATE: string;
+      LOAN_AMOUNT: number;
+      LENDER: string;
+      LOAN_OFFICER?: string;
+      TRANSACTION_TYPE: string;
+      BUYER_NAME?: string;
+      SELLER_NAME?: string;
+      SALE_PRICE?: number;
+    }>;
+    currentStatus: 'off_market' | 'active' | 'pending' | 'sold' | 'unknown';
+    lastSaleDate?: string;
+    lastSalePrice?: number;
+    lastUpdated: string;
+  }>(),
+
   // Lookup Metadata
   lookupSource: varchar('lookup_source', { length: 20 }).default('manual'), // 'manual', 'quote', 'policy'
   linkedQuoteId: uuid('linked_quote_id').references(() => quotes.id, { onDelete: 'set null' }),

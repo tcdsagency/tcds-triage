@@ -16,6 +16,7 @@ interface PropertyLookup {
   lng: number;
   nearmapData: NearmapData | null;
   rprData: RPRData | null;
+  mmiData: MMIData | null;
   aiAnalysis: AIAnalysis | null;
   obliqueViews: ObliqueViews | null;
   historicalSurveys: Array<{ date: string; imageUrl: string }>;
@@ -86,6 +87,33 @@ interface HistoricalComparison {
   comparedDates: { current: string; previous: string };
   changesDetected: boolean;
   changes: Array<{ type: string; severity: string; description: string }>;
+}
+
+interface MMIData {
+  propertyId: string;
+  listingHistory: Array<{
+    LISTING_DATE: string;
+    LIST_PRICE: number;
+    CLOSE_PRICE: number;
+    STATUS: string;
+    LISTING_AGENT: string;
+    LISTING_BROKER: string;
+    DAYS_ON_MARKET?: number;
+  }>;
+  deedHistory: Array<{
+    DATE: string;
+    LOAN_AMOUNT: number;
+    LENDER: string;
+    LOAN_OFFICER?: string;
+    TRANSACTION_TYPE: string;
+    BUYER_NAME?: string;
+    SELLER_NAME?: string;
+    SALE_PRICE?: number;
+  }>;
+  currentStatus: 'off_market' | 'active' | 'pending' | 'sold' | 'unknown';
+  lastSaleDate?: string;
+  lastSalePrice?: number;
+  lastUpdated: string;
 }
 
 // =============================================================================
@@ -513,6 +541,85 @@ export default function PropertyIntelligencePage() {
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Market Data (MMI) */}
+              {lookup.mmiData && (
+                <div className="bg-white rounded-lg border p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase">
+                      Market Status
+                    </h3>
+                    <span className={cn(
+                      'px-2 py-1 rounded text-xs font-bold uppercase',
+                      lookup.mmiData.currentStatus === 'active' ? 'bg-green-100 text-green-700' :
+                      lookup.mmiData.currentStatus === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                      lookup.mmiData.currentStatus === 'sold' ? 'bg-blue-100 text-blue-700' :
+                      'bg-gray-100 text-gray-600'
+                    )}>
+                      {lookup.mmiData.currentStatus === 'off_market' ? 'Off Market' : lookup.mmiData.currentStatus}
+                    </span>
+                  </div>
+
+                  {/* Listing History */}
+                  {lookup.mmiData.listingHistory.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-xs font-medium text-gray-500 mb-2">LISTING HISTORY</div>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {lookup.mmiData.listingHistory.slice(0, 5).map((listing, i) => (
+                          <div key={i} className="flex items-center justify-between text-sm bg-gray-50 px-3 py-2 rounded">
+                            <div>
+                              <span className="font-medium">{new Date(listing.LISTING_DATE).toLocaleDateString()}</span>
+                              <span className={cn(
+                                'ml-2 text-xs px-1.5 py-0.5 rounded',
+                                listing.STATUS?.toLowerCase().includes('sold') ? 'bg-blue-100 text-blue-700' :
+                                listing.STATUS?.toLowerCase().includes('active') ? 'bg-green-100 text-green-700' :
+                                'bg-gray-200 text-gray-600'
+                              )}>
+                                {listing.STATUS || 'Unknown'}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-medium">{formatCurrency(listing.LIST_PRICE)}</div>
+                              {listing.CLOSE_PRICE > 0 && (
+                                <div className="text-xs text-gray-500">Sold: {formatCurrency(listing.CLOSE_PRICE)}</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Deed/Sale History */}
+                  {lookup.mmiData.deedHistory.length > 0 && (
+                    <div>
+                      <div className="text-xs font-medium text-gray-500 mb-2">SALE & LOAN HISTORY</div>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {lookup.mmiData.deedHistory.slice(0, 5).map((deed, i) => (
+                          <div key={i} className="text-sm bg-gray-50 px-3 py-2 rounded">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">{new Date(deed.DATE).toLocaleDateString()}</span>
+                              <span className="text-xs text-gray-500">{deed.TRANSACTION_TYPE}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-1 text-xs text-gray-600">
+                              {deed.SALE_PRICE && deed.SALE_PRICE > 0 ? (
+                                <span>Sale: {formatCurrency(deed.SALE_PRICE)}</span>
+                              ) : deed.LOAN_AMOUNT > 0 ? (
+                                <span>Loan: {formatCurrency(deed.LOAN_AMOUNT)}</span>
+                              ) : null}
+                              {deed.LENDER && <span className="truncate max-w-[150px]">{deed.LENDER}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {lookup.mmiData.listingHistory.length === 0 && lookup.mmiData.deedHistory.length === 0 && (
+                    <p className="text-sm text-gray-500 italic">No market history available for this property.</p>
+                  )}
                 </div>
               )}
 
