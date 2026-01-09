@@ -116,7 +116,7 @@ export async function GET(
           lastName: customers.lastName,
           email: customers.email,
           phone: customers.phone,
-          agencyZoomId: customers.agencyZoomId,
+          agencyzoomId: customers.agencyzoomId,
         })
         .from(customers)
         .where(eq(customers.id, notice.customerId));
@@ -129,7 +129,7 @@ export async function GET(
           id: policies.id,
           policyNumber: policies.policyNumber,
           carrier: policies.carrier,
-          type: policies.type,
+          type: policies.lineOfBusiness,
           status: policies.status,
         })
         .from(policies)
