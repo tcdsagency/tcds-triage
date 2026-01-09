@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { wrapupDrafts, calls } from '@/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, ne, count } from 'drizzle-orm';
 
 // GET /api/calls/wrapup - Get wrapup drafts queue
 export async function GET(request: NextRequest) {
@@ -171,6 +171,62 @@ export async function PATCH(request: NextRequest) {
     console.error('Wrapup draft update error:', error);
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : 'Update failed' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/calls/wrapup - Purge wrapup drafts
+export async function DELETE(request: NextRequest) {
+  try {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+    const keepCompleted = searchParams.get('keepCompleted') === 'true';
+
+    // Count before delete
+    const [{ beforeCount }] = await db
+      .select({ beforeCount: count() })
+      .from(wrapupDrafts)
+      .where(eq(wrapupDrafts.tenantId, tenantId));
+
+    // Delete items
+    if (keepCompleted) {
+      await db
+        .delete(wrapupDrafts)
+        .where(
+          and(
+            eq(wrapupDrafts.tenantId, tenantId),
+            ne(wrapupDrafts.status, 'completed')
+          )
+        );
+    } else {
+      await db
+        .delete(wrapupDrafts)
+        .where(eq(wrapupDrafts.tenantId, tenantId));
+    }
+
+    // Count after delete
+    const [{ afterCount }] = await db
+      .select({ afterCount: count() })
+      .from(wrapupDrafts)
+      .where(eq(wrapupDrafts.tenantId, tenantId));
+
+    const deleted = beforeCount - afterCount;
+
+    return NextResponse.json({
+      success: true,
+      message: `Purged ${deleted} wrapup drafts`,
+      deleted,
+      remaining: afterCount,
+    });
+  } catch (error) {
+    console.error('Wrapup purge error:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Purge failed' },
       { status: 500 }
     );
   }
