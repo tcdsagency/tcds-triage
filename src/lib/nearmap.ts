@@ -412,8 +412,15 @@ class NearmapClient {
 
   /**
    * Get static aerial image URL
+   * Uses Google Static Maps as fallback since Nearmap static maps may be unavailable
    */
   getStaticImageUrl(lat: number, lng: number, width: number = 800, height: number = 600): string {
+    // Use Google Static Maps for reliable satellite imagery
+    const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (googleKey) {
+      return `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=19&size=${width}x${height}&maptype=satellite&key=${googleKey}`;
+    }
+    // Fallback to Nearmap if available
     const key = this.imageApiKey || this.apiKey;
     if (!key) return '';
     return `https://api.nearmap.com/staticmap/v3/staticmap?center=${lat},${lng}&size=${width}x${height}&zoom=19&apikey=${key}`;
