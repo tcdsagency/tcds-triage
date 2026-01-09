@@ -11,6 +11,7 @@ import { useQuoteWizard } from '../QuoteWizardProvider';
 import { cn } from '@/lib/utils';
 import { Plus, Trash2, Car, Loader2 } from 'lucide-react';
 import { Vehicle } from '../config/types';
+import { CanopyConnectSMS } from '@/components/CanopyConnectSMS';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 30 }, (_, i) => CURRENT_YEAR + 1 - i);
@@ -64,10 +65,18 @@ export function VehiclesStep() {
 
   return (
     <div className="space-y-6">
-      {/* Instructions */}
-      <p className="text-gray-600 dark:text-gray-400">
-        Add all vehicles you want to insure. Enter the VIN for automatic year, make, and model lookup.
-      </p>
+      {/* Header with Canopy Connect */}
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-gray-600 dark:text-gray-400">
+          Add all vehicles you want to insure. Enter the VIN for automatic year, make, and model lookup.
+        </p>
+        <CanopyConnectSMS
+          customerPhone={formData.phone}
+          customerName={formData.firstName}
+          variant="outline"
+          size="sm"
+        />
+      </div>
 
       {/* Vehicle list */}
       <div className="space-y-6">

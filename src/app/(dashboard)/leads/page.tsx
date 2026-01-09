@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { CanopyConnectSMS } from '@/components/CanopyConnectSMS';
 
 interface Lead {
   id: string;
@@ -330,7 +331,7 @@ export default function LeadsPage() {
               </div>
 
               {/* Actions */}
-              <div className="flex gap-3 mt-8">
+              <div className="flex flex-wrap gap-3 mt-8">
                 {selectedLead.phone && (
                   <a
                     href={`tel:${selectedLead.phone}`}
@@ -354,6 +355,14 @@ export default function LeadsPage() {
                   >
                     ✉️ Email
                   </a>
+                )}
+                {selectedLead.phone && (
+                  <CanopyConnectSMS
+                    customerPhone={selectedLead.phone}
+                    customerName={selectedLead.firstName}
+                    variant="outline"
+                    size="default"
+                  />
                 )}
               </div>
             </div>

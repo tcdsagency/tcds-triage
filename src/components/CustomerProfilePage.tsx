@@ -75,6 +75,7 @@ import { LifeInsuranceTab } from "@/components/features/life-insurance";
 import { mapMergedProfileToLifeInsurance, hasLifeInsurance, calculateOpportunityScore } from "@/lib/utils/lifeInsuranceMapper";
 import { DonnaInsightsCard } from "@/components/features/DonnaInsightsCard";
 import { MortgageePaymentStatus } from "@/components/features/MortgageePaymentStatus";
+import { CanopyConnectSMS } from "@/components/CanopyConnectSMS";
 
 // =============================================================================
 // ICON MAPPING
@@ -554,7 +555,17 @@ export default function CustomerProfilePage() {
                 <Plus className="w-4 h-4 mr-1" />
                 Add Note
               </Button>
-              
+
+              {profile.contact.phone && (
+                <CanopyConnectSMS
+                  customerPhone={profile.contact.phone}
+                  customerName={profile.firstName}
+                  customerId={profile.id}
+                  variant="outline"
+                  size="sm"
+                />
+              )}
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm">
