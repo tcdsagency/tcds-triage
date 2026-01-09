@@ -17,6 +17,7 @@ import {
 import { ChangeTypeOption, ChangeCategory } from './types';
 
 export const CHANGE_TYPES: ChangeTypeOption[] = [
+  // Auto-only changes
   {
     id: 'add_vehicle',
     name: 'Add Vehicle',
@@ -24,6 +25,7 @@ export const CHANGE_TYPES: ChangeTypeOption[] = [
     description: 'Add a new vehicle to the policy',
     category: 'vehicle',
     color: 'amber',
+    policyTypes: ['auto'],
   },
   {
     id: 'remove_vehicle',
@@ -32,6 +34,7 @@ export const CHANGE_TYPES: ChangeTypeOption[] = [
     description: 'Remove a vehicle from the policy',
     category: 'vehicle',
     color: 'amber',
+    policyTypes: ['auto'],
   },
   {
     id: 'replace_vehicle',
@@ -40,6 +43,7 @@ export const CHANGE_TYPES: ChangeTypeOption[] = [
     description: 'Replace one vehicle with another',
     category: 'vehicle',
     color: 'amber',
+    policyTypes: ['auto'],
   },
   {
     id: 'add_driver',
@@ -48,6 +52,7 @@ export const CHANGE_TYPES: ChangeTypeOption[] = [
     description: 'Add a new driver to the policy',
     category: 'driver',
     color: 'blue',
+    policyTypes: ['auto'],
   },
   {
     id: 'remove_driver',
@@ -56,15 +61,9 @@ export const CHANGE_TYPES: ChangeTypeOption[] = [
     description: 'Remove a driver from the policy',
     category: 'driver',
     color: 'blue',
+    policyTypes: ['auto'],
   },
-  {
-    id: 'address_change',
-    name: 'Address Change',
-    icon: MapPin,
-    description: 'Update the insured address',
-    category: 'property',
-    color: 'emerald',
-  },
+  // Home-only changes
   {
     id: 'add_mortgagee',
     name: 'Add Mortgagee/Lienholder',
@@ -72,6 +71,7 @@ export const CHANGE_TYPES: ChangeTypeOption[] = [
     description: 'Add a lienholder to the policy',
     category: 'property',
     color: 'emerald',
+    policyTypes: ['home'],
   },
   {
     id: 'remove_mortgagee',
@@ -80,6 +80,17 @@ export const CHANGE_TYPES: ChangeTypeOption[] = [
     description: 'Remove a lienholder',
     category: 'property',
     color: 'emerald',
+    policyTypes: ['home'],
+  },
+  // Changes that apply to all policy types
+  {
+    id: 'address_change',
+    name: 'Address Change',
+    icon: MapPin,
+    description: 'Update the insured address',
+    category: 'property',
+    color: 'emerald',
+    policyTypes: ['auto', 'home', 'all'],
   },
   {
     id: 'coverage_change',
@@ -88,6 +99,7 @@ export const CHANGE_TYPES: ChangeTypeOption[] = [
     description: 'Increase or decrease coverage limits',
     category: 'coverage',
     color: 'purple',
+    policyTypes: ['auto', 'home', 'all'],
   },
   {
     id: 'cancel_policy',
@@ -96,6 +108,7 @@ export const CHANGE_TYPES: ChangeTypeOption[] = [
     description: 'Cancel the policy',
     category: 'admin',
     color: 'red',
+    policyTypes: ['auto', 'home', 'all'],
   },
 ];
 
@@ -113,6 +126,41 @@ export const getChangeTypesByCategory = (category: ChangeCategory): ChangeTypeOp
 
 export const getChangeTypeById = (id: string): ChangeTypeOption | undefined => {
   return CHANGE_TYPES.find((ct) => ct.id === id);
+};
+
+/**
+ * Filter change types based on policy type
+ * @param policyType - The type of policy (e.g., 'auto', 'home', 'renters', etc.)
+ * @returns Filtered change types applicable to the policy type
+ */
+export const getChangeTypesForPolicy = (policyType: string): ChangeTypeOption[] => {
+  // Normalize policy type to our filter categories
+  const normalizedType = normalizePolicyType(policyType);
+
+  return CHANGE_TYPES.filter((ct) =>
+    ct.policyTypes.includes(normalizedType) || ct.policyTypes.includes('all')
+  );
+};
+
+/**
+ * Normalize policy type string to our filter categories
+ */
+export const normalizePolicyType = (policyType: string): 'auto' | 'home' | 'all' => {
+  const type = policyType?.toLowerCase() || '';
+
+  // Auto policies
+  if (type.includes('auto') || type.includes('vehicle') || type.includes('car') || type.includes('motorcycle')) {
+    return 'auto';
+  }
+
+  // Home policies
+  if (type.includes('home') || type.includes('dwelling') || type.includes('renters') ||
+      type.includes('condo') || type.includes('mobile') || type.includes('flood')) {
+    return 'home';
+  }
+
+  // Default to 'all' for other/unknown policy types
+  return 'all';
 };
 
 // Common options

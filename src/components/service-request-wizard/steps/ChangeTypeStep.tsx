@@ -4,13 +4,14 @@
  * Change Type Step
  * ================
  * Select the type of change to make.
+ * Filters change types based on the selected policy type.
  */
 
-import { Car, User, Home, Shield, XCircle } from 'lucide-react';
+import { useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useServiceRequestWizard } from '../ServiceRequestWizardProvider';
-import { CHANGE_TYPES, CATEGORY_LABELS, getChangeTypesByCategory } from '../config/change-types';
+import { CATEGORY_LABELS, getChangeTypesForPolicy, normalizePolicyType } from '../config/change-types';
 import { ChangeCategory } from '../config/types';
 
 const CATEGORY_ORDER: ChangeCategory[] = ['vehicle', 'driver', 'property', 'coverage', 'admin'];
@@ -25,6 +26,34 @@ const CATEGORY_COLORS: Record<ChangeCategory, string> = {
 
 export function ChangeTypeStep() {
   const { selectChangeType, formData, errors } = useServiceRequestWizard();
+
+  // Get filtered change types based on selected policy type
+  const filteredChangeTypes = useMemo(() => {
+    const policyType = formData.policy?.type || '';
+    return getChangeTypesForPolicy(policyType);
+  }, [formData.policy?.type]);
+
+  // Group filtered types by category
+  const typesByCategory = useMemo(() => {
+    const grouped: Record<ChangeCategory, typeof filteredChangeTypes> = {
+      vehicle: [],
+      driver: [],
+      property: [],
+      coverage: [],
+      admin: [],
+    };
+
+    filteredChangeTypes.forEach((ct) => {
+      grouped[ct.category].push(ct);
+    });
+
+    return grouped;
+  }, [filteredChangeTypes]);
+
+  // Get the normalized policy type for display
+  const normalizedPolicyType = formData.policy?.type
+    ? normalizePolicyType(formData.policy.type)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -53,14 +82,21 @@ export function ChangeTypeStep() {
           What would you like to change?
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2">
-          Select the type of change you need to make
+          {normalizedPolicyType === 'auto' && 'Select from auto policy change options'}
+          {normalizedPolicyType === 'home' && 'Select from home policy change options'}
+          {normalizedPolicyType === 'all' && 'Select the type of change you need to make'}
+          {!normalizedPolicyType && 'Select the type of change you need to make'}
         </p>
       </div>
 
-      {/* Change Type Categories */}
+      {/* Change Type Categories - Only show categories that have available options */}
       <div className="space-y-8">
         {CATEGORY_ORDER.map((category) => {
-          const types = getChangeTypesByCategory(category);
+          const types = typesByCategory[category];
+
+          // Skip categories with no available types
+          if (types.length === 0) return null;
+
           const categoryInfo = CATEGORY_LABELS[category];
           const color = CATEGORY_COLORS[category];
 

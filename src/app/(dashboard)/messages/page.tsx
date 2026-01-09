@@ -34,6 +34,8 @@ interface SMSMessage {
   contactType: string | null;
   isAcknowledged: boolean;
   acknowledgedAt: string | null;
+  acknowledgedById: string | null;
+  acknowledgedByName: string | null;
   isAfterHours: boolean;
   sentAt: string | null;
   createdAt: string;
@@ -149,7 +151,23 @@ export default function MessagesPage() {
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [phoneFromUrl, setPhoneFromUrl] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch current user on mount
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.user?.id) {
+          setCurrentUser({
+            id: data.user.id,
+            name: `${data.user.firstName || ''} ${data.user.lastName || ''}`.trim() || 'Unknown',
+          });
+        }
+      })
+      .catch(err => console.error('Failed to fetch current user:', err));
+  }, []);
 
   // Track phone from URL on mount
   useEffect(() => {
@@ -311,25 +329,41 @@ export default function MessagesPage() {
   // Acknowledge a message
   const acknowledgeMessage = async (messageId: string) => {
     try {
-      await fetch(`/api/messages/${messageId}/read`, { method: 'POST' });
-      // Update local state
+      const now = new Date().toISOString();
+      const acknowledgedBy = currentUser?.name || 'Unknown';
+      const acknowledgedById = currentUser?.id || null;
+
+      await fetch(`/api/messages/${messageId}/read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: acknowledgedById }),
+      });
+
+      // Update local state with acknowledgement info
+      const updateMessage = (m: SMSMessage) =>
+        m.id === messageId
+          ? {
+              ...m,
+              isAcknowledged: true,
+              acknowledgedAt: now,
+              acknowledgedById,
+              acknowledgedByName: acknowledgedBy,
+            }
+          : m;
+
       setConversations(prev =>
         prev.map(conv => ({
           ...conv,
           unreadCount: conv.messages.some(m => m.id === messageId && !m.isAcknowledged)
             ? Math.max(0, conv.unreadCount - 1)
             : conv.unreadCount,
-          messages: conv.messages.map(m =>
-            m.id === messageId ? { ...m, isAcknowledged: true } : m
-          ),
+          messages: conv.messages.map(updateMessage),
         }))
       );
       if (selectedConversation) {
         setSelectedConversation(prev => prev ? {
           ...prev,
-          messages: prev.messages.map(m =>
-            m.id === messageId ? { ...m, isAcknowledged: true } : m
-          ),
+          messages: prev.messages.map(updateMessage),
         } : null);
       }
       setUnreadTotal(prev => Math.max(0, prev - 1));
@@ -534,6 +568,13 @@ export default function MessagesPage() {
                     <span className="text-xs">{formatMessageTime(msg.createdAt)}</span>
                     {getStatusIcon(msg)}
                   </div>
+                  {/* Acknowledgement info for inbound messages */}
+                  {msg.direction === "inbound" && msg.isAcknowledged && msg.acknowledgedByName && (
+                    <div className="text-xs text-blue-600 dark:text-blue-400 mt-1 text-right">
+                      Acknowledged by {msg.acknowledgedByName}
+                      {msg.acknowledgedAt && ` on ${new Date(msg.acknowledgedAt).toLocaleDateString()} at ${new Date(msg.acknowledgedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
