@@ -1,23 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { User, Bell, Moon, Sun, Shield, Key, Smartphone, Mail, Save, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+
+interface UserProfile {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string | null;
+  extension: string | null;
+  role: string;
+  avatarUrl: string | null;
+}
 
 export default function MySettingsPage() {
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("profile");
-  
+
   const [profile, setProfile] = useState({
-    firstName: "Todd",
-    lastName: "Conn",
-    email: "todd.conn@tcdsagency.com",
-    phone: "(205) 555-1234",
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
     title: "Agent",
-    extension: "101",
+    extension: "",
   });
   
   const [notifications, setNotifications] = useState({
@@ -37,10 +50,57 @@ export default function MySettingsPage() {
     soundAlerts: true,
   });
 
+  // Fetch current user profile on load
+  useEffect(() => {
+    async function fetchProfile() {
+      try {
+        const res = await fetch("/api/auth/me");
+        const data = await res.json();
+        if (data.success && data.user) {
+          setProfile({
+            firstName: data.user.firstName || "",
+            lastName: data.user.lastName || "",
+            email: data.user.email || "",
+            phone: data.user.phone || "",
+            title: data.user.role || "Agent",
+            extension: data.user.extension || "",
+          });
+        }
+      } catch (error) {
+        console.error("Failed to fetch profile:", error);
+        toast.error("Failed to load profile");
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProfile();
+  }, []);
+
   const handleSave = async () => {
     setSaving(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setSaving(false);
+    try {
+      const res = await fetch("/api/auth/me", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          phone: profile.phone,
+          extension: profile.extension,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Settings saved successfully");
+      } else {
+        toast.error(data.error || "Failed to save settings");
+      }
+    } catch (error) {
+      console.error("Save error:", error);
+      toast.error("Failed to save settings");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const tabs = [
@@ -49,6 +109,20 @@ export default function MySettingsPage() {
     { id: "preferences", label: "Preferences", icon: Moon },
     { id: "security", label: "Security", icon: Shield },
   ];
+
+  if (loading) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Settings</h1>
+          <p className="text-gray-500 dark:text-gray-400">Loading your settings...</p>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -117,7 +191,7 @@ export default function MySettingsPage() {
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">Profile Photo</h3>
                 <div className="flex items-center gap-4">
                   <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                    TC
+                    {profile.firstName?.[0] || ""}{profile.lastName?.[0] || ""}
                   </div>
                   <div>
                     <Button variant="outline" size="sm">Upload Photo</Button>
