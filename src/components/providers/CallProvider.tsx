@@ -3,6 +3,15 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from "react";
 import CallPopup from "@/components/features/CallPopup";
 
+interface UserInfo {
+  id: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl?: string;
+  extension: string;
+}
+
 interface ActiveCall {
   sessionId: string;
   phoneNumber: string;
@@ -10,6 +19,10 @@ interface ActiveCall {
   status: "ringing" | "connected" | "on_hold" | "wrap_up" | "ended";
   startTime: number;
   customerId?: string;
+  extension?: string;
+  // User info for caller/callee when extension matches a user
+  callerUser?: UserInfo;
+  calleeUser?: UserInfo;
 }
 
 interface CallContextType {
@@ -17,6 +30,8 @@ interface CallContextType {
   isPopupVisible: boolean;
   isPopupMinimized: boolean;
   myExtension: string | null;
+  myUserInfo: UserInfo | null;
+  usersByExtension: Map<string, UserInfo>;
   openPopup: (call: ActiveCall) => void;
   closePopup: () => void;
   minimizePopup: () => void;
@@ -43,7 +58,46 @@ export function CallProvider({ children }: CallProviderProps) {
   const [isPopupMinimized, setIsPopupMinimized] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [myExtension, setMyExtension] = useState<string | null>(null);
+  const [myUserInfo, setMyUserInfo] = useState<UserInfo | null>(null);
+  const [usersByExtension, setUsersByExtension] = useState<Map<string, UserInfo>>(new Map());
   const myExtensionRef = useRef<string | null>(null);
+  const activeCallRef = useRef<ActiveCall | null>(null);
+  const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Keep activeCallRef in sync
+  useEffect(() => {
+    activeCallRef.current = activeCall;
+  }, [activeCall]);
+
+  // Lookup user by extension and cache it
+  const lookupUserByExtension = useCallback(async (extension: string): Promise<UserInfo | null> => {
+    // Check cache first
+    if (usersByExtension.has(extension)) {
+      return usersByExtension.get(extension)!;
+    }
+
+    try {
+      const res = await fetch(`/api/users/by-extension/${extension}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.user) {
+          const userInfo: UserInfo = {
+            id: data.user.id,
+            name: data.user.name || `${data.user.firstName} ${data.user.lastName}`.trim(),
+            firstName: data.user.firstName,
+            lastName: data.user.lastName,
+            avatarUrl: data.user.avatarUrl,
+            extension: data.user.extension,
+          };
+          setUsersByExtension(prev => new Map(prev).set(extension, userInfo));
+          return userInfo;
+        }
+      }
+    } catch (err) {
+      console.error(`[CallProvider] Failed to lookup user for extension ${extension}:`, err);
+    }
+    return null;
+  }, [usersByExtension]);
 
   // Fetch current user's extension on mount and check for active call
   useEffect(() => {
@@ -56,6 +110,18 @@ export function CallProvider({ children }: CallProviderProps) {
           myExtensionRef.current = ext;
           localStorage.setItem('myExtension', ext);
           console.log('[CallProvider] Agent extension:', ext);
+
+          // Store current user info
+          const userInfo: UserInfo = {
+            id: data.user.id,
+            name: `${data.user.firstName} ${data.user.lastName}`.trim(),
+            firstName: data.user.firstName,
+            lastName: data.user.lastName,
+            avatarUrl: data.user.avatarUrl,
+            extension: ext,
+          };
+          setMyUserInfo(userInfo);
+          setUsersByExtension(prev => new Map(prev).set(ext, userInfo));
 
           // Check for active call on page load
           try {
@@ -71,6 +137,7 @@ export function CallProvider({ children }: CallProviderProps) {
                   status: activeData.call.status === "in_progress" ? "connected" : "ringing",
                   startTime: new Date(activeData.call.startedAt).getTime(),
                   customerId: activeData.call.customerId,
+                  extension: ext,
                 };
                 setActiveCall(call);
                 setIsPopupVisible(true);
@@ -162,16 +229,17 @@ export function CallProvider({ children }: CallProviderProps) {
   // The 3CX bridge posts to webhooks, which should push to realtime server
   // If popup not showing, check if realtime server has /api/broadcast endpoint
 
-  const handleCallEvent = useCallback((data: any) => {
+  const handleCallEvent = useCallback(async (data: any) => {
     console.log("[CallProvider] Event:", data.type, data);
 
     // Get extension from event (supports both formats from 3CX)
     const callExtension = data.extension || data.data?.extension || data.agentExtension;
     const currentExt = myExtensionRef.current || localStorage.getItem('myExtension');
+    const currentCall = activeCallRef.current;
 
     switch (data.type) {
       case "call_ringing":
-      case "call_started":
+      case "call_started": {
         // Filter by extension - only show popup for THIS agent's calls
         const isMyCall = !callExtension || (currentExt && callExtension === currentExt);
 
@@ -180,7 +248,26 @@ export function CallProvider({ children }: CallProviderProps) {
           return;
         }
 
-        // New incoming/outgoing call - auto-open popup
+        // DEDUPLICATION: Check if we already have an active call for this session
+        if (currentCall && currentCall.sessionId === data.sessionId) {
+          // Same session - just update status if needed (ringing -> connected)
+          const newStatus = data.type === "call_ringing" ? "ringing" : "connected";
+          if (currentCall.status !== newStatus) {
+            console.log(`[CallProvider] Updating existing call ${data.sessionId} status: ${currentCall.status} -> ${newStatus}`);
+            setActiveCall(prev => prev ? { ...prev, status: newStatus } : null);
+          } else {
+            console.log(`[CallProvider] Ignoring duplicate ${data.type} for session ${data.sessionId}`);
+          }
+          return;
+        }
+
+        // Clear any pending close timeout from previous call
+        if (closeTimeoutRef.current) {
+          clearTimeout(closeTimeoutRef.current);
+          closeTimeoutRef.current = null;
+        }
+
+        // New call - create ActiveCall object
         const newCall: ActiveCall = {
           sessionId: data.sessionId,
           phoneNumber: data.phoneNumber || data.callerNumber || "Unknown",
@@ -188,35 +275,62 @@ export function CallProvider({ children }: CallProviderProps) {
           status: data.type === "call_ringing" ? "ringing" : "connected",
           startTime: Date.now(),
           customerId: data.customerId,
+          extension: callExtension,
         };
+
+        // Look up user info for caller/callee extensions
+        if (data.callerExtension) {
+          newCall.callerUser = await lookupUserByExtension(data.callerExtension) || undefined;
+        }
+        if (data.calleeExtension) {
+          newCall.calleeUser = await lookupUserByExtension(data.calleeExtension) || undefined;
+        }
+        // If call extension is the agent's, mark them as callee for inbound or caller for outbound
+        if (callExtension && callExtension === currentExt) {
+          const myUser = usersByExtension.get(callExtension);
+          if (myUser) {
+            if (data.direction === "inbound") {
+              newCall.calleeUser = myUser;
+            } else {
+              newCall.callerUser = myUser;
+            }
+          }
+        }
+
         setActiveCall(newCall);
         setIsPopupVisible(true);
         setIsPopupMinimized(false);
         console.log("[CallProvider] Auto-opened popup for call:", newCall.sessionId, "extension:", callExtension);
         break;
+      }
 
       case "call_updated":
-        if (activeCall && data.sessionId === activeCall.sessionId) {
+        if (currentCall && data.sessionId === currentCall.sessionId) {
           setActiveCall((prev) =>
             prev ? { ...prev, status: data.status } : null
           );
         }
         break;
 
-      case "call_ended":
-        if (activeCall && data.sessionId === activeCall.sessionId) {
+      case "call_ended": {
+        // Match by sessionId - use ref to avoid stale closure
+        if (currentCall && data.sessionId === currentCall.sessionId) {
           setActiveCall((prev) =>
             prev ? { ...prev, status: "ended" } : null
           );
+
           // Keep popup visible for wrap-up, auto-close after 60s
-          setTimeout(() => {
+          // Store timeout ref so we can cancel if a new call comes in
+          closeTimeoutRef.current = setTimeout(() => {
             setIsPopupVisible(false);
             setActiveCall(null);
+            closeTimeoutRef.current = null;
           }, 60000);
         }
         break;
+      }
     }
-  }, [activeCall]);
+  }, [lookupUserByExtension, usersByExtension]);
 
   // Expose test function to window for debugging (dev only)
   useEffect(() => {
@@ -260,10 +374,16 @@ export function CallProvider({ children }: CallProviderProps) {
   }, []);
 
   const closePopup = useCallback(() => {
+    // Clear any pending auto-close timeout
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+
     setIsPopupVisible(false);
     setIsPopupMinimized(false);
-    // Keep activeCall for a bit in case they want to reopen
-    setTimeout(() => setActiveCall(null), 5000);
+    // Clear activeCall immediately when user explicitly closes
+    setActiveCall(null);
   }, []);
 
   const minimizePopup = useCallback(() => {
@@ -281,6 +401,8 @@ export function CallProvider({ children }: CallProviderProps) {
         isPopupVisible,
         isPopupMinimized,
         myExtension,
+        myUserInfo,
+        usersByExtension,
         openPopup,
         closePopup,
         minimizePopup,
@@ -298,6 +420,10 @@ export function CallProvider({ children }: CallProviderProps) {
           isVisible={isPopupVisible && !isPopupMinimized}
           onClose={closePopup}
           onMinimize={minimizePopup}
+          startTime={activeCall.startTime}
+          callStatus={activeCall.status}
+          callerUser={activeCall.callerUser}
+          calleeUser={activeCall.calleeUser}
         />
       )}
 

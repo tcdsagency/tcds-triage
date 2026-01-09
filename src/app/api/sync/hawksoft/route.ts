@@ -148,7 +148,7 @@ export async function POST(request: Request) {
                   customerId,
                   hawksoftPolicyId: policyId,
                   policyNumber: policy.policyNumber || 'Unknown',
-                  lineOfBusiness: policy.lineOfBusiness || policy.policyType || 'Unknown',
+                  lineOfBusiness: extractLineOfBusiness(policy),
                   carrier: policy.carrier || null,
                   effectiveDate: policy.effectiveDate ? new Date(policy.effectiveDate) : new Date(),
                   expirationDate: policy.expirationDate ? new Date(policy.expirationDate) : new Date(),
@@ -220,4 +220,49 @@ function mapPolicyStatus(status: string | undefined): 'active' | 'pending' | 'ex
   if (lower.includes('pending')) return 'pending';
   if (lower.includes('non') && lower.includes('renew')) return 'non_renewed';
   return 'active';
+}
+
+/**
+ * Extract line of business from HawkSoft policy
+ * HawkSoft returns LOB in loBs[0].code (most reliable), title, or other fields
+ *
+ * Priority: loBs[0].code → title → autos/locations presence → type → lineOfBusiness → 'Unknown'
+ */
+function extractLineOfBusiness(policy: any): string {
+  // loBs[0].code is the most reliable source (e.g., "AUTOP", "HOMEP", "DFIRE")
+  if (policy.loBs && policy.loBs.length > 0 && policy.loBs[0].code) {
+    return policy.loBs[0].code;
+  }
+
+  // Title field often has human-readable names like "Personal Auto", "Homeowners"
+  if (policy.title && policy.title.toLowerCase() !== 'general') {
+    return policy.title;
+  }
+
+  // Check for presence of autos (indicates auto policy)
+  if (policy.autos && policy.autos.length > 0) {
+    return 'Auto';
+  }
+
+  // Check for presence of locations (indicates property policy)
+  if (policy.locations && policy.locations.length > 0) {
+    return 'Property';
+  }
+
+  // Fall back to type if not "General"
+  if (policy.type && policy.type.toLowerCase() !== 'general') {
+    return policy.type;
+  }
+
+  // Try policyType field
+  if (policy.policyType && policy.policyType.toLowerCase() !== 'general') {
+    return policy.policyType;
+  }
+
+  // Try lineOfBusiness field
+  if (policy.lineOfBusiness) {
+    return policy.lineOfBusiness;
+  }
+
+  return 'Unknown';
 }

@@ -238,20 +238,34 @@ export class RiskMonitorScheduler {
     rprData: RPRPropertyData | null | undefined,
     mmiData: MMIPropertyData | null | undefined
   ): string {
-    // Prioritize MMI current status as it's more reliable
-    if (mmiData?.currentStatus) {
-      if (mmiData.currentStatus !== "unknown") {
-        return mmiData.currentStatus;
-      }
+    // Check MMI listing history first - most recent listing status is most reliable
+    const latestMMIListing = mmiData?.listingHistory?.[0];
+    if (latestMMIListing?.STATUS) {
+      const mmiListingStatus = latestMMIListing.STATUS.toUpperCase();
+      if (mmiListingStatus === "ACTIVE") return "active";
+      if (mmiListingStatus === "PENDING" || mmiListingStatus === "UNDER CONTRACT") return "pending";
+      if (mmiListingStatus === "SOLD" || mmiListingStatus === "CLOSED") return "sold";
     }
 
-    // Fall back to RPR current status or listing
+    // Check RPR listing status
+    if (rprData?.listing?.active) {
+      return "active";
+    }
+    if (rprData?.listing?.status) {
+      const rprStatus = rprData.listing.status.toLowerCase();
+      if (rprStatus === "active") return "active";
+      if (rprStatus === "pending" || rprStatus === "under contract") return "pending";
+      if (rprStatus === "sold" || rprStatus === "closed") return "sold";
+    }
+
+    // Check RPR current status
     if (rprData?.currentStatus && rprData.currentStatus !== "unknown") {
       return rprData.currentStatus;
     }
 
-    if (rprData?.listing?.active) {
-      return "active";
+    // Check MMI current status as fallback
+    if (mmiData?.currentStatus && mmiData.currentStatus !== "unknown") {
+      return mmiData.currentStatus;
     }
 
     // Default to off_market

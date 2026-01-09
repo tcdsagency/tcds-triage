@@ -25,6 +25,49 @@ const INACTIVE_STATUSES = [
   "void",
 ];
 
+/**
+ * Extract line of business from HawkSoft policy
+ * HawkSoft returns LOB in loBs[0].code (most reliable), title, or other fields
+ */
+function extractLineOfBusiness(policy: any): string {
+  // loBs[0].code is the most reliable source (e.g., "AUTOP", "HOMEP", "DFIRE")
+  if (policy.loBs && policy.loBs.length > 0 && policy.loBs[0].code) {
+    return policy.loBs[0].code;
+  }
+
+  // Title field often has human-readable names like "Personal Auto", "Homeowners"
+  if (policy.title && policy.title.toLowerCase() !== 'general') {
+    return policy.title;
+  }
+
+  // Check for presence of autos (indicates auto policy)
+  if (policy.autos && policy.autos.length > 0) {
+    return 'Auto';
+  }
+
+  // Check for presence of locations (indicates property policy)
+  if (policy.locations && policy.locations.length > 0) {
+    return 'Property';
+  }
+
+  // Fall back to type if not "General"
+  if (policy.type && policy.type.toLowerCase() !== 'general') {
+    return policy.type;
+  }
+
+  // Try policyType field
+  if (policy.policyType && policy.policyType.toLowerCase() !== 'general') {
+    return policy.policyType;
+  }
+
+  // Try lineOfBusiness field
+  if (policy.lineOfBusiness) {
+    return policy.lineOfBusiness;
+  }
+
+  return 'Unknown';
+}
+
 // GET - Get policies for a customer
 export async function GET(request: NextRequest) {
   try {
@@ -110,7 +153,7 @@ export async function GET(request: NextRequest) {
               .map((p) => ({
                 policyNumber: p.policyNumber,
                 carrier: p.carrier || "Unknown Carrier",
-                type: p.lineOfBusiness || p.policyType || "Unknown",
+                type: extractLineOfBusiness(p),
                 status: p.status,
                 expirationDate: p.expirationDate,
               }));

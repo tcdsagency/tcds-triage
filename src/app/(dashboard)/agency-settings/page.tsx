@@ -95,6 +95,19 @@ export default function AgencySettingsPage() {
   const [aiUsageLoading, setAiUsageLoading] = useState(false);
   const [aiUsagePeriod, setAiUsagePeriod] = useState("30d");
 
+  // Data Sync state
+  const [dataSyncStats, setDataSyncStats] = useState<{
+    hawksoft: { lastSync: string | null; policiesSynced: number; status: string };
+    agencyzoom: { lastSync: string | null; customersSynced: number; status: string };
+  } | null>(null);
+  const [dataSyncLoading, setDataSyncLoading] = useState(false);
+  const [hawksoftSyncing, setHawksoftSyncing] = useState(false);
+  const [hawksoftSyncResult, setHawksoftSyncResult] = useState<{
+    success: boolean;
+    message: string;
+    details?: any;
+  } | null>(null);
+
   // JSON Import state
   const [showJsonImport, setShowJsonImport] = useState(false);
   const [jsonImportText, setJsonImportText] = useState("");
@@ -627,11 +640,71 @@ export default function AgencySettingsPage() {
     setSyncing(null);
   };
 
+  // Load data sync stats
+  const loadDataSyncStats = async () => {
+    setDataSyncLoading(true);
+    try {
+      const res = await fetch("/api/sync/stats");
+      const data = await res.json();
+      if (data.success) {
+        setDataSyncStats(data.stats);
+      }
+    } catch (err) {
+      console.error("Failed to load sync stats:", err);
+    } finally {
+      setDataSyncLoading(false);
+    }
+  };
+
+  // Handle HawkSoft sync
+  const handleHawksoftSync = async () => {
+    setHawksoftSyncing(true);
+    setHawksoftSyncResult(null);
+
+    try {
+      const res = await fetch("/api/sync/hawksoft", {
+        method: "POST",
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setHawksoftSyncResult({
+          success: true,
+          message: `Synced ${data.policiesSynced} policies from ${data.customersUpdated} customers`,
+          details: data,
+        });
+        // Reload stats after sync
+        await loadDataSyncStats();
+      } else {
+        setHawksoftSyncResult({
+          success: false,
+          message: data.error || "Sync failed",
+          details: data,
+        });
+      }
+    } catch (err: any) {
+      setHawksoftSyncResult({
+        success: false,
+        message: err.message || "Sync failed",
+      });
+    } finally {
+      setHawksoftSyncing(false);
+    }
+  };
+
+  // Load sync stats when data sync tab is active
+  useEffect(() => {
+    if (activeTab === "datasync" && !dataSyncStats) {
+      loadDataSyncStats();
+    }
+  }, [activeTab]);
+
   const tabs = [
     { id: "general", label: "General", icon: Building2 },
     { id: "afterhours", label: "After Hours", icon: Moon },
     { id: "team", label: "Team", icon: Users },
     { id: "integrations", label: "Integrations", icon: Link2 },
+    { id: "datasync", label: "Data Sync", icon: Database },
     { id: "aiusage", label: "AI Usage", icon: Cpu },
     { id: "templates", label: "SMS Templates", icon: MessageSquare },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
@@ -1610,6 +1683,151 @@ export default function AgencySettingsPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Data Sync Tab */}
+          {activeTab === "datasync" && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Data Synchronization</h2>
+                <p className="text-sm text-gray-500">Sync policy and customer data from external systems</p>
+              </div>
+
+              {dataSyncLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* HawkSoft Sync Card */}
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                          <Database className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900 dark:text-white">HawkSoft Policy Sync</h3>
+                          <p className="text-sm text-gray-500 mt-1">
+                            Sync policies from HawkSoft to update LOB types, carriers, and coverage details
+                          </p>
+                          <div className="flex items-center gap-4 mt-3 text-sm">
+                            <div className="flex items-center gap-1.5 text-gray-500">
+                              <Clock className="w-4 h-4" />
+                              <span>
+                                Last sync: {dataSyncStats?.hawksoft?.lastSync
+                                  ? new Date(dataSyncStats.hawksoft.lastSync).toLocaleString()
+                                  : "Never"}
+                              </span>
+                            </div>
+                            {dataSyncStats?.hawksoft?.policiesSynced !== undefined && (
+                              <div className="text-gray-500">
+                                {dataSyncStats.hawksoft.policiesSynced.toLocaleString()} policies synced
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        onClick={handleHawksoftSync}
+                        disabled={hawksoftSyncing}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                      >
+                        {hawksoftSyncing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Syncing...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Sync Now
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    {/* Sync Result */}
+                    {hawksoftSyncResult && (
+                      <div className={cn(
+                        "mt-4 p-4 rounded-lg",
+                        hawksoftSyncResult.success
+                          ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800"
+                          : "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
+                      )}>
+                        <div className="flex items-start gap-3">
+                          {hawksoftSyncResult.success ? (
+                            <Check className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5" />
+                          ) : (
+                            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" />
+                          )}
+                          <div>
+                            <p className={cn(
+                              "font-medium",
+                              hawksoftSyncResult.success
+                                ? "text-green-800 dark:text-green-300"
+                                : "text-red-800 dark:text-red-300"
+                            )}>
+                              {hawksoftSyncResult.success ? "Sync Completed" : "Sync Failed"}
+                            </p>
+                            <p className={cn(
+                              "text-sm mt-1",
+                              hawksoftSyncResult.success
+                                ? "text-green-700 dark:text-green-400"
+                                : "text-red-700 dark:text-red-400"
+                            )}>
+                              {hawksoftSyncResult.message}
+                            </p>
+                            {hawksoftSyncResult.details?.hasMore && (
+                              <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
+                                More records available. Click "Sync Now" again to continue syncing.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Info Box */}
+                    <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                        <div className="text-sm text-blue-700 dark:text-blue-300">
+                          <p className="font-medium">Why sync?</p>
+                          <p className="mt-1">
+                            Running a sync will update policy Line of Business (LOB) types from HawkSoft.
+                            This fixes policies showing as "Other" instead of their correct type (Auto, Home, etc.).
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* AgencyZoom Info Card */}
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                        <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900 dark:text-white">AgencyZoom Customer Sync</h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Customer data syncs automatically from AgencyZoom via scheduled jobs
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-3 text-sm text-gray-500">
+                          <Clock className="w-4 h-4" />
+                          <span>
+                            Last sync: {dataSyncStats?.agencyzoom?.lastSync
+                              ? new Date(dataSyncStats.agencyzoom.lastSync).toLocaleString()
+                              : "Never"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

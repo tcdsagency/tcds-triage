@@ -122,19 +122,40 @@ async function notifyRealtimeServer(event: {
 
 // Start VM Bridge transcription
 async function startTranscription(callId: string, extension: string) {
+  console.log(`[3CX Webhook] ========== TRANSCRIPTION START REQUEST ==========`);
+  console.log(`[3CX Webhook] Call ID: ${callId}`);
+  console.log(`[3CX Webhook] Extension: ${extension}`);
+
+  if (!extension) {
+    console.error("[3CX Webhook] Cannot start transcription: No extension provided!");
+    return null;
+  }
+
   try {
     const vmBridge = await getVMBridgeClient();
     if (!vmBridge) {
-      console.warn("[3CX Webhook] VM Bridge not configured");
+      console.warn("[3CX Webhook] VM Bridge not configured - check VMBRIDGE_URL and DEEPGRAM_API_KEY env vars");
+      console.warn("[3CX Webhook] VMBRIDGE_URL:", process.env.VMBRIDGE_URL ? "SET" : "NOT SET");
+      console.warn("[3CX Webhook] DEEPGRAM_API_KEY:", process.env.DEEPGRAM_API_KEY ? "SET" : "NOT SET");
       return null;
     }
 
+    console.log(`[3CX Webhook] VM Bridge client obtained, bridge URL: ${vmBridge.getBridgeUrl()}`);
     console.log(`[3CX Webhook] Starting transcription for call ${callId}, extension ${extension}`);
+
     const session = await vmBridge.startTranscription(callId, extension);
-    console.log(`[3CX Webhook] Transcription started:`, session);
+
+    if (session) {
+      console.log(`[3CX Webhook] Transcription started successfully:`, JSON.stringify(session, null, 2));
+    } else {
+      console.warn(`[3CX Webhook] Transcription start returned null - check VM Bridge logs`);
+    }
+
+    console.log(`[3CX Webhook] ========== TRANSCRIPTION START COMPLETE ==========`);
     return session;
   } catch (error) {
     console.error("[3CX Webhook] Failed to start transcription:", error);
+    console.error("[3CX Webhook] Error details:", error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -307,6 +328,11 @@ export async function POST(request: NextRequest) {
       case "answered":
       case "connected":
       case "talking": {
+        console.log(`[3CX Webhook] ========== CALL ANSWERED EVENT ==========`);
+        console.log(`[3CX Webhook] Event type: ${eventType}`);
+        console.log(`[3CX Webhook] External Call ID: ${callId}`);
+        console.log(`[3CX Webhook] Extension from event: ${extension || "NOT PROVIDED"}`);
+
         // Update call status - use 'in_progress' (matches DB enum)
         const [call] = await db
           .update(calls)
@@ -317,37 +343,62 @@ export async function POST(request: NextRequest) {
           .where(eq(calls.externalCallId, callId))
           .returning();
 
-        if (call) {
-          await notifyRealtimeServer({
-            type: "call_started",
-            sessionId: call.id,
-            status: "connected", // UI uses 'connected' for display
-          });
+        if (!call) {
+          console.error(`[3CX Webhook] No call found with externalCallId: ${callId}`);
+          return NextResponse.json({
+            success: false,
+            error: `No call found with externalCallId: ${callId}`,
+          }, { status: 404 });
+        }
 
-          // Start VM Bridge transcription now that call is answered
-          // VoIPTools Listen2 requires an active call
-          let agentExtension = extension;
+        console.log(`[3CX Webhook] Updated call record: ${call.id}`);
+        console.log(`[3CX Webhook] Call agent ID: ${call.agentId || "NOT SET"}`);
 
-          // If extension not in event, try to look it up from agent
-          if (!agentExtension && call.agentId) {
-            const [agent] = await db
-              .select({ extension: users.extension })
-              .from(users)
-              .where(eq(users.id, call.agentId))
-              .limit(1);
-            agentExtension = agent?.extension || "";
-          }
+        await notifyRealtimeServer({
+          type: "call_started",
+          sessionId: call.id,
+          status: "connected", // UI uses 'connected' for display
+          extension: extension,
+        });
 
-          if (agentExtension) {
-            console.log(`[3CX Webhook] Starting transcription for call ${call.id}, extension ${agentExtension}`);
-            await startTranscription(call.id, agentExtension);
+        // Start VM Bridge transcription now that call is answered
+        // VoIPTools Listen2 requires an active call
+        let agentExtension = extension;
+        console.log(`[3CX Webhook] Initial agent extension: ${agentExtension || "NOT PROVIDED"}`);
+
+        // If extension not in event, try to look it up from agent
+        if (!agentExtension && call.agentId) {
+          console.log(`[3CX Webhook] Looking up extension for agent ID: ${call.agentId}`);
+          const [agent] = await db
+            .select({ extension: users.extension, firstName: users.firstName, lastName: users.lastName })
+            .from(users)
+            .where(eq(users.id, call.agentId))
+            .limit(1);
+
+          if (agent) {
+            agentExtension = agent.extension || "";
+            console.log(`[3CX Webhook] Found agent: ${agent.firstName} ${agent.lastName}, extension: ${agentExtension}`);
+          } else {
+            console.warn(`[3CX Webhook] No agent found with ID: ${call.agentId}`);
           }
         }
+
+        if (agentExtension) {
+          console.log(`[3CX Webhook] Starting transcription for call ${call.id}, extension ${agentExtension}`);
+          await startTranscription(call.id, agentExtension);
+        } else {
+          console.error(`[3CX Webhook] Cannot start transcription: No agent extension available`);
+          console.error(`[3CX Webhook] Extension from event: ${extension || "NOT PROVIDED"}`);
+          console.error(`[3CX Webhook] Call agent ID: ${call.agentId || "NOT SET"}`);
+        }
+
+        console.log(`[3CX Webhook] ========== CALL ANSWERED COMPLETE ==========`);
 
         return NextResponse.json({
           success: true,
           callId: call?.id,
           event: "call_answered",
+          transcriptionStarted: !!agentExtension,
         });
       }
 
