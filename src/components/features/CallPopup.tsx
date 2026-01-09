@@ -200,16 +200,23 @@ export default function CallPopup({
 
     const loadAIOverview = async () => {
       setAiLoading(true);
-      
+
       try {
-        // Same API endpoint used by CustomerProfilePage
+        // Format recent notes for AI context (last 5)
+        const recentNotes = profile.notes?.slice(0, 5).map((n) => ({
+          content: n.content || "",
+          createdAt: n.createdAt || "",
+          createdBy: n.createdBy?.name || "Agent",
+        }));
+
+        // Same API endpoint used by CustomerProfilePage - now with notes
         const res = await fetch("/api/ai/customer-overview", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profile }),
+          body: JSON.stringify({ profile, recentNotes }),
         });
         const data = await res.json();
-        
+
         if (data.success && data.overview) {
           setAiOverview(data.overview);
         }
@@ -782,6 +789,36 @@ export default function CallPopup({
                   )}
                 </div>
               ) : null}
+
+              {/* Recent Notes from AgencyZoom */}
+              {profile?.notes && profile.notes.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                    📝 Recent Notes
+                  </h3>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {profile.notes.slice(0, 5).map((note, i) => (
+                      <div key={i} className="bg-white rounded border p-2 text-xs">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-gray-500">
+                            {note.createdAt
+                              ? new Date(note.createdAt).toLocaleDateString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                })
+                              : ""}
+                          </span>
+                          <span className="text-gray-400">{note.createdBy?.name || "Agent"}</span>
+                        </div>
+                        <p className="text-gray-700 line-clamp-2">
+                          {note.content?.substring(0, 150)}
+                          {(note.content?.length || 0) > 150 ? "..." : ""}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Quick Policies Summary */}
               {profile?.policies && profile.policies.length > 0 && (
