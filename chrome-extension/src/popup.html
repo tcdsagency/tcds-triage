@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TCDS Call Pop</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <span class="logo">TCDS</span>
+        <span class="status-indicator" id="connectionStatus"></span>
+      </div>
+      <div class="header-right">
+        <button id="settingsBtn" class="icon-btn" title="Settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- No Call State -->
+    <div id="noCallState" class="state-container">
+      <div class="empty-state">
+        <svg class="empty-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+        </svg>
+        <p class="empty-text">Waiting for calls...</p>
+        <p class="empty-subtext" id="extensionInfo"></p>
+      </div>
+    </div>
+
+    <!-- Active Call State -->
+    <div id="activeCallState" class="state-container hidden">
+      <!-- Call Header -->
+      <div class="call-header" id="callHeader">
+        <div class="call-direction" id="callDirection">
+          <span class="direction-icon"></span>
+          <span class="direction-text"></span>
+        </div>
+        <div class="call-timer" id="callTimer">00:00</div>
+      </div>
+
+      <!-- Customer Info -->
+      <div class="customer-section">
+        <div class="customer-info" id="customerInfo">
+          <div class="customer-avatar" id="customerAvatar">?</div>
+          <div class="customer-details">
+            <h2 class="customer-name" id="customerName">Unknown Caller</h2>
+            <p class="customer-phone" id="customerPhone"></p>
+            <div class="customer-tags" id="customerTags"></div>
+          </div>
+        </div>
+        <button id="viewProfileBtn" class="btn btn-primary hidden">View Full Profile</button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="ai">AI Insights</button>
+        <button class="tab" data-tab="transcript">Transcript</button>
+      </div>
+
+      <!-- Tab Content -->
+      <div class="tab-content">
+        <!-- Overview Tab -->
+        <div id="overviewTab" class="tab-panel active">
+          <div class="info-section" id="policiesSection">
+            <h3 class="section-title">Policies</h3>
+            <div class="policies-list" id="policiesList">
+              <p class="empty-section">No policies found</p>
+            </div>
+          </div>
+          <div class="info-section" id="recentNotesSection">
+            <h3 class="section-title">Recent Notes</h3>
+            <div class="notes-list" id="notesList">
+              <p class="empty-section">No recent notes</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Insights Tab -->
+        <div id="aiTab" class="tab-panel hidden">
+          <div id="aiLoading" class="loading-state">
+            <div class="spinner"></div>
+            <p>Generating insights...</p>
+          </div>
+          <div id="aiContent" class="hidden">
+            <div class="ai-section">
+              <h3 class="ai-label">Likely Call Reason</h3>
+              <p class="ai-text" id="aiCallReason"></p>
+            </div>
+            <div class="ai-section">
+              <h3 class="ai-label">Coverage Summary</h3>
+              <p class="ai-text" id="aiCoverageSummary"></p>
+            </div>
+            <div class="ai-section">
+              <h3 class="ai-label">Last Contact</h3>
+              <p class="ai-text" id="aiLastContact"></p>
+            </div>
+            <div class="ai-section" id="aiOpenItemsSection">
+              <h3 class="ai-label">Open Items</h3>
+              <ul class="ai-list" id="aiOpenItems"></ul>
+            </div>
+            <div class="ai-section">
+              <h3 class="ai-label">Suggested Questions</h3>
+              <ul class="ai-list" id="aiSuggestions"></ul>
+            </div>
+          </div>
+          <div id="aiError" class="error-state hidden">
+            <p>Failed to load AI insights</p>
+            <button id="retryAiBtn" class="btn btn-secondary">Retry</button>
+          </div>
+        </div>
+
+        <!-- Transcript Tab -->
+        <div id="transcriptTab" class="tab-panel hidden">
+          <div class="transcript-container" id="transcriptContainer">
+            <p class="empty-section">Transcript will appear here...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Disconnected State -->
+    <div id="disconnectedState" class="state-container hidden">
+      <div class="empty-state error">
+        <svg class="empty-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="15" y1="9" x2="9" y2="15"></line>
+          <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>
+        <p class="empty-text">Not Connected</p>
+        <p class="empty-subtext">Check your settings and try again</p>
+        <button id="reconnectBtn" class="btn btn-primary">Reconnect</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TCDS Call Pop - Settings</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #1f2937;
+      background: #f3f4f6;
+      padding: 32px;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .logo-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #059669 0%, #047857 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .logo-text {
+      font-size: 24px;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .subtitle {
+      color: #6b7280;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    .help-text {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="url"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #059669;
+      box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.1);
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #059669;
+    }
+
+    .checkbox-label {
+      font-size: 14px;
+      color: #374151;
+      margin-bottom: 0;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+    }
+
+    .btn-primary {
+      background: #059669;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #047857;
+    }
+
+    .btn-primary:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+
+    .btn-secondary:hover {
+      background: #e5e7eb;
+    }
+
+    .actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .status-message {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-top: 16px;
+      display: none;
+    }
+
+    .status-message.success {
+      display: block;
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #86efac;
+    }
+
+    .status-message.error {
+      display: block;
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+    }
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #f9fafb;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #fbbf24;
+    }
+
+    .status-dot.connected {
+      background: #34d399;
+    }
+
+    .status-dot.disconnected {
+      background: #f87171;
+    }
+
+    .status-text {
+      font-size: 13px;
+      color: #374151;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">
+        <div class="logo-icon">T</div>
+        <span class="logo-text">TCDS Call Pop</span>
+      </div>
+      <p class="subtitle">Configure your call popup settings</p>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">Connection Settings</h2>
+
+      <div class="connection-status">
+        <span class="status-dot" id="statusDot"></span>
+        <span class="status-text" id="statusText">Checking connection...</span>
+      </div>
+
+      <div class="form-group">
+        <label for="apiUrl">TCDS API URL</label>
+        <input type="url" id="apiUrl" placeholder="https://tcds-triage.vercel.app">
+        <p class="help-text">The base URL for your TCDS deployment</p>
+      </div>
+
+      <div class="form-group">
+        <label for="wsUrl">WebSocket URL</label>
+        <input type="url" id="wsUrl" placeholder="wss://realtime.tcdsagency.com/ws/calls">
+        <p class="help-text">Real-time server WebSocket endpoint</p>
+      </div>
+
+      <div class="form-group">
+        <label for="userExtension">Your Extension</label>
+        <input type="text" id="userExtension" placeholder="101">
+        <p class="help-text">Your 3CX extension number (e.g., 101, 102)</p>
+      </div>
+
+      <div class="form-group">
+        <label for="authToken">Auth Token (Optional)</label>
+        <input type="password" id="authToken" placeholder="Enter your auth token">
+        <p class="help-text">API authentication token for secure requests</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">Notification Settings</h2>
+
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="notificationsEnabled" checked>
+          <label for="notificationsEnabled" class="checkbox-label">Enable desktop notifications</label>
+        </div>
+        <p class="help-text">Show system notifications when calls come in</p>
+      </div>
+
+      <div class="form-group">
+        <div class="checkbox-group">
+          <input type="checkbox" id="autoPopup" checked>
+          <label for="autoPopup" class="checkbox-label">Auto-open popup on incoming calls</label>
+        </div>
+        <p class="help-text">Automatically open the popup when a call starts ringing</p>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="testConnection" class="btn btn-secondary">Test Connection</button>
+      <button id="saveSettings" class="btn btn-primary">Save Settings</button>
+    </div>
+
+    <div id="statusMessage" class="status-message"></div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
