@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2, Key, Eye, EyeOff, Zap, Settings2, MessageSquare, Webhook, Copy, Cpu, TrendingUp, DollarSign, BarChart3 } from "lucide-react";
+import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, CheckCircle, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2, Key, Eye, EyeOff, Zap, Settings2, MessageSquare, Webhook, Copy, Cpu, TrendingUp, DollarSign, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -110,6 +110,12 @@ export default function AgencySettingsPage() {
   const [dataSyncLoading, setDataSyncLoading] = useState(false);
   const [hawksoftSyncing, setHawksoftSyncing] = useState(false);
   const [hawksoftSyncResult, setHawksoftSyncResult] = useState<{
+    success: boolean;
+    message: string;
+    details?: any;
+  } | null>(null);
+  const [agencyzoomSyncing, setAgencyzoomSyncing] = useState(false);
+  const [agencyzoomSyncResult, setAgencyzoomSyncResult] = useState<{
     success: boolean;
     message: string;
     details?: any;
@@ -696,6 +702,42 @@ export default function AgencySettingsPage() {
       });
     } finally {
       setHawksoftSyncing(false);
+    }
+  };
+
+  // Handle AgencyZoom sync
+  const handleAgencyZoomSync = async () => {
+    setAgencyzoomSyncing(true);
+    setAgencyzoomSyncResult(null);
+
+    try {
+      const res = await fetch("/api/sync/agencyzoom", {
+        method: "POST",
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setAgencyzoomSyncResult({
+          success: true,
+          message: `Synced ${data.customersCreated || 0} new customers, updated ${data.customersUpdated || 0}`,
+          details: data,
+        });
+        // Reload stats after sync
+        await loadDataSyncStats();
+      } else {
+        setAgencyzoomSyncResult({
+          success: false,
+          message: data.error || "Sync failed",
+          details: data,
+        });
+      }
+    } catch (err: any) {
+      setAgencyzoomSyncResult({
+        success: false,
+        message: err.message || "Sync failed",
+      });
+    } finally {
+      setAgencyzoomSyncing(false);
     }
   };
 
@@ -1850,27 +1892,66 @@ export default function AgencySettingsPage() {
                     </div>
                   </div>
 
-                  {/* AgencyZoom Info Card */}
+                  {/* AgencyZoom Sync Card */}
                   <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                        <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900 dark:text-white">AgencyZoom Customer Sync</h3>
-                        <p className="text-sm text-gray-500 mt-1">
-                          Customer data syncs automatically from AgencyZoom via scheduled jobs
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-3 text-sm text-gray-500">
-                          <Clock className="w-4 h-4" />
-                          <span>
-                            Last sync: {dataSyncStats?.agencyzoom?.lastSync
-                              ? new Date(dataSyncStats.agencyzoom.lastSync).toLocaleString()
-                              : "Never"}
-                          </span>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                          <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900 dark:text-white">AgencyZoom Customer Sync</h3>
+                          <p className="text-sm text-gray-500 mt-1">
+                            Sync customer and lead data from AgencyZoom
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-3 text-sm text-gray-500">
+                            <Clock className="w-4 h-4" />
+                            <span>
+                              Last sync: {dataSyncStats?.agencyzoom?.lastSync
+                                ? new Date(dataSyncStats.agencyzoom.lastSync).toLocaleString()
+                                : "Never"}
+                            </span>
+                          </div>
+                          {dataSyncStats?.agencyzoom?.customersSynced !== undefined && (
+                            <div className="text-gray-500 text-sm mt-1">
+                              {dataSyncStats.agencyzoom.customersSynced.toLocaleString()} customers synced
+                            </div>
+                          )}
                         </div>
                       </div>
+                      <Button
+                        onClick={handleAgencyZoomSync}
+                        disabled={agencyzoomSyncing}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        {agencyzoomSyncing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Syncing...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Sync Now
+                          </>
+                        )}
+                      </Button>
                     </div>
+                    {agencyzoomSyncResult && (
+                      <div className={cn(
+                        "mt-4 p-3 rounded-lg text-sm",
+                        agencyzoomSyncResult.success
+                          ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                          : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                      )}>
+                        {agencyzoomSyncResult.success ? (
+                          <CheckCircle className="w-4 h-4 inline mr-2" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 inline mr-2" />
+                        )}
+                        {agencyzoomSyncResult.message}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
