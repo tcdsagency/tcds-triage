@@ -137,6 +137,26 @@ export const policyChangeStatusEnum = pgEnum('policy_change_status', [
   'cancelled',      // Cancelled by user
 ]);
 
+export const mortgageePaymentStatusEnum = pgEnum('mortgagee_payment_status', [
+  'current',        // All payments up to date
+  'late',           // Payment overdue
+  'grace_period',   // Within grace period
+  'lapsed',         // Policy lapsed for non-payment
+  'unknown',        // Could not determine status
+  'pending_check',  // Check in progress
+  'error',          // Check failed
+]);
+
+export const mortgageeCheckStatusEnum = pgEnum('mortgagee_check_status', [
+  'pending',        // Queued for processing
+  'in_progress',    // Currently being checked
+  'completed',      // Successfully completed
+  'failed',         // Check failed (will retry)
+  'captcha_failed', // CAPTCHA solving failed
+  'not_found',      // Policy not found on MCI
+  'site_blocked',   // Rate limited or blocked
+]);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MULTI-TENANCY: TENANTS (Agencies)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3055,6 +3075,243 @@ export const lifeQuotesRelations = relations(lifeQuotes, ({ one }) => ({
   agent: one(users, {
     fields: [lifeQuotes.agentId],
     references: [users.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MORTGAGEE PAYMENT TRACKING
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Tracks active mortgagees per policy (synced from HawkSoft lienholders)
+export const mortgagees = pgTable('mortgagees', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // Link to policy
+  policyId: uuid('policy_id').notNull().references(() => policies.id, { onDelete: 'cascade' }),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+
+  // Mortgagee details (from HawkSoft lienholder data)
+  name: text('name').notNull(),
+  loanNumber: varchar('loan_number', { length: 100 }),
+  addressLine1: text('address_line1'),
+  addressLine2: text('address_line2'),
+  city: varchar('city', { length: 100 }),
+  state: varchar('state', { length: 2 }),
+  zipCode: varchar('zip_code', { length: 10 }),
+
+  // Type classification
+  type: varchar('type', { length: 50 }).default('mortgagee'), // mortgagee, lienholder, loss_payee
+  position: integer('position').default(1), // 1st, 2nd, 3rd mortgagee
+
+  // Tracking
+  isActive: boolean('is_active').default(true).notNull(),
+  lastPaymentCheckAt: timestamp('last_payment_check_at'),
+  currentPaymentStatus: mortgageePaymentStatusEnum('current_payment_status').default('unknown'),
+
+  // MyCoverageInfo lookup data
+  mciLastFound: boolean('mci_last_found'),
+  mciPolicyNumber: varchar('mci_policy_number', { length: 100 }), // May differ from HS policy number
+
+  // Payment details (updated after each check)
+  paidThroughDate: date('paid_through_date'),
+  nextDueDate: date('next_due_date'),
+  amountDue: decimal('amount_due', { precision: 12, scale: 2 }),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('mortgagees_tenant_idx').on(table.tenantId),
+  policyIdx: index('mortgagees_policy_idx').on(table.policyId),
+  customerIdx: index('mortgagees_customer_idx').on(table.customerId),
+  statusIdx: index('mortgagees_status_idx').on(table.currentPaymentStatus),
+  activeIdx: index('mortgagees_active_idx').on(table.tenantId, table.isActive),
+}));
+
+// History of all payment verification checks
+export const mortgageePaymentChecks = pgTable('mortgagee_payment_checks', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // References
+  mortgageeId: uuid('mortgagee_id').notNull().references(() => mortgagees.id, { onDelete: 'cascade' }),
+  policyId: uuid('policy_id').notNull().references(() => policies.id, { onDelete: 'cascade' }),
+
+  // Check metadata
+  runId: uuid('run_id'), // Groups checks from same scheduler run
+  checkType: varchar('check_type', { length: 20 }).default('scheduled'), // scheduled, manual, batch
+
+  // Status
+  status: mortgageeCheckStatusEnum('status').notNull().default('pending'),
+
+  // Results
+  paymentStatus: mortgageePaymentStatusEnum('payment_status'),
+  paidThroughDate: date('paid_through_date'),
+  nextDueDate: date('next_due_date'),
+  amountDue: decimal('amount_due', { precision: 12, scale: 2 }),
+  premiumAmount: decimal('premium_amount', { precision: 12, scale: 2 }),
+
+  // Policy info from MCI (snapshot)
+  mciPolicyNumber: varchar('mci_policy_number', { length: 100 }),
+  mciCarrier: varchar('mci_carrier', { length: 200 }),
+  mciEffectiveDate: date('mci_effective_date'),
+  mciExpirationDate: date('mci_expiration_date'),
+  mciCancellationDate: date('mci_cancellation_date'),
+  mciReason: text('mci_reason'), // Cancellation reason if applicable
+
+  // Scraping details
+  screenshotUrl: text('screenshot_url'), // S3 URL of page screenshot for audit
+  rawResponse: jsonb('raw_response'), // Full scraped data
+
+  // Error handling
+  errorMessage: text('error_message'),
+  errorCode: varchar('error_code', { length: 50 }),
+  retryCount: integer('retry_count').default(0),
+
+  // Timing
+  startedAt: timestamp('started_at'),
+  completedAt: timestamp('completed_at'),
+  durationMs: integer('duration_ms'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('mpc_tenant_idx').on(table.tenantId),
+  mortgageeIdx: index('mpc_mortgagee_idx').on(table.mortgageeId),
+  policyIdx: index('mpc_policy_idx').on(table.policyId),
+  runIdx: index('mpc_run_idx').on(table.runId),
+  statusIdx: index('mpc_status_idx').on(table.status),
+  createdAtIdx: index('mpc_created_at_idx').on(table.createdAt),
+  paymentStatusIdx: index('mpc_payment_status_idx').on(table.paymentStatus),
+}));
+
+// Settings for mortgagee payment scheduler (follows riskMonitorSettings pattern)
+export const mortgageePaymentSettings = pgTable('mortgagee_payment_settings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id).unique(),
+
+  // Scheduler controls
+  isPaused: boolean('is_paused').default(false).notNull(),
+  pausedAt: timestamp('paused_at'),
+  pausedByUserId: uuid('paused_by_user_id').references(() => users.id),
+  pauseReason: text('pause_reason'),
+
+  // Schedule window (CST, run overnight to avoid rate limits)
+  scheduleStartHour: integer('schedule_start_hour').default(22).notNull(), // 10pm
+  scheduleEndHour: integer('schedule_end_hour').default(5).notNull(), // 5am
+
+  // Rate limiting
+  dailyCheckBudget: integer('daily_check_budget').default(200).notNull(),
+  checksToday: integer('checks_today').default(0).notNull(),
+  lastBudgetResetAt: timestamp('last_budget_reset_at'),
+
+  // Check cycle
+  recheckDays: integer('recheck_days').default(7).notNull(), // Re-check every 7 days
+  delayBetweenChecksMs: integer('delay_between_checks_ms').default(30000).notNull(), // 30 seconds
+
+  // Microservice connection
+  microserviceUrl: text('microservice_url'), // e.g., http://mci-scraper:8080
+  microserviceApiKey: varchar('microservice_api_key', { length: 64 }),
+
+  // 2Captcha settings
+  twoCaptchaApiKey: varchar('two_captcha_api_key', { length: 64 }),
+  twoCaptchaBalance: decimal('two_captcha_balance', { precision: 10, scale: 4 }),
+  twoCaptchaLastCheckedAt: timestamp('two_captcha_last_checked_at'),
+
+  // Alerts
+  alertOnLatePayment: boolean('alert_on_late_payment').default(true).notNull(),
+  alertOnLapsed: boolean('alert_on_lapsed').default(true).notNull(),
+  emailNotificationsEnabled: boolean('email_notifications_enabled').default(true).notNull(),
+  emailRecipients: jsonb('email_recipients').$type<string[]>(),
+
+  // Scheduler state
+  lastSchedulerRunAt: timestamp('last_scheduler_run_at'),
+  lastSchedulerCompletedAt: timestamp('last_scheduler_completed_at'),
+  lastSchedulerError: text('last_scheduler_error'),
+  schedulerRunCount: integer('scheduler_run_count').default(0).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Activity log for scheduler runs (follows riskMonitorActivityLog pattern)
+export const mortgageePaymentActivityLog = pgTable('mortgagee_payment_activity_log', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // Run info
+  runId: uuid('run_id').notNull(),
+  runType: varchar('run_type', { length: 20 }).notNull(), // 'scheduled', 'manual', 'batch'
+
+  // Timing
+  startedAt: timestamp('started_at').notNull(),
+  completedAt: timestamp('completed_at'),
+  durationMs: integer('duration_ms'),
+
+  // Results
+  policiesChecked: integer('policies_checked').default(0).notNull(),
+  latePaymentsFound: integer('late_payments_found').default(0).notNull(),
+  lapsedFound: integer('lapsed_found').default(0).notNull(),
+  errorsEncountered: integer('errors_encountered').default(0).notNull(),
+  captchasSolved: integer('captchas_solved').default(0).notNull(),
+
+  // Status
+  status: varchar('status', { length: 20 }).default('running').notNull(),
+  errorMessage: text('error_message'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('mpact_tenant_idx').on(table.tenantId),
+  runIdIdx: index('mpact_run_id_idx').on(table.runId),
+  startedAtIdx: index('mpact_started_at_idx').on(table.startedAt),
+}));
+
+// Mortgagee Relations
+export const mortgageesRelations = relations(mortgagees, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [mortgagees.tenantId],
+    references: [tenants.id],
+  }),
+  policy: one(policies, {
+    fields: [mortgagees.policyId],
+    references: [policies.id],
+  }),
+  customer: one(customers, {
+    fields: [mortgagees.customerId],
+    references: [customers.id],
+  }),
+  paymentChecks: many(mortgageePaymentChecks),
+}));
+
+export const mortgageePaymentChecksRelations = relations(mortgageePaymentChecks, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [mortgageePaymentChecks.tenantId],
+    references: [tenants.id],
+  }),
+  mortgagee: one(mortgagees, {
+    fields: [mortgageePaymentChecks.mortgageeId],
+    references: [mortgagees.id],
+  }),
+  policy: one(policies, {
+    fields: [mortgageePaymentChecks.policyId],
+    references: [policies.id],
+  }),
+}));
+
+export const mortgageePaymentSettingsRelations = relations(mortgageePaymentSettings, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [mortgageePaymentSettings.tenantId],
+    references: [tenants.id],
+  }),
+  pausedByUser: one(users, {
+    fields: [mortgageePaymentSettings.pausedByUserId],
+    references: [users.id],
+  }),
+}));
+
+export const mortgageePaymentActivityLogRelations = relations(mortgageePaymentActivityLog, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [mortgageePaymentActivityLog.tenantId],
+    references: [tenants.id],
   }),
 }));
 

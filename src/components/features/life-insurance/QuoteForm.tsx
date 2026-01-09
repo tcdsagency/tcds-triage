@@ -48,6 +48,20 @@ export function QuoteForm({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Update form when customerData changes (handles async data loading)
+  useEffect(() => {
+    if (customerData) {
+      setFormData((prev) => ({
+        ...prev,
+        firstName: customerData.firstName || prev.firstName || "",
+        lastName: customerData.lastName || prev.lastName || "",
+        dateOfBirth: customerData.dateOfBirth || prev.dateOfBirth || "",
+        gender: customerData.gender || prev.gender || Gender.MALE,
+        state: customerData.state || prev.state || "",
+      }));
+    }
+  }, [customerData]);
+
   // Update form when prefilled values change
   useEffect(() => {
     if (prefilledValues) {
