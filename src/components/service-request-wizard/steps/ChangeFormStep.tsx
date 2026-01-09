@@ -177,11 +177,10 @@ export function ChangeFormStep() {
                       required
                     />
                     <FormField
-                      label="Lienholder Address"
+                      label="Lienholder Address (if available)"
                       value={formData.vehicle.lienholderAddress}
                       onChange={(v) => updateNestedField('vehicle', 'lienholderAddress', v)}
                       placeholder="P.O. Box 12345, City, ST 12345"
-                      required
                     />
                   </div>
                 </div>

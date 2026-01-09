@@ -19,6 +19,7 @@ import { personalAutoSteps } from '@/components/quote-wizard/config/personal-aut
 import { homeownersSteps } from '@/components/quote-wizard/config/homeowners';
 import { rentersSteps } from '@/components/quote-wizard/config/renters';
 import { mobileHomeSteps } from '@/components/quote-wizard/config/mobile-home';
+import { floodSteps } from '@/components/quote-wizard/config/flood';
 import { umbrellaSteps } from '@/components/quote-wizard/config/umbrella';
 import { bopSteps } from '@/components/quote-wizard/config/bop';
 import { generalLiabilitySteps } from '@/components/quote-wizard/config/general-liability';
@@ -66,6 +67,10 @@ const QUOTE_TYPES: Record<QuoteType, QuoteTypeInfo> = {
   mobile_home: {
     label: 'Mobile Home',
     steps: mobileHomeSteps,
+  },
+  flood: {
+    label: 'Flood Insurance',
+    steps: floodSteps,
   },
   umbrella: {
     label: 'Umbrella',

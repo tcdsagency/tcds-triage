@@ -24,6 +24,8 @@ export type ChangeType =
 
 export type ChangeCategory = 'vehicle' | 'driver' | 'property' | 'coverage' | 'admin';
 
+export type PolicyTypeFilter = 'auto' | 'home' | 'all';
+
 export interface ChangeTypeOption {
   id: ChangeType;
   name: string;
@@ -31,6 +33,7 @@ export interface ChangeTypeOption {
   description: string;
   category: ChangeCategory;
   color: string;
+  policyTypes: PolicyTypeFilter[]; // Which policy types this change applies to
 }
 
 // =============================================================================

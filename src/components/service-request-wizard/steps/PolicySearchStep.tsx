@@ -40,7 +40,7 @@ export function PolicySearchStep() {
     setSearching(true);
     setHasSearched(true);
     try {
-      const res = await fetch(`/api/policy/search?q=${encodeURIComponent(q)}&limit=20`);
+      const res = await fetch(`/api/policy/search?q=${encodeURIComponent(q)}&limit=20&activeOnly=true`);
       const data = await res.json();
 
       if (data.success && data.results) {
