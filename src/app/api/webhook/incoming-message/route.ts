@@ -34,22 +34,25 @@ export async function POST(request: NextRequest) {
     const contentType = request.headers.get("content-type") || "";
     let payload: TwilioIncomingMessage;
 
+    let formData: FormData | null = null;
+    let jsonData: any = null;
+
     if (contentType.includes("application/json")) {
       // Parse JSON payload (from Zapier, custom integrations, etc.)
-      const json = await request.json();
+      jsonData = await request.json();
       payload = {
-        MessageSid: json.MessageSid || json.externalId || json.messageSid || `custom_${Date.now()}`,
-        From: json.From || json.from || "",
-        To: json.To || json.to || "",
-        Body: json.Body || json.body || "",
-        NumMedia: json.NumMedia || json.numMedia || "0",
-        MediaUrl0: json.MediaUrl0 || json.mediaUrl0,
-        MediaContentType0: json.MediaContentType0 || json.mediaContentType0,
-        AccountSid: json.AccountSid || json.accountSid,
+        MessageSid: jsonData.MessageSid || jsonData.externalId || jsonData.messageSid || `custom_${Date.now()}`,
+        From: jsonData.From || jsonData.from || "",
+        To: jsonData.To || jsonData.to || "",
+        Body: jsonData.Body || jsonData.body || "",
+        NumMedia: jsonData.NumMedia || jsonData.numMedia || "0",
+        MediaUrl0: jsonData.MediaUrl0 || jsonData.mediaUrl0,
+        MediaContentType0: jsonData.MediaContentType0 || jsonData.mediaContentType0,
+        AccountSid: jsonData.AccountSid || jsonData.accountSid,
       };
     } else {
       // Parse form data (Twilio sends as x-www-form-urlencoded)
-      const formData = await request.formData();
+      formData = await request.formData();
       payload = {
         MessageSid: formData.get("MessageSid") as string,
         From: formData.get("From") as string,
@@ -164,7 +167,12 @@ export async function POST(request: NextRequest) {
     const mediaUrls: string[] = [];
     const numMedia = parseInt(payload.NumMedia || "0", 10);
     for (let i = 0; i < numMedia; i++) {
-      const mediaUrl = formData.get(`MediaUrl${i}`) as string;
+      let mediaUrl: string | null = null;
+      if (formData) {
+        mediaUrl = formData.get(`MediaUrl${i}`) as string;
+      } else if (jsonData) {
+        mediaUrl = jsonData[`MediaUrl${i}`] || jsonData[`mediaUrl${i}`];
+      }
       if (mediaUrl) {
         mediaUrls.push(mediaUrl);
       }
