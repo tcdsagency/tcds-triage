@@ -201,7 +201,7 @@ export class RiskMonitorScheduler {
         mmiData = mmiResult.data ?? null;
         result.mmiData = mmiData;
         await this.logEvent("mmi_lookup", policy.id, "MMI check complete", {
-          status: mmiData?.marketStatus?.currentStatus,
+          status: mmiData?.currentStatus,
         });
       }
 
@@ -231,15 +231,18 @@ export class RiskMonitorScheduler {
     rprData: RPRPropertyData | null | undefined,
     mmiData: MMIPropertyData | null | undefined
   ): string {
-    // Prioritize MMI market status as it's more reliable
-    if (mmiData?.marketStatus?.currentStatus) {
-      const mmiStatus = mmiData.marketStatus.currentStatus;
-      if (mmiStatus !== "unknown") {
-        return mmiStatus;
+    // Prioritize MMI current status as it's more reliable
+    if (mmiData?.currentStatus) {
+      if (mmiData.currentStatus !== "unknown") {
+        return mmiData.currentStatus;
       }
     }
 
-    // Fall back to RPR listing status
+    // Fall back to RPR current status or listing
+    if (rprData?.currentStatus && rprData.currentStatus !== "unknown") {
+      return rprData.currentStatus;
+    }
+
     if (rprData?.listing?.active) {
       return "active";
     }
@@ -266,31 +269,31 @@ export class RiskMonitorScheduler {
     };
 
     // Extract listing details from MMI
-    if (mmiData?.marketStatus) {
-      if (mmiData.marketStatus.listingDate) {
-        updateData.listingDate = new Date(mmiData.marketStatus.listingDate);
+    if (mmiData) {
+      // Get most recent listing from history
+      const latestListing = mmiData.listingHistory?.[0];
+      if (latestListing) {
+        if (latestListing.LISTING_DATE) {
+          updateData.listingDate = new Date(latestListing.LISTING_DATE);
+        }
+        if (latestListing.LIST_PRICE) {
+          updateData.listingPrice = latestListing.LIST_PRICE;
+        }
+        if (latestListing.DAYS_ON_MARKET) {
+          updateData.daysOnMarket = latestListing.DAYS_ON_MARKET;
+        }
+        if (latestListing.CLOSE_PRICE) {
+          updateData.lastSalePrice = latestListing.CLOSE_PRICE;
+        }
       }
-      if (mmiData.marketStatus.listingPrice) {
-        updateData.listingPrice = mmiData.marketStatus.listingPrice;
-      }
-      if (mmiData.marketStatus.daysOnMarket) {
-        updateData.daysOnMarket = mmiData.marketStatus.daysOnMarket;
-      }
-      if (mmiData.marketStatus.soldDate) {
-        updateData.lastSaleDate = new Date(mmiData.marketStatus.soldDate);
-      }
-      if (mmiData.marketStatus.soldPrice) {
-        updateData.lastSalePrice = mmiData.marketStatus.soldPrice;
-      }
-    }
 
-    // Extract property details from MMI
-    if (mmiData?.valuation) {
-      updateData.estimatedValue = mmiData.valuation.estimatedValue;
-    }
-    if (mmiData?.owner) {
-      updateData.ownerName = mmiData.owner.name;
-      updateData.ownerOccupied = mmiData.owner.ownerOccupied;
+      // Extract last sale from MMI
+      if (mmiData.lastSaleDate) {
+        updateData.lastSaleDate = new Date(mmiData.lastSaleDate);
+      }
+      if (mmiData.lastSalePrice) {
+        updateData.lastSalePrice = mmiData.lastSalePrice;
+      }
     }
 
     // Fall back to RPR data
@@ -404,9 +407,11 @@ export class RiskMonitorScheduler {
    * Get alert description
    */
   private getAlertDescription(alertType: string, result: PropertyCheckResult): string {
+    const latestListing = result.mmiData?.listingHistory?.[0];
     const price =
-      result.mmiData?.marketStatus?.listingPrice ||
-      result.mmiData?.marketStatus?.soldPrice ||
+      latestListing?.LIST_PRICE ||
+      latestListing?.CLOSE_PRICE ||
+      result.mmiData?.lastSalePrice ||
       result.rprData?.listing?.price;
 
     const priceStr = price ? `$${price.toLocaleString()}` : "Unknown";
@@ -594,11 +599,6 @@ export class RiskMonitorScheduler {
     } finally {
       this.isRunning = false;
       this.currentRunId = null;
-
-      // Close browser if RPR was used
-      if (this.settings?.rprEnabled) {
-        await rprClient.close();
-      }
     }
 
     return {
