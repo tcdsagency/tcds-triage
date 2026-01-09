@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FloodZoneIndicator, FloodRisk } from "@/components/ui/flood-zone-indicator";
 import { cn } from "@/lib/utils";
 import AgentAssistSidebar from "@/components/features/AgentAssistSidebar";
 import { QuoteType as AgentAssistQuoteType } from "@/lib/agent-assist/types";
@@ -158,6 +159,9 @@ interface HomeownersFormData {
   dogBreed: string;
   dogBiteHistory: boolean;
   hasBusinessOnPremises: boolean;
+  // Flood Zone
+  floodZone: string;
+  floodRisk: string;
   // Mortgage
   hasMortgage: boolean;
   mortgageCompany: string;
@@ -723,6 +727,8 @@ const INITIAL_HOMEOWNERS_FORM: HomeownersFormData = {
   hasPool: false, poolType: "inground", poolFenced: false,
   hasTrampoline: false, hasDog: false, dogBreed: "", dogBiteHistory: false,
   hasBusinessOnPremises: false,
+  // Flood Zone
+  floodZone: "", floodRisk: "",
   // Mortgage
   hasMortgage: true, mortgageCompany: "", mortgageAddress: "", loanNumber: "",
   // Coverage
@@ -1962,6 +1968,8 @@ export default function QuoteIntakePage() {
     roofCondition?: string;
     roofConditionScore?: number;
     estimatedValue?: number;
+    floodZone?: string;
+    floodRisk?: string;
   }) => {
     setHomeownersFormData(prev => {
       const updates: Partial<HomeownersFormData> = {
@@ -2012,6 +2020,14 @@ export default function QuoteIntakePage() {
         if (data.hasPool) {
           updates.poolType = 'inground'; // Default - Nearmap detects in-ground pools
         }
+      }
+
+      // Prefill flood zone
+      if (data.floodZone) {
+        updates.floodZone = data.floodZone;
+      }
+      if (data.floodRisk) {
+        updates.floodRisk = data.floodRisk;
       }
 
       // Prefill dwelling coverage estimate based on estimated value
@@ -2876,6 +2892,20 @@ export default function QuoteIntakePage() {
                   <label className="block text-sm font-medium text-gray-300 mb-2">Occupancy</label>
                   <VisualOptionSelector options={VISUAL_OCCUPANCY_TYPES} value={homeownersFormData.occupancy} onChange={(v) => updateHomeownersField("occupancy", v)} columns={4} size="sm" />
                 </div>
+                {/* Flood Zone Indicator - shown when property lookup returns flood data */}
+                {homeownersFormData.floodZone && (
+                  <div className="col-span-2 p-3 bg-gray-900/50 rounded-lg">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">FEMA Flood Zone</label>
+                    <FloodZoneIndicator
+                      zone={homeownersFormData.floodZone}
+                      risk={(homeownersFormData.floodRisk as FloodRisk) || 'Unknown'}
+                      inSFHA={homeownersFormData.floodZone?.startsWith('A') || homeownersFormData.floodZone?.startsWith('V')}
+                      showDescription
+                      showInsuranceWarning
+                      size="sm"
+                    />
+                  </div>
+                )}
                 <div className="col-span-2 flex items-center gap-4">
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={homeownersFormData.recentPurchase} onChange={(e) => updateHomeownersField("recentPurchase", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500" />
