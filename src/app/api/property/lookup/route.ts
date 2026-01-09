@@ -130,13 +130,25 @@ async function checkCache(tenantId: string, address: string) {
     .limit(1);
 
   if (cached) {
+    const lat = parseFloat(cached.latitude);
+    const lng = parseFloat(cached.longitude);
+
+    // Add staticImageUrl to nearmapData if missing (for cached data before this field existed)
+    let nearmapData = cached.nearmapData;
+    if (nearmapData && !nearmapData.staticImageUrl) {
+      nearmapData = {
+        ...nearmapData,
+        staticImageUrl: nearmapClient.getStaticImageUrl(lat, lng, 800, 600),
+      };
+    }
+
     return {
       id: cached.id,
       address: cached.address,
       formattedAddress: cached.formattedAddress,
-      lat: parseFloat(cached.latitude),
-      lng: parseFloat(cached.longitude),
-      nearmapData: cached.nearmapData,
+      lat,
+      lng,
+      nearmapData,
       rprData: cached.rprData,
       obliqueViews: cached.obliqueViews,
       historicalSurveys: cached.historicalSurveys,
