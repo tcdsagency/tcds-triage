@@ -7,6 +7,7 @@ import PendingItemCard, { PendingItemCardSkeleton, type PendingItem } from '@/co
 import PendingCountsBar, { type PendingCounts } from '@/components/features/PendingCountsBar';
 import BulkActionBar from '@/components/features/BulkActionBar';
 import ReviewModal from '@/components/features/ReviewModal';
+import CustomerSearchModal from '@/components/features/CustomerSearchModal';
 
 // =============================================================================
 // TYPES
@@ -54,6 +55,7 @@ export default function PendingReviewPage() {
   const [selectedItemForReview, setSelectedItemForReview] = useState<PendingItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [reviewModalItem, setReviewModalItem] = useState<PendingItem | null>(null);
+  const [findMatchItem, setFindMatchItem] = useState<PendingItem | null>(null);
 
   // ==========================================================================
   // DATA FETCHING
@@ -213,6 +215,61 @@ export default function PendingReviewPage() {
     } catch (error) {
       console.error('Review action error:', error);
       toast.error('Failed to complete action');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCustomerMatch = async (customer: {
+    id: string;
+    agencyzoomId: string | null;
+    displayName: string;
+    isLead: boolean;
+  }) => {
+    if (!findMatchItem) return;
+
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/pending-review/${findMatchItem.id}/match`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: findMatchItem.type,
+          customerId: customer.agencyzoomId || customer.id,
+          customerName: customer.displayName,
+          isLead: customer.isLead,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // Update item in list with new match info
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === findMatchItem.id
+              ? {
+                  ...item,
+                  matchStatus: 'matched' as const,
+                  contactName: customer.displayName,
+                  agencyzoomCustomerId: customer.isLead ? undefined : (customer.agencyzoomId || customer.id),
+                  agencyzoomLeadId: customer.isLead ? (customer.agencyzoomId || customer.id) : undefined,
+                }
+              : item
+          )
+        );
+        // Close modal
+        setFindMatchItem(null);
+        // Show success with reminder about phone number
+        toast.success('Customer matched successfully', {
+          description: data.reminder || 'Please verify the customer\'s phone number is correct in AgencyZoom.',
+          duration: 8000,
+        });
+      } else {
+        toast.error(data.error || 'Match failed');
+      }
+    } catch (error) {
+      console.error('Match error:', error);
+      toast.error('Failed to match customer');
     } finally {
       setActionLoading(false);
     }
@@ -389,6 +446,7 @@ export default function PendingReviewPage() {
               onCheck={(checked) => handleCheckItem(item, checked)}
               onQuickAction={(action) => handleQuickAction(item, action)}
               onReviewClick={() => setReviewModalItem(item)}
+              onFindMatch={() => setFindMatchItem(item)}
             />
           ))}
         </div>
@@ -412,6 +470,17 @@ export default function PendingReviewPage() {
           onClose={() => setReviewModalItem(null)}
           onAction={handleReviewModalAction}
           isLoading={actionLoading}
+        />
+      )}
+
+      {/* Customer Search Modal for manual matching */}
+      {findMatchItem && (
+        <CustomerSearchModal
+          isOpen={!!findMatchItem}
+          onClose={() => setFindMatchItem(null)}
+          onSelect={handleCustomerMatch}
+          initialPhone={findMatchItem.contactPhone}
+          title={`Find Match for ${findMatchItem.contactName || findMatchItem.contactPhone || 'Unknown'}`}
         />
       )}
     </div>
