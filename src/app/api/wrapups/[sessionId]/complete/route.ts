@@ -172,6 +172,8 @@ export async function POST(
       agencyZoomLeadId?: number;
       customerId?: number;
       error?: string;
+      queued?: boolean;
+      message?: string;
     } = { success: false, action: body.action };
 
     // Process based on action
