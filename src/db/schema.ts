@@ -617,6 +617,7 @@ export const propertyLookups = pgTable('property_lookups', {
       conditionScore: number;
       area: number;
       age?: number;
+      issues?: string[];
     };
     pool: {
       present: boolean;
