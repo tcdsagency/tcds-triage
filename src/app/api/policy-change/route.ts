@@ -1,10 +1,49 @@
 // API Route: /api/policy-change
-// Handle policy change requests
+// Handle policy change requests - saves to DB and creates AgencyZoom ticket via Zapier
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from '@/db';
-import { policyChangeRequests, policies } from '@/db/schema';
+import { policyChangeRequests, policies, customers } from '@/db/schema';
 import { eq, desc, and } from 'drizzle-orm';
+
+// =============================================================================
+// ZAPIER INTEGRATION
+// =============================================================================
+
+const ZAPIER_WEBHOOK_URL = "https://hooks.zapier.com/hooks/catch/5343719/uf796g9/";
+const PIPELINE_ID = 30699;      // Service Center pipeline
+const STAGE_ID = 111160;        // Initial "New" stage
+
+// Map change types to AgencyZoom category IDs
+const CHANGE_TYPE_TO_CATEGORY: Record<string, number> = {
+  add_vehicle: 115762,      // Policy Modification
+  remove_vehicle: 115762,
+  replace_vehicle: 115762,
+  add_driver: 115762,
+  remove_driver: 115762,
+  address_change: 115762,
+  add_mortgagee: 115762,
+  remove_mortgagee: 115762,
+  coverage_change: 115762,
+  cancel_policy: 115762,
+};
+
+// Priority IDs
+const PRIORITY_IDS: Record<string, number> = {
+  standard: 27902,
+  high: 27903,
+  urgent: 27904,
+};
+
+// No Customer Match fallback
+const NO_MATCH_CUSTOMER = {
+  id: "22138921",
+  email: "4e80kxy3@robot.zapier.com",
+  name: "No Customer Match",
+};
+
+// Default assignee (CSR)
+const DEFAULT_CSR_ID = 5461;
 
 // =============================================================================
 // TYPES
@@ -66,17 +105,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Look up the policy to get customer ID
+    // Look up the policy and customer info
     let customerId: string | null = null;
+    let customerName: string | null = null;
+    let customerEmail: string | null = null;
+    let customerPhone: string | null = null;
+
     if (body.policyId) {
-      const policy = await db
-        .select({ customerId: policies.customerId })
+      const policyData = await db
+        .select({
+          customerId: policies.customerId,
+        })
         .from(policies)
         .where(eq(policies.id, body.policyId))
         .limit(1);
 
-      if (policy.length > 0) {
-        customerId = policy[0].customerId;
+      if (policyData.length > 0 && policyData[0].customerId) {
+        customerId = policyData[0].customerId;
+
+        // Look up customer details
+        const customerData = await db
+          .select({
+            firstName: customers.firstName,
+            lastName: customers.lastName,
+            email: customers.email,
+            phone: customers.phone,
+          })
+          .from(customers)
+          .where(eq(customers.id, customerId))
+          .limit(1);
+
+        if (customerData.length > 0) {
+          customerName = `${customerData[0].firstName || ''} ${customerData[0].lastName || ''}`.trim();
+          customerEmail = customerData[0].email;
+          customerPhone = customerData[0].phone;
+        }
       }
     }
 
@@ -107,9 +170,81 @@ export async function POST(request: NextRequest) {
     // Generate summary based on change type
     const summary = generateChangeSummary(body.changeType, body.data);
 
+    // ==========================================================================
+    // CREATE AGENCYZOOM SERVICE REQUEST VIA ZAPIER
+    // ==========================================================================
+
+    let zapierTicketId: string | null = null;
+
+    try {
+      // Determine if we need to use No Match fallback (no email)
+      const useNoMatch = !customerEmail;
+
+      const effectiveEmail = useNoMatch ? NO_MATCH_CUSTOMER.email : customerEmail;
+      const effectiveName = useNoMatch ? NO_MATCH_CUSTOMER.name : (customerName || 'Unknown Customer');
+
+      // Build description with full details
+      let ticketDescription = `📋 Policy Change Request\n\n${summary}\n\nPolicy: ${body.policyNumber}\nEffective Date: ${body.effectiveDate}`;
+
+      if (body.notes) {
+        ticketDescription += `\n\nNotes: ${body.notes}`;
+      }
+
+      // If using No Match, append original customer info
+      if (useNoMatch && customerName) {
+        ticketDescription += `\n\n--- Original Customer Info ---\nName: ${customerName}`;
+        if (customerPhone) ticketDescription += `\nPhone: ${customerPhone}`;
+        if (customerId) ticketDescription += `\nCustomer ID: ${customerId}`;
+      }
+
+      // Get category and priority
+      const categoryId = CHANGE_TYPE_TO_CATEGORY[body.changeType] || 115762;
+      const priorityId = body.changeType === 'cancel_policy' ? PRIORITY_IDS.urgent : PRIORITY_IDS.standard;
+
+      // Build Zapier payload
+      const zapierPayload = {
+        Name: effectiveName,
+        Email: effectiveEmail,
+        Subject: `${getChangeTypeLabel(body.changeType)} - ${body.policyNumber}`,
+        "Service Desc": ticketDescription,
+        "Pipeline Id": PIPELINE_ID,
+        "Stage Id": STAGE_ID,
+        "Due After Days": body.changeType === 'cancel_policy' ? 0 : 1,
+        "Category Id": categoryId,
+        "Priority Id": priorityId,
+        "Csr Id": DEFAULT_CSR_ID,
+      };
+
+      console.log('[PolicyChange] Sending to Zapier:', {
+        name: effectiveName,
+        email: effectiveEmail,
+        changeType: body.changeType,
+        policyNumber: body.policyNumber,
+      });
+
+      // Send to Zapier webhook
+      const zapierResponse = await fetch(ZAPIER_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(zapierPayload),
+      });
+
+      if (zapierResponse.ok) {
+        const zapierResult = await zapierResponse.json();
+        zapierTicketId = zapierResult.id || `zapier-${Date.now()}`;
+        console.log('[PolicyChange] Zapier ticket created:', zapierTicketId);
+      } else {
+        console.error('[PolicyChange] Zapier error:', zapierResponse.status, await zapierResponse.text());
+      }
+    } catch (zapierError) {
+      console.error('[PolicyChange] Zapier webhook error:', zapierError);
+      // Don't fail the request if Zapier fails - the change request is already saved
+    }
+
     return NextResponse.json({
       success: true,
       changeRequestId: changeRequest.id,
+      ticketId: zapierTicketId,
       message: `Policy change request submitted successfully`,
       summary,
       status: 'pending',
