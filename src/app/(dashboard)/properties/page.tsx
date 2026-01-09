@@ -287,10 +287,10 @@ export default function PropertyIntelligencePage() {
                   <button
                     key={suggestion.place_id || i}
                     onClick={() => handleSelectAddress(suggestion)}
-                    className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b last:border-b-0"
+                    className="w-full px-4 py-3 text-left text-gray-900 hover:bg-gray-100 border-b last:border-b-0"
                   >
-                    <span className="text-gray-400 mr-2">📍</span>
-                    {suggestion.description}
+                    <span className="text-blue-500 mr-2">📍</span>
+                    <span className="font-medium">{suggestion.description}</span>
                   </button>
                 ))}
               </div>
