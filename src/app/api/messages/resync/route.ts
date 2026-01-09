@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
         skipped++;
         continue;
       }
-      const normalizedPhone = phone.replace(/\D/g, "");
+      const normalizedPhone = (phone as string).replace(/\D/g, "");
       const last10 = normalizedPhone.slice(-10);
 
       // Check cache first
