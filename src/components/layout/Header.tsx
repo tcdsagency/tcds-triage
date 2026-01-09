@@ -29,6 +29,7 @@ interface UserProfile {
   currentStatus?: string;
   isAvailable?: boolean;
   extension?: string;
+  avatarUrl?: string | null;
 }
 
 export function Header({ user }: HeaderProps) {
@@ -406,7 +407,19 @@ export function Header({ user }: HeaderProps) {
               className="flex items-center gap-x-3 -m-1.5 p-1.5"
             >
               <div className="relative">
-                <div className="h-8 w-8 rounded-full bg-emerald-600 flex items-center justify-center">
+                {userProfile?.avatarUrl ? (
+                  <img
+                    src={userProfile.avatarUrl}
+                    alt={`${userProfile.firstName || ''} ${userProfile.lastName || ''}`}
+                    className="h-8 w-8 rounded-full object-cover"
+                    onError={(e) => {
+                      // Hide broken image on error
+                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                    }}
+                  />
+                ) : null}
+                <div className={`h-8 w-8 rounded-full bg-emerald-600 flex items-center justify-center ${userProfile?.avatarUrl ? 'hidden' : ''}`}>
                   <span className="text-white text-sm font-medium">
                     {userProfile?.firstName?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase()}
                   </span>

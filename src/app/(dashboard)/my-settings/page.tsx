@@ -31,6 +31,7 @@ export default function MySettingsPage() {
     phone: "",
     title: "Agent",
     extension: "",
+    avatarUrl: "",
   });
   
   const [notifications, setNotifications] = useState({
@@ -64,6 +65,7 @@ export default function MySettingsPage() {
             phone: data.user.phone || "",
             title: data.user.role || "Agent",
             extension: data.user.extension || "",
+            avatarUrl: data.user.avatarUrl || "",
           });
         }
       } catch (error) {
@@ -87,6 +89,7 @@ export default function MySettingsPage() {
           lastName: profile.lastName,
           phone: profile.phone,
           extension: profile.extension,
+          avatarUrl: profile.avatarUrl || null,
         }),
       });
       const data = await res.json();
@@ -189,13 +192,49 @@ export default function MySettingsPage() {
 
               <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">Profile Photo</h3>
-                <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                <div className="flex items-start gap-4">
+                  {profile.avatarUrl ? (
+                    <img
+                      src={profile.avatarUrl}
+                      alt={`${profile.firstName} ${profile.lastName}`}
+                      className="w-20 h-20 rounded-full object-cover border-2 border-gray-200 dark:border-gray-700"
+                      onError={(e) => {
+                        // Hide broken image and show initials fallback
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                      }}
+                    />
+                  ) : null}
+                  <div className={cn(
+                    "w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-2xl font-bold text-emerald-600 dark:text-emerald-400",
+                    profile.avatarUrl ? "hidden" : ""
+                  )}>
                     {profile.firstName?.[0] || ""}{profile.lastName?.[0] || ""}
                   </div>
-                  <div>
-                    <Button variant="outline" size="sm">Upload Photo</Button>
-                    <p className="text-xs text-gray-500 mt-1">JPG, PNG up to 5MB</p>
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Photo URL
+                    </label>
+                    <Input
+                      type="url"
+                      value={profile.avatarUrl}
+                      onChange={(e) => setProfile({ ...profile, avatarUrl: e.target.value })}
+                      placeholder="https://example.com/photo.jpg"
+                      className="mb-2"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Enter a direct link to your profile photo (JPG, PNG)
+                    </p>
+                    {profile.avatarUrl && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2 text-red-600 hover:text-red-700"
+                        onClick={() => setProfile({ ...profile, avatarUrl: "" })}
+                      >
+                        Remove Photo
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
