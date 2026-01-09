@@ -181,7 +181,8 @@ export default function PropertyIntelligencePage() {
 
         // Trigger AI analysis if not already done
         if (!data.lookup.aiAnalysis) {
-          runAIAnalysis(data.lookup.id);
+          const imageUrl = data.lookup.nearmapData?.staticImageUrl;
+          runAIAnalysis(data.lookup.id, imageUrl);
         }
       } else {
         setError(data.error || 'Lookup failed');
@@ -194,13 +195,13 @@ export default function PropertyIntelligencePage() {
     }
   }, []);
 
-  const runAIAnalysis = async (lookupId: string) => {
+  const runAIAnalysis = async (lookupId: string, imageUrl?: string) => {
     setAnalyzing(true);
     try {
       const response = await fetch('/api/property/ai-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lookupId }),
+        body: JSON.stringify({ lookupId, imageUrl }),
       });
 
       const data = await response.json();
