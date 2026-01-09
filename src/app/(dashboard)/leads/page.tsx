@@ -107,7 +107,7 @@ export default function LeadsPage() {
   };
 
   const openInAgencyZoom = (agencyzoomId: string) => {
-    window.open(`https://app.agencyzoom.com/leads/${agencyzoomId}`, '_blank');
+    window.open(`https://app.agencyzoom.com/lead/index?id=${agencyzoomId}`, '_blank');
   };
 
   return (
