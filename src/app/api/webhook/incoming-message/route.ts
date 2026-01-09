@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { messages, tenants, customers } from "@/db/schema";
+import { messages, tenants, customers, triageItems } from "@/db/schema";
 import { eq, and, gte, desc, or, ilike } from "drizzle-orm";
 import { twilioClient, sendAfterHoursReply } from "@/lib/twilio";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
@@ -176,7 +176,29 @@ export async function POST(request: NextRequest) {
 
     console.log("[Webhook] Message stored:", storedMessage.id);
 
-    // 5. Handle after-hours auto-reply
+    // 5. Create triage item for pending review
+    const [triageItem] = await db
+      .insert(triageItems)
+      .values({
+        tenantId,
+        type: "message",
+        status: "pending",
+        priority: isAfterHours ? "high" : "medium",
+        messageId: storedMessage.id,
+        title: `SMS from ${contactName || payload.From}`,
+        description: payload.Body?.substring(0, 500) || "New SMS message",
+        aiSummary: JSON.stringify({
+          from: payload.From,
+          contactType,
+          isAfterHours,
+          mediaCount: mediaUrls?.length || 0,
+        }),
+      })
+      .returning();
+
+    console.log("[Webhook] Triage item created:", triageItem.id);
+
+    // 6. Handle after-hours auto-reply
     if (isAfterHours && afterHoursInfo.enabled && afterHoursInfo.autoReplyMessage) {
       // Check cooldown - don't spam the same number
       const cooldownPassed = await checkAutoReplyCooldown(
@@ -228,7 +250,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 6. TODO: Broadcast via WebSocket for real-time notifications
+    // 7. TODO: Broadcast via WebSocket for real-time notifications
     // This would notify connected agents of the new message
     // await broadcastNewMessage(storedMessage);
 
