@@ -31,6 +31,7 @@ export default function AgencySettingsPage() {
     agencyzoomId: "",
     agentCode: "",
     inLeadRotation: true,
+    avatarUrl: "",
   });
   const [userSaving, setUserSaving] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
@@ -757,6 +758,7 @@ export default function AgencySettingsPage() {
       agencyzoomId: "",
       agentCode: "",
       inLeadRotation: true,
+      avatarUrl: "",
     });
     setUserError(null);
     setNewPassword("");
@@ -779,6 +781,7 @@ export default function AgencySettingsPage() {
       agencyzoomId: user.agencyzoomId || "",
       agentCode: user.agentCode || "",
       inLeadRotation: user.inLeadRotation ?? true,
+      avatarUrl: user.avatarUrl || "",
     });
     setUserError(null);
     setNewPassword("");
@@ -2173,6 +2176,16 @@ export default function AgencySettingsPage() {
                         <option value="manager">Manager</option>
                         <option value="admin">Admin</option>
                       </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Profile Photo URL</label>
+                      <Input
+                        type="url"
+                        value={userFormData.avatarUrl}
+                        onChange={(e) => setUserFormData({ ...userFormData, avatarUrl: e.target.value })}
+                        placeholder="https://example.com/photo.jpg"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">URL to user&apos;s profile photo image</p>
                     </div>
                   </div>
                 </div>
