@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { AgencyZoomButton, getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
 
 // =============================================================================
 // TYPES
@@ -507,6 +508,16 @@ export default function CanopyConnectPage() {
                     <div className="text-center text-sm text-green-600 dark:text-green-400 py-2">
                       Synced to AgencyZoom
                     </div>
+                  )}
+
+                  {/* AgencyZoom Link for matched customers */}
+                  {selectedPull.matchedAgencyzoomId && (
+                    <AgencyZoomButton
+                      href={getAgencyZoomUrl(selectedPull.matchedAgencyzoomId, 'customer')}
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-center"
+                    />
                   )}
 
                   {selectedPull.matchStatus !== 'ignored' && selectedPull.matchStatus !== 'created' && (
