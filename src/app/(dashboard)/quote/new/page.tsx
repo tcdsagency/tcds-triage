@@ -2002,26 +2002,22 @@ export default function QuoteIntakePage() {
   }
 
   // =============================================================================
-  // FORM HELPERS - Using memoized wrappers for stable component references
+  // FORM HELPERS
   // =============================================================================
 
-  // Stable Section wrapper using useMemo - prevents re-mounting on state changes
-  const Section = useMemo(() => {
-    return function StableSection({ id, icon, title, subtitle, children }: { id: string; icon: any; title: string; subtitle?: string; children: React.ReactNode }) {
-      return (
-        <FormSection
-          id={id}
-          icon={icon}
-          title={title}
-          subtitle={subtitle}
-          expanded={expandedSections.has(id)}
-          onToggle={() => toggleSection(id)}
-        >
-          {children}
-        </FormSection>
-      );
-    };
-  }, [expandedSections, toggleSection]);
+  // Section wrapper - defined as inline function (not useMemo to avoid React error #310)
+  const Section = ({ id, icon, title, subtitle, children }: { id: string; icon: any; title: string; subtitle?: string; children: React.ReactNode }) => (
+    <FormSection
+      id={id}
+      icon={icon}
+      title={title}
+      subtitle={subtitle}
+      expanded={expandedSections.has(id)}
+      onToggle={() => toggleSection(id)}
+    >
+      {children}
+    </FormSection>
+  );
 
   // Alias for Field - FormField is already stable since it's defined outside the component
   const Field = FormField;
