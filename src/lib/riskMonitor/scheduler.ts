@@ -13,6 +13,7 @@ import {
 import { eq, and, lte, desc, isNull, sql, not, inArray, or, lt } from "drizzle-orm";
 import { rprClient, type RPRPropertyData } from "@/lib/rpr";
 import { mmiClient, type MMIPropertyData } from "@/lib/mmi";
+import { outlookClient } from "@/lib/outlook";
 
 // =============================================================================
 // TYPES
@@ -400,7 +401,7 @@ export class RiskMonitorScheduler {
       result.mmiData?.lastSalePrice ||
       result.rprData?.lastSalePrice;
 
-    // Create alert
+    // Create alert with full raw data for verification
     await db.insert(riskMonitorAlerts).values({
       tenantId: this.tenantId,
       policyId: policy.id,
@@ -410,10 +411,21 @@ export class RiskMonitorScheduler {
       previousStatus: result.previousStatus as any,
       newStatus: result.newStatus as any,
       title: this.getAlertTitle(alertType, `${policy.addressLine1}, ${policy.city}`),
-      description: this.getAlertDescription(alertType, result),
+      description: this.getAlertDescription(alertType, result, policy),
       listingPrice: listingPrice || null,
       salePrice: salePrice || null,
       dataSource: result.mmiData ? "mmi" : result.rprData ? "rpr" : null,
+      rawData: {
+        mmi: result.mmiData || null,
+        rpr: result.rprData || null,
+        checkedAt: new Date().toISOString(),
+        customer: {
+          name: policy.contactName,
+          email: policy.contactEmail,
+          phone: policy.contactPhone,
+          azContactId: policy.azContactId,
+        },
+      },
     });
 
     await this.logEvent("alert_created", policy.id, `Created ${alertType} alert`, {
@@ -444,29 +456,87 @@ export class RiskMonitorScheduler {
   }
 
   /**
-   * Get alert description
+   * Get alert description with full details
    */
-  private getAlertDescription(alertType: string, result: PropertyCheckResult): string {
+  private getAlertDescription(
+    alertType: string,
+    result: PropertyCheckResult,
+    policy: typeof riskMonitorPolicies.$inferSelect
+  ): string {
     const latestListing = result.mmiData?.listingHistory?.[0];
-    const price =
+    const listPrice =
       latestListing?.LIST_PRICE ||
+      result.rprData?.listing?.price;
+    const salePrice =
       latestListing?.CLOSE_PRICE ||
       result.mmiData?.lastSalePrice ||
-      result.rprData?.lastSalePrice ||
-      result.rprData?.listing?.price;
+      result.rprData?.lastSalePrice;
 
-    const priceStr = price ? `$${price.toLocaleString()}` : "Unknown";
+    const listPriceStr = listPrice ? `$${listPrice.toLocaleString()}` : "N/A";
+    const salePriceStr = salePrice ? `$${salePrice.toLocaleString()}` : "N/A";
 
+    // Extract dates - compute RPR list date from daysOnMarket if available
+    let rprListDate: string | null = null;
+    if (result.rprData?.listing?.daysOnMarket) {
+      const date = new Date();
+      date.setDate(date.getDate() - result.rprData.listing.daysOnMarket);
+      rprListDate = date.toLocaleDateString();
+    }
+    const listDate = latestListing?.LISTING_DATE || rprListDate || "N/A";
+    const saleDate = latestListing?.SOLD_DATE || result.mmiData?.lastSaleDate || result.rprData?.lastSaleDate || "N/A";
+    const dataSource = result.mmiData ? "MMI (MLS)" : result.rprData ? "RPR (Realtor)" : "Unknown";
+
+    // Build detailed description
+    const lines: string[] = [];
+
+    // Customer Info
+    lines.push(`**Customer:** ${policy.contactName || "Unknown"}`);
+    if (policy.contactPhone) lines.push(`**Phone:** ${policy.contactPhone}`);
+    if (policy.contactEmail) lines.push(`**Email:** ${policy.contactEmail}`);
+    lines.push("");
+
+    // Property Info
+    lines.push(`**Address:** ${result.address}`);
+    lines.push(`**Policy #:** ${policy.policyNumber || "N/A"}`);
+    lines.push(`**Carrier:** ${policy.carrier || "N/A"}`);
+    lines.push("");
+
+    // Listing/Sale Details
     switch (alertType) {
       case "listing_detected":
-        return `Property at ${result.address} has been listed for sale at ${priceStr}. Customer may be planning to move.`;
+        lines.push(`**Status:** Listed for Sale`);
+        lines.push(`**List Price:** ${listPriceStr}`);
+        lines.push(`**List Date:** ${listDate}`);
+        break;
       case "pending_sale":
-        return `Property at ${result.address} is now pending sale. Contact customer urgently about policy changes.`;
+        lines.push(`**Status:** Pending Sale`);
+        lines.push(`**List Price:** ${listPriceStr}`);
+        lines.push(`**List Date:** ${listDate}`);
+        break;
       case "sold":
-        return `Property at ${result.address} has been sold for ${priceStr}. Policy may need to be cancelled or transferred.`;
+        lines.push(`**Status:** SOLD`);
+        lines.push(`**List Price:** ${listPriceStr}`);
+        lines.push(`**Sale Price:** ${salePriceStr}`);
+        lines.push(`**Sale Date:** ${saleDate}`);
+        break;
       default:
-        return `Property status changed from ${result.previousStatus} to ${result.newStatus}.`;
+        lines.push(`**Status Changed:** ${result.previousStatus} → ${result.newStatus}`);
     }
+    lines.push("");
+
+    // Data Source
+    lines.push(`**Data Source:** ${dataSource}`);
+    lines.push(`**Checked:** ${new Date().toLocaleString()}`);
+    lines.push("");
+
+    // Links
+    if (policy.azContactId) {
+      lines.push(`**AgencyZoom:** https://app.agencyzoom.com/customer/index?id=${policy.azContactId}`);
+    }
+    lines.push(`**App Profile:** https://tcds-triage.vercel.app/customers/${policy.azContactId || policy.id}`);
+
+    return lines.join("\n");
+
   }
 
   /**
@@ -479,10 +549,83 @@ export class RiskMonitorScheduler {
   ): Promise<void> {
     if (!this.settings?.alertEmailAddresses?.length) return;
 
-    // TODO: Implement email sending via SendGrid or similar
-    await this.logEvent("email_sent", policy.id, `Email alert sent for ${alertType}`, {
-      recipients: this.settings.alertEmailAddresses,
-    });
+    const latestListing = result.mmiData?.listingHistory?.[0];
+    const listPrice = latestListing?.LIST_PRICE || result.rprData?.listing?.price;
+    const salePrice = latestListing?.CLOSE_PRICE || result.mmiData?.lastSalePrice || result.rprData?.lastSalePrice;
+
+    // Compute RPR list date from daysOnMarket
+    let emailRprListDate: string | null = null;
+    if (result.rprData?.listing?.daysOnMarket) {
+      const date = new Date();
+      date.setDate(date.getDate() - result.rprData.listing.daysOnMarket);
+      emailRprListDate = date.toLocaleDateString();
+    }
+    const listDate = latestListing?.LISTING_DATE || emailRprListDate || "N/A";
+    const saleDate = latestListing?.SOLD_DATE || result.mmiData?.lastSaleDate || result.rprData?.lastSaleDate || "N/A";
+    const dataSource = result.mmiData ? "MMI (MLS)" : result.rprData ? "RPR (Realtor)" : "Unknown";
+
+    const title = this.getAlertTitle(alertType, `${policy.addressLine1}, ${policy.city}`);
+    const statusEmoji = alertType === "sold" ? "🏠" : alertType === "pending_sale" ? "⏳" : "📋";
+
+    const emailBody = `
+${statusEmoji} RISK MONITOR ALERT - ${title}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CUSTOMER INFORMATION
+• Name: ${policy.contactName || "Unknown"}
+• Phone: ${policy.contactPhone || "N/A"}
+• Email: ${policy.contactEmail || "N/A"}
+
+PROPERTY DETAILS
+• Address: ${result.address}
+• Policy #: ${policy.policyNumber || "N/A"}
+• Carrier: ${policy.carrier || "N/A"}
+
+LISTING / SALE INFORMATION
+• Status: ${alertType === "sold" ? "SOLD" : alertType === "pending_sale" ? "Pending Sale" : "Listed for Sale"}
+• List Price: ${listPrice ? "$" + listPrice.toLocaleString() : "N/A"}
+${alertType === "sold" ? `• Sale Price: ${salePrice ? "$" + salePrice.toLocaleString() : "N/A"}` : ""}
+• List Date: ${listDate}
+${alertType === "sold" ? `• Sale Date: ${saleDate}` : ""}
+• Data Source: ${dataSource}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+QUICK LINKS
+• AgencyZoom Profile: ${policy.azContactId ? `https://app.agencyzoom.com/customer/index?id=${policy.azContactId}` : "N/A"}
+• TCDS App: https://tcds-triage.vercel.app/customers/${policy.azContactId || policy.id}
+• Risk Monitor Dashboard: https://tcds-triage.vercel.app/risk-monitor
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This is an automated alert from the TCDS Risk Monitor.
+Please review and take appropriate action.
+    `.trim();
+
+    try {
+      const sendResult = await outlookClient.sendEmail({
+        to: this.settings.alertEmailAddresses,
+        subject: `🚨 ${title}`,
+        body: emailBody,
+        isHtml: false,
+      });
+
+      if (sendResult.success) {
+        await this.logEvent("email_sent", policy.id, `Email alert sent for ${alertType}`, {
+          recipients: this.settings.alertEmailAddresses,
+          messageId: sendResult.messageId,
+        });
+      } else {
+        await this.logEvent("email_failed", policy.id, `Failed to send email: ${sendResult.error}`, {
+          recipients: this.settings.alertEmailAddresses,
+        });
+      }
+    } catch (err: any) {
+      await this.logEvent("email_failed", policy.id, `Email send error: ${err.message}`, {
+        recipients: this.settings.alertEmailAddresses,
+      });
+    }
   }
 
   /**
