@@ -15,7 +15,7 @@ import {
 // =============================================================================
 
 interface UseEligibilityOptions {
-  /** Debounce delay in ms (default: 300) */
+  /** Debounce delay in ms (default: 500) */
   debounceMs?: number;
   /** Whether to auto-evaluate on mount */
   evaluateOnMount?: boolean;
@@ -72,11 +72,11 @@ interface UseEligibilityReturn {
 
 export function useEligibility(
   quoteType: QuoteType | string | null,
-  formData: Record<string, any>,
+  formData: Record<string, unknown>,
   options: UseEligibilityOptions = {}
 ): UseEligibilityReturn {
   const {
-    debounceMs = 300,
+    debounceMs = 500,
     evaluateOnMount = true,
     onStatusChange,
     onNewAlert,
@@ -87,34 +87,62 @@ export function useEligibility(
   const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set());
   const [isEvaluating, setIsEvaluating] = useState(false);
 
-  // Refs for callbacks
+  // Refs to avoid re-renders - store latest values
+  const formDataRef = useRef(formData);
+  const quoteTypeRef = useRef(quoteType);
+  const acknowledgedIdsRef = useRef(acknowledgedIds);
   const onStatusChangeRef = useRef(onStatusChange);
   const onNewAlertRef = useRef(onNewAlert);
   const previousAlertsRef = useRef<Map<string, EligibilityAlert>>(new Map());
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const mountedRef = useRef(true);
 
-  // Keep refs updated
+  // Keep refs updated (without triggering re-renders)
+  useEffect(() => {
+    formDataRef.current = formData;
+  }, [formData]);
+
+  useEffect(() => {
+    quoteTypeRef.current = quoteType;
+  }, [quoteType]);
+
+  useEffect(() => {
+    acknowledgedIdsRef.current = acknowledgedIds;
+  }, [acknowledgedIds]);
+
   useEffect(() => {
     onStatusChangeRef.current = onStatusChange;
     onNewAlertRef.current = onNewAlert;
   }, [onStatusChange, onNewAlert]);
 
-  // Evaluation function
-  const evaluate = useCallback(() => {
-    if (!quoteType) {
-      setResult(EMPTY_ELIGIBILITY_RESULT);
+  // Cleanup on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Core evaluation function - uses refs, doesn't depend on state
+  const doEvaluation = useCallback(() => {
+    const currentQuoteType = quoteTypeRef.current;
+    const currentFormData = formDataRef.current;
+    const currentAcknowledgedIds = acknowledgedIdsRef.current;
+
+    if (!currentQuoteType || !mountedRef.current) {
       return;
     }
 
-    setIsEvaluating(true);
-
     try {
-      const newResult = evaluateEligibility(quoteType, formData);
+      const newResult = evaluateEligibility(currentQuoteType, currentFormData as Record<string, unknown>);
 
       // Apply acknowledgments
       const alertsWithAcknowledgments = newResult.alerts.map(alert => ({
         ...alert,
-        acknowledged: acknowledgedIds.has(alert.field) || alert.acknowledged,
+        acknowledged: currentAcknowledgedIds.has(alert.field) || alert.acknowledged,
       }));
 
       // Update result with acknowledgments
@@ -128,41 +156,54 @@ export function useEligibility(
       };
 
       // Check for new alerts
-      const currentAlertFields = new Set(newResult.alerts.map(a => a.field));
       const previousAlertFields = new Set(previousAlertsRef.current.keys());
 
       for (const alert of newResult.alerts) {
         if (!previousAlertFields.has(alert.field)) {
-          // This is a new alert
           onNewAlertRef.current?.(alert);
         }
       }
 
-      // Check for status change
-      setResult(prevResult => {
-        if (prevResult.status !== finalResult.status) {
-          onStatusChangeRef.current?.(finalResult.status);
-        }
-        return finalResult;
-      });
-
       // Update previous alerts map
       previousAlertsRef.current = new Map(newResult.alerts.map(a => [a.field, a]));
+
+      // Only update state if component is still mounted
+      if (mountedRef.current) {
+        setResult(prevResult => {
+          if (prevResult.status !== finalResult.status) {
+            onStatusChangeRef.current?.(finalResult.status);
+          }
+          return finalResult;
+        });
+        setIsEvaluating(false);
+      }
     } catch (error) {
       console.error('[useEligibility] Evaluation error:', error);
-    } finally {
-      setIsEvaluating(false);
+      if (mountedRef.current) {
+        setIsEvaluating(false);
+      }
     }
-  }, [quoteType, formData, acknowledgedIds]);
+  }, []); // No dependencies - uses refs
 
-  // Debounced evaluation on form data change
+  // Debounced evaluation trigger
   useEffect(() => {
+    // Clear any existing timer
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
+    // Don't evaluate if no quote type selected
+    if (!quoteType) {
+      setResult(EMPTY_ELIGIBILITY_RESULT);
+      return;
+    }
+
+    // Set evaluating state immediately for UI feedback
+    setIsEvaluating(true);
+
+    // Schedule evaluation
     debounceTimerRef.current = setTimeout(() => {
-      evaluate();
+      doEvaluation();
     }, debounceMs);
 
     return () => {
@@ -170,29 +211,38 @@ export function useEligibility(
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [evaluate, debounceMs]);
+  }, [quoteType, formData, debounceMs, doEvaluation]);
 
   // Initial evaluation on mount
   useEffect(() => {
     if (evaluateOnMount && quoteType) {
-      evaluate();
+      // Small delay to let form settle
+      const timer = setTimeout(() => {
+        doEvaluation();
+      }, 100);
+      return () => clearTimeout(timer);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Acknowledge a specific alert
   const acknowledgeAlert = useCallback((alertId: string) => {
-    // Find the alert to get its field
-    const alert = result.alerts.find(a => a.id === alertId);
-    if (alert) {
-      setAcknowledgedIds(prev => new Set([...prev, alert.field]));
-    }
-  }, [result.alerts]);
+    setResult(currentResult => {
+      const alert = currentResult.alerts.find(a => a.id === alertId);
+      if (alert) {
+        setAcknowledgedIds(prev => new Set([...prev, alert.field]));
+      }
+      return currentResult;
+    });
+  }, []);
 
   // Acknowledge all warnings
   const acknowledgeAllWarnings = useCallback(() => {
-    const warningFields = result.warnings.map(w => w.field);
-    setAcknowledgedIds(prev => new Set([...prev, ...warningFields]));
-  }, [result.warnings]);
+    setResult(currentResult => {
+      const warningFields = currentResult.warnings.map(w => w.field);
+      setAcknowledgedIds(prev => new Set([...prev, ...warningFields]));
+      return currentResult;
+    });
+  }, []);
 
   // Get alerts for a specific field
   const getFieldAlerts = useCallback((fieldName: string): EligibilityAlert[] => {
@@ -208,14 +258,13 @@ export function useEligibility(
   const getFieldSeverity = useCallback((fieldName: string): AlertSeverity | null => {
     const fieldAlerts = getFieldAlerts(fieldName);
     if (fieldAlerts.length === 0) return null;
-    // Return highest severity (red > yellow)
     return fieldAlerts.some(a => a.severity === 'red') ? 'red' : 'yellow';
   }, [getFieldAlerts]);
 
   // Force re-evaluation
   const reevaluate = useCallback(() => {
-    evaluate();
-  }, [evaluate]);
+    doEvaluation();
+  }, [doEvaluation]);
 
   // Clear all acknowledgments
   const clearAcknowledgments = useCallback(() => {
@@ -224,9 +273,7 @@ export function useEligibility(
 
   // Computed: can submit
   const canSubmit = useMemo(() => {
-    // Cannot submit if there are any blockers (regardless of acknowledgment)
     if (result.blockers.length > 0) return false;
-    // Can submit if all warnings are acknowledged
     return !result.hasUnacknowledgedWarnings;
   }, [result.blockers.length, result.hasUnacknowledgedWarnings]);
 
