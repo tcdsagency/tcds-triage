@@ -1,11 +1,11 @@
 // API Route: /api/payment-advance/customer/policies
-// Get policies for a customer from HawkSoft
+// Get policies for a customer from local DB first, then HawkSoft
 
 import { NextRequest, NextResponse } from "next/server";
 import { getHawkSoftClient } from "@/lib/api/hawksoft";
 import { db } from "@/db";
-import { policies } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { policies, customers } from "@/db/schema";
+import { eq, and, or, ne, gt } from "drizzle-orm";
 
 export interface CustomerPolicy {
   policyNumber: string;
@@ -19,6 +19,7 @@ export interface CustomerPolicy {
 const INACTIVE_STATUSES = [
   "cancelled",
   "replaced:rewrite",
+  "replaced",
   "expired",
   "deadfiled",
   "void",
@@ -40,26 +41,71 @@ export async function GET(request: NextRequest) {
     }
 
     let customerPolicies: CustomerPolicy[] = [];
-    let source: "hawksoft" | "cache" | "none" = "none";
+    let source: "local" | "hawksoft" | "none" = "none";
 
-    // If we have a HawkSoft client number, try live lookup first
-    if (hawksoftClientNumber) {
+    // ==========================================================================
+    // 1. Try local database first (fast)
+    // ==========================================================================
+    try {
+      // Skip if customerId starts with "az-lead-" (AgencyZoom lead, no local data)
+      if (!customerId.startsWith("az-lead-")) {
+        const now = new Date();
+        const cachedPolicies = await db
+          .select({
+            policyNumber: policies.policyNumber,
+            carrier: policies.carrier,
+            lineOfBusiness: policies.lineOfBusiness,
+            status: policies.status,
+            expirationDate: policies.expirationDate,
+          })
+          .from(policies)
+          .where(
+            and(
+              eq(policies.customerId, customerId),
+              or(
+                eq(policies.status, "active"),
+                eq(policies.status, "pending"),
+                gt(policies.expirationDate, now)
+              )
+            )
+          );
+
+        if (cachedPolicies.length > 0) {
+          customerPolicies = cachedPolicies
+            .filter((p) => {
+              const status = (p.status || "").toLowerCase();
+              return !INACTIVE_STATUSES.some((inactive) => status.includes(inactive));
+            })
+            .map((p) => ({
+              policyNumber: p.policyNumber,
+              carrier: p.carrier || "Unknown Carrier",
+              type: p.lineOfBusiness || "Unknown",
+              status: p.status || undefined,
+              expirationDate: p.expirationDate?.toISOString() || undefined,
+            }));
+          source = "local";
+        }
+      }
+    } catch (localError) {
+      console.warn("[Payment Advance] Local DB lookup failed:", localError);
+    }
+
+    // ==========================================================================
+    // 2. If no local results and we have HawkSoft client number, try HawkSoft API
+    // ==========================================================================
+    if (customerPolicies.length === 0 && hawksoftClientNumber) {
       try {
         const hsClient = getHawkSoftClient();
         const clientNumber = parseInt(hawksoftClientNumber);
 
         if (!isNaN(clientNumber)) {
-          // Get client with policies included
           const client = await hsClient.getClient(clientNumber, ["policies"]);
 
           if (client && client.policies) {
-            // Filter out inactive policies
             customerPolicies = client.policies
               .filter((p) => {
                 const status = (p.status || "").toLowerCase();
-                return !INACTIVE_STATUSES.some((inactive) =>
-                  status.includes(inactive)
-                );
+                return !INACTIVE_STATUSES.some((inactive) => status.includes(inactive));
               })
               .map((p) => ({
                 policyNumber: p.policyNumber,
@@ -73,38 +119,7 @@ export async function GET(request: NextRequest) {
           }
         }
       } catch (hsError) {
-        console.warn("[Payment Advance] HawkSoft lookup failed, falling back to cache:", hsError);
-        // Fall through to cache lookup
-      }
-    }
-
-    // Fallback: Try to get cached policies from database
-    if (customerPolicies.length === 0 && hawksoftClientNumber) {
-      try {
-        // Look up customer by HawkSoft client code
-        const cachedPolicies = await db
-          .select({
-            policyNumber: policies.policyNumber,
-            carrier: policies.carrier,
-            lineOfBusiness: policies.lineOfBusiness,
-            status: policies.status,
-            expirationDate: policies.expirationDate,
-          })
-          .from(policies)
-          .where(eq(policies.status, "active"));
-
-        if (cachedPolicies.length > 0) {
-          customerPolicies = cachedPolicies.map((p) => ({
-            policyNumber: p.policyNumber,
-            carrier: p.carrier || "Unknown Carrier",
-            type: p.lineOfBusiness || "Unknown",
-            status: p.status || undefined,
-            expirationDate: p.expirationDate?.toISOString() || undefined,
-          }));
-          source = "cache";
-        }
-      } catch (cacheError) {
-        console.warn("[Payment Advance] Cache lookup failed:", cacheError);
+        console.warn("[Payment Advance] HawkSoft lookup failed:", hsError);
       }
     }
 

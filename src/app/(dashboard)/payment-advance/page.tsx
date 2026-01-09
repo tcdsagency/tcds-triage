@@ -9,13 +9,16 @@ import Link from "next/link";
 // =============================================================================
 
 interface SearchResult {
-  id: number;
+  id: string;
   type: "customer" | "lead";
   firstName: string;
   lastName: string;
   email?: string;
   phone?: string;
   hawksoftClientNumber?: string;
+  agencyzoomId?: string;
+  policyCount?: number;
+  policyTypes?: string[];
 }
 
 interface CustomerPolicy {
@@ -212,16 +215,19 @@ export default function PaymentAdvancePage() {
       submitterEmail: prev.submitterEmail || "", // Don't overwrite if already set
     }));
 
-    // Load policies
+    // Load policies - use local customer ID or HawkSoft client number
     if (customer.hawksoftClientNumber || customer.type === "customer") {
       setPoliciesLoading(true);
       try {
         const params = new URLSearchParams({
-          customerId: customer.id.toString(),
+          customerId: customer.id,
           customerType: customer.type,
         });
         if (customer.hawksoftClientNumber) {
           params.set("hawksoftClientNumber", customer.hawksoftClientNumber);
+        }
+        if (customer.agencyzoomId) {
+          params.set("agencyzoomId", customer.agencyzoomId);
         }
 
         const res = await fetch(`/api/payment-advance/customer/policies?${params}`);
@@ -473,8 +479,15 @@ export default function PaymentAdvancePage() {
                   <div className="flex items-center gap-3">
                     <span className="text-green-600 text-xl">✓</span>
                     <div>
-                      <div className="font-medium text-gray-900">
-                        {selectedCustomer.firstName} {selectedCustomer.lastName}
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900">
+                          {selectedCustomer.firstName} {selectedCustomer.lastName}
+                        </span>
+                        {selectedCustomer.policyCount !== undefined && selectedCustomer.policyCount > 0 && (
+                          <span className="text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded">
+                            {selectedCustomer.policyCount} {selectedCustomer.policyCount === 1 ? 'policy' : 'policies'}
+                          </span>
+                        )}
                       </div>
                       <div className="text-sm text-gray-500">
                         {selectedCustomer.type === "customer" ? "Customer" : "Lead"}
@@ -507,17 +520,24 @@ export default function PaymentAdvancePage() {
 
                   {/* Search Results Dropdown */}
                   {searchResults.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-72 overflow-y-auto">
                       {searchResults.map((result) => (
                         <button
                           key={`${result.type}-${result.id}`}
                           onClick={() => handleSelectCustomer(result)}
                           className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b last:border-b-0"
                         >
-                          <div className="font-medium text-gray-900">
-                            {result.firstName} {result.lastName}
+                          <div className="flex items-center justify-between">
+                            <div className="font-medium text-gray-900">
+                              {result.firstName} {result.lastName}
+                            </div>
+                            {result.policyCount !== undefined && result.policyCount > 0 && (
+                              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                                {result.policyCount} {result.policyCount === 1 ? 'policy' : 'policies'}
+                              </span>
+                            )}
                           </div>
-                          <div className="text-sm text-gray-500 flex items-center gap-2">
+                          <div className="text-sm text-gray-500 flex items-center gap-2 flex-wrap mt-1">
                             <span className={cn(
                               "px-1.5 py-0.5 rounded text-xs",
                               result.type === "customer"
@@ -527,7 +547,12 @@ export default function PaymentAdvancePage() {
                               {result.type}
                             </span>
                             {result.phone && <span>{result.phone}</span>}
-                            {result.email && <span>{result.email}</span>}
+                            {result.email && <span className="truncate max-w-[200px]">{result.email}</span>}
+                            {result.policyTypes && result.policyTypes.length > 0 && (
+                              <span className="text-xs text-gray-400">
+                                ({result.policyTypes.slice(0, 3).join(', ')})
+                              </span>
+                            )}
                           </div>
                         </button>
                       ))}
