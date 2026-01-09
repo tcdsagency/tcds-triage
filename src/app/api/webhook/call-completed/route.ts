@@ -790,30 +790,8 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 4.5. Create triage item for agent review
-      const triageType = mapCallTypeToTriageType(analysis.callType);
-      const priority = calculatePriority(analysis, body.duration || 0);
-      const aiScore = calculateAIPriorityScore(analysis, body.duration || 0);
-
-      const [triageItem] = await db
-        .insert(triageItems)
-        .values({
-          tenantId,
-          type: triageType,
-          status: "pending",
-          priority,
-          customerId: call.customerId || null,
-          callId: call.id,
-          title: `${direction === "inbound" ? "Inbound" : "Outbound"} Call: ${analysis.extractedData?.customerName || callerNumber}`,
-          description: analysis.summary,
-          aiSummary: analysis.summary,
-          aiPriorityScore: aiScore.toString(),
-          aiPriorityReason: aiScore >= 80 ? "Urgent follow-up needed" : aiScore >= 60 ? "Action items pending" : "Routine follow-up",
-          dueAt: new Date(Date.now() + (priority === "urgent" ? 2 : priority === "high" ? 4 : 8) * 60 * 60 * 1000), // 2h/4h/8h SLA
-        })
-        .returning();
-
-      console.log(`[Call-Completed] Created triage item: ${triageItem.id} (type: ${triageType}, priority: ${priority})`);
+      // Note: Triage items removed - wrapup_drafts is the single source of truth
+      // All call review happens through /pending-review using wrapup_drafts table
     }
 
     // 5. NOTE: Auto-posting to AgencyZoom removed

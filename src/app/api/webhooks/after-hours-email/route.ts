@@ -1,11 +1,10 @@
 // API Route: /api/webhooks/after-hours-email
 // Receives after-hours email notifications and merges with Twilio transcripts
-// Flow: Email arrives → Wait for Twilio transcript → AI merge → Create triage item
+// Flow: Email arrives → Wait for Twilio transcript → AI merge → Create after-hours message
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { triageItems, messages, calls } from "@/db/schema";
-import { eq, and, gte, desc, or } from "drizzle-orm";
+import { messages } from "@/db/schema";
 import OpenAI from "openai";
 
 // =============================================================================
@@ -282,43 +281,44 @@ async function createAfterHoursTriageItem(
   // Merge content using AI
   const mergedContent = await mergeContentWithAI(emailData, twilioData);
 
-  const messageType = emailData.type || (twilioData?.TranscriptionText ? "voicemail" : "missed_call");
-  const title = `After Hours ${messageType === "voicemail" ? "Voicemail" : "Message"} from ${emailData.fromName || phone}`;
+  // Build a comprehensive body including all relevant info
+  const bodyParts: string[] = [];
+  if (mergedContent.summary) {
+    bodyParts.push(`Summary: ${mergedContent.summary}`);
+  }
+  if (twilioData?.TranscriptionText) {
+    bodyParts.push(`\n\nVoicemail: ${twilioData.TranscriptionText}`);
+  }
+  if (emailData.body && emailData.body !== twilioData?.TranscriptionText) {
+    bodyParts.push(`\n\nEmail: ${emailData.body}`);
+  }
+  if (mergedContent.actionItems.length > 0) {
+    bodyParts.push(`\n\nAction Items:\n- ${mergedContent.actionItems.join('\n- ')}`);
+  }
+  const fullBody = bodyParts.join('') || 'After-hours message received. Callback required.';
 
-  // Create triage item
-  const [triageItem] = await db
-    .insert(triageItems)
+  // Create an after-hours message for the pending review queue
+  const [message] = await db
+    .insert(messages)
     .values({
       tenantId,
-      type: "after_hours",
-      status: "pending",
-      priority: "high", // After-hours items are high priority
-      title,
-      description: mergedContent.summary,
-      aiSummary: JSON.stringify({
-        phone,
-        fromName: emailData.fromName,
-        emailSubject: emailData.subject,
-        emailBody: emailData.body,
-        twilioTranscript: twilioData?.TranscriptionText,
-        mergedSummary: mergedContent.summary,
-        actionItems: mergedContent.actionItems,
-        callbackRequired: mergedContent.callbackRequired,
-        urgency: mergedContent.urgency,
-        messageType,
-        merged: !!twilioData?.TranscriptionText && !!emailData.body,
-        // Additional metadata
-        emailReceivedAt: emailData.receivedAt,
-        audioUrl: emailData.audioUrl || twilioData?.RecordingUrl,
-        twilioCallSid: twilioData?.CallSid,
-        duration: twilioData?.Duration,
-      }),
+      type: "sms", // Using SMS type for voicemail/after-hours messages
+      direction: "inbound",
+      fromNumber: phone,
+      toNumber: process.env.TWILIO_PHONE_NUMBER || "",
+      body: fullBody,
+      externalId: twilioData?.CallSid || `after_hours_${Date.now()}`,
+      status: "received",
+      isAfterHours: true,
+      isAcknowledged: false,
+      contactName: emailData.fromName || undefined,
+      contactType: "customer",
     })
     .returning();
 
-  console.log(`[After-Hours] Created triage item ${triageItem.id}`);
+  console.log(`[After-Hours] Created after-hours message ${message.id}`);
 
-  return triageItem;
+  return message;
 }
 
 // =============================================================================

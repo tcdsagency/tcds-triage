@@ -19,6 +19,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
     }
 
+    // First, clean up any "undefined undefined" legacy data
+    const cleanupResult = await db
+      .update(messages)
+      .set({ contactName: null })
+      .where(
+        and(
+          eq(messages.tenantId, tenantId),
+          eq(messages.contactName, "undefined undefined")
+        )
+      );
+
+    const cleanedUp = (cleanupResult as any).rowCount || 0;
+    if (cleanedUp > 0) {
+      console.log(`[Resync] Cleaned up ${cleanedUp} messages with "undefined undefined"`);
+    }
+
     // Find messages with no contactName or "unknown" contactName
     const messagesToResync = await db
       .select({
@@ -173,7 +189,8 @@ export async function POST(request: NextRequest) {
       total: messagesToResync.length,
       updated,
       skipped,
-      message: `Resynced ${updated} messages, skipped ${skipped}`,
+      cleanedUp,
+      message: `Resynced ${updated} messages, skipped ${skipped}, cleaned up ${cleanedUp} legacy records`,
     });
   } catch (error) {
     console.error("[Resync] Error:", error);

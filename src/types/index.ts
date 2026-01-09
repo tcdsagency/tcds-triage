@@ -8,7 +8,7 @@ import type {
   drivers,
   properties,
   calls,
-  triageItems,
+  wrapupDrafts,
   quotes,
   messages,
   activities,
@@ -44,8 +44,8 @@ export type NewProperty = typeof properties.$inferInsert;
 export type Call = typeof calls.$inferSelect;
 export type NewCall = typeof calls.$inferInsert;
 
-export type TriageItem = typeof triageItems.$inferSelect;
-export type NewTriageItem = typeof triageItems.$inferInsert;
+export type WrapupDraft = typeof wrapupDrafts.$inferSelect;
+export type NewWrapupDraft = typeof wrapupDrafts.$inferInsert;
 
 export type Quote = typeof quotes.$inferSelect;
 export type NewQuote = typeof quotes.$inferInsert;
@@ -134,12 +134,9 @@ export interface QuoteWithRelations extends Quote {
   createdBy?: User;
 }
 
-// Triage item with relations
-export interface TriageItemWithRelations extends TriageItem {
-  customer?: Customer;
+// Wrapup draft with relations
+export interface WrapupDraftWithRelations extends WrapupDraft {
   call?: Call;
-  quote?: Quote;
-  assignedTo?: User;
 }
 
 // Session user (from Supabase + our users table)
