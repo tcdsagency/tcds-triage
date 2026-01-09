@@ -481,6 +481,49 @@ export class AgencyZoomClient {
   }
 
   /**
+   * Search leads by phone number
+   * Uses searchText to find leads with matching phone
+   */
+  async findLeadByPhone(phone: string): Promise<AgencyZoomLead | null> {
+    const normalized = phone.replace(/\D/g, '');
+    if (normalized.length < 10) return null;
+
+    const result = await this.getLeads({ searchText: normalized, limit: 10 });
+
+    // Filter results to find exact phone match (searchText may match other fields)
+    for (const lead of result.data) {
+      const leadPhone = lead.phone?.replace(/\D/g, '') || '';
+      if (leadPhone.includes(normalized) || normalized.includes(leadPhone)) {
+        return lead;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Search leads by phone number (returns all matches)
+   */
+  async findLeadsByPhone(phone: string, limit: number = 5): Promise<AgencyZoomLead[]> {
+    const normalized = phone.replace(/\D/g, '');
+    if (normalized.length < 10) return [];
+
+    const result = await this.getLeads({ searchText: normalized, limit: limit * 2 });
+
+    // Filter results to find phone matches
+    const matches: AgencyZoomLead[] = [];
+    for (const lead of result.data) {
+      const leadPhone = lead.phone?.replace(/\D/g, '') || '';
+      if (leadPhone.includes(normalized) || normalized.includes(leadPhone)) {
+        matches.push(lead);
+        if (matches.length >= limit) break;
+      }
+    }
+
+    return matches;
+  }
+
+  /**
    * Get single lead by ID
    * GET /v1/api/leads/{leadId}
    */
