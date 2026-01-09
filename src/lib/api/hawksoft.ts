@@ -291,11 +291,18 @@ export class HawkSoftAPI {
 
   /**
    * Normalize HawkSoft client data to ensure producer/CSR fields are mapped
-   * HawkSoft may return these fields in various formats
+   * HawkSoft returns client info nested under 'details' object
    */
   private normalizeClient(client: any): HawkSoftClient {
-    // Log raw client data to identify field names (temporary debugging)
-    const agentFields = Object.keys(client).filter(k =>
+    // HawkSoft returns data nested under 'details' when using include=details
+    const details = client.details || {};
+
+    // Log what's in details to understand the structure
+    const detailKeys = Object.keys(details);
+    console.log(`[HawkSoft] Client ${client.clientNumber} details keys:`, detailKeys);
+
+    // Look for agent-related fields in details
+    const agentFields = detailKeys.filter(k =>
       k.toLowerCase().includes('producer') ||
       k.toLowerCase().includes('csr') ||
       k.toLowerCase().includes('agent') ||
@@ -304,54 +311,81 @@ export class HawkSoftAPI {
     );
 
     if (agentFields.length > 0) {
-      console.log(`[HawkSoft] Client ${client.clientNumber} agent fields:`,
-        agentFields.reduce((acc, k) => ({ ...acc, [k]: client[k] }), {})
+      console.log(`[HawkSoft] Client ${client.clientNumber} agent fields in details:`,
+        agentFields.reduce((acc, k) => ({ ...acc, [k]: details[k] }), {})
       );
-    } else {
-      // Log ALL fields for first client to see what's available
-      console.log(`[HawkSoft] Client ${client.clientNumber} ALL fields:`, Object.keys(client));
     }
 
-    // Map various HawkSoft field names to our normalized structure
-    const normalized = { ...client } as HawkSoftClient;
+    // Merge details into client for easier access
+    const merged = { ...client, ...details } as HawkSoftClient;
 
-    // Normalize producer (may be in different field names)
-    if (!normalized.producer) {
-      const producerId = client.producerId || client.ProducerId || client.agentId || client.AgentId ||
-                         client.agent1Id || client.Agent1Id || client.primaryAgentId;
-      const producerName = client.producerName || client.ProducerName || client.agentName || client.AgentName ||
-                           client.agent1Name || client.Agent1Name || client.primaryAgentName;
-      const producerEmail = client.producerEmail || client.ProducerEmail || client.agentEmail || client.AgentEmail;
-
-      if (producerId || producerName) {
-        normalized.producer = {
-          id: producerId || 0,
-          name: producerName || 'Unknown Producer',
-          email: producerEmail,
+    // Normalize producer (check both client and details level)
+    if (!merged.producer) {
+      // Check for producer as an object first
+      const producerObj = details.producer || details.Producer || client.producer;
+      if (producerObj && typeof producerObj === 'object') {
+        merged.producer = {
+          id: producerObj.id || producerObj.userId || producerObj.producerId || 0,
+          name: producerObj.name || producerObj.fullName || producerObj.displayName || 'Unknown Producer',
+          email: producerObj.email,
         };
-        console.log(`[HawkSoft] Client ${client.clientNumber} producer mapped:`, normalized.producer);
+        console.log(`[HawkSoft] Client ${client.clientNumber} producer (object):`, merged.producer);
+      } else {
+        // Check for producer as separate fields
+        const producerId = details.producerId || details.ProducerId || details.agentId || details.AgentId ||
+                           details.agent1Id || details.Agent1Id || details.primaryAgentId ||
+                           client.producerId || client.agentId;
+        const producerName = details.producerName || details.ProducerName || details.agentName || details.AgentName ||
+                             details.agent1Name || details.Agent1Name || details.primaryAgentName ||
+                             client.producerName || client.agentName;
+        const producerEmail = details.producerEmail || details.ProducerEmail || details.agentEmail ||
+                              client.producerEmail;
+
+        if (producerId || producerName) {
+          merged.producer = {
+            id: producerId || 0,
+            name: producerName || 'Unknown Producer',
+            email: producerEmail,
+          };
+          console.log(`[HawkSoft] Client ${client.clientNumber} producer (fields):`, merged.producer);
+        }
       }
     }
 
-    // Normalize CSR (may be in different field names)
-    if (!normalized.csr) {
-      const csrId = client.csrId || client.CsrId || client.serviceRepId || client.ServiceRepId ||
-                    client.agent2Id || client.Agent2Id || client.secondaryAgentId;
-      const csrName = client.csrName || client.CsrName || client.serviceRepName || client.ServiceRepName ||
-                      client.agent2Name || client.Agent2Name || client.secondaryAgentName;
-      const csrEmail = client.csrEmail || client.CsrEmail || client.serviceRepEmail || client.ServiceRepEmail;
-
-      if (csrId || csrName) {
-        normalized.csr = {
-          id: csrId || 0,
-          name: csrName || 'Unknown CSR',
-          email: csrEmail,
+    // Normalize CSR (check both client and details level)
+    if (!merged.csr) {
+      // Check for CSR as an object first
+      const csrObj = details.csr || details.CSR || details.serviceRep || client.csr;
+      if (csrObj && typeof csrObj === 'object') {
+        merged.csr = {
+          id: csrObj.id || csrObj.userId || csrObj.csrId || 0,
+          name: csrObj.name || csrObj.fullName || csrObj.displayName || 'Unknown CSR',
+          email: csrObj.email,
         };
-        console.log(`[HawkSoft] Client ${client.clientNumber} CSR mapped:`, normalized.csr);
+        console.log(`[HawkSoft] Client ${client.clientNumber} CSR (object):`, merged.csr);
+      } else {
+        // Check for CSR as separate fields
+        const csrId = details.csrId || details.CsrId || details.serviceRepId || details.ServiceRepId ||
+                      details.agent2Id || details.Agent2Id || details.secondaryAgentId ||
+                      client.csrId || client.serviceRepId;
+        const csrName = details.csrName || details.CsrName || details.serviceRepName || details.ServiceRepName ||
+                        details.agent2Name || details.Agent2Name || details.secondaryAgentName ||
+                        client.csrName || client.serviceRepName;
+        const csrEmail = details.csrEmail || details.CsrEmail || details.serviceRepEmail ||
+                         client.csrEmail;
+
+        if (csrId || csrName) {
+          merged.csr = {
+            id: csrId || 0,
+            name: csrName || 'Unknown CSR',
+            email: csrEmail,
+          };
+          console.log(`[HawkSoft] Client ${client.clientNumber} CSR (fields):`, merged.csr);
+        }
       }
     }
 
-    return normalized;
+    return merged;
   }
 
   /**
