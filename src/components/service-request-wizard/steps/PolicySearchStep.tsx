@@ -13,7 +13,18 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useServiceRequestWizard, usePrefill } from '../ServiceRequestWizardProvider';
-import { PolicySearchResult } from '../config/types';
+
+interface PolicySearchResult {
+  id: string;
+  policyNumber: string;
+  type: string;
+  carrier: string;
+  insuredName: string;
+  effectiveDate: string;
+  expirationDate: string;
+  status?: string;
+  isActive?: boolean;
+}
 
 export function PolicySearchStep() {
   const { selectPolicy, formData, errors } = useServiceRequestWizard();
@@ -40,7 +51,8 @@ export function PolicySearchStep() {
     setSearching(true);
     setHasSearched(true);
     try {
-      const res = await fetch(`/api/policy/search?q=${encodeURIComponent(q)}&limit=20&activeOnly=true`);
+      // Don't filter by activeOnly - show all policies with status indicator
+      const res = await fetch(`/api/policy/search?q=${encodeURIComponent(q)}&limit=20`);
       const data = await res.json();
 
       if (data.success && data.results) {
@@ -53,6 +65,8 @@ export function PolicySearchStep() {
             insuredName: p.insuredName || 'Unknown',
             effectiveDate: p.effectiveDate || '',
             expirationDate: p.expirationDate || '',
+            status: p.status || 'Unknown',
+            isActive: p.isActive ?? true,
           }))
         );
       } else {
@@ -134,12 +148,27 @@ export function PolicySearchStep() {
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="flex items-center gap-2">
+                          {/* Status dot indicator */}
+                          <span
+                            className={cn(
+                              'w-2.5 h-2.5 rounded-full flex-shrink-0',
+                              policy.isActive
+                                ? 'bg-green-500'
+                                : 'bg-red-500'
+                            )}
+                            title={policy.isActive ? 'Active' : policy.status || 'Inactive'}
+                          />
                           <span className="font-semibold text-gray-900 dark:text-gray-100">
                             {policy.policyNumber}
                           </span>
                           <Badge variant="secondary" className="text-xs">
                             {policy.type}
                           </Badge>
+                          {!policy.isActive && (
+                            <Badge variant="outline" className="text-xs text-red-600 border-red-300">
+                              {policy.status}
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                           {policy.insuredName} &bull; {policy.carrier}

@@ -28,6 +28,18 @@ interface CustomerSearchModalProps {
   title?: string;
 }
 
+// Normalize phone number by removing +1 country code prefix
+function normalizePhone(phone: string): string {
+  if (!phone) return '';
+  // Remove +1 prefix if present (common US country code)
+  let normalized = phone.replace(/^\+1/, '');
+  // Also remove any leading 1 if it's followed by 10 digits (e.g., 14691234567)
+  if (normalized.length === 11 && normalized.startsWith('1')) {
+    normalized = normalized.slice(1);
+  }
+  return normalized;
+}
+
 export default function CustomerSearchModal({
   isOpen,
   onClose,
@@ -40,10 +52,10 @@ export default function CustomerSearchModal({
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
-  // Pre-populate search with phone if provided
+  // Pre-populate search with phone if provided (normalized without +1 prefix)
   useEffect(() => {
     if (isOpen && initialPhone && !search) {
-      setSearch(initialPhone);
+      setSearch(normalizePhone(initialPhone));
     }
   }, [isOpen, initialPhone]);
 
