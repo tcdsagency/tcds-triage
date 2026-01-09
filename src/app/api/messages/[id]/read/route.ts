@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { messages } from "@/db/schema";
+import { messages, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 
 // =============================================================================
@@ -26,13 +26,22 @@ export async function POST(
       return NextResponse.json({ error: "Message ID required" }, { status: 400 });
     }
 
-    // Update message
+    // Get user ID from request body if provided
+    let userId: string | null = null;
+    try {
+      const body = await request.json();
+      userId = body.userId || null;
+    } catch {
+      // No body provided, that's ok
+    }
+
+    // Update message with acknowledgement info
     const [updated] = await db
       .update(messages)
       .set({
         isAcknowledged: true,
         acknowledgedAt: new Date(),
-        // TODO: Set acknowledgedById from auth context
+        acknowledgedById: userId,
       })
       .where(and(eq(messages.id, id), eq(messages.tenantId, tenantId)))
       .returning();
@@ -41,9 +50,26 @@ export async function POST(
       return NextResponse.json({ error: "Message not found" }, { status: 404 });
     }
 
+    // Fetch user name if we have a userId
+    let acknowledgedByName: string | null = null;
+    if (userId) {
+      const [user] = await db
+        .select({ firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (user) {
+        acknowledgedByName = `${user.firstName} ${user.lastName}`.trim();
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      message: updated,
+      message: {
+        ...updated,
+        acknowledgedByName,
+      },
     });
   } catch (error) {
     console.error("Acknowledge message error:", error);

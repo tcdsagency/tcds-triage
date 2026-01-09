@@ -30,18 +30,20 @@ export async function POST(
 
     if (itemType === 'wrapup') {
       // Update wrapup draft with the matched customer
+      // Build the JSON object to merge
+      const matchData = {
+        agencyZoomCustomerId: String(customerId),
+        manuallyMatched: true,
+        matchedCustomerName: customerName || '',
+        isLead: isLead || false,
+      };
+
       const [updated] = await db
         .update(wrapupDrafts)
         .set({
           // Store in aiExtraction for compatibility with existing flow
           aiExtraction: sql`
-            COALESCE(${wrapupDrafts.aiExtraction}, '{}'::jsonb) ||
-            jsonb_build_object(
-              'agencyZoomCustomerId', ${customerId},
-              'manuallyMatched', true,
-              'matchedCustomerName', ${customerName || ''},
-              'isLead', ${isLead || false}
-            )
+            COALESCE(${wrapupDrafts.aiExtraction}, '{}'::jsonb) || ${JSON.stringify(matchData)}::jsonb
           `,
           matchStatus: 'matched',
         })
