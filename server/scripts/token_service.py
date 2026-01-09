@@ -88,9 +88,37 @@ async def extract_mmi_token():
             await page.fill('input[type="email"], input[name="email"]', email)
             await page.fill('input[type="password"], input[name="password"]', password)
 
-            await page.click('button[type="submit"]')
+            # Try multiple submit button selectors
+            submit_selectors = [
+                'button[type="submit"]',
+                'button:has-text("Sign In")',
+                'button:has-text("Log In")',
+                'button:has-text("Login")',
+                'input[type="submit"]',
+                'button.login-button',
+                'button.submit-btn',
+                'form button',
+            ]
+
+            clicked = False
+            for selector in submit_selectors:
+                try:
+                    btn = await page.query_selector(selector)
+                    if btn:
+                        await btn.click()
+                        clicked = True
+                        print(f"[MMI] Clicked button with selector: {selector}", file=sys.stderr)
+                        break
+                except:
+                    continue
+
+            if not clicked:
+                # Try pressing Enter in password field
+                await page.press('input[type="password"]', 'Enter')
+                print("[MMI] Pressed Enter to submit", file=sys.stderr)
+
             await page.wait_for_load_state("networkidle", timeout=15000)
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
 
             cookies = await context.cookies()
             api_key_cookie = next((c for c in cookies if c["name"] == "api_key"), None)
