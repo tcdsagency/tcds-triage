@@ -1,10 +1,11 @@
 // API Route: /api/pending-review
-// Unified pending items API - consolidates wrapups, messages, and leads
+// Unified pending items API - consolidates wrapups and messages for intake/service
+// NOTE: Leads are NOT included - they belong to the sales workflow (/leads page)
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { wrapupDrafts, messages, customers, users, calls } from "@/db/schema";
-import { eq, and, desc, isNull, sql, gte, inArray } from "drizzle-orm";
+import { wrapupDrafts, messages, users, calls } from "@/db/schema";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 
 // =============================================================================
 // TYPES
@@ -254,67 +255,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // =======================================================================
-    // 3. Fetch New Unassigned Leads (last 7 days)
-    // =======================================================================
-    if (!typeFilter || typeFilter === 'lead') {
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-      const newLeads = await db
-        .select({
-          id: customers.id,
-          firstName: customers.firstName,
-          lastName: customers.lastName,
-          email: customers.email,
-          phone: customers.phone,
-          phoneAlt: customers.phoneAlt,
-          leadSource: customers.leadSource,
-          agencyzoomId: customers.agencyzoomId,
-          createdAt: customers.createdAt,
-        })
-        .from(customers)
-        .where(
-          and(
-            eq(customers.tenantId, tenantId),
-            eq(customers.isLead, true),
-            isNull(customers.producerId),
-            gte(customers.createdAt, sevenDaysAgo)
-          )
-        )
-        .orderBy(desc(customers.createdAt))
-        .limit(limit);
-
-      for (const lead of newLeads) {
-        // Skip if filtering by status (leads are always 'unmatched' in this context)
-        if (statusFilter && statusFilter !== 'unmatched') continue;
-
-        const ageMinutes = Math.floor((now.getTime() - new Date(lead.createdAt).getTime()) / 60000);
-
-        items.push({
-          id: lead.id,
-          type: 'lead',
-          direction: null,
-          contactName: `${lead.firstName} ${lead.lastName}`.trim(),
-          contactPhone: lead.phone || '',
-          contactEmail: lead.email,
-          contactType: 'lead',
-          matchStatus: 'unmatched',
-          sentiment: null,
-          isAutoPosted: false,
-          summary: `New lead from ${lead.leadSource || 'Unknown source'}`,
-          requestType: 'New Lead',
-          actionItems: ['Follow up with lead', 'Qualify opportunity'],
-          policies: [],
-          handledBy: null,
-          timestamp: lead.createdAt.toISOString(),
-          ageMinutes,
-          trestleData: null,
-          matchSuggestions: [],
-          agencyzoomLeadId: lead.agencyzoomId || undefined,
-        });
-      }
-    }
+    // NOTE: Leads are NOT included in pending review - they belong to sales workflow
+    // Leads are managed separately in /leads page
 
     // =======================================================================
     // Sort by timestamp (newest first) and apply limit
@@ -323,12 +265,12 @@ export async function GET(request: NextRequest) {
     const limitedItems = items.slice(0, limit);
 
     // =======================================================================
-    // Calculate Counts
+    // Calculate Counts (Leads excluded - they're in sales workflow)
     // =======================================================================
     const counts: PendingCounts = {
       wrapups: items.filter(i => i.type === 'wrapup').length,
       messages: items.filter(i => i.type === 'message').length,
-      leads: items.filter(i => i.type === 'lead').length,
+      leads: 0, // Leads not included in pending review
       total: items.length,
       byStatus: {
         matched: items.filter(i => i.matchStatus === 'matched').length,

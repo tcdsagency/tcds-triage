@@ -259,6 +259,16 @@ export async function GET(request: NextRequest) {
 
     const enrichedResults = results.map(r => {
       const custPolicies = policyMap.get(r.id) || [];
+      // Sort policies: active first, then by expiration date descending
+      custPolicies.sort((a, b) => {
+        // Active policies first
+        if (a.isActive && !b.isActive) return -1;
+        if (!a.isActive && b.isActive) return 1;
+        // Then by expiration date (most recent first)
+        const dateA = a.expirationDate ? new Date(a.expirationDate).getTime() : 0;
+        const dateB = b.expirationDate ? new Date(b.expirationDate).getTime() : 0;
+        return dateB - dateA;
+      });
       const activePolicies = custPolicies.filter(p => p.isActive);
       const policyTypes = [...new Set(activePolicies.map(p => p.lineOfBusiness))];
       

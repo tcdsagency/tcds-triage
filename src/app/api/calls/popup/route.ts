@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
           lastName: users.lastName,
           email: users.email,
           role: users.role,
+          avatarUrl: users.avatarUrl,
         })
         .from(users)
         .where(and(eq(users.tenantId, tenantId), eq(users.extension, extension)))
@@ -99,7 +100,12 @@ export async function GET(request: NextRequest) {
       const customer = matchedCustomers[0];
       if (customer.producerId) {
         const [p] = await db
-          .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+          .select({
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            avatarUrl: users.avatarUrl,
+          })
           .from(users)
           .where(eq(users.id, customer.producerId))
           .limit(1);
@@ -107,7 +113,12 @@ export async function GET(request: NextRequest) {
       }
       if (customer.csrId) {
         const [c] = await db
-          .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+          .select({
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            avatarUrl: users.avatarUrl,
+          })
           .from(users)
           .where(eq(users.id, customer.csrId))
           .limit(1);

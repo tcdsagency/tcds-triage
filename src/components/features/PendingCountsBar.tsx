@@ -21,8 +21,8 @@ export interface PendingCounts {
 
 interface PendingCountsBarProps {
   counts: PendingCounts;
-  activeTypeFilter: 'all' | 'wrapup' | 'message' | 'lead' | null;
-  onTypeFilter: (type: 'all' | 'wrapup' | 'message' | 'lead') => void;
+  activeTypeFilter: 'all' | 'wrapup' | 'message' | null;
+  onTypeFilter: (type: 'all' | 'wrapup' | 'message') => void;
   isLoading?: boolean;
 }
 
@@ -36,6 +36,7 @@ export default function PendingCountsBar({
   onTypeFilter,
   isLoading = false,
 }: PendingCountsBarProps) {
+  // NOTE: Leads are NOT included - they belong to sales workflow (/leads page)
   const typeButtons = [
     {
       key: 'all' as const,
@@ -60,14 +61,6 @@ export default function PendingCountsBar({
       icon: '💬',
       color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
       activeColor: 'bg-green-600 text-white',
-    },
-    {
-      key: 'lead' as const,
-      label: 'Leads',
-      count: counts.leads,
-      icon: '🎯',
-      color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-      activeColor: 'bg-purple-600 text-white',
     },
   ];
 
