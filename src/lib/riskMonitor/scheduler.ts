@@ -301,21 +301,29 @@ export class RiskMonitorScheduler {
     }
 
     // Fall back to RPR data
-    if (rprData?.listing) {
-      if (!updateData.listingPrice && rprData.listing.price) {
-        updateData.listingPrice = rprData.listing.price;
+    if (rprData) {
+      if (rprData.listing) {
+        if (!updateData.listingPrice && rprData.listing.price) {
+          updateData.listingPrice = rprData.listing.price;
+        }
+        if (!updateData.listingDate && rprData.listing.daysOnMarket) {
+          const listingDate = new Date();
+          listingDate.setDate(listingDate.getDate() - rprData.listing.daysOnMarket);
+          updateData.listingDate = listingDate;
+          updateData.daysOnMarket = rprData.listing.daysOnMarket;
+        }
       }
-      if (!updateData.listingDate && rprData.listing.daysOnMarket) {
-        const listingDate = new Date();
-        listingDate.setDate(listingDate.getDate() - rprData.listing.daysOnMarket);
-        updateData.listingDate = listingDate;
-        updateData.daysOnMarket = rprData.listing.daysOnMarket;
+      // Fall back to RPR sale data
+      if (!updateData.lastSaleDate && rprData.lastSaleDate) {
+        updateData.lastSaleDate = new Date(rprData.lastSaleDate);
       }
-    }
-
-    // Fallback estimated value from RPR
-    if (!updateData.estimatedValue && rprData?.estimatedValue) {
-      updateData.estimatedValue = rprData.estimatedValue;
+      if (!updateData.lastSalePrice && rprData.lastSalePrice) {
+        updateData.lastSalePrice = rprData.lastSalePrice;
+      }
+      // Fallback estimated value from RPR
+      if (!updateData.estimatedValue && rprData.estimatedValue) {
+        updateData.estimatedValue = rprData.estimatedValue;
+      }
     }
 
     await db
@@ -372,7 +380,8 @@ export class RiskMonitorScheduler {
     const listingPrice = latestListing?.LIST_PRICE || result.rprData?.listing?.price;
     const salePrice =
       latestListing?.CLOSE_PRICE ||
-      result.mmiData?.lastSalePrice;
+      result.mmiData?.lastSalePrice ||
+      result.rprData?.lastSalePrice;
 
     // Create alert
     await db.insert(riskMonitorAlerts).values({
@@ -426,6 +435,7 @@ export class RiskMonitorScheduler {
       latestListing?.LIST_PRICE ||
       latestListing?.CLOSE_PRICE ||
       result.mmiData?.lastSalePrice ||
+      result.rprData?.lastSalePrice ||
       result.rprData?.listing?.price;
 
     const priceStr = price ? `$${price.toLocaleString()}` : "Unknown";

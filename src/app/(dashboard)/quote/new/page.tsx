@@ -1378,6 +1378,235 @@ export default function QuoteIntakePage() {
   // Guided mode for new agents - only shows current section
   const [guidedMode, setGuidedMode] = useState(false);
 
+  // Customer search & autofill state
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerSearchResults, setCustomerSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [showCustomerSearch, setShowCustomerSearch] = useState(true);
+
+  // Customer search with debounce
+  useEffect(() => {
+    if (customerSearch.length < 2) {
+      setCustomerSearchResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const res = await fetch(`/api/customers/search?q=${encodeURIComponent(customerSearch)}&limit=10`);
+        const data = await res.json();
+        if (data.success) {
+          setCustomerSearchResults(data.results || []);
+        }
+      } catch (e) {
+        console.error("Customer search failed:", e);
+      }
+      setSearchLoading(false);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [customerSearch]);
+
+  // Autofill function - maps customer data to form fields
+  const autofillFromCustomer = useCallback((customer: any) => {
+    setSelectedCustomer(customer);
+    setShowCustomerSearch(false);
+    setCustomerSearch("");
+    setCustomerSearchResults([]);
+
+    // Parse address if it's a JSON string
+    let address = customer.address;
+    if (typeof address === 'string') {
+      try { address = JSON.parse(address); } catch { address = {}; }
+    }
+    address = address || {};
+
+    // Get policies with type matching current quote type
+    const activePolicies = (customer.policies || []).filter((p: any) => p.isActive);
+    const autoPolicies = activePolicies.filter((p: any) => p.type === 'auto');
+    const homePolicies = activePolicies.filter((p: any) => p.type === 'home');
+    const umbrellaPolicies = activePolicies.filter((p: any) => p.type === 'umbrella');
+
+    // Get all vehicles and drivers from auto policies
+    const allVehicles = autoPolicies.flatMap((p: any) => p.vehicles || []);
+    const allDrivers = autoPolicies.flatMap((p: any) => p.drivers || []);
+
+    // Get property from home policies
+    const property = homePolicies[0]?.properties?.[0] || {};
+    let propertyAddress = property.address;
+    if (typeof propertyAddress === 'string') {
+      try { propertyAddress = JSON.parse(propertyAddress); } catch { propertyAddress = {}; }
+    }
+    propertyAddress = propertyAddress || {};
+
+    // Current carrier info
+    const currentAutoPolicy = autoPolicies[0];
+    const currentHomePolicy = homePolicies[0];
+
+    // Fill Auto Form
+    if (selectedType === "personal_auto" || !selectedType) {
+      setAutoFormData(prev => ({
+        ...prev,
+        firstName: customer.firstName || prev.firstName,
+        lastName: customer.lastName || prev.lastName,
+        email: customer.email || prev.email,
+        phone: customer.phone || prev.phone,
+        address: address.street || address.address1 || prev.address,
+        city: address.city || prev.city,
+        state: address.state || prev.state,
+        zip: address.zip || address.zipCode || prev.zip,
+        dob: allDrivers[0]?.dateOfBirth || prev.dob,
+        gender: allDrivers[0]?.gender || prev.gender,
+        // Current insurance
+        hasCurrentInsurance: !!currentAutoPolicy,
+        currentCarrier: typeof currentAutoPolicy?.carrier === 'string' ? currentAutoPolicy.carrier : (currentAutoPolicy?.carrier?.name || prev.currentCarrier),
+        currentPremium: currentAutoPolicy?.premium?.toString() || prev.currentPremium,
+        // Vehicles
+        vehicles: allVehicles.length > 0
+          ? allVehicles.map((v: any) => ({
+              id: crypto.randomUUID(),
+              vin: v.vin || "",
+              year: v.year?.toString() || "",
+              make: v.make || "",
+              model: v.model || "",
+              ownership: "owned",
+              primaryUse: v.use || "commute",
+              annualMileage: v.annualMiles?.toString() || "12000",
+            }))
+          : prev.vehicles,
+        // Drivers
+        drivers: allDrivers.length > 0
+          ? allDrivers.map((d: any) => ({
+              id: crypto.randomUUID(),
+              firstName: d.firstName || "",
+              lastName: d.lastName || "",
+              dob: d.dateOfBirth || "",
+              gender: d.gender || "",
+              relationship: d.relationship || "self",
+              licenseNumber: d.licenseNumber || "",
+              licenseState: d.licenseState || "",
+            }))
+          : prev.drivers,
+      }));
+    }
+
+    // Fill Homeowners Form
+    if (selectedType === "homeowners") {
+      setHomeownersFormData(prev => ({
+        ...prev,
+        firstName: customer.firstName || prev.firstName,
+        lastName: customer.lastName || prev.lastName,
+        email: customer.email || prev.email,
+        phone: customer.phone || prev.phone,
+        dob: allDrivers[0]?.dateOfBirth || prev.dob,
+        // Property address (prefer property address, fallback to mailing)
+        propertyAddress: propertyAddress.street || propertyAddress.address1 || address.street || prev.propertyAddress,
+        propertyCity: propertyAddress.city || address.city || prev.propertyCity,
+        propertyState: propertyAddress.state || address.state || prev.propertyState,
+        propertyZip: propertyAddress.zip || propertyAddress.zipCode || address.zip || prev.propertyZip,
+        // Property details
+        yearBuilt: property.yearBuilt?.toString() || prev.yearBuilt,
+        squareFootage: property.squareFeet?.toString() || prev.squareFootage,
+        stories: property.stories?.toString() || prev.stories,
+        constructionType: property.constructionType || prev.constructionType,
+        roofMaterial: property.roofType || prev.roofMaterial,
+        roofAge: property.roofAge?.toString() || prev.roofAge,
+        // Current insurance
+        hasCurrentInsurance: !!currentHomePolicy,
+        currentCarrier: typeof currentHomePolicy?.carrier === 'string' ? currentHomePolicy.carrier : (currentHomePolicy?.carrier?.name || prev.currentCarrier),
+        currentPremium: currentHomePolicy?.premium?.toString() || prev.currentPremium,
+      }));
+    }
+
+    // Fill Mobile Home Form
+    if (selectedType === "mobile_home") {
+      setMobileHomeFormData(prev => ({
+        ...prev,
+        firstName: customer.firstName || prev.firstName,
+        lastName: customer.lastName || prev.lastName,
+        email: customer.email || prev.email,
+        phone: customer.phone || prev.phone,
+        dob: allDrivers[0]?.dateOfBirth || prev.dob,
+        propertyAddress: propertyAddress.street || address.street || prev.propertyAddress,
+        propertyCity: propertyAddress.city || address.city || prev.propertyCity,
+        propertyState: propertyAddress.state || address.state || prev.propertyState,
+        propertyZip: propertyAddress.zip || address.zip || prev.propertyZip,
+        yearManufactured: property.yearBuilt?.toString() || prev.yearManufactured,
+        squareFootage: property.squareFeet?.toString() || prev.squareFootage,
+      }));
+    }
+
+    // Fill Renters Form
+    if (selectedType === "renters") {
+      setRentersFormData(prev => ({
+        ...prev,
+        firstName: customer.firstName || prev.firstName,
+        lastName: customer.lastName || prev.lastName,
+        email: customer.email || prev.email,
+        phone: customer.phone || prev.phone,
+        dob: allDrivers[0]?.dateOfBirth || prev.dob,
+        rentalAddress: address.street || prev.rentalAddress,
+        rentalCity: address.city || prev.rentalCity,
+        rentalState: address.state || prev.rentalState,
+        rentalZip: address.zip || prev.rentalZip,
+      }));
+    }
+
+    // Fill Umbrella Form
+    if (selectedType === "umbrella") {
+      const umbrellaPolicy = umbrellaPolicies[0];
+      setUmbrellaFormData(prev => ({
+        ...prev,
+        firstName: customer.firstName || prev.firstName,
+        lastName: customer.lastName || prev.lastName,
+        email: customer.email || prev.email,
+        phone: customer.phone || prev.phone,
+        dob: allDrivers[0]?.dateOfBirth || prev.dob,
+        address: address.street || prev.address,
+        city: address.city || prev.city,
+        state: address.state || prev.state,
+        zip: address.zip || prev.zip,
+        // Underlying policies
+        hasAutoPolicy: autoPolicies.length > 0,
+        autoCarrier: typeof currentAutoPolicy?.carrier === 'string' ? currentAutoPolicy.carrier : (currentAutoPolicy?.carrier?.name || prev.autoCarrier),
+        autoPolicyNumber: currentAutoPolicy?.policyNumber || prev.autoPolicyNumber,
+        numVehicles: allVehicles.length.toString() || prev.numVehicles,
+        numDrivers: allDrivers.length.toString() || prev.numDrivers,
+        hasHomePolicy: homePolicies.length > 0,
+        homeCarrier: typeof currentHomePolicy?.carrier === 'string' ? currentHomePolicy.carrier : (currentHomePolicy?.carrier?.name || prev.homeCarrier),
+        homePolicyNumber: currentHomePolicy?.policyNumber || prev.homePolicyNumber,
+        // Current umbrella
+        hasCurrentUmbrella: !!umbrellaPolicy,
+        currentCarrier: typeof umbrellaPolicy?.carrier === 'string' ? umbrellaPolicy.carrier : (umbrellaPolicy?.carrier?.name || prev.currentCarrier),
+        currentPremium: umbrellaPolicy?.premium?.toString() || prev.currentPremium,
+      }));
+    }
+
+    // Fill Recreational Form
+    if (selectedType === "recreational") {
+      setRecreationalFormData(prev => ({
+        ...prev,
+        firstName: customer.firstName || prev.firstName,
+        lastName: customer.lastName || prev.lastName,
+        email: customer.email || prev.email,
+        phone: customer.phone || prev.phone,
+        dob: allDrivers[0]?.dateOfBirth || prev.dob,
+        address: address.street || prev.address,
+        city: address.city || prev.city,
+        state: address.state || prev.state,
+        zip: address.zip || prev.zip,
+      }));
+    }
+  }, [selectedType]);
+
+  // Clear selected customer and show search again
+  const clearSelectedCustomer = useCallback(() => {
+    setSelectedCustomer(null);
+    setShowCustomerSearch(true);
+  }, []);
+
   // Blocker modal state
   const [showBlockerModal, setShowBlockerModal] = useState(false);
 
@@ -2329,6 +2558,113 @@ export default function QuoteIntakePage() {
       <div className="flex">
         {/* Main Form */}
         <div className="flex-1 max-w-5xl mx-auto px-6 py-6 space-y-4">
+
+        {/* Customer Search & Autofill */}
+        <div className="bg-gray-800/30 rounded-xl border border-gray-700/50 p-4">
+          {selectedCustomer ? (
+            // Selected customer display
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                  <User className="w-6 h-6 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-white">{selectedCustomer.displayName}</span>
+                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs">
+                      <Check className="w-3 h-3 mr-1" />Autofilled
+                    </Badge>
+                  </div>
+                  <div className="text-sm text-gray-400 flex items-center gap-3">
+                    {selectedCustomer.phone && <span><Phone className="w-3 h-3 inline mr-1" />{selectedCustomer.phone}</span>}
+                    {selectedCustomer.email && <span><Mail className="w-3 h-3 inline mr-1" />{selectedCustomer.email}</span>}
+                    {selectedCustomer.policyCount > 0 && (
+                      <span><FileText className="w-3 h-3 inline mr-1" />{selectedCustomer.policyCount} active {selectedCustomer.policyCount === 1 ? 'policy' : 'policies'}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" onClick={clearSelectedCustomer} className="text-gray-400 hover:text-white">
+                Change Customer
+              </Button>
+            </div>
+          ) : showCustomerSearch ? (
+            // Customer search UI
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <Search className="w-5 h-5 text-amber-500" />
+                <div>
+                  <h3 className="font-medium text-white">Find Existing Customer</h3>
+                  <p className="text-sm text-gray-400">Search to autofill from HawkSoft/AgencyZoom data</p>
+                </div>
+              </div>
+              <div className="relative">
+                <Input
+                  type="text"
+                  value={customerSearch}
+                  onChange={(e) => setCustomerSearch(e.target.value)}
+                  placeholder="Search by name, phone, or email..."
+                  className="bg-gray-900 border-gray-700 text-white pl-10"
+                />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                {searchLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-500 animate-spin" />}
+              </div>
+
+              {/* Search Results */}
+              {customerSearchResults.length > 0 && (
+                <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg max-h-64 overflow-y-auto">
+                  {customerSearchResults.map((customer) => (
+                    <button
+                      key={customer.id}
+                      onClick={() => autofillFromCustomer(customer)}
+                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-800 border-b border-gray-700/50 last:border-0 text-left transition-colors"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-gray-300 font-medium">
+                        {customer.firstName?.[0]}{customer.lastName?.[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-white truncate">{customer.displayName}</div>
+                        <div className="text-sm text-gray-400 flex items-center gap-2">
+                          {customer.phone && <span>{customer.phone}</span>}
+                          {customer.policyCount > 0 && (
+                            <Badge variant="secondary" className="text-xs">{customer.policyCount} {customer.policyCount === 1 ? 'policy' : 'policies'}</Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {customer.policies?.filter((p: any) => p.isActive).map((p: any) => p.type).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i).slice(0, 3).map((type: string) => (
+                          <span key={type} className="inline-block px-1.5 py-0.5 bg-gray-700 rounded mr-1">{type}</span>
+                        ))}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {customerSearch.length >= 2 && customerSearchResults.length === 0 && !searchLoading && (
+                <div className="mt-2 text-center py-4 text-gray-400 text-sm">
+                  No customers found. Continue with new customer info below.
+                </div>
+              )}
+
+              <button
+                onClick={() => setShowCustomerSearch(false)}
+                className="mt-3 text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                Skip - Enter new customer info manually
+              </button>
+            </div>
+          ) : (
+            // Collapsed state - show button to search
+            <button
+              onClick={() => setShowCustomerSearch(true)}
+              className="flex items-center gap-3 text-gray-400 hover:text-white transition-colors"
+            >
+              <Search className="w-5 h-5" />
+              <span>Search for existing customer to autofill...</span>
+            </button>
+          )}
+        </div>
 
         {/* Eligibility Banner - shows underwriting alerts */}
         {selectedType && eligibilityResult.issueCount > 0 && (

@@ -37,11 +37,49 @@ export async function POST(
         alertCreated: result.alertCreated,
         rprData: result.rprData
           ? {
+              // Basic property details
               beds: result.rprData.beds,
               baths: result.rprData.baths,
               sqft: result.rprData.sqft,
+              stories: result.rprData.stories,
+              yearBuilt: result.rprData.yearBuilt,
+              propertyType: result.rprData.propertyType,
+              // Lot
+              lotSqft: result.rprData.lotSqft,
+              lotAcres: result.rprData.lotAcres,
+              // Construction (insurance key)
+              roofType: result.rprData.roofType,
+              roofMaterial: result.rprData.roofMaterial,
+              foundation: result.rprData.foundation,
+              exteriorWalls: result.rprData.exteriorWalls,
+              constructionType: result.rprData.constructionType,
+              hvac: result.rprData.hvac,
+              // Features (liability)
+              hasPool: result.rprData.hasPool,
+              pool: result.rprData.pool,
+              garageSpaces: result.rprData.garageSpaces,
+              garageType: result.rprData.garageType,
+              hasFireplace: result.rprData.hasFireplace,
+              fireplaces: result.rprData.fireplaces,
+              basement: result.rprData.basement,
+              // Owner
+              ownerName: result.rprData.ownerName,
+              ownerOccupied: result.rprData.ownerOccupied,
+              // Valuation
+              assessedValue: result.rprData.assessedValue,
               estimatedValue: result.rprData.estimatedValue,
+              taxAmount: result.rprData.taxAmount,
+              lastSaleDate: result.rprData.lastSaleDate,
+              lastSalePrice: result.rprData.lastSalePrice,
+              // Risk
+              floodZone: result.rprData.floodZone,
+              floodRisk: result.rprData.floodRisk,
+              // HOA
+              hasHoa: result.rprData.hasHoa,
+              hoaFee: result.rprData.hoaFee,
+              // Listing & Status
               listing: result.rprData.listing,
+              currentStatus: result.rprData.currentStatus,
             }
           : null,
         mmiData: result.mmiData
