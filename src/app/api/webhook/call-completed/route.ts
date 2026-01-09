@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { calls, customers, wrapupDrafts, activities, users, triageItems, matchSuggestions } from "@/db/schema";
+import { calls, customers, wrapupDrafts, activities, users, matchSuggestions } from "@/db/schema";
 import { eq, or, ilike, and, gte, lte, desc } from "drizzle-orm";
 import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
@@ -61,73 +61,6 @@ function normalizePhone(phone: string): string {
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   return phone;
-}
-
-// Map AI call types to triage types
-function mapCallTypeToTriageType(callType: string | undefined): "call" | "quote" | "claim" | "service" | "lead" | "after_hours" {
-  if (!callType) return "call";
-  const type = callType.toLowerCase();
-  if (type.includes("quote") || type.includes("new business")) return "quote";
-  if (type.includes("claim")) return "claim";
-  if (type.includes("lead") || type.includes("prospect")) return "lead";
-  if (type.includes("service") || type.includes("endorsement") || type.includes("change")) return "service";
-  if (type.includes("after") || type.includes("voicemail")) return "after_hours";
-  return "call";
-}
-
-// Calculate priority based on call analysis
-function calculatePriority(analysis: any, duration: number): "low" | "medium" | "high" | "urgent" {
-  // Urgent: Claims, complaints, cancellation requests
-  const urgentKeywords = ["claim", "accident", "cancel", "complaint", "urgent", "emergency", "asap"];
-  const summary = (analysis.summary || "").toLowerCase();
-  const callType = (analysis.callType || "").toLowerCase();
-
-  if (urgentKeywords.some(k => summary.includes(k) || callType.includes(k))) {
-    return "urgent";
-  }
-
-  // High: Quote requests, billing issues, action items
-  const highKeywords = ["quote", "billing", "payment", "due", "lapse"];
-  if (highKeywords.some(k => summary.includes(k) || callType.includes(k))) {
-    return "high";
-  }
-
-  // High: Has multiple action items
-  if (analysis.actionItems && analysis.actionItems.length > 2) {
-    return "high";
-  }
-
-  // Medium: Has some action items or longer call
-  if ((analysis.actionItems && analysis.actionItems.length > 0) || duration > 300) {
-    return "medium";
-  }
-
-  return "low";
-}
-
-// Calculate AI priority score (0-100)
-function calculateAIPriorityScore(analysis: any, duration: number): number {
-  let score = 50; // Base score
-
-  // Sentiment adjustment
-  if (analysis.sentiment === "negative") score += 20;
-  else if (analysis.sentiment === "positive") score -= 10;
-
-  // Action items
-  const actionCount = analysis.actionItems?.length || 0;
-  score += Math.min(actionCount * 10, 30);
-
-  // Call type adjustment
-  const callType = (analysis.callType || "").toLowerCase();
-  if (callType.includes("claim")) score += 25;
-  else if (callType.includes("quote")) score += 15;
-  else if (callType.includes("cancel")) score += 20;
-
-  // Duration adjustment (longer calls often more complex)
-  if (duration > 600) score += 10;
-  else if (duration > 300) score += 5;
-
-  return Math.min(100, Math.max(0, score));
 }
 
 // =============================================================================
