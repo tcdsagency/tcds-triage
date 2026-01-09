@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { customers, policies, vehicles, drivers, users, properties } from '@/db/schema';
 import { eq, or, ilike, sql, and, desc, ne, isNull } from 'drizzle-orm';
 import { getPolicyTypeFromLineOfBusiness } from '@/types/customer-profile';
+import { getAgencyZoomClient } from '@/lib/api/agencyzoom';
 
 // GET /api/customers/search?q=query&limit=20&assignedTo=userId
 export async function GET(request: NextRequest) {
@@ -310,11 +311,80 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // ==========================================================================
+    // API Fallback: If few results, search AgencyZoom for customers and leads
+    // ==========================================================================
+    let apiResults: any[] = [];
+    const searchQuery = query || phone || '';
+
+    if (enrichedResults.length < 5 && searchQuery.length >= 2) {
+      try {
+        const azClient = getAgencyZoomClient();
+        const seenIds = new Set(enrichedResults.map(r => r.agencyzoomId).filter(Boolean));
+
+        // Search customers in AgencyZoom
+        const azCustomersResult = await azClient.getCustomers({ search: searchQuery, limit: 10 });
+        const azCustomers = azCustomersResult.data;
+        for (const c of azCustomers) {
+          if (seenIds.has(c.id?.toString())) continue;
+          seenIds.add(c.id?.toString());
+          apiResults.push({
+            id: `az-customer-${c.id}`,
+            agencyzoomId: c.id?.toString(),
+            firstName: c.firstName || '',
+            lastName: c.lastName || '',
+            email: c.email || null,
+            phone: c.phone || null,
+            isLead: false,
+            displayName: `${c.firstName || ''} ${c.lastName || ''}`.trim(),
+            policyStatus: 'unknown',
+            policyCount: 0,
+            policyTypes: [],
+            policies: [],
+            producer: null,
+            csr: null,
+            source: 'agencyzoom',
+          });
+        }
+
+        // Search leads in AgencyZoom
+        const leadsResult = await azClient.getLeads({ searchText: searchQuery, limit: 10 });
+        for (const l of leadsResult.data) {
+          if (seenIds.has(l.id?.toString())) continue;
+          seenIds.add(l.id?.toString());
+          apiResults.push({
+            id: `az-lead-${l.id}`,
+            agencyzoomId: l.id?.toString(),
+            firstName: l.firstName || '',
+            lastName: l.lastName || '',
+            email: l.email || null,
+            phone: l.phone || null,
+            isLead: true,
+            displayName: `${l.firstName || ''} ${l.lastName || ''}`.trim(),
+            policyStatus: 'lead',
+            policyCount: 0,
+            policyTypes: [],
+            policies: [],
+            producer: null,
+            csr: null,
+            source: 'agencyzoom',
+          });
+        }
+      } catch (azError) {
+        console.warn('[Customer Search] AgencyZoom fallback failed:', azError);
+      }
+    }
+
+    // Combine local and API results (local first)
+    const allResults = [...enrichedResults, ...apiResults];
+
     return NextResponse.json({
       success: true,
-      query: query || phone || '',
-      count: enrichedResults.length,
-      results: enrichedResults,
+      query: searchQuery,
+      count: allResults.length,
+      results: allResults,
+      localCount: enrichedResults.length,
+      apiCount: apiResults.length,
     });
   } catch (error) {
     console.error('Customer search error:', error);

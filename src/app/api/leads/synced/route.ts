@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { customers, users } from '@/db/schema';
 import { eq, and, desc, ilike, or, sql, isNull } from 'drizzle-orm';
+import { getAgencyZoomClient } from '@/lib/api/agencyzoom';
 
 /**
  * GET /api/leads/synced - Get UNASSIGNED leads from AgencyZoom sync
@@ -22,9 +23,27 @@ export async function GET(request: NextRequest) {
 
     // Build base query
     let leads;
-    
+
     if (query.length >= 2) {
       const searchTerm = `%${query}%`;
+
+      // Build search conditions - support name, email, and phone
+      const searchConditions = [
+        ilike(customers.firstName, searchTerm),
+        ilike(customers.lastName, searchTerm),
+        ilike(customers.email, searchTerm),
+        sql`${customers.firstName} || ' ' || ${customers.lastName} ILIKE ${searchTerm}`,
+      ];
+
+      // Add phone search if query contains digits (at least 3)
+      const phoneDigits = query.replace(/\D/g, '');
+      if (phoneDigits.length >= 3) {
+        searchConditions.push(
+          sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ${'%' + phoneDigits + '%'}`,
+          sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phoneAlt}, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ${'%' + phoneDigits + '%'}`
+        );
+      }
+
       leads = await db
         .select({
           id: customers.id,
@@ -48,12 +67,7 @@ export async function GET(request: NextRequest) {
             eq(customers.tenantId, tenantId),
             eq(customers.isLead, true),
             isNull(customers.producerId), // Only show unassigned leads
-            or(
-              ilike(customers.firstName, searchTerm),
-              ilike(customers.lastName, searchTerm),
-              ilike(customers.email, searchTerm),
-              sql`${customers.firstName} || ' ' || ${customers.lastName} ILIKE ${searchTerm}`
-            )
+            or(...searchConditions)
           )
         )
         .orderBy(desc(customers.createdAt))
@@ -143,10 +157,55 @@ export async function GET(request: NextRequest) {
       lost: allLeads.filter(l => l.leadStatus === 'lost').length,
     };
 
+    // ==========================================================================
+    // API Fallback: If few results and searching, also check AgencyZoom API
+    // ==========================================================================
+    let apiLeads: any[] = [];
+
+    if (enrichedLeads.length < 5 && query.length >= 2) {
+      try {
+        const azClient = getAgencyZoomClient();
+        const seenIds = new Set(enrichedLeads.map(l => l.agencyzoomId).filter(Boolean));
+
+        const leadsResult = await azClient.getLeads({ searchText: query, limit: 10 });
+        for (const l of leadsResult.data) {
+          if (seenIds.has(l.id?.toString())) continue;
+          seenIds.add(l.id?.toString());
+          apiLeads.push({
+            id: `az-lead-${l.id}`,
+            agencyzoomId: l.id?.toString(),
+            firstName: l.firstName || '',
+            lastName: l.lastName || '',
+            email: l.email || null,
+            phone: l.phone || null,
+            phoneAlt: null,
+            leadSource: l.source || null,
+            leadStatus: l.status || 'new',
+            pipelineStage: null,
+            producerId: null,
+            csrId: null,
+            createdAt: l.createdAt || new Date().toISOString(),
+            updatedAt: l.createdAt || new Date().toISOString(),
+            displayName: `${l.firstName || ''} ${l.lastName || ''}`.trim(),
+            producer: null,
+            csr: null,
+            source: 'agencyzoom',
+          });
+        }
+      } catch (azError) {
+        console.warn('[Lead Search] AgencyZoom fallback failed:', azError);
+      }
+    }
+
+    // Combine local and API results (local first)
+    const allResults = [...enrichedLeads, ...apiLeads];
+
     return NextResponse.json({
       success: true,
-      leads: enrichedLeads,
+      leads: allResults,
       counts,
+      localCount: enrichedLeads.length,
+      apiCount: apiLeads.length,
     });
   } catch (error) {
     console.error('Leads fetch error:', error);
