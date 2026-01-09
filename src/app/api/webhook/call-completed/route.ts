@@ -12,10 +12,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { calls, customers, wrapupDrafts, activities, users, triageItems } from "@/db/schema";
+import { calls, customers, wrapupDrafts, activities, users, triageItems, matchSuggestions } from "@/db/schema";
 import { eq, or, ilike, and, gte, lte, desc } from "drizzle-orm";
 import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
-import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
+import { trestleIQClient } from "@/lib/api/trestleiq";
+import { getServiceRequestTypeId } from "@/lib/constants/agencyzoom";
 
 // =============================================================================
 // AUTHENTICATION
@@ -249,6 +251,7 @@ interface AIAnalysis {
   sentiment: "positive" | "neutral" | "negative";
   isHangup: boolean;
   callType?: string;
+  serviceRequestType?: string; // Maps to AgencyZoom service request type
 }
 
 async function analyzeTranscript(transcript: string): Promise<AIAnalysis | null> {
@@ -276,6 +279,7 @@ async function analyzeTranscript(transcript: string): Promise<AIAnalysis | null>
 4. Overall sentiment (positive/neutral/negative)
 5. Whether this was a hangup/brief call with no meaningful conversation
 6. Call type (quote request, policy change, billing inquiry, claim, renewal, etc.)
+7. Service request type - classify as one of: billing inquiry, policy change, add vehicle, remove vehicle, add driver, remove driver, claims, renewal, quote request, cancel, certificate, id card, general inquiry
 
 Respond in JSON format:
 {
@@ -284,7 +288,8 @@ Respond in JSON format:
   "extractedData": { "customerName": "...", "policyNumber": "...", ... },
   "sentiment": "positive|neutral|negative",
   "isHangup": true|false,
-  "callType": "..."
+  "callType": "...",
+  "serviceRequestType": "billing inquiry|policy change|add vehicle|remove vehicle|add driver|remove driver|claims|renewal|quote request|cancel|certificate|id card|general inquiry"
 }`,
           },
           {
@@ -642,9 +647,98 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Create wrap-up draft
+    // 4. Create wrap-up draft with customer matching
     let wrapupId: string | null = null;
+    let customerMatchStatus: "matched" | "multiple_matches" | "unmatched" = "unmatched";
+    let matchedAzCustomerId: string | null = null;
+    let trestleData: Record<string, unknown> | null = null;
+
     if (analysis && !analysis.isHangup) {
+      // Get customer phone from call direction
+      const customerPhone = direction === "inbound" ? callerNumber : calledNumber;
+      const phoneForLookup = analysis.extractedData?.phone || customerPhone;
+
+      // 4.1 AgencyZoom customer lookup (search both customers AND leads)
+      let azMatches: AgencyZoomCustomer[] = [];
+      let azLeadMatches: AgencyZoomLead[] = [];
+      let matchType: "customer" | "lead" | "none" = "none";
+
+      try {
+        const azClient = await getAgencyZoomClient();
+        if (azClient && phoneForLookup) {
+          // First search customers
+          azMatches = await azClient.findCustomersByPhone(phoneForLookup, 5);
+          console.log(`[Call-Completed] AgencyZoom customer lookup for ${phoneForLookup}: ${azMatches.length} matches`);
+
+          // If no customers found, search leads
+          if (azMatches.length === 0) {
+            try {
+              const normalizedPhone = phoneForLookup.replace(/\D/g, "");
+              const leadsResult = await azClient.getLeads({ searchText: normalizedPhone, limit: 5 });
+              azLeadMatches = leadsResult.data;
+              console.log(`[Call-Completed] AgencyZoom lead lookup for ${phoneForLookup}: ${azLeadMatches.length} matches`);
+              matchType = azLeadMatches.length > 0 ? "lead" : "none";
+            } catch (leadError) {
+              console.error("[Call-Completed] AgencyZoom lead lookup error:", leadError);
+            }
+          } else {
+            matchType = "customer";
+          }
+        }
+      } catch (error) {
+        console.error("[Call-Completed] AgencyZoom lookup error:", error);
+      }
+
+      // Determine match status - check customers first, then leads
+      let matchedLeadId: string | null = null;
+
+      if (azMatches.length === 1) {
+        customerMatchStatus = "matched";
+        matchedAzCustomerId = azMatches[0].id.toString();
+        console.log(`[Call-Completed] Single customer match: AZ customer ${matchedAzCustomerId}`);
+      } else if (azMatches.length > 1) {
+        customerMatchStatus = "multiple_matches";
+        console.log(`[Call-Completed] Multiple customer matches: ${azMatches.length} customers`);
+      } else if (azLeadMatches.length === 1) {
+        // Single lead match
+        customerMatchStatus = "matched";
+        matchedLeadId = azLeadMatches[0].id.toString();
+        console.log(`[Call-Completed] Single lead match: AZ lead ${matchedLeadId}`);
+      } else if (azLeadMatches.length > 1) {
+        customerMatchStatus = "multiple_matches";
+        console.log(`[Call-Completed] Multiple lead matches: ${azLeadMatches.length} leads`);
+      } else {
+        customerMatchStatus = "unmatched";
+
+        // 4.2 Trestle IQ lookup for unmatched calls
+        if (phoneForLookup) {
+          try {
+            if (trestleIQClient) {
+              const trestleResult = await trestleIQClient.reversePhone(phoneForLookup);
+              if (trestleResult) {
+                trestleData = {
+                  phoneNumber: trestleResult.phoneNumber,
+                  lineType: trestleResult.lineType,
+                  carrier: trestleResult.carrier,
+                  person: trestleResult.person,
+                  address: trestleResult.address,
+                  emails: trestleResult.emails,
+                  confidence: trestleResult.confidence,
+                };
+                console.log(`[Call-Completed] Trestle lookup: ${trestleResult.person?.name || "No name found"}`);
+              }
+            }
+          } catch (error) {
+            console.error("[Call-Completed] Trestle lookup error:", error);
+          }
+        }
+      }
+
+      // 4.3 Create wrapup draft
+      const serviceRequestTypeId = getServiceRequestTypeId(analysis.serviceRequestType || analysis.callType);
+      const trestlePersonName = (trestleData as { person?: { name?: string } } | null)?.person?.name;
+      const trestleEmails = (trestleData as { emails?: string[] } | null)?.emails;
+
       const [wrapup] = await db
         .insert(wrapupDrafts)
         .values({
@@ -654,11 +748,13 @@ export async function POST(request: NextRequest) {
           agentExtension: extension,
           agentName: body.agentName,
           summary: analysis.summary,
-          customerName: analysis.extractedData?.customerName,
-          customerPhone: analysis.extractedData?.phone || callerNumber,
-          customerEmail: analysis.extractedData?.email,
+          customerName: analysis.extractedData?.customerName || trestlePersonName,
+          customerPhone: phoneForLookup,
+          customerEmail: analysis.extractedData?.email || trestleEmails?.[0],
           requestType: analysis.callType,
           status: "pending_review",
+          matchStatus: customerMatchStatus,
+          trestleData: trestleData,
           aiCleanedSummary: analysis.summary,
           aiProcessingStatus: "completed",
           aiProcessedAt: new Date(),
@@ -666,13 +762,78 @@ export async function POST(request: NextRequest) {
             actionItems: analysis.actionItems,
             extractedData: analysis.extractedData,
             sentiment: analysis.sentiment,
+            serviceRequestType: analysis.serviceRequestType,
+            serviceRequestTypeId,
+            agencyZoomCustomerId: matchedAzCustomerId,
+            agencyZoomLeadId: matchedLeadId,
+            matchType,
           },
           aiConfidence: "0.85",
         })
         .returning();
 
       wrapupId = wrapup.id;
-      console.log(`[Call-Completed] Created wrap-up draft: ${wrapupId}`);
+      console.log(`[Call-Completed] Created wrap-up draft: ${wrapupId} (matchStatus: ${customerMatchStatus})`);
+
+      // 4.4 Store match suggestions for multiple matches (customers or leads)
+      if (customerMatchStatus === "multiple_matches") {
+        const suggestions: Array<{
+          tenantId: string;
+          wrapupDraftId: string;
+          source: string;
+          contactType: string;
+          contactId: string;
+          contactName: string;
+          contactPhone: string | null;
+          contactEmail: string | null;
+          confidence: string;
+          matchReason: string;
+          recommendedAction: string;
+        }> = [];
+
+        // Add customer matches
+        if (azMatches.length > 0) {
+          azMatches.forEach((az, index) => {
+            suggestions.push({
+              tenantId,
+              wrapupDraftId: wrapup.id,
+              source: "agencyzoom",
+              contactType: az.customerType || "customer",
+              contactId: az.id.toString(),
+              contactName: az.businessName || `${az.firstName} ${az.lastName}`.trim(),
+              contactPhone: az.phone || az.phoneCell,
+              contactEmail: az.email,
+              confidence: (1 - index * 0.1).toFixed(2),
+              matchReason: "Phone number match - Customer",
+              recommendedAction: index === 0 ? "review" : "consider",
+            });
+          });
+        }
+
+        // Add lead matches
+        if (azLeadMatches.length > 0) {
+          azLeadMatches.forEach((lead, index) => {
+            suggestions.push({
+              tenantId,
+              wrapupDraftId: wrapup.id,
+              source: "agencyzoom",
+              contactType: "lead",
+              contactId: lead.id.toString(),
+              contactName: `${lead.firstName} ${lead.lastName}`.trim(),
+              contactPhone: lead.phone,
+              contactEmail: lead.email,
+              confidence: (0.9 - index * 0.1).toFixed(2), // Leads slightly lower confidence
+              matchReason: "Phone number match - Lead",
+              recommendedAction: index === 0 && azMatches.length === 0 ? "review" : "consider",
+            });
+          });
+        }
+
+        if (suggestions.length > 0) {
+          await db.insert(matchSuggestions).values(suggestions);
+          console.log(`[Call-Completed] Stored ${suggestions.length} match suggestions (${azMatches.length} customers, ${azLeadMatches.length} leads)`);
+        }
+      }
 
       // 4.5. Create triage item for agent review
       const triageType = mapCallTypeToTriageType(analysis.callType);
@@ -700,30 +861,22 @@ export async function POST(request: NextRequest) {
       console.log(`[Call-Completed] Created triage item: ${triageItem.id} (type: ${triageType}, priority: ${priority})`);
     }
 
-    // 5. Post to AgencyZoom (if customer found)
-    if (call.customerId && analysis) {
-      await postToAgencyZoom(
-        call.customerId,
-        analysis.summary,
-        direction,
-        body.agentName || "Agent",
-        timestamp
-      );
-    }
+    // 5. NOTE: Auto-posting to AgencyZoom removed
+    // All CRM posting is now handled through the Wrapup Review UI
+    // This ensures agents can review/edit summaries before posting and avoids duplicate notes
 
-    // 6. Log for E&O compliance (only if we have a customer)
-    if (call.customerId) {
-      await db.insert(activities).values({
-        tenantId,
-        customerId: call.customerId,
-        callId: call.id,
-        createdById: call.agentId,
-        type: "call",
-        title: `Call ${direction === "inbound" ? "received" : "placed"} - ${body.duration}s`,
-        description: analysis?.summary || `${direction} call completed. Duration: ${body.duration}s. Match: ${matchResult.method} (${matchResult.confidence})`,
-        aiGenerated: !!analysis,
-      });
-    }
+    // 6. Log for E&O compliance (log all calls, not just matched ones)
+    // This creates an internal audit trail even for unmatched calls
+    await db.insert(activities).values({
+      tenantId,
+      customerId: call.customerId || null, // Can be null for unmatched calls
+      callId: call.id,
+      createdById: call.agentId,
+      type: "call",
+      title: `Call ${direction === "inbound" ? "received" : "placed"} - ${body.duration}s`,
+      description: analysis?.summary || `${direction} call completed. Duration: ${body.duration}s. Match: ${matchResult.method} (${matchResult.confidence})`,
+      aiGenerated: !!analysis,
+    });
 
     const processingTime = Date.now() - startTime;
     console.log(`[Call-Completed] Processed in ${processingTime}ms`);

@@ -2821,3 +2821,58 @@ export const aiTokenUsageDaily = pgTable('ai_token_usage_daily', {
   tenantDateIdx: uniqueIndex('ai_token_daily_tenant_date_idx').on(table.tenantId, table.date, table.provider, table.model),
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// API RETRY QUEUE (Failed External API Calls)
+// ═══════════════════════════════════════════════════════════════════════════
+// Stores failed API calls for retry (AgencyZoom, Trestle, etc.)
+
+export const apiRetryQueueStatusEnum = pgEnum('api_retry_queue_status', [
+  'pending',      // Waiting to be retried
+  'processing',   // Currently being retried
+  'completed',    // Successfully completed
+  'failed',       // Permanently failed (max retries exceeded)
+  'cancelled',    // Manually cancelled
+]);
+
+export const apiRetryQueue = pgTable('api_retry_queue', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Operation details
+  operationType: text('operation_type').notNull(), // 'agencyzoom_note', 'agencyzoom_ticket', 'agencyzoom_lead', 'trestle_lookup'
+  targetService: text('target_service').notNull(), // 'agencyzoom', 'trestle', etc.
+
+  // Request data (stored as JSON for replay)
+  requestPayload: jsonb('request_payload').notNull(),
+
+  // Context for the operation
+  wrapupDraftId: uuid('wrapup_draft_id').references(() => wrapupDrafts.id, { onDelete: 'set null' }),
+  callId: uuid('call_id').references(() => calls.id, { onDelete: 'set null' }),
+  customerId: text('customer_id'), // AgencyZoom customer ID (not our internal ID)
+
+  // Status tracking
+  status: apiRetryQueueStatusEnum('status').notNull().default('pending'),
+
+  // Retry tracking
+  attemptCount: integer('attempt_count').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(3),
+  lastAttemptAt: timestamp('last_attempt_at'),
+  nextAttemptAt: timestamp('next_attempt_at'),
+
+  // Error tracking
+  lastError: text('last_error'),
+  errorHistory: jsonb('error_history').$type<Array<{ timestamp: string; error: string; attempt: number }>>(),
+
+  // Result on success
+  resultData: jsonb('result_data'),
+
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  completedAt: timestamp('completed_at'),
+}, (table) => [
+  index('api_retry_queue_status_idx').on(table.tenantId, table.status),
+  index('api_retry_queue_next_attempt_idx').on(table.status, table.nextAttemptAt),
+  index('api_retry_queue_service_idx').on(table.tenantId, table.targetService),
+  index('api_retry_queue_wrapup_idx').on(table.wrapupDraftId),
+]);
+

@@ -236,14 +236,26 @@ export class AgencyZoomClient {
   }
 
   /**
-   * Search customers by phone number
+   * Search customers by phone number (returns first match)
    */
   async findCustomerByPhone(phone: string): Promise<AgencyZoomCustomer | null> {
     // Normalize phone number
     const normalized = phone.replace(/\D/g, '');
-    
+
     const result = await this.getCustomers({ search: normalized, limit: 1 });
     return result.data[0] || null;
+  }
+
+  /**
+   * Search customers by phone number (returns all matches)
+   * Used for wrapup matching where we need to show multiple options
+   */
+  async findCustomersByPhone(phone: string, limit: number = 5): Promise<AgencyZoomCustomer[]> {
+    const normalized = phone.replace(/\D/g, '');
+    if (normalized.length < 10) return [];
+
+    const result = await this.getCustomers({ search: normalized, limit });
+    return result.data;
   }
 
   /**
