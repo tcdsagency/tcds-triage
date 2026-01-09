@@ -41,7 +41,7 @@ function SectionProgress({ total, current }: { total: number; current: number })
           key={i}
           className={cn(
             "w-2 h-2 rounded-full transition-colors",
-            i < current ? "bg-indigo-400" : i === current ? "bg-white" : "bg-indigo-800"
+            i < current ? "bg-white" : i === current ? "bg-emerald-400" : "bg-white/30"
           )}
         />
       ))}
@@ -248,7 +248,7 @@ export default function AgentAssistSidebar({
           <h3 className="font-semibold text-sm">Agent Assist</h3>
           <SectionProgress total={guidance.length} current={currentIndex >= 0 ? currentIndex : 0} />
         </div>
-        <p className="text-xs text-indigo-200 mt-1">
+        <p className="text-xs text-white/80 mt-1">
           Section {currentIndex + 1} of {guidance.length}
         </p>
       </div>

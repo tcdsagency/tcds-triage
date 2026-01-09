@@ -488,6 +488,8 @@ export const customers = pgTable('customers', {
   index('customers_hs_idx').on(table.tenantId, table.hawksoftClientCode),
   index('customers_archived_idx').on(table.tenantId, table.isArchived),
   index('customers_lead_idx').on(table.tenantId, table.isLead),
+  // Unique constraint to prevent duplicate AgencyZoom leads
+  uniqueIndex('customers_tenant_az_unique').on(table.tenantId, table.agencyzoomId),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
