@@ -60,8 +60,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Run the scheduler
-    const result = await scheduler.run();
+    // Run the scheduler (mark as manual trigger)
+    const result = await scheduler.run(true);
 
     // If we modified settings, restore them
     if (ignoreWindow) {

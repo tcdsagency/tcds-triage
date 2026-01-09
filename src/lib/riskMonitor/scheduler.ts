@@ -10,7 +10,7 @@ import {
   riskMonitorActivityLog,
   riskMonitorActivityEvents,
 } from "@/db/schema";
-import { eq, and, lte, desc, isNull, sql, not, inArray } from "drizzle-orm";
+import { eq, and, lte, desc, isNull, sql, not, inArray, or, lt } from "drizzle-orm";
 import { rprClient, type RPRPropertyData } from "@/lib/rpr";
 import { mmiClient, type MMIPropertyData } from "@/lib/mmi";
 
@@ -160,7 +160,10 @@ export class RiskMonitorScheduler {
           eq(riskMonitorPolicies.tenantId, this.tenantId),
           eq(riskMonitorPolicies.isActive, true),
           // Either never checked, or last checked before cutoff
-          sql`(${riskMonitorPolicies.lastCheckedAt} IS NULL OR ${riskMonitorPolicies.lastCheckedAt} < ${cutoffDate})`
+          or(
+            isNull(riskMonitorPolicies.lastCheckedAt),
+            lt(riskMonitorPolicies.lastCheckedAt, cutoffDate)
+          )
         )
       )
       .orderBy(riskMonitorPolicies.lastCheckedAt)
@@ -490,8 +493,9 @@ export class RiskMonitorScheduler {
 
   /**
    * Run the scheduler
+   * @param isManual - Whether this is a manual trigger (vs scheduled)
    */
-  async run(): Promise<SchedulerRunResult> {
+  async run(isManual: boolean = false): Promise<SchedulerRunResult> {
     const startTime = Date.now();
     const errors: string[] = [];
     let propertiesChecked = 0;
@@ -547,7 +551,7 @@ export class RiskMonitorScheduler {
       .values({
         tenantId: this.tenantId,
         runId,
-        runType: "scheduled",
+        runType: isManual ? "manual" : "scheduled",
         status: "running",
         startedAt: new Date(),
       })
