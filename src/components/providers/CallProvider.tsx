@@ -170,18 +170,31 @@ export function CallProvider({ children }: CallProviderProps) {
 
   // WebSocket connection for call events
   useEffect(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL || 'wss://realtime.tcdsagency.com/ws/calls';
+    const wsUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL;
     let ws: WebSocket | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
     let reconnectAttempts = 0;
+    const maxReconnectAttempts = 3;
+
+    // Skip WebSocket connection if no URL is configured
+    if (!wsUrl) {
+      console.debug("[CallProvider] No WebSocket URL configured, skipping realtime connection");
+      return;
+    }
 
     const connect = () => {
+      // Stop reconnecting after max attempts
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        console.debug("[CallProvider] Max reconnect attempts reached, stopping");
+        return;
+      }
+
       try {
-        console.log("[CallProvider] Connecting to", wsUrl);
+        console.debug("[CallProvider] Connecting to", wsUrl);
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
-          console.log("[CallProvider] WebSocket connected");
+          console.debug("[CallProvider] WebSocket connected");
           setWsConnected(true);
           reconnectAttempts = 0;
 
@@ -194,28 +207,27 @@ export function CallProvider({ children }: CallProviderProps) {
             const data = JSON.parse(event.data);
             handleCallEvent(data);
           } catch (e) {
-            console.error("[CallProvider] Parse error:", e);
+            console.debug("[CallProvider] Parse error:", e);
           }
         };
 
         ws.onclose = () => {
-          console.log("[CallProvider] WebSocket closed");
           setWsConnected(false);
+          reconnectAttempts++;
 
-          // Reconnect with backoff
-          if (reconnectAttempts < 5) {
-            reconnectAttempts++;
+          // Reconnect with backoff up to max attempts
+          if (reconnectAttempts < maxReconnectAttempts) {
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
-            console.log(`[CallProvider] Reconnecting in ${delay}ms`);
+            console.debug(`[CallProvider] Reconnecting in ${delay}ms`);
             reconnectTimeout = setTimeout(connect, delay);
           }
         };
 
-        ws.onerror = (error) => {
-          console.error("[CallProvider] WebSocket error:", error);
+        ws.onerror = () => {
+          // Silently handle errors - onclose will trigger reconnect
         };
       } catch (e) {
-        console.error("[CallProvider] Connection error:", e);
+        reconnectAttempts++;
       }
     };
 
@@ -227,8 +239,8 @@ export function CallProvider({ children }: CallProviderProps) {
     };
   }, []);
 
-  // Polling fallback: Check call status every 10 seconds in case WebSocket misses events
-  // This ensures popup closes even if realtime broadcast fails
+  // Polling fallback: Check call status AND presence every 5 seconds
+  // Since webhooks aren't reliable, we use presence as source of truth
   useEffect(() => {
     if (!activeCall || activeCall.status === "ended") {
       // No active call or already ended - clear polling
@@ -240,7 +252,46 @@ export function CallProvider({ children }: CallProviderProps) {
     }
 
     const checkCallStatus = async () => {
+      const currentExt = myExtensionRef.current;
+
       try {
+        // Check presence API - this is the source of truth for whether agent is on a call
+        if (currentExt) {
+          const presenceRes = await fetch('/api/3cx/presence');
+          if (presenceRes.ok) {
+            const presenceData = await presenceRes.json();
+            const myPresence = presenceData.team?.find((t: any) => t.extension === currentExt);
+
+            if (myPresence && myPresence.status !== 'on_call' && activeCallRef.current?.status !== "ended") {
+              // Presence shows NOT on call, but we have an active popup - call must have ended
+              console.log(`[CallProvider] Presence shows ${myPresence.status}, marking call as ended`);
+              setActiveCall(prev => prev ? { ...prev, status: "ended" } : null);
+
+              // Also update the call in the database
+              try {
+                await fetch(`/api/calls/${activeCall.sessionId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'end' }),
+                });
+              } catch (e) {
+                console.error('[CallProvider] Failed to update call status:', e);
+              }
+
+              // Auto-close after 30 seconds for wrap-up
+              if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+              closeTimeoutRef.current = setTimeout(() => {
+                console.log(`[CallProvider] Auto-closing popup after presence detected end`);
+                setIsPopupVisible(false);
+                setActiveCall(null);
+                closeTimeoutRef.current = null;
+              }, 30000);
+              return;
+            }
+          }
+        }
+
+        // Also check DB status as secondary source
         const res = await fetch(`/api/calls/${activeCall.sessionId}`);
         if (res.ok) {
           const data = await res.json();
@@ -249,13 +300,13 @@ export function CallProvider({ children }: CallProviderProps) {
             const hasEnded = data.call.endedAt || dbStatus === "completed" || dbStatus === "missed";
 
             if (hasEnded && activeCallRef.current?.status !== "ended") {
-              console.log(`[CallProvider] Polling detected call ended (status: ${dbStatus}), closing popup`);
+              console.log(`[CallProvider] DB shows call ended (status: ${dbStatus}), closing popup`);
               setActiveCall(prev => prev ? { ...prev, status: "ended" } : null);
 
               // Auto-close after 30 seconds for wrap-up
               if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
               closeTimeoutRef.current = setTimeout(() => {
-                console.log(`[CallProvider] Auto-closing popup after polling detected end`);
+                console.log(`[CallProvider] Auto-closing popup after DB detected end`);
                 setIsPopupVisible(false);
                 setActiveCall(null);
                 closeTimeoutRef.current = null;
@@ -273,8 +324,8 @@ export function CallProvider({ children }: CallProviderProps) {
       }
     };
 
-    // Start polling every 10 seconds
-    pollIntervalRef.current = setInterval(checkCallStatus, 10000);
+    // Start polling every 5 seconds (faster since we're relying on this)
+    pollIntervalRef.current = setInterval(checkCallStatus, 5000);
 
     // Also check immediately
     checkCallStatus();

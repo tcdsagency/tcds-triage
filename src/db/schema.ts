@@ -1951,6 +1951,9 @@ export const riskMonitorPolicies = pgTable('risk_monitor_policies', {
   effectiveDate: timestamp('effective_date'),
   expirationDate: timestamp('expiration_date'),
 
+  // Customer relationship info (for alert filtering)
+  customerSinceDate: timestamp('customer_since_date'), // When customer became a client
+
   // Current property status
   currentStatus: propertyStatusEnum('current_status').default('off_market').notNull(),
   previousStatus: propertyStatusEnum('previous_status'),

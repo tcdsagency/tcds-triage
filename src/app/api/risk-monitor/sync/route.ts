@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
           policyNumber: policies.policyNumber,
           carrier: policies.carrier,
           expirationDate: policies.expirationDate,
+          customerSinceDate: customers.createdAt, // When customer record was created
         })
         .from(customers)
         .innerJoin(policies, eq(policies.customerId, customers.id))
@@ -60,6 +61,7 @@ export async function POST(request: NextRequest) {
           phone: customers.phone,
           address: customers.address,
           agencyzoomId: customers.agencyzoomId,
+          customerSinceDate: customers.createdAt, // When customer record was created
         })
         .from(customers)
         .where(
@@ -136,6 +138,7 @@ export async function POST(request: NextRequest) {
           carrier: (customer as any).carrier || null,
           policyType: "homeowners",
           expirationDate: (customer as any).expirationDate || null,
+          customerSinceDate: (customer as any).customerSinceDate || null, // When they became a customer
           currentStatus: "off_market",
           isActive: true,
         });

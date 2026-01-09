@@ -163,20 +163,35 @@ export function useRealtimeNotifications() {
   const { showNotification, permission } = useNotifications();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 3; // Stop trying after 3 failed attempts
 
   useEffect(() => {
     // Don't connect if notifications aren't enabled
     if (permission !== "granted") return;
 
-    const wsUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL || "wss://realtime.tcdsagency.com/ws/notifications";
+    const wsUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL;
+
+    // Skip WebSocket connection if no URL is configured
+    if (!wsUrl) {
+      console.debug("[RealtimeNotifications] No WebSocket URL configured, skipping realtime connection");
+      return;
+    }
 
     const connect = () => {
+      // Stop reconnecting after max attempts
+      if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+        console.debug("[RealtimeNotifications] Max reconnect attempts reached, stopping");
+        return;
+      }
+
       try {
-        console.log("[RealtimeNotifications] Connecting to", wsUrl);
+        console.debug("[RealtimeNotifications] Connecting to", wsUrl);
         wsRef.current = new WebSocket(wsUrl);
 
         wsRef.current.onopen = () => {
-          console.log("[RealtimeNotifications] Connected");
+          console.debug("[RealtimeNotifications] Connected");
+          reconnectAttemptsRef.current = 0; // Reset on successful connection
         };
 
         wsRef.current.onmessage = (event) => {
@@ -184,21 +199,26 @@ export function useRealtimeNotifications() {
             const data = JSON.parse(event.data);
             handleRealtimeEvent(data);
           } catch (e) {
-            console.error("[RealtimeNotifications] Parse error:", e);
+            console.debug("[RealtimeNotifications] Parse error:", e);
           }
         };
 
         wsRef.current.onclose = () => {
-          console.log("[RealtimeNotifications] Disconnected, reconnecting...");
-          reconnectTimeoutRef.current = setTimeout(connect, 5000);
+          reconnectAttemptsRef.current++;
+          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+            console.debug("[RealtimeNotifications] Disconnected, reconnecting...");
+            reconnectTimeoutRef.current = setTimeout(connect, 5000);
+          }
         };
 
-        wsRef.current.onerror = (error) => {
-          console.error("[RealtimeNotifications] WebSocket error:", error);
+        wsRef.current.onerror = () => {
+          // Silently handle errors - onclose will trigger reconnect
         };
       } catch (error) {
-        console.error("[RealtimeNotifications] Connection error:", error);
-        reconnectTimeoutRef.current = setTimeout(connect, 5000);
+        reconnectAttemptsRef.current++;
+        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+          reconnectTimeoutRef.current = setTimeout(connect, 5000);
+        }
       }
     };
 

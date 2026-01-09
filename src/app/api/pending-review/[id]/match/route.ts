@@ -29,14 +29,21 @@ export async function POST(
     }
 
     if (itemType === 'wrapup') {
-      // Update wrapup draft with the matched customer
-      // Build the JSON object to merge
-      const matchData = {
-        agencyZoomCustomerId: String(customerId),
-        manuallyMatched: true,
-        matchedCustomerName: customerName || '',
-        isLead: isLead || false,
-      };
+      // Update wrapup draft with the matched customer/lead
+      // Build the JSON object to merge - use correct field based on isLead flag
+      const matchData = isLead
+        ? {
+            agencyZoomLeadId: String(customerId),
+            manuallyMatched: true,
+            matchedCustomerName: customerName || '',
+            isLead: true,
+          }
+        : {
+            agencyZoomCustomerId: String(customerId),
+            manuallyMatched: true,
+            matchedCustomerName: customerName || '',
+            isLead: false,
+          };
 
       const [updated] = await db
         .update(wrapupDrafts)
