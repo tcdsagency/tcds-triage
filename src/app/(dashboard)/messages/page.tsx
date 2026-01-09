@@ -84,11 +84,15 @@ const groupIntoConversations = (messages: SMSMessage[]): Conversation[] => {
     const normalizedPhone = phone.replace(/\D/g, '');
 
     if (!convMap.has(normalizedPhone)) {
+      // Treat "undefined undefined" as null (legacy data cleanup)
+      const validName = msg.contactName && msg.contactName !== "undefined undefined"
+        ? msg.contactName
+        : null;
       convMap.set(normalizedPhone, {
         id: normalizedPhone,
         contact: {
           id: msg.contactId || normalizedPhone,
-          name: msg.contactName || formatPhone(phone),
+          name: validName || formatPhone(phone),
           phone: formatPhone(phone),
           type: (msg.contactType as 'customer' | 'lead') || 'lead',
         },
