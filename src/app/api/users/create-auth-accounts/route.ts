@@ -68,6 +68,27 @@ export async function POST(request: NextRequest) {
         });
 
         if (createError) {
+          // If user already exists, try to find and link them
+          if (createError.message.includes("already been registered")) {
+            console.log(`[Create Auth] User ${user.email} already exists, looking up...`);
+
+            // List all users and find by email
+            const { data: listData } = await adminClient.auth.admin.listUsers();
+            const existingAuth = listData?.users?.find(u => u.email === user.email);
+
+            if (existingAuth) {
+              await db
+                .update(users)
+                .set({ authId: existingAuth.id })
+                .where(eq(users.id, user.id));
+
+              results.push({ email: user.email, status: "linked_existing" });
+              created++;
+              console.log(`[Create Auth] Linked existing auth for ${user.email}`);
+              continue;
+            }
+          }
+
           console.error(`[Create Auth] Error creating auth for ${user.email}:`, createError);
           results.push({ email: user.email, status: `error: ${createError.message}` });
           failed++;
