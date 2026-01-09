@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { AgencyZoomLink, getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
 
 // =============================================================================
 // TYPES
@@ -342,6 +343,18 @@ export default function PendingItemCard({
             >
               ✓ Acknowledge
             </button>
+          )}
+
+          {/* AgencyZoom Link */}
+          {(item.agencyzoomCustomerId || item.agencyzoomLeadId) && (
+            <AgencyZoomLink
+              href={getAgencyZoomUrl(
+                item.agencyzoomCustomerId || item.agencyzoomLeadId || '',
+                item.agencyzoomCustomerId ? 'customer' : 'lead'
+              )}
+              size="sm"
+              showText={false}
+            />
           )}
 
           <button

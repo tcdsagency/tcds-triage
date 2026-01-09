@@ -14,6 +14,7 @@ interface UserInfo {
 
 interface ActiveCall {
   sessionId: string;
+  externalCallId?: string; // 3CX call ID for matching call_ended events
   phoneNumber: string;
   direction: "inbound" | "outbound";
   status: "ringing" | "connected" | "on_hold" | "wrap_up" | "ended";
@@ -270,6 +271,7 @@ export function CallProvider({ children }: CallProviderProps) {
         // New call - create ActiveCall object
         const newCall: ActiveCall = {
           sessionId: data.sessionId,
+          externalCallId: data.callId || data.externalCallId, // Store 3CX call ID for matching
           phoneNumber: data.phoneNumber || data.callerNumber || "Unknown",
           direction: data.direction || "inbound",
           status: data.type === "call_ringing" ? "ringing" : "connected",
@@ -313,19 +315,32 @@ export function CallProvider({ children }: CallProviderProps) {
         break;
 
       case "call_ended": {
-        // Match by sessionId - use ref to avoid stale closure
-        if (currentCall && data.sessionId === currentCall.sessionId) {
+        // Match by sessionId (UUID), externalCallId (3CX call ID), or extension
+        // Use ref to avoid stale closure
+        const matchesSession = currentCall && (
+          data.sessionId === currentCall.sessionId ||
+          data.sessionId === currentCall.externalCallId ||
+          data.externalCallId === currentCall.sessionId ||
+          data.externalCallId === currentCall.externalCallId ||
+          (data.extension && data.extension === currentCall.extension)
+        );
+
+        if (matchesSession) {
+          console.log(`[CallProvider] Call ended - session ${data.sessionId}, closing popup after timeout`);
           setActiveCall((prev) =>
             prev ? { ...prev, status: "ended" } : null
           );
 
-          // Keep popup visible for wrap-up, auto-close after 60s
+          // Keep popup visible for wrap-up, auto-close after 30s (reduced from 60s)
           // Store timeout ref so we can cancel if a new call comes in
           closeTimeoutRef.current = setTimeout(() => {
+            console.log(`[CallProvider] Auto-closing popup after call ended`);
             setIsPopupVisible(false);
             setActiveCall(null);
             closeTimeoutRef.current = null;
-          }, 60000);
+          }, 30000);
+        } else {
+          console.log(`[CallProvider] Ignoring call_ended - no matching session (received: ${data.sessionId}, current: ${currentCall?.sessionId})`);
         }
         break;
       }
