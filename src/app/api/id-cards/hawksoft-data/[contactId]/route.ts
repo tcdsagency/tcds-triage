@@ -13,12 +13,55 @@ interface RouteParams {
 const AUTO_LOB_KEYWORDS = [
   "pa", "ppa", "auto", "motor", "vehicle", "car",
   "boat", "rv", "mc", "motorcycle", "recreational",
-  "commercial auto", "truck", "fleet"
+  "commercial auto", "truck", "fleet", "autop"
 ];
 
+/**
+ * Extract line of business from HawkSoft policy
+ * HawkSoft returns LOB in loBs[0].code (most reliable), title, or other fields
+ */
+function extractLineOfBusiness(policy: any): string {
+  // loBs[0].code is the most reliable source (e.g., "AUTOP", "HOMEP", "DFIRE")
+  if (policy.loBs && policy.loBs.length > 0 && policy.loBs[0].code) {
+    return policy.loBs[0].code;
+  }
+
+  // Title field often has human-readable names like "Personal Auto", "Homeowners"
+  if (policy.title && policy.title.toLowerCase() !== 'general') {
+    return policy.title;
+  }
+
+  // Check for presence of autos (indicates auto policy)
+  if (policy.autos && policy.autos.length > 0) {
+    return 'Auto';
+  }
+
+  // Check for presence of locations (indicates property policy)
+  if (policy.locations && policy.locations.length > 0) {
+    return 'Property';
+  }
+
+  // Fall back to type if not "General"
+  if (policy.type && policy.type.toLowerCase() !== 'general') {
+    return policy.type;
+  }
+
+  // Try policyType field
+  if (policy.policyType && policy.policyType.toLowerCase() !== 'general') {
+    return policy.policyType;
+  }
+
+  // Try lineOfBusiness field
+  if (policy.lineOfBusiness) {
+    return policy.lineOfBusiness;
+  }
+
+  return 'Unknown';
+}
+
 function isAutoPolicy(policy: any): boolean {
-  // Check line of business
-  const lob = (policy.lineOfBusiness || policy.policyType || "").toLowerCase();
+  // Check line of business using proper extraction
+  const lob = extractLineOfBusiness(policy).toLowerCase();
   if (AUTO_LOB_KEYWORDS.some((kw) => lob.includes(kw))) {
     return true;
   }
@@ -157,7 +200,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         expirationDate: policy.expirationDate,
         status: policy.status,
         isActive,
-        lineOfBusiness: policy.lineOfBusiness || policy.policyType || "",
+        lineOfBusiness: extractLineOfBusiness(policy),
         isAutoPolicy: isAuto,
         vehicles,
         drivers,

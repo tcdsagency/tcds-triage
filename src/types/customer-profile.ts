@@ -611,57 +611,70 @@ export function getPolicyTypeFromLineOfBusiness(lob: string): PolicyType {
   if (!lob) return "other";
   const lobLower = lob.toLowerCase().trim();
 
-  // Auto policies - HawkSoft codes: AUTOP, PA, PPA, AUTO, etc.
+  // Skip "Unknown" - should not match any type
+  if (lobLower === "unknown") return "other";
+
+  // Auto policies - HawkSoft codes: AUTOP, PA, PPA, AUTO, PERAU, etc.
   if (lobLower.includes("auto") || lobLower.includes("vehicle") ||
       lobLower === "autop" || lobLower === "pa" || lobLower === "ppa" ||
-      lobLower === "private passenger" || lobLower.includes("car") ||
-      lobLower.startsWith("pp") || lobLower === "personal auto") return "auto";
+      lobLower === "perau" || lobLower === "private passenger" ||
+      lobLower.includes("car") || lobLower.startsWith("pp") ||
+      lobLower === "personal auto") return "auto";
 
-  // Home policies - HawkSoft codes: DFIRE, HOME, HO-3, HO3, HOMEOWNER, DWELLING, etc.
+  // Home policies - HawkSoft codes: DFIRE, HOME, HO-3, HO3, HO-6, HOMEOWNER, HOMEP, DWELLING, etc.
   if (lobLower.includes("home") || lobLower.includes("dwelling") ||
       lobLower.includes("ho-") || lobLower.includes("ho3") || lobLower.includes("ho2") ||
-      lobLower === "dfire" || lobLower.includes("homeowner") ||
-      lobLower === "df" || lobLower === "dp" || lobLower === "dp3" ||
+      lobLower.includes("ho4") || lobLower.includes("ho5") || lobLower.includes("ho6") ||
+      lobLower === "dfire" || lobLower === "homep" || lobLower.includes("homeowner") ||
+      lobLower === "df" || lobLower === "dp" || lobLower === "dp3" || lobLower === "dp1" ||
       lobLower.includes("property") || lobLower.includes("house") ||
+      lobLower.includes("condo") || lobLower.includes("tenant") || lobLower.includes("renter") ||
       lobLower === "fire" || lobLower === "dwelling fire") return "home";
 
-  // Umbrella policies - HawkSoft codes: PUMBR, UMBR, PUP, UMBRELLA
+  // Umbrella policies - HawkSoft codes: PUMBR, UMBR, PUP, UMBRELLA, EXCES
   if (lobLower.includes("umbrella") || lobLower.includes("excess") ||
       lobLower === "pumbr" || lobLower === "umbr" || lobLower === "pup" ||
-      lobLower === "personal umbrella") return "umbrella";
+      lobLower === "exces" || lobLower === "personal umbrella" ||
+      lobLower.includes("liability") && lobLower.includes("personal")) return "umbrella";
 
-  // Life insurance
-  if (lobLower.includes("life") || lobLower === "term" || lobLower === "whole") return "life";
+  // Life insurance - HawkSoft codes: LIFE, TERM, WHOLE, UNIV
+  if (lobLower.includes("life") || lobLower === "term" || lobLower === "whole" ||
+      lobLower === "univ" || lobLower.includes("universal")) return "life";
 
-  // Commercial policies - HawkSoft codes: BOP, GL, WC, CPP, CA, etc.
+  // Commercial policies - HawkSoft codes: BOP, GL, WC, CPP, CA, CGL, COMM, etc.
   if (lobLower.includes("commercial") || lobLower.includes("business") ||
       lobLower === "bop" || lobLower === "gl" || lobLower === "wc" ||
-      lobLower === "cpp" || lobLower === "ca" || lobLower.includes("general liability") ||
-      lobLower.includes("workers comp") || lobLower === "comm") return "commercial";
+      lobLower === "cgl" || lobLower === "cpp" || lobLower === "ca" ||
+      lobLower.includes("general liability") || lobLower.includes("workers comp") ||
+      lobLower === "comm" || lobLower.includes("liability") && !lobLower.includes("personal")) return "commercial";
 
-  // Boat/Watercraft - HawkSoft codes: BOAT, PWC, WATERCRAFT
+  // Boat/Watercraft - HawkSoft codes: BOAT, PWC, WATERCRAFT, YACHT, MARINE
   if (lobLower.includes("boat") || lobLower.includes("watercraft") ||
-      lobLower === "pwc" || lobLower.includes("yacht") || lobLower.includes("marine")) return "boat";
+      lobLower === "pwc" || lobLower.includes("yacht") || lobLower.includes("marine") ||
+      lobLower.includes("jet ski") || lobLower.includes("jetski")) return "boat";
 
-  // Motorcycle - HawkSoft codes: CYCLE, MC, MOTORCYCLE
+  // Motorcycle - HawkSoft codes: CYCLE, MC, MOTORCYCLE, MOTO
   if (lobLower.includes("motorcycle") || lobLower === "cycle" ||
-      lobLower === "mc" || lobLower.includes("motorbike")) return "motorcycle";
+      lobLower === "mc" || lobLower.includes("motorbike") ||
+      lobLower === "moto") return "motorcycle";
 
-  // RV/Recreational Vehicle - HawkSoft codes: RV, TRAVEL, CAMPER
+  // RV/Recreational Vehicle - HawkSoft codes: RV, TRAVEL, CAMPER, MOTOR
   if (lobLower.includes("rv") || lobLower.includes("recreational") ||
       lobLower.includes("travel trailer") || lobLower.includes("camper") ||
-      lobLower.includes("motorhome") || lobLower === "rec") return "rv";
+      lobLower.includes("motorhome") || lobLower === "rec" ||
+      lobLower.includes("fifth wheel") || lobLower.includes("trailer")) return "rv";
 
-  // Mobile/Manufactured Home - HawkSoft codes: MH, MOBILE, MANUFACTURED
+  // Mobile/Manufactured Home - HawkSoft codes: MH, MOBILE, MANUFACTURED, MFHOME
   if (lobLower.includes("mobile") || lobLower.includes("manufactured") ||
-      lobLower === "mh" || lobLower === "mfhome") return "mobile_home";
+      lobLower === "mh" || lobLower === "mfhome" ||
+      lobLower.includes("modular")) return "mobile_home";
 
-  // Flood insurance - HawkSoft codes: FLOOD, NFIP
-  if (lobLower.includes("flood") || lobLower === "nfip") return "flood";
+  // Flood insurance - HawkSoft codes: FLOOD, NFIP, FLD
+  if (lobLower.includes("flood") || lobLower === "nfip" || lobLower === "fld") return "flood";
 
-  // Wind/Hurricane insurance - HawkSoft codes: WIND, HURRICANE
+  // Wind/Hurricane insurance - HawkSoft codes: WIND, HURRICANE, HRCN
   if (lobLower === "wind" || lobLower.includes("hurricane") ||
-      lobLower.includes("windstorm")) return "wind";
+      lobLower.includes("windstorm") || lobLower === "hrcn") return "wind";
 
   return "other";
 }

@@ -14,6 +14,15 @@ import { AgentAvatar } from "@/components/ui/agent-avatar";
 // TYPES
 // =============================================================================
 
+interface UserInfo {
+  id: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl?: string;
+  extension: string;
+}
+
 interface CallPopupProps {
   sessionId: string;
   phoneNumber: string;
@@ -21,6 +30,10 @@ interface CallPopupProps {
   isVisible: boolean;
   onClose: () => void;
   onMinimize: () => void;
+  startTime?: number;
+  callStatus?: "ringing" | "connected" | "on_hold" | "wrap_up" | "ended";
+  callerUser?: UserInfo;
+  calleeUser?: UserInfo;
 }
 
 interface CustomerLookup {
@@ -73,12 +86,23 @@ export default function CallPopup({
   direction,
   isVisible,
   onClose,
-  onMinimize
+  onMinimize,
+  startTime,
+  callStatus: externalCallStatus,
+  callerUser,
+  calleeUser
 }: CallPopupProps) {
   // UI State
   const [isMinimized, setIsMinimized] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "notes" | "assist">("overview");
-  const [callDuration, setCallDuration] = useState(0);
+
+  // Calculate initial duration from startTime to maintain persistence across navigation
+  const calculateDuration = useCallback(() => {
+    if (!startTime) return 0;
+    return Math.floor((Date.now() - startTime) / 1000);
+  }, [startTime]);
+
+  const [callDuration, setCallDuration] = useState(calculateDuration);
 
   // Live Assist State
   const [matchedPlaybook, setMatchedPlaybook] = useState<Playbook | null>(null);
@@ -232,17 +256,33 @@ export default function CallPopup({
   }, [profile]);
 
   // =========================================================================
-  // Call duration timer
+  // Call duration timer - persists across navigation using startTime
   // =========================================================================
+  // Recalculate duration when startTime changes (e.g., after navigation)
   useEffect(() => {
-    if (!isVisible || callStatus === "ended") return;
+    if (startTime) {
+      setCallDuration(calculateDuration());
+    }
+  }, [startTime, calculateDuration]);
+
+  // Use external call status if provided, otherwise use websocket status
+  const effectiveCallStatus = externalCallStatus || callStatus;
+
+  useEffect(() => {
+    if (!isVisible || effectiveCallStatus === "ended") return;
 
     const interval = setInterval(() => {
-      setCallDuration(prev => prev + 1);
+      if (startTime) {
+        // Calculate from startTime for accuracy
+        setCallDuration(Math.floor((Date.now() - startTime) / 1000));
+      } else {
+        // Fallback to increment
+        setCallDuration(prev => prev + 1);
+      }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isVisible, callStatus]);
+  }, [isVisible, effectiveCallStatus, startTime]);
 
   // =========================================================================
   // LIVE ASSIST: Fetch playbook and suggestions based on transcript
@@ -576,38 +616,75 @@ export default function CallPopup({
   // =========================================================================
   // FULL VIEW
   // =========================================================================
+
+  // Determine which user to show (the internal user on the call)
+  const internalUser = direction === "inbound" ? calleeUser : callerUser;
+  const externalParty = direction === "inbound" ? callerUser : calleeUser;
+
   return (
     <div className="fixed inset-4 md:inset-auto md:top-4 md:right-4 md:w-[900px] md:h-[700px] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col z-50 overflow-hidden">
-      
+
       {/* ===== HEADER ===== */}
       <div className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className={cn(
-            "text-lg",
-            direction === "inbound" ? "text-green-400" : "text-blue-400"
-          )}>
-            {direction === "inbound" ? "📞" : "📱"}
-          </span>
+          {/* Show agent avatar if we have user info */}
+          {internalUser ? (
+            <div className="relative">
+              <AgentAvatar
+                name={internalUser.name}
+                avatarUrl={internalUser.avatarUrl}
+                size="md"
+              />
+              <span className={cn(
+                "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-gray-900",
+                effectiveCallStatus === "connected" && "bg-green-500",
+                effectiveCallStatus === "ringing" && "bg-yellow-500 animate-pulse",
+                effectiveCallStatus === "ended" && "bg-gray-500"
+              )} />
+            </div>
+          ) : (
+            <span className={cn(
+              "text-lg",
+              direction === "inbound" ? "text-green-400" : "text-blue-400"
+            )}>
+              {direction === "inbound" ? "📞" : "📱"}
+            </span>
+          )}
           <div>
-            <div className="font-semibold">
-              {direction === "inbound" ? "INCOMING" : "OUTGOING"}: {phoneNumber}
+            <div className="font-semibold flex items-center gap-2">
+              <span className="text-xs uppercase text-gray-400">
+                {direction === "inbound" ? "INCOMING" : "OUTGOING"}
+              </span>
+              {internalUser && (
+                <span className="text-xs bg-gray-700 px-1.5 py-0.5 rounded">
+                  {internalUser.name} (ext {internalUser.extension})
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span>{phoneNumber}</span>
+              {externalParty && (
+                <span className="text-xs text-gray-400">
+                  ({externalParty.name})
+                </span>
+              )}
             </div>
             <div className="text-xs text-gray-400 flex items-center gap-2">
               <span>{formatDuration(callDuration)}</span>
               <span className={cn(
                 "px-1.5 py-0.5 rounded text-xs",
-                callStatus === "connected" && "bg-green-600",
-                callStatus === "ringing" && "bg-yellow-600",
-                callStatus === "ended" && "bg-gray-600"
+                effectiveCallStatus === "connected" && "bg-green-600",
+                effectiveCallStatus === "ringing" && "bg-yellow-600",
+                effectiveCallStatus === "ended" && "bg-gray-600"
               )}>
-                {callStatus}
+                {effectiveCallStatus}
               </span>
               {isConnected && <span className="text-green-400">● Live</span>}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {callStatus !== "ended" && (
+          {effectiveCallStatus !== "ended" && (
             <button
               onClick={handleEndCall}
               disabled={endingCall}
