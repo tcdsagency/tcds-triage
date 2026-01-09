@@ -213,7 +213,7 @@ async function handleTwilioTranscript(
     emailData: {
       from: phone || "Unknown",
       type: "voicemail",
-      phoneNumber: phone,
+      phoneNumber: phone || undefined,
     },
     twilioData: payload,
     createdAt: new Date(),
@@ -233,7 +233,7 @@ async function handleTwilioTranscript(
   console.log(`[After-Hours] Creating item with Twilio transcript only`);
   const triageItem = await createAfterHoursTriageItem(
     tenantId,
-    { from: phone || "Unknown", type: "voicemail", phoneNumber: phone },
+    { from: phone || "Unknown", type: "voicemail", phoneNumber: phone || undefined },
     payload,
     phone || "Unknown"
   );
@@ -307,15 +307,12 @@ async function createAfterHoursTriageItem(
         urgency: mergedContent.urgency,
         messageType,
         merged: !!twilioData?.TranscriptionText && !!emailData.body,
-      }),
-      metadata: {
-        phone,
-        messageType,
+        // Additional metadata
         emailReceivedAt: emailData.receivedAt,
         audioUrl: emailData.audioUrl || twilioData?.RecordingUrl,
         twilioCallSid: twilioData?.CallSid,
         duration: twilioData?.Duration,
-      },
+      }),
     })
     .returning();
 
