@@ -1363,7 +1363,7 @@ export default function QuoteIntakePage() {
   const [glFormData, setGlFormData] = useState<GeneralLiabilityFormData>(INITIAL_GL_FORM);
   const [wcFormData, setWcFormData] = useState<WorkersCompFormData>(INITIAL_WC_FORM);
   const [recreationalFormData, setRecreationalFormData] = useState<RecreationalFormData>(INITIAL_RECREATIONAL_FORM);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["customer", "vehicles", "drivers", "coverage", "property", "propertyDetails", "roof", "rental", "underlying", "business", "location", "operations", "employees", "item", "itemDetails", "usageStorage", "operators"]));
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["customer"]));
   const [aiProcessing, setAiProcessing] = useState(false);
   const [aiPasteText, setAiPasteText] = useState("");
   const [showAiPaste, setShowAiPaste] = useState(false);

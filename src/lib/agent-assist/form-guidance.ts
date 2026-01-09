@@ -243,6 +243,274 @@ const homeownersGuidance: FormSectionGuidance[] = [
 ];
 
 // =============================================================================
+// MOBILE HOME GUIDANCE
+// =============================================================================
+
+const mobileHomeGuidance: FormSectionGuidance[] = [
+  {
+    id: 'customer-info',
+    title: 'Customer Information',
+    tips: [
+      {
+        type: 'script',
+        title: 'Opening',
+        content: "Thank you for calling TCDS Agency. I'd be happy to help you with mobile home insurance today."
+      },
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Full legal name', 'Date of birth', 'Phone number', 'Email address']
+      }
+    ]
+  },
+  {
+    id: 'property',
+    title: 'Mobile Home Details',
+    tips: [
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Property address', 'Year manufactured', 'Make and model', 'Size (dimensions)', 'Single or double-wide']
+      },
+      {
+        type: 'warning',
+        title: 'Age Restrictions',
+        content: "Mobile homes over 25 years old may have limited carrier options."
+      }
+    ]
+  }
+];
+
+// =============================================================================
+// RENTERS GUIDANCE
+// =============================================================================
+
+const rentersGuidance: FormSectionGuidance[] = [
+  {
+    id: 'customer-info',
+    title: 'Customer Information',
+    tips: [
+      {
+        type: 'script',
+        title: 'Opening',
+        content: "I can help you protect your belongings with renters insurance. Let's start with your information."
+      },
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Full legal name', 'Date of birth', 'Phone number', 'Email address']
+      }
+    ]
+  },
+  {
+    id: 'rental',
+    title: 'Rental Property',
+    tips: [
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Rental address', 'Type (apartment, house, condo)', 'Number of roommates', 'Lease start date']
+      },
+      {
+        type: 'tip',
+        title: 'Contents Value',
+        content: "Help customer estimate belongings value - furniture, electronics, clothing, etc."
+      }
+    ]
+  }
+];
+
+// =============================================================================
+// UMBRELLA GUIDANCE
+// =============================================================================
+
+const umbrellaGuidance: FormSectionGuidance[] = [
+  {
+    id: 'customer-info',
+    title: 'Customer Information',
+    tips: [
+      {
+        type: 'script',
+        title: 'Opening',
+        content: "An umbrella policy provides extra liability protection beyond your auto and home policies."
+      },
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Full legal name', 'Date of birth', 'Phone number', 'Email address']
+      }
+    ]
+  },
+  {
+    id: 'underlying',
+    title: 'Underlying Policies',
+    tips: [
+      {
+        type: 'checklist',
+        title: 'Current Policies Needed',
+        content: ['Auto policy carrier', 'Home/Renters policy carrier', 'Current liability limits', 'Number of vehicles', 'Number of drivers']
+      },
+      {
+        type: 'warning',
+        title: 'Minimum Requirements',
+        content: "Most umbrella policies require underlying limits of at least 250/500 auto and 300K home liability."
+      }
+    ]
+  }
+];
+
+// =============================================================================
+// RECREATIONAL VEHICLE GUIDANCE
+// =============================================================================
+
+const recreationalGuidance: FormSectionGuidance[] = [
+  {
+    id: 'customer-info',
+    title: 'Customer Information',
+    tips: [
+      {
+        type: 'script',
+        title: 'Opening',
+        content: "I can help you insure your recreational vehicle. What type of vehicle are we quoting today?"
+      },
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Full legal name', 'Date of birth', 'Phone number', 'Email address']
+      }
+    ]
+  },
+  {
+    id: 'item',
+    title: 'Vehicle Details',
+    tips: [
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Vehicle type (boat, RV, ATV, etc.)', 'Year/Make/Model', 'VIN or Hull ID', 'Purchase price', 'Storage location']
+      },
+      {
+        type: 'tip',
+        title: 'Seasonal Use',
+        content: "Ask about seasonal use - some carriers offer lay-up discounts for winter storage."
+      }
+    ]
+  }
+];
+
+// =============================================================================
+// BOP (BUSINESS OWNER POLICY) GUIDANCE
+// =============================================================================
+
+const bopGuidance: FormSectionGuidance[] = [
+  {
+    id: 'business',
+    title: 'Business Information',
+    tips: [
+      {
+        type: 'script',
+        title: 'Opening',
+        content: "A Business Owner's Policy bundles property and liability coverage for small businesses."
+      },
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Business name', 'Business type/entity', 'Years in operation', 'Annual revenue', 'Number of employees']
+      }
+    ]
+  },
+  {
+    id: 'location',
+    title: 'Location',
+    tips: [
+      {
+        type: 'checklist',
+        title: 'Property Details',
+        content: ['Business address', 'Own or lease?', 'Square footage', 'Building construction type', 'Year built']
+      }
+    ]
+  }
+];
+
+// =============================================================================
+// GENERAL LIABILITY GUIDANCE
+// =============================================================================
+
+const generalLiabilityGuidance: FormSectionGuidance[] = [
+  {
+    id: 'business',
+    title: 'Business Information',
+    tips: [
+      {
+        type: 'script',
+        title: 'Opening',
+        content: "General liability insurance protects your business from third-party claims."
+      },
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Business name', 'Business type', 'Years in business', 'Annual revenue', 'Number of employees']
+      }
+    ]
+  },
+  {
+    id: 'operations',
+    title: 'Operations',
+    tips: [
+      {
+        type: 'checklist',
+        title: 'Key Questions',
+        content: ['Description of operations', 'Work done at customer locations?', 'Any subcontractors?', 'Products sold?']
+      },
+      {
+        type: 'warning',
+        title: 'Classification',
+        content: "Accurate business classification is critical - affects rates and coverage."
+      }
+    ]
+  }
+];
+
+// =============================================================================
+// WORKERS COMP GUIDANCE
+// =============================================================================
+
+const workersCompGuidance: FormSectionGuidance[] = [
+  {
+    id: 'business',
+    title: 'Business Information',
+    tips: [
+      {
+        type: 'script',
+        title: 'Opening',
+        content: "Workers compensation insurance covers employee injuries on the job."
+      },
+      {
+        type: 'checklist',
+        title: 'Required Information',
+        content: ['Business name', 'FEIN/Tax ID', 'Years in business', 'States with employees']
+      }
+    ]
+  },
+  {
+    id: 'employees',
+    title: 'Employee Information',
+    tips: [
+      {
+        type: 'checklist',
+        title: 'Payroll Details',
+        content: ['Number of employees', 'Annual payroll by class code', 'Job descriptions', 'Any subcontractors?']
+      },
+      {
+        type: 'warning',
+        title: 'Classification',
+        content: "Employees must be classified correctly by job duties, not job title."
+      }
+    ]
+  }
+];
+
+// =============================================================================
 // COMMERCIAL AUTO GUIDANCE
 // =============================================================================
 
@@ -309,15 +577,15 @@ const commercialAutoGuidance: FormSectionGuidance[] = [
 export const QUOTE_FORM_GUIDANCE: Record<QuoteType, FormSectionGuidance[]> = {
   personal_auto: personalAutoGuidance,
   homeowners: homeownersGuidance,
-  mobile_home: [], // TODO: Add mobile home guidance
-  renters: [], // TODO: Add renters guidance
-  umbrella: [], // TODO: Add umbrella guidance
+  mobile_home: mobileHomeGuidance,
+  renters: rentersGuidance,
+  umbrella: umbrellaGuidance,
   commercial_auto: commercialAutoGuidance,
   commercial_property: [], // TODO: Add commercial property guidance
-  bop: [], // TODO: Add BOP guidance
-  general_liability: [], // TODO: Add general liability guidance
-  workers_comp: [], // TODO: Add workers comp guidance
-  recreational: [], // TODO: Add recreational guidance
+  bop: bopGuidance,
+  general_liability: generalLiabilityGuidance,
+  workers_comp: workersCompGuidance,
+  recreational: recreationalGuidance,
   flood: [], // TODO: Add flood guidance
   life: [], // TODO: Add life guidance
 };
