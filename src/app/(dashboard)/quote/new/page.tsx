@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import AgentAssistSidebar from "@/components/features/AgentAssistSidebar";
 import { QuoteType as AgentAssistQuoteType } from "@/lib/agent-assist/types";
+import { useEligibility } from "@/hooks/useEligibility";
+import { EligibilityBanner, BlockerModal, EligibilityStatusBadge } from "@/components/features/EligibilityAlerts";
 
 // =============================================================================
 // TYPES
@@ -1360,6 +1362,75 @@ export default function QuoteIntakePage() {
   const [currentFormSection, setCurrentFormSection] = useState<string>("customer-info");
   const [showAgentAssist, setShowAgentAssist] = useState(true);
 
+  // Blocker modal state
+  const [showBlockerModal, setShowBlockerModal] = useState(false);
+
+  // Build combined form data for eligibility evaluation
+  const eligibilityFormData = useMemo(() => {
+    switch (selectedType) {
+      case "personal_auto":
+        return {
+          ...autoFormData,
+          vehicles: autoFormData.vehicles,
+          drivingHistory: {
+            hasDui: autoFormData.vehicles.some((v: Vehicle) => v.primaryUse === "rideshare"),
+          },
+        };
+      case "homeowners":
+        return {
+          ...homeownersFormData,
+          occupancy: homeownersFormData.occupancy,
+          propertyType: homeownersFormData.propertyType,
+          roofAge: homeownersFormData.roofAge,
+        };
+      case "mobile_home":
+        return {
+          ...mobileHomeFormData,
+          yearManufactured: mobileHomeFormData.yearManufactured,
+          tieDownType: mobileHomeFormData.tieDownType,
+        };
+      case "recreational":
+        return {
+          ...recreationalFormData,
+          customer: { ownershipType: recreationalFormData.ownershipType },
+          usageStorage: { primaryUse: recreationalFormData.primaryUse },
+          boat: { year: recreationalFormData.year },
+          motorhome: { isFullTimeResidence: recreationalFormData.isFullTimeResidence },
+        };
+      case "flood":
+        return {
+          floodZone: "A", // Would come from actual form
+          isSRL: false,
+          hasBasement: false,
+        };
+      case "commercial_auto":
+        return {
+          gvw: "", // Would come from actual form
+          hazmatCargo: false,
+          isForHire: false,
+          hasViolations: false,
+        };
+      default:
+        return {};
+    }
+  }, [selectedType, autoFormData, homeownersFormData, mobileHomeFormData, recreationalFormData]);
+
+  // Eligibility evaluation hook
+  const {
+    result: eligibilityResult,
+    status: eligibilityStatus,
+    alerts: eligibilityAlerts,
+    blockers,
+    warnings,
+    canSubmit: eligibilityCanSubmit,
+    acknowledgeAlert,
+    acknowledgeAllWarnings,
+    hasUnacknowledgedWarnings,
+  } = useEligibility(selectedType, eligibilityFormData, {
+    debounceMs: 300,
+    evaluateOnMount: true,
+  });
+
   // Auto-save state
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [autoSaving, setAutoSaving] = useState(false);
@@ -1725,6 +1796,19 @@ export default function QuoteIntakePage() {
   };
 
   const submitQuote = async () => {
+    // Check for eligibility blockers first
+    if (blockers.length > 0) {
+      setShowBlockerModal(true);
+      return;
+    }
+
+    // Check for unacknowledged warnings
+    if (hasUnacknowledgedWarnings) {
+      // Scroll to eligibility banner
+      document.querySelector('[data-eligibility-banner]')?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
     const errs: Record<string, string> = {};
     if (selectedType === "homeowners") {
       if (!homeownersFormData.firstName) errs.firstName = "Required";
@@ -2095,7 +2179,8 @@ export default function QuoteIntakePage() {
             <Button variant="outline" size="sm" onClick={() => setShowAiPaste(true)} className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10">
               <Wand2 className="w-4 h-4 mr-2" />AI Fill
             </Button>
-            <Button onClick={submitQuote} disabled={saving || completion < 50} className="bg-emerald-600 hover:bg-emerald-700">
+            {selectedType && <EligibilityStatusBadge status={eligibilityStatus} issueCount={eligibilityResult.issueCount} />}
+            <Button onClick={submitQuote} disabled={saving || completion < 50 || blockers.length > 0} className={cn("bg-emerald-600 hover:bg-emerald-700", blockers.length > 0 && "opacity-50 cursor-not-allowed")}>
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}Submit Quote
             </Button>
           </div>
@@ -2119,10 +2204,28 @@ export default function QuoteIntakePage() {
         </div>
       )}
 
+      {/* Blocker Modal */}
+      <BlockerModal
+        blockers={blockers}
+        isOpen={showBlockerModal}
+        onClose={() => setShowBlockerModal(false)}
+      />
+
       {/* Form with Agent Assist Sidebar */}
       <div className="flex">
         {/* Main Form */}
         <div className="flex-1 max-w-5xl mx-auto px-6 py-6 space-y-4">
+
+        {/* Eligibility Banner - shows underwriting alerts */}
+        {selectedType && eligibilityResult.issueCount > 0 && (
+          <div data-eligibility-banner>
+            <EligibilityBanner
+              result={eligibilityResult}
+              onAcknowledgeAll={acknowledgeAllWarnings}
+            />
+          </div>
+        )}
+
         {/* ========================================================================= */}
         {/* PERSONAL AUTO FORM */}
         {/* ========================================================================= */}
