@@ -37,6 +37,14 @@ interface PropertyLookup {
   createdAt: string;
 }
 
+interface FeaturePolygon {
+  type: string;
+  coordinates: number[][][];
+  description?: string;
+  areaSqft?: number;
+  confidence?: number;
+}
+
 interface NearmapData {
   surveyDate: string;
   building: { footprintArea: number; count: number };
@@ -47,6 +55,13 @@ interface NearmapData {
   hazards: { trampoline: boolean; debris: boolean; construction: boolean };
   tileUrl: string;
   staticImageUrl?: string;
+  overlays?: {
+    roof: FeaturePolygon[];
+    treeOverhang: FeaturePolygon[];
+    pool: FeaturePolygon[];
+    solar: FeaturePolygon[];
+    building: FeaturePolygon[];
+  };
 }
 
 interface RPRData {
@@ -410,6 +425,7 @@ export default function PropertyIntelligencePage() {
                     lng={lookup.lng}
                     zoom={19}
                     surveyDate={selectedHistoricalDate || lookup.nearmapData?.surveyDate}
+                    overlays={lookup.nearmapData?.overlays}
                   />
                 ) : (
                   <iframe

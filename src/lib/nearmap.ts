@@ -15,6 +15,14 @@ const NEARMAP_API_URL = 'https://api.nearmap.com';
 // TYPES
 // =============================================================================
 
+export interface FeaturePolygon {
+  type: string;
+  coordinates: number[][][];
+  description?: string;
+  areaSqft?: number;
+  confidence?: number;
+}
+
 export interface NearmapFeatures {
   surveyDate: string;
   surveyId?: string;
@@ -55,6 +63,14 @@ export interface NearmapFeatures {
   };
   tileUrl: string;
   staticImageUrl?: string;
+  // Polygon overlays for map rendering
+  overlays?: {
+    roof: FeaturePolygon[];
+    treeOverhang: FeaturePolygon[];
+    pool: FeaturePolygon[];
+    solar: FeaturePolygon[];
+    building: FeaturePolygon[];
+  };
 }
 
 export interface NearmapSurvey {
@@ -319,6 +335,51 @@ class NearmapClient {
         !f.description?.toLowerCase().includes('roof')
       );
 
+      // Extract polygon overlays for map rendering
+      const roofPolygons = features
+        .filter(f => f.description === 'Roof' || f.description?.includes('Roof'))
+        .map(f => ({
+          type: f.geometry?.type || 'Polygon',
+          coordinates: f.geometry?.coordinates || [],
+          description: f.description,
+          areaSqft: f.areaSqft || f.areaSqm,
+          confidence: f.confidence,
+        }));
+
+      const treeOverhangPolygons = features
+        .filter(f => f.description?.toLowerCase().includes('overhang') || f.description?.toLowerCase().includes('tree'))
+        .map(f => ({
+          type: f.geometry?.type || 'Polygon',
+          coordinates: f.geometry?.coordinates || [],
+          description: f.description,
+          areaSqft: f.areaSqft || f.areaSqm,
+          confidence: f.confidence,
+        }));
+
+      const poolPolygons = poolFeatures.map(f => ({
+        type: f.geometry?.type || 'Polygon',
+        coordinates: f.geometry?.coordinates || [],
+        description: f.description,
+        areaSqft: f.areaSqft || f.areaSqm,
+        confidence: f.confidence,
+      }));
+
+      const solarPolygons = solarFeatures.map(f => ({
+        type: f.geometry?.type || 'Polygon',
+        coordinates: f.geometry?.coordinates || [],
+        description: f.description,
+        areaSqft: f.areaSqft || f.areaSqm,
+        confidence: f.confidence,
+      }));
+
+      const buildingPolygons = buildings.map(f => ({
+        type: f.geometry?.type || 'Polygon',
+        coordinates: f.geometry?.coordinates || [],
+        description: f.description,
+        areaSqft: f.areaSqft || f.areaSqm,
+        confidence: f.confidence,
+      }));
+
       return {
         surveyDate: data.surveyDate || new Date().toISOString().split('T')[0],
         surveyId: data.surveyId,
@@ -357,6 +418,13 @@ class NearmapClient {
         },
         tileUrl,
         staticImageUrl,
+        overlays: {
+          roof: roofPolygons,
+          treeOverhang: treeOverhangPolygons,
+          pool: poolPolygons,
+          solar: solarPolygons,
+          building: buildingPolygons,
+        },
       };
     } catch (error) {
       console.error('[Nearmap] getFeatures error:', error);
