@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Car, User, MapPin, Shield, Plus, Minus, RefreshCw,
   Home, FileText, XCircle, ChevronDown, ChevronRight, Loader2,
@@ -241,6 +241,7 @@ const INITIAL_CANCEL: CancelPolicyData = {
 
 export default function PolicyChangePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Step management
   const [step, setStep] = useState<'search' | 'select_type' | 'form'>('search');
@@ -251,6 +252,52 @@ export default function PolicyChangePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<PolicySearchResult[]>([]);
+  const [prefillApplied, setPrefillApplied] = useState(false);
+
+  // Pre-fill from URL params (when coming from customer profile)
+  useEffect(() => {
+    if (prefillApplied) return;
+
+    const name = searchParams.get('name');
+    const policyNumber = searchParams.get('policyNumber');
+
+    if (name || policyNumber) {
+      // Pre-fill search with customer name or policy number
+      setSearchQuery(policyNumber || name || '');
+      setPrefillApplied(true);
+
+      // Auto-search after a short delay
+      setTimeout(() => {
+        searchPoliciesWithQuery(policyNumber || name || '');
+      }, 100);
+    }
+  }, [searchParams, prefillApplied]);
+
+  // Search function that accepts query parameter
+  const searchPoliciesWithQuery = async (query: string) => {
+    if (!query.trim()) return;
+    setSearching(true);
+    try {
+      const res = await fetch(`/api/policy/search?q=${encodeURIComponent(query)}&limit=20`);
+      const data = await res.json();
+
+      if (data.success && data.results) {
+        setSearchResults(data.results.map((p: any) => ({
+          id: p.id,
+          policyNumber: p.policyNumber,
+          type: p.type || 'Unknown',
+          carrier: p.carrier || 'Unknown Carrier',
+          insuredName: p.insuredName || 'Unknown',
+          effectiveDate: p.effectiveDate || '',
+          expirationDate: p.expirationDate || '',
+        })));
+      }
+    } catch (err) {
+      console.error('Search error:', err);
+    } finally {
+      setSearching(false);
+    }
+  };
 
   // Form states
   const [addVehicleData, setAddVehicleData] = useState<AddVehicleData>(INITIAL_ADD_VEHICLE);
@@ -268,34 +315,8 @@ export default function PolicyChangePage() {
   const [vinDecoding, setVinDecoding] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Policy search
-  const searchPolicies = async () => {
-    if (!searchQuery.trim()) return;
-    setSearching(true);
-    try {
-      const res = await fetch(`/api/policy/search?q=${encodeURIComponent(searchQuery)}&limit=20`);
-      const data = await res.json();
-
-      if (data.success && data.results) {
-        setSearchResults(data.results.map((p: any) => ({
-          id: p.id,
-          policyNumber: p.policyNumber,
-          type: p.type || 'Unknown',
-          carrier: p.carrier || 'Unknown Carrier',
-          insuredName: p.insuredName || 'Unknown',
-          effectiveDate: p.effectiveDate,
-          expirationDate: p.expirationDate,
-        })));
-      } else {
-        setSearchResults([]);
-        console.error('Policy search failed:', data.error);
-      }
-    } catch (e) {
-      console.error('Policy search error:', e);
-      setSearchResults([]);
-    }
-    setSearching(false);
-  };
+  // Policy search (uses the searchQuery state)
+  const searchPolicies = () => searchPoliciesWithQuery(searchQuery);
 
   // VIN decode
   const decodeVin = async (vin: string, target: 'add' | 'replace') => {

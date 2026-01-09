@@ -123,11 +123,13 @@ export default function InvoiceGeneratorPage() {
 
   // Pre-fill from URL params
   useEffect(() => {
-    const customerName = searchParams.get("customerName");
+    // Support both 'customerName' and 'name' params
+    const customerName = searchParams.get("customerName") || searchParams.get("name");
     const policyNumber = searchParams.get("policyNumber");
     const carrier = searchParams.get("carrier");
     const premium = searchParams.get("premium");
     const lineOfBusiness = searchParams.get("lineOfBusiness");
+    const email = searchParams.get("email");
 
     if (customerName || policyNumber || carrier || premium || lineOfBusiness) {
       setFormData((prev) => ({
@@ -138,6 +140,11 @@ export default function InvoiceGeneratorPage() {
         premium: premium || prev.premium,
         lineOfBusiness: lineOfBusiness || prev.lineOfBusiness,
       }));
+    }
+
+    // Pre-fill email for send modal
+    if (email) {
+      setEmailTo(email);
     }
   }, [searchParams]);
 

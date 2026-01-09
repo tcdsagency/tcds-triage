@@ -11,7 +11,7 @@ import BulkActionBar from '@/components/features/BulkActionBar';
 // =============================================================================
 
 type StatusFilter = 'all' | 'matched' | 'needs_review' | 'unmatched' | 'after_hours';
-type TypeFilter = 'all' | 'wrapup' | 'message' | 'lead';
+type TypeFilter = 'all' | 'wrapup' | 'message';
 
 interface APIResponse {
   success: boolean;

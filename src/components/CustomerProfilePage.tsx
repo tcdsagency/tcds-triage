@@ -570,14 +570,33 @@ export default function CustomerProfilePage() {
                     Send ID Cards
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => {
-                    const params = new URLSearchParams({ customerId: profile?.id || '' });
+                    const params = new URLSearchParams();
+                    if (profile?.id) params.set('customerId', profile.id);
+                    if (profile?.name) params.set('name', profile.name);
+                    if (profile?.contact?.email) params.set('email', profile.contact.email);
+                    if (profile?.contact?.phone) params.set('phone', profile.contact.phone);
+                    if (profile?.hawksoftId) params.set('hawksoftId', profile.hawksoftId);
                     router.push(`/invoice?${params.toString()}`);
                   }}>
                     <FileText className="w-4 h-4 mr-2" />
                     Send Invoice
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {
+                    const params = new URLSearchParams();
+                    if (profile?.id) params.set('customerId', profile.id);
+                    if (profile?.name) params.set('name', profile.name);
+                    if (profile?.contact?.email) params.set('email', profile.contact.email);
+                    if (profile?.contact?.phone) params.set('phone', profile.contact.phone);
+                    if (profile?.hawksoftId) params.set('hawksoftId', profile.hawksoftId);
+                    // Pass policy info if they only have one active policy
+                    const activePolicies = profile?.policies?.filter(p => p.isActive) || [];
+                    if (activePolicies.length === 1) {
+                      params.set('policyNumber', activePolicies[0].policyNumber);
+                      params.set('carrier', activePolicies[0].carrier || '');
+                    }
+                    router.push(`/policy-change?${params.toString()}`);
+                  }}>
                     <FileText className="w-4 h-4 mr-2" />
                     Policy Change
                   </DropdownMenuItem>
