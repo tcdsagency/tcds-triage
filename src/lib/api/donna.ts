@@ -32,6 +32,7 @@ export class DonnaClient {
   private config: DonnaConfig;
   private baseUrl: string;
   private session: DonnaSession | null = null;
+  private loginPromise: Promise<void> | null = null; // Prevent concurrent logins
 
   constructor(config: DonnaConfig) {
     this.config = config;
@@ -162,12 +163,17 @@ export class DonnaClient {
       redirectUrl = redirectUrl.replace(/&amp;/g, '&');
     }
 
+    let lastHost = 'https://id-au-ui.gocrux.com'; // Start with auth server
     for (let i = 0; i < 10 && redirectUrl; i++) {
-      // Handle relative URLs
+      // Handle relative URLs - use the last host we were on
       let fullUrl = redirectUrl;
       if (redirectUrl.startsWith('/')) {
-        const hasAMCookie = allCookies.some(c => c.includes('GRAVITEE_IO_AM'));
-        fullUrl = (hasAMCookie ? 'https://id-au-ui.gocrux.com' : this.baseUrl) + redirectUrl;
+        fullUrl = lastHost + redirectUrl;
+      } else {
+        // Update lastHost from absolute URL
+        try {
+          lastHost = new URL(redirectUrl).origin;
+        } catch {}
       }
 
       const response = await fetch(fullUrl, {
@@ -202,13 +208,26 @@ export class DonnaClient {
 
   /**
    * Get valid session, logging in if needed
+   * Uses a lock to prevent concurrent login attempts
    */
   private async getSession(): Promise<DonnaSession> {
     if (this.session && new Date() < this.session.expiresAt) {
       return this.session;
     }
 
-    await this.login();
+    // If a login is already in progress, wait for it
+    if (this.loginPromise) {
+      await this.loginPromise;
+      if (this.session) return this.session;
+    }
+
+    // Start a new login and store the promise
+    this.loginPromise = this.login();
+    try {
+      await this.loginPromise;
+    } finally {
+      this.loginPromise = null;
+    }
 
     if (!this.session) {
       throw new Error('Failed to establish Donna session');
@@ -229,12 +248,14 @@ export class DonnaClient {
    */
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryCount = 0
   ): Promise<T> {
     const session = await this.getSession();
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
+      redirect: 'manual', // Don't follow redirects - they indicate session issues
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
@@ -243,11 +264,18 @@ export class DonnaClient {
       },
     });
 
-    // Handle session expiry
-    if (response.status === 401 || response.status === 403) {
-      console.log('[Donna] Session expired, re-authenticating...');
+    // Handle session expiry (redirect, 401/403, or HTML response)
+    const contentType = response.headers.get('content-type') || '';
+    const isHtmlResponse = contentType.includes('text/html');
+    const isRedirect = response.status === 302 || response.status === 301;
+
+    if (response.status === 401 || response.status === 403 || isHtmlResponse || isRedirect) {
+      if (retryCount >= 2) {
+        throw new Error(`Donna API: Session keeps expiring after ${retryCount} retries`);
+      }
+      console.log(`[Donna] Session expired (status=${response.status}), re-authenticating...`);
       this.session = null;
-      return this.request(endpoint, options);
+      return this.request(endpoint, options, retryCount + 1);
     }
 
     if (!response.ok) {
@@ -319,10 +347,9 @@ export class DonnaClient {
     data: DonnaAPICustomerDetails | null;
     activities: DonnaAPIActivitiesResponse['activities'];
   }> {
-    const [data, activities] = await Promise.all([
-      this.getCustomerData(customerId),
-      this.getActivities(customerId),
-    ]);
+    // Sequential calls to avoid session issues with parallel requests
+    const data = await this.getCustomerData(customerId);
+    const activities = await this.getActivities(customerId);
 
     return { data, activities };
   }
