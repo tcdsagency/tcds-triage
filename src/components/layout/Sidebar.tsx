@@ -26,6 +26,7 @@ import {
   Headphones,
   FilePen,
   ClipboardCheck,
+  Bell,
 } from 'lucide-react';
 
 // Dashboard section
@@ -53,6 +54,7 @@ const getIntakeNav = (canAccessSupervisor: boolean) => {
 // Customer Management section
 const customerNav = [
   { name: 'Customers', href: '/customers', icon: Users },
+  { name: 'Policy Notices', href: '/policy-notices', icon: Bell },
   { name: 'Policy Change', href: '/policy-change', icon: FilePen },
   { name: 'Payment Advance', href: '/payment-advance', icon: CreditCard },
   { name: 'ID Cards', href: '/id-cards', icon: IdCard },
