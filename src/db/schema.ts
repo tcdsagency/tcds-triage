@@ -68,6 +68,7 @@ export const triageTypeEnum = pgEnum('triage_type', [
   'service',
   'lead',
   'after_hours',
+  'message',
 ]);
 
 export const quoteTypeEnum = pgEnum('quote_type', [
@@ -976,6 +977,7 @@ export const triageItems = pgTable('triage_items', {
   customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
   callId: uuid('call_id').references(() => calls.id, { onDelete: 'set null' }),
   quoteId: uuid('quote_id').references(() => quotes.id, { onDelete: 'set null' }),
+  messageId: uuid('message_id').references(() => messages.id, { onDelete: 'set null' }),
 
   // Assignment
   assignedToId: uuid('assigned_to_id').references(() => users.id, { onDelete: 'set null' }),
@@ -1872,6 +1874,10 @@ export const triageItemsRelations = relations(triageItems, ({ one }) => ({
   quote: one(quotes, {
     fields: [triageItems.quoteId],
     references: [quotes.id],
+  }),
+  message: one(messages, {
+    fields: [triageItems.messageId],
+    references: [messages.id],
   }),
   assignedTo: one(users, {
     fields: [triageItems.assignedToId],
