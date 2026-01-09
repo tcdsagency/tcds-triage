@@ -3492,3 +3492,108 @@ export const policyNoticeWebhookDeliveriesRelations = relations(policyNoticeWebh
   }),
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CANOPY CONNECT
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const canopyMatchStatusEnum = pgEnum('canopy_match_status', [
+  'pending',
+  'matched',
+  'created',
+  'needs_review',
+  'ignored',
+]);
+
+export const canopyConnectPulls = pgTable('canopy_connect_pulls', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Canopy identifiers
+  pullId: varchar('pull_id', { length: 100 }).notNull(),
+  pullStatus: varchar('pull_status', { length: 50 }), // SUCCESS, PENDING, FAILED
+
+  // Primary insured
+  firstName: varchar('first_name', { length: 100 }),
+  lastName: varchar('last_name', { length: 100 }),
+  email: varchar('email', { length: 255 }),
+  phone: varchar('phone', { length: 20 }),
+  dateOfBirth: date('date_of_birth'),
+
+  // Address
+  address: jsonb('address').$type<{
+    street?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    fullAddress?: string;
+  }>(),
+
+  // Secondary insured
+  secondaryInsured: jsonb('secondary_insured').$type<{
+    firstName?: string;
+    lastName?: string;
+    dateOfBirth?: string;
+    relationship?: string;
+  }>(),
+
+  // Carrier info
+  carrierName: varchar('carrier_name', { length: 100 }),
+  carrierFriendlyName: varchar('carrier_friendly_name', { length: 100 }),
+
+  // Raw data from Canopy
+  policies: jsonb('policies').$type<any[]>().default([]),
+  vehicles: jsonb('vehicles').$type<any[]>().default([]),
+  drivers: jsonb('drivers').$type<any[]>().default([]),
+  dwellings: jsonb('dwellings').$type<any[]>().default([]),
+  coverages: jsonb('coverages').$type<any[]>().default([]),
+  claims: jsonb('claims').$type<any[]>().default([]),
+  documents: jsonb('documents').$type<any[]>().default([]),
+
+  // Metadata
+  canopyLinkUsed: varchar('canopy_link_used', { length: 255 }),
+  totalPremiumCents: integer('total_premium_cents'),
+  policyCount: integer('policy_count').default(0),
+  vehicleCount: integer('vehicle_count').default(0),
+  driverCount: integer('driver_count').default(0),
+
+  // Match status
+  matchStatus: canopyMatchStatusEnum('match_status').default('pending'),
+  matchedCustomerId: uuid('matched_customer_id').references(() => customers.id),
+  matchedAgencyzoomId: varchar('matched_agencyzoom_id', { length: 50 }),
+  matchedAgencyzoomType: varchar('matched_agencyzoom_type', { length: 20 }), // 'lead' or 'customer'
+  matchedAt: timestamp('matched_at'),
+  matchedByUserId: uuid('matched_by_user_id').references(() => users.id),
+
+  // Note sync
+  agencyzoomNoteSynced: boolean('agencyzoom_note_synced').default(false),
+  agencyzoomNoteId: varchar('agencyzoom_note_id', { length: 50 }),
+
+  // Raw payload
+  rawPayload: jsonb('raw_payload'),
+
+  // Timestamps
+  pulledAt: timestamp('pulled_at'), // When customer completed the import
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  pullIdIdx: uniqueIndex('canopy_pull_id_idx').on(table.pullId),
+  phoneIdx: index('canopy_phone_idx').on(table.phone),
+  matchStatusIdx: index('canopy_match_status_idx').on(table.matchStatus),
+  tenantIdx: index('canopy_tenant_idx').on(table.tenantId),
+}));
+
+export const canopyConnectPullsRelations = relations(canopyConnectPulls, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [canopyConnectPulls.tenantId],
+    references: [tenants.id],
+  }),
+  matchedCustomer: one(customers, {
+    fields: [canopyConnectPulls.matchedCustomerId],
+    references: [customers.id],
+  }),
+  matchedBy: one(users, {
+    fields: [canopyConnectPulls.matchedByUserId],
+    references: [users.id],
+  }),
+}));
+

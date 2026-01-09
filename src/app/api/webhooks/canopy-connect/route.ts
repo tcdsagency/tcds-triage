@@ -1,0 +1,304 @@
+/**
+ * Canopy Connect Webhook Endpoint
+ * ================================
+ * Receives webhook notifications when customers complete policy imports.
+ *
+ * POST /api/webhooks/canopy-connect
+ *
+ * Events:
+ * - pull.completed: Customer successfully imported their policy data
+ * - pull.failed: Customer failed to complete the import
+ * - pull.expired: The pull link expired
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/db";
+import { canopyConnectPulls, customers } from "@/db/schema";
+import { eq, or, ilike } from "drizzle-orm";
+import { getCanopyClient, CanopyClient, CanopyWebhookPayload } from "@/lib/api/canopy";
+
+// =============================================================================
+// POST - Receive Webhook
+// =============================================================================
+
+export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+
+  try {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (!tenantId) {
+      console.error("[Canopy Webhook] Tenant not configured");
+      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    }
+
+    // Get raw body for signature verification
+    const rawBody = await request.text();
+    const signature = request.headers.get("x-canopy-signature") || "";
+
+    // Verify webhook signature
+    let client: ReturnType<typeof getCanopyClient>;
+    try {
+      client = getCanopyClient();
+    } catch (error) {
+      console.error("[Canopy Webhook] Canopy not configured:", error);
+      return NextResponse.json({ error: "Canopy not configured" }, { status: 500 });
+    }
+
+    const isValid = client.verifyWebhookSignature(rawBody, signature);
+    if (!isValid) {
+      console.warn("[Canopy Webhook] Invalid signature");
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+
+    // Parse payload
+    const payload: CanopyWebhookPayload = JSON.parse(rawBody);
+    console.log(`[Canopy Webhook] Received event: ${payload.event_type}, pull_id: ${payload.pull_id}`);
+
+    // Extract normalized data
+    const extractedData = CanopyClient.extractPullData(payload);
+
+    // Handle different event types
+    switch (payload.event_type) {
+      case "pull.completed":
+        await handlePullCompleted(tenantId, extractedData, payload);
+        break;
+
+      case "pull.failed":
+        await handlePullFailed(tenantId, extractedData, payload);
+        break;
+
+      case "pull.expired":
+        await handlePullExpired(tenantId, extractedData, payload);
+        break;
+
+      default:
+        console.warn(`[Canopy Webhook] Unknown event type: ${payload.event_type}`);
+    }
+
+    const duration = Date.now() - startTime;
+    console.log(`[Canopy Webhook] Processed in ${duration}ms`);
+
+    return NextResponse.json({
+      success: true,
+      pull_id: payload.pull_id,
+      event: payload.event_type
+    });
+  } catch (error) {
+    console.error("[Canopy Webhook] Error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Webhook processing failed" },
+      { status: 500 }
+    );
+  }
+}
+
+// =============================================================================
+// Event Handlers
+// =============================================================================
+
+async function handlePullCompleted(
+  tenantId: string,
+  data: ReturnType<typeof CanopyClient.extractPullData>,
+  rawPayload: CanopyWebhookPayload
+) {
+  // Check if we already have this pull
+  const [existing] = await db
+    .select({ id: canopyConnectPulls.id })
+    .from(canopyConnectPulls)
+    .where(eq(canopyConnectPulls.pullId, data.pullId))
+    .limit(1);
+
+  if (existing) {
+    console.log(`[Canopy Webhook] Pull ${data.pullId} already exists, updating`);
+    await db
+      .update(canopyConnectPulls)
+      .set({
+        pullStatus: data.pullStatus,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        phone: normalizePhone(data.phone),
+        dateOfBirth: data.dateOfBirth,
+        address: data.address,
+        secondaryInsured: data.secondaryInsured,
+        carrierName: data.carrierName,
+        carrierFriendlyName: data.carrierFriendlyName,
+        policies: data.policies,
+        vehicles: data.vehicles,
+        drivers: data.drivers,
+        dwellings: data.dwellings,
+        coverages: data.coverages,
+        claims: data.claims,
+        documents: data.documents,
+        canopyLinkUsed: data.canopyLinkUsed,
+        totalPremiumCents: data.totalPremiumCents,
+        policyCount: data.policies.length,
+        vehicleCount: data.vehicles.length,
+        driverCount: data.drivers.length,
+        rawPayload: rawPayload,
+        pulledAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(canopyConnectPulls.id, existing.id));
+    return;
+  }
+
+  // Try to auto-match by phone number
+  let matchedCustomer = null;
+  const normalizedPhone = normalizePhone(data.phone);
+
+  if (normalizedPhone) {
+    const phoneVariants = [
+      normalizedPhone,
+      normalizedPhone.replace(/\D/g, ""),
+      `+1${normalizedPhone.replace(/\D/g, "")}`,
+    ];
+
+    const [customer] = await db
+      .select({
+        id: customers.id,
+        agencyzoomId: customers.agencyzoomId,
+      })
+      .from(customers)
+      .where(
+        or(
+          ...phoneVariants.map(p => eq(customers.phone, p)),
+          ...phoneVariants.map(p => eq(customers.phoneAlt, p))
+        )!
+      )
+      .limit(1);
+
+    if (customer) {
+      matchedCustomer = customer;
+      console.log(`[Canopy Webhook] Auto-matched to customer ${customer.id} by phone`);
+    }
+  }
+
+  // Insert new pull record
+  await db.insert(canopyConnectPulls).values({
+    tenantId,
+    pullId: data.pullId,
+    pullStatus: data.pullStatus,
+    firstName: data.firstName,
+    lastName: data.lastName,
+    email: data.email,
+    phone: normalizedPhone,
+    dateOfBirth: data.dateOfBirth,
+    address: data.address,
+    secondaryInsured: data.secondaryInsured,
+    carrierName: data.carrierName,
+    carrierFriendlyName: data.carrierFriendlyName,
+    policies: data.policies,
+    vehicles: data.vehicles,
+    drivers: data.drivers,
+    dwellings: data.dwellings,
+    coverages: data.coverages,
+    claims: data.claims,
+    documents: data.documents,
+    canopyLinkUsed: data.canopyLinkUsed,
+    totalPremiumCents: data.totalPremiumCents,
+    policyCount: data.policies.length,
+    vehicleCount: data.vehicles.length,
+    driverCount: data.drivers.length,
+    matchStatus: matchedCustomer ? "matched" : "pending",
+    matchedCustomerId: matchedCustomer?.id,
+    matchedAgencyzoomId: matchedCustomer?.agencyzoomId,
+    matchedAt: matchedCustomer ? new Date() : null,
+    rawPayload: rawPayload,
+    pulledAt: new Date(),
+  });
+
+  console.log(`[Canopy Webhook] Stored pull ${data.pullId} with ${data.policies.length} policies, ${data.vehicles.length} vehicles`);
+}
+
+async function handlePullFailed(
+  tenantId: string,
+  data: ReturnType<typeof CanopyClient.extractPullData>,
+  rawPayload: CanopyWebhookPayload
+) {
+  // Check if we already have this pull
+  const [existing] = await db
+    .select({ id: canopyConnectPulls.id })
+    .from(canopyConnectPulls)
+    .where(eq(canopyConnectPulls.pullId, data.pullId))
+    .limit(1);
+
+  if (existing) {
+    await db
+      .update(canopyConnectPulls)
+      .set({
+        pullStatus: "FAILED",
+        rawPayload: rawPayload,
+        updatedAt: new Date(),
+      })
+      .where(eq(canopyConnectPulls.id, existing.id));
+  } else {
+    await db.insert(canopyConnectPulls).values({
+      tenantId,
+      pullId: data.pullId,
+      pullStatus: "FAILED",
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: normalizePhone(data.phone),
+      matchStatus: "needs_review",
+      rawPayload: rawPayload,
+    });
+  }
+
+  console.log(`[Canopy Webhook] Pull ${data.pullId} failed`);
+}
+
+async function handlePullExpired(
+  tenantId: string,
+  data: ReturnType<typeof CanopyClient.extractPullData>,
+  rawPayload: CanopyWebhookPayload
+) {
+  // Check if we already have this pull
+  const [existing] = await db
+    .select({ id: canopyConnectPulls.id })
+    .from(canopyConnectPulls)
+    .where(eq(canopyConnectPulls.pullId, data.pullId))
+    .limit(1);
+
+  if (existing) {
+    await db
+      .update(canopyConnectPulls)
+      .set({
+        pullStatus: "EXPIRED",
+        rawPayload: rawPayload,
+        updatedAt: new Date(),
+      })
+      .where(eq(canopyConnectPulls.id, existing.id));
+  } else {
+    await db.insert(canopyConnectPulls).values({
+      tenantId,
+      pullId: data.pullId,
+      pullStatus: "EXPIRED",
+      matchStatus: "ignored",
+      rawPayload: rawPayload,
+    });
+  }
+
+  console.log(`[Canopy Webhook] Pull ${data.pullId} expired`);
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+function normalizePhone(phone: string | undefined | null): string | undefined {
+  if (!phone) return undefined;
+
+  // Remove all non-digits
+  const digits = phone.replace(/\D/g, "");
+
+  // Format as (XXX) XXX-XXXX for US numbers
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+
+  return phone; // Return original if can't normalize
+}

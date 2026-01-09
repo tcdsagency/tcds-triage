@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
     // Get recent reviews (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoIso = thirtyDaysAgo.toISOString();
 
     const [recentStats] = await db
       .select({
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
       })
       .from(googleReviews)
       .where(
-        sql`${googleReviews.tenantId} = ${tenantId} AND ${googleReviews.reviewTimestamp} >= ${thirtyDaysAgo}`
+        sql`${googleReviews.tenantId} = ${tenantId} AND ${googleReviews.reviewTimestamp} >= ${thirtyDaysAgoIso}::timestamp`
       );
 
     return NextResponse.json({
