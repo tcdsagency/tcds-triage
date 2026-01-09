@@ -1110,6 +1110,27 @@ function ActivityTab({ logs }: { logs: ActivityLog[] }) {
   );
 }
 
+interface DebugLog {
+  id: string;
+  runId: string;
+  runType: string;
+  status: string;
+  startedAt: string;
+  completedAt?: string;
+  policiesChecked: number;
+  alertsCreated: number;
+  errorsEncountered: number;
+  errorMessage?: string;
+}
+
+interface DebugEvent {
+  id: string;
+  eventType: string;
+  description: string;
+  policyId?: string;
+  createdAt: string;
+}
+
 function SettingsTab({
   settings,
   onSave,
@@ -1118,6 +1139,41 @@ function SettingsTab({
   onSave: (updates: Partial<Settings>) => void;
 }) {
   const [localSettings, setLocalSettings] = useState(settings);
+  const [showLogs, setShowLogs] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<DebugLog[]>([]);
+  const [selectedLog, setSelectedLog] = useState<string | null>(null);
+  const [logEvents, setLogEvents] = useState<DebugEvent[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+
+  const fetchDebugLogs = async () => {
+    setLoadingLogs(true);
+    try {
+      const res = await fetch('/api/risk-monitor/activity?limit=10');
+      const data = await res.json();
+      if (data.success) {
+        setDebugLogs(data.logs);
+      }
+    } catch (err) {
+      console.error('Error fetching logs:', err);
+    }
+    setLoadingLogs(false);
+  };
+
+  const fetchLogEvents = async (logId: string) => {
+    setLoadingEvents(true);
+    setSelectedLog(logId);
+    try {
+      const res = await fetch(`/api/risk-monitor/activity?logId=${logId}`);
+      const data = await res.json();
+      if (data.success) {
+        setLogEvents(data.events || []);
+      }
+    } catch (err) {
+      console.error('Error fetching events:', err);
+    }
+    setLoadingEvents(false);
+  };
 
   const handleToggle = (key: keyof Settings) => {
     const newValue = !localSettings[key];
@@ -1272,6 +1328,127 @@ function SettingsTab({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Debug Logs */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Debug Logs</h3>
+          <button
+            onClick={() => {
+              setShowLogs(!showLogs);
+              if (!showLogs && debugLogs.length === 0) {
+                fetchDebugLogs();
+              }
+            }}
+            className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+          >
+            {showLogs ? 'Hide Logs' : 'View Logs'}
+          </button>
+        </div>
+
+        {showLogs && (
+          <div className="space-y-4">
+            {/* Refresh button */}
+            <div className="flex justify-end">
+              <button
+                onClick={fetchDebugLogs}
+                disabled={loadingLogs}
+                className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+              >
+                <RefreshCw className={`h-3 w-3 ${loadingLogs ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+
+            {/* Logs list */}
+            {loadingLogs ? (
+              <div className="text-center py-4 text-gray-500">Loading logs...</div>
+            ) : debugLogs.length === 0 ? (
+              <div className="text-center py-4 text-gray-500">No logs found</div>
+            ) : (
+              <div className="space-y-2">
+                {debugLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    className={`border rounded-lg p-3 cursor-pointer transition-colors ${
+                      selectedLog === log.id
+                        ? 'border-emerald-500 bg-emerald-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    onClick={() => fetchLogEvents(log.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${
+                          log.status === 'completed' ? 'bg-green-500' :
+                          log.status === 'failed' ? 'bg-red-500' :
+                          log.status === 'running' ? 'bg-blue-500 animate-pulse' :
+                          'bg-gray-400'
+                        }`} />
+                        <span className="text-sm font-medium text-gray-900">
+                          {log.runType === 'manual' ? 'Manual Run' : 'Scheduled Run'}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          log.status === 'completed' ? 'bg-green-100 text-green-700' :
+                          log.status === 'failed' ? 'bg-red-100 text-red-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {log.status}
+                        </span>
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {new Date(log.startedAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {log.policiesChecked} checked • {log.alertsCreated} alerts • {log.errorsEncountered} errors
+                    </div>
+                    {log.errorMessage && (
+                      <div className="mt-2 p-2 bg-red-50 rounded text-xs text-red-700 font-mono overflow-x-auto">
+                        {log.errorMessage}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Selected log events */}
+            {selectedLog && (
+              <div className="mt-4 border-t pt-4">
+                <h4 className="text-sm font-medium text-gray-900 mb-2">Run Events</h4>
+                {loadingEvents ? (
+                  <div className="text-center py-4 text-gray-500">Loading events...</div>
+                ) : logEvents.length === 0 ? (
+                  <div className="text-center py-4 text-gray-500 text-sm">No events recorded for this run</div>
+                ) : (
+                  <div className="bg-gray-900 rounded-lg p-3 max-h-64 overflow-y-auto">
+                    <div className="space-y-1 font-mono text-xs">
+                      {logEvents.map((event) => (
+                        <div key={event.id} className="flex gap-2">
+                          <span className="text-gray-500 shrink-0">
+                            {new Date(event.createdAt).toLocaleTimeString()}
+                          </span>
+                          <span className={`shrink-0 ${
+                            event.eventType === 'error' ? 'text-red-400' :
+                            event.eventType === 'alert_created' ? 'text-yellow-400' :
+                            event.eventType === 'run_started' ? 'text-blue-400' :
+                            event.eventType === 'run_completed' ? 'text-green-400' :
+                            'text-gray-400'
+                          }`}>
+                            [{event.eventType}]
+                          </span>
+                          <span className="text-gray-300">{event.description}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Save Button */}
