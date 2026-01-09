@@ -157,12 +157,18 @@ export async function GET(request: NextRequest) {
 
         const ageMinutes = Math.floor((now.getTime() - new Date(w.createdAt).getTime()) / 60000);
 
+        // Use external phone number based on call direction
+        // Inbound: customer called us, so fromNumber is the customer
+        // Outbound: we called customer, so toNumber is the customer
+        const isInbound = w.direction?.toLowerCase() === 'inbound';
+        const externalPhone = isInbound ? w.callFromNumber : w.callToNumber;
+
         items.push({
           id: w.id,
           type: 'wrapup',
           direction: w.direction?.toLowerCase() as 'inbound' | 'outbound' | null,
           contactName: w.customerName,
-          contactPhone: w.customerPhone || w.callFromNumber || '',
+          contactPhone: w.customerPhone || externalPhone || '',
           contactEmail: w.customerEmail,
           contactType: extraction.matchType === 'customer' ? 'customer' : extraction.matchType === 'lead' ? 'lead' : null,
           matchStatus,
