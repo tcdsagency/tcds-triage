@@ -3,8 +3,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { messages, tenants } from "@/db/schema";
-import { eq, and, gte, desc } from "drizzle-orm";
+import { messages, tenants, customers } from "@/db/schema";
+import { eq, and, gte, desc, or, ilike } from "drizzle-orm";
 import { twilioClient, sendAfterHoursReply } from "@/lib/twilio";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 
@@ -57,23 +57,75 @@ export async function POST(request: NextRequest) {
       return new NextResponse("OK", { status: 200 }); // Always return 200 to Twilio
     }
 
-    // 1. Look up contact in AgencyZoom
+    // 1. Look up contact - check local DB first (fast), then AgencyZoom API (slower)
     let contactId: string | null = null;
     let contactName: string | null = null;
     let contactType: "customer" | "lead" | null = null;
 
-    try {
-      const azClient = getAgencyZoomClient();
-      const customer = await azClient.findCustomerByPhone(payload.From);
+    // Normalize phone for matching
+    const normalizedPhone = payload.From.replace(/\D/g, '');
+    const phoneVariants = [
+      normalizedPhone,
+      normalizedPhone.slice(-10), // Last 10 digits (without country code)
+    ];
 
-      if (customer) {
-        contactId = customer.id.toString();
-        contactName = `${customer.firstName} ${customer.lastName}`.trim();
-        contactType = "customer";
-        console.log("[Webhook] Found AZ customer:", contactName);
+    // 1a. Check local database first (fast lookup)
+    try {
+      const [localContact] = await db
+        .select({
+          id: customers.id,
+          agencyzoomId: customers.agencyzoomId,
+          firstName: customers.firstName,
+          lastName: customers.lastName,
+          isLead: customers.isLead,
+        })
+        .from(customers)
+        .where(
+          and(
+            eq(customers.tenantId, tenantId),
+            or(
+              ...phoneVariants.map(p => ilike(customers.phone, `%${p.slice(-10)}%`)),
+              ...phoneVariants.map(p => ilike(customers.phoneAlt, `%${p.slice(-10)}%`))
+            )
+          )
+        )
+        .limit(1);
+
+      if (localContact) {
+        contactId = localContact.agencyzoomId || localContact.id;
+        contactName = `${localContact.firstName} ${localContact.lastName}`.trim();
+        contactType = localContact.isLead ? "lead" : "customer";
+        console.log("[Webhook] Found local contact:", contactName, contactType);
       }
     } catch (error) {
-      console.warn("[Webhook] AgencyZoom lookup failed:", error);
+      console.warn("[Webhook] Local DB lookup failed:", error);
+    }
+
+    // 1b. If not found locally, check AgencyZoom API
+    if (!contactId) {
+      try {
+        const azClient = getAgencyZoomClient();
+
+        // First try to find as a customer
+        const customer = await azClient.findCustomerByPhone(payload.From);
+        if (customer) {
+          contactId = customer.id.toString();
+          contactName = `${customer.firstName} ${customer.lastName}`.trim();
+          contactType = "customer";
+          console.log("[Webhook] Found AZ customer:", contactName);
+        } else {
+          // If not a customer, try to find as a lead
+          const lead = await azClient.findLeadByPhone(payload.From);
+          if (lead) {
+            contactId = lead.id.toString();
+            contactName = `${lead.firstName} ${lead.lastName}`.trim();
+            contactType = "lead";
+            console.log("[Webhook] Found AZ lead:", contactName);
+          }
+        }
+      } catch (error) {
+        console.warn("[Webhook] AgencyZoom lookup failed:", error);
+      }
     }
 
     // 2. Check if after-hours
