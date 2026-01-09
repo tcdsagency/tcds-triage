@@ -1,8 +1,25 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
 import { HazardRiskCard } from '@/components/features/HazardRiskCard';
+
+// Dynamic import for Leaflet map (client-side only)
+const NearmapMap = dynamic(
+  () => import('@/components/features/NearmapMap').then(mod => ({ default: mod.NearmapMap })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <div className="animate-spin text-3xl mb-2">🛰️</div>
+          <p className="text-sm text-gray-600 font-medium">Loading map...</p>
+        </div>
+      </div>
+    )
+  }
+);
 
 // =============================================================================
 // TYPES
@@ -356,61 +373,39 @@ export default function PropertyIntelligencePage() {
           <div className="h-full flex overflow-hidden">
             {/* Left Column - Map & Images */}
             <div className="w-1/2 border-r flex flex-col overflow-hidden">
-              {/* Aerial Map */}
+              {/* Aerial Map - Interactive */}
               <div className="flex-1 bg-gray-200 relative">
-                {lookup.nearmapData?.staticImageUrl ? (
-                  <div className="absolute inset-0">
-                    {/* Nearmap Static Map Image */}
-                    <img
-                      src={lookup.nearmapData.staticImageUrl}
-                      alt="Aerial view"
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        // Fallback to placeholder on error
-                        e.currentTarget.style.display = 'none';
-                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                        if (fallback) fallback.classList.remove('hidden');
-                      }}
-                    />
-                    {/* Fallback placeholder (hidden by default) */}
-                    <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-700">
-                      <div className="text-center text-white">
-                        <div className="text-4xl mb-2">🛰️</div>
-                        <p className="text-sm font-medium">Aerial Imagery</p>
-                        <p className="text-xs text-gray-300 mt-1">
-                          Survey: {lookup.nearmapData.surveyDate}
-                        </p>
-                      </div>
-                    </div>
-                    {/* Survey date overlay */}
-                    <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                      Survey: {lookup.nearmapData.surveyDate}
-                    </div>
-                  </div>
+                {lookup.lat && lookup.lng ? (
+                  <NearmapMap
+                    lat={lookup.lat}
+                    lng={lookup.lng}
+                    zoom={19}
+                    surveyDate={lookup.nearmapData?.surveyDate}
+                  />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center bg-amber-50">
                     <div className="text-center p-4">
                       <div className="text-4xl mb-2">⚠️</div>
-                      <p className="text-amber-800 font-medium">Nearmap Data Unavailable</p>
+                      <p className="text-amber-800 font-medium">Location Not Available</p>
                       <p className="text-xs text-amber-700 mt-1">
-                        Check Nearmap API configuration or coverage for this location
+                        Unable to display map without coordinates
                       </p>
                     </div>
                   </div>
                 )}
 
                 {/* Layer Toggles */}
-                <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg p-2 space-y-1">
-                  <button className="flex items-center gap-2 px-3 py-1.5 text-sm rounded hover:bg-gray-100 w-full">
+                <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg p-2 space-y-1 z-20">
+                  <button className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-900 font-medium rounded hover:bg-gray-100 w-full">
                     <span>🏠</span> Building
                   </button>
-                  <button className="flex items-center gap-2 px-3 py-1.5 text-sm rounded hover:bg-gray-100 w-full">
+                  <button className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-900 font-medium rounded hover:bg-gray-100 w-full">
                     <span>🔲</span> Roof
                   </button>
-                  <button className="flex items-center gap-2 px-3 py-1.5 text-sm rounded hover:bg-gray-100 w-full">
+                  <button className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-900 font-medium rounded hover:bg-gray-100 w-full">
                     <span>🏊</span> Pool
                   </button>
-                  <button className="flex items-center gap-2 px-3 py-1.5 text-sm rounded hover:bg-gray-100 w-full">
+                  <button className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-900 font-medium rounded hover:bg-gray-100 w-full">
                     <span>☀️</span> Solar
                   </button>
                 </div>
@@ -465,77 +460,77 @@ export default function PropertyIntelligencePage() {
               {/* Property Details (RPR) */}
               {lookup.rprData && (
                 <div className="bg-white rounded-lg border p-4">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase mb-3">
                     Property Details
                   </h3>
                   <div className="space-y-2">
-                    <div className="font-medium text-lg">{lookup.formattedAddress}</div>
+                    <div className="font-medium text-lg text-gray-900">{lookup.formattedAddress}</div>
 
                     <div className="grid grid-cols-4 gap-3 mt-3">
                       <div className="text-center p-2 bg-gray-50 rounded">
-                        <div className="text-lg font-bold">{lookup.rprData.beds}</div>
-                        <div className="text-xs text-gray-500">Beds</div>
+                        <div className="text-lg font-bold text-gray-900">{lookup.rprData.beds}</div>
+                        <div className="text-xs text-gray-700 font-medium">Beds</div>
                       </div>
                       <div className="text-center p-2 bg-gray-50 rounded">
-                        <div className="text-lg font-bold">{lookup.rprData.baths}</div>
-                        <div className="text-xs text-gray-500">Baths</div>
+                        <div className="text-lg font-bold text-gray-900">{lookup.rprData.baths}</div>
+                        <div className="text-xs text-gray-700 font-medium">Baths</div>
                       </div>
                       <div className="text-center p-2 bg-gray-50 rounded">
-                        <div className="text-lg font-bold">{lookup.rprData.sqft.toLocaleString()}</div>
-                        <div className="text-xs text-gray-500">Sq Ft</div>
+                        <div className="text-lg font-bold text-gray-900">{lookup.rprData.sqft.toLocaleString()}</div>
+                        <div className="text-xs text-gray-700 font-medium">Sq Ft</div>
                       </div>
                       <div className="text-center p-2 bg-gray-50 rounded">
-                        <div className="text-lg font-bold">{lookup.rprData.yearBuilt}</div>
-                        <div className="text-xs text-gray-500">Built</div>
+                        <div className="text-lg font-bold text-gray-900">{lookup.rprData.yearBuilt}</div>
+                        <div className="text-xs text-gray-700 font-medium">Built</div>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-4 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-500">Stories:</span>
-                        <span className="font-medium">{lookup.rprData.stories}</span>
+                        <span className="text-gray-700 font-medium">Stories:</span>
+                        <span className="font-semibold text-gray-900">{lookup.rprData.stories}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-500">Lot:</span>
-                        <span className="font-medium">{lookup.rprData.lotAcres.toFixed(2)} acres</span>
+                        <span className="text-gray-700 font-medium">Lot:</span>
+                        <span className="font-semibold text-gray-900">{lookup.rprData.lotAcres.toFixed(2)} acres</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-500">Roof:</span>
-                        <span className="font-medium">{lookup.rprData.roofType}</span>
+                        <span className="text-gray-700 font-medium">Roof:</span>
+                        <span className="font-semibold text-gray-900">{lookup.rprData.roofType}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-500">Foundation:</span>
-                        <span className="font-medium">{lookup.rprData.foundation}</span>
+                        <span className="text-gray-700 font-medium">Foundation:</span>
+                        <span className="font-semibold text-gray-900">{lookup.rprData.foundation}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-500">Exterior:</span>
-                        <span className="font-medium">{lookup.rprData.exteriorWalls}</span>
+                        <span className="text-gray-700 font-medium">Exterior:</span>
+                        <span className="font-semibold text-gray-900">{lookup.rprData.exteriorWalls}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-500">HVAC:</span>
-                        <span className="font-medium">{lookup.rprData.hvac}</span>
+                        <span className="text-gray-700 font-medium">HVAC:</span>
+                        <span className="font-semibold text-gray-900">{lookup.rprData.hvac}</span>
                       </div>
                     </div>
 
                     <div className="border-t mt-4 pt-4">
                       <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-500">Owner:</span>
-                        <span className="font-medium">
+                        <span className="text-gray-700 font-medium">Owner:</span>
+                        <span className="font-semibold text-gray-900">
                           {lookup.rprData.ownerName}
                           {lookup.rprData.ownerOccupied && (
-                            <span className="ml-2 text-xs text-green-600">(Owner Occupied)</span>
+                            <span className="ml-2 text-xs text-green-600 font-medium">(Owner Occupied)</span>
                           )}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-500">Last Sale:</span>
-                        <span className="font-medium">
+                        <span className="text-gray-700 font-medium">Last Sale:</span>
+                        <span className="font-semibold text-gray-900">
                           {formatCurrency(lookup.rprData.lastSalePrice)} ({lookup.rprData.lastSaleDate})
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Est. Value:</span>
-                        <span className="font-medium text-green-600">
+                        <span className="text-gray-700 font-medium">Est. Value:</span>
+                        <span className="font-bold text-green-600">
                           {formatCurrency(lookup.rprData.estimatedValue)}
                         </span>
                       </div>
@@ -548,7 +543,7 @@ export default function PropertyIntelligencePage() {
               {lookup.mmiData && (
                 <div className="bg-white rounded-lg border p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase">
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase">
                       Market Status
                     </h3>
                     <span className={cn(
@@ -556,7 +551,7 @@ export default function PropertyIntelligencePage() {
                       lookup.mmiData.currentStatus === 'active' ? 'bg-green-100 text-green-700' :
                       lookup.mmiData.currentStatus === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                       lookup.mmiData.currentStatus === 'sold' ? 'bg-blue-100 text-blue-700' :
-                      'bg-gray-100 text-gray-600'
+                      'bg-gray-200 text-gray-700'
                     )}>
                       {lookup.mmiData.currentStatus === 'off_market' ? 'Off Market' : lookup.mmiData.currentStatus}
                     </span>
@@ -565,25 +560,25 @@ export default function PropertyIntelligencePage() {
                   {/* Listing History */}
                   {lookup.mmiData.listingHistory.length > 0 && (
                     <div className="mb-4">
-                      <div className="text-xs font-medium text-gray-500 mb-2">LISTING HISTORY</div>
+                      <div className="text-xs font-semibold text-gray-700 mb-2">LISTING HISTORY</div>
                       <div className="space-y-2 max-h-32 overflow-y-auto">
                         {lookup.mmiData.listingHistory.slice(0, 5).map((listing, i) => (
                           <div key={i} className="flex items-center justify-between text-sm bg-gray-50 px-3 py-2 rounded">
                             <div>
-                              <span className="font-medium">{new Date(listing.LISTING_DATE).toLocaleDateString()}</span>
+                              <span className="font-semibold text-gray-900">{new Date(listing.LISTING_DATE).toLocaleDateString()}</span>
                               <span className={cn(
-                                'ml-2 text-xs px-1.5 py-0.5 rounded',
+                                'ml-2 text-xs px-1.5 py-0.5 rounded font-medium',
                                 listing.STATUS?.toLowerCase().includes('sold') ? 'bg-blue-100 text-blue-700' :
                                 listing.STATUS?.toLowerCase().includes('active') ? 'bg-green-100 text-green-700' :
-                                'bg-gray-200 text-gray-600'
+                                'bg-gray-200 text-gray-700'
                               )}>
                                 {listing.STATUS || 'Unknown'}
                               </span>
                             </div>
                             <div className="text-right">
-                              <div className="font-medium">{formatCurrency(listing.LIST_PRICE)}</div>
+                              <div className="font-semibold text-gray-900">{formatCurrency(listing.LIST_PRICE)}</div>
                               {listing.CLOSE_PRICE > 0 && (
-                                <div className="text-xs text-gray-500">Sold: {formatCurrency(listing.CLOSE_PRICE)}</div>
+                                <div className="text-xs text-gray-700 font-medium">Sold: {formatCurrency(listing.CLOSE_PRICE)}</div>
                               )}
                             </div>
                           </div>
@@ -595,21 +590,21 @@ export default function PropertyIntelligencePage() {
                   {/* Deed/Sale History */}
                   {lookup.mmiData.deedHistory.length > 0 && (
                     <div>
-                      <div className="text-xs font-medium text-gray-500 mb-2">SALE & LOAN HISTORY</div>
+                      <div className="text-xs font-semibold text-gray-700 mb-2">SALE & LOAN HISTORY</div>
                       <div className="space-y-2 max-h-32 overflow-y-auto">
                         {lookup.mmiData.deedHistory.slice(0, 5).map((deed, i) => (
                           <div key={i} className="text-sm bg-gray-50 px-3 py-2 rounded">
                             <div className="flex items-center justify-between">
-                              <span className="font-medium">{new Date(deed.DATE).toLocaleDateString()}</span>
-                              <span className="text-xs text-gray-500">{deed.TRANSACTION_TYPE}</span>
+                              <span className="font-semibold text-gray-900">{new Date(deed.DATE).toLocaleDateString()}</span>
+                              <span className="text-xs text-gray-700 font-medium">{deed.TRANSACTION_TYPE}</span>
                             </div>
-                            <div className="flex items-center justify-between mt-1 text-xs text-gray-600">
+                            <div className="flex items-center justify-between mt-1 text-xs text-gray-800">
                               {deed.SALE_PRICE && deed.SALE_PRICE > 0 ? (
-                                <span>Sale: {formatCurrency(deed.SALE_PRICE)}</span>
+                                <span className="font-medium">Sale: {formatCurrency(deed.SALE_PRICE)}</span>
                               ) : deed.LOAN_AMOUNT > 0 ? (
-                                <span>Loan: {formatCurrency(deed.LOAN_AMOUNT)}</span>
+                                <span className="font-medium">Loan: {formatCurrency(deed.LOAN_AMOUNT)}</span>
                               ) : null}
-                              {deed.LENDER && <span className="truncate max-w-[150px]">{deed.LENDER}</span>}
+                              {deed.LENDER && <span className="truncate max-w-[150px] font-medium">{deed.LENDER}</span>}
                             </div>
                           </div>
                         ))}
@@ -618,7 +613,7 @@ export default function PropertyIntelligencePage() {
                   )}
 
                   {lookup.mmiData.listingHistory.length === 0 && lookup.mmiData.deedHistory.length === 0 && (
-                    <p className="text-sm text-gray-500 italic">No market history available for this property.</p>
+                    <p className="text-sm text-gray-700 italic">No market history available for this property.</p>
                   )}
                 </div>
               )}
@@ -637,7 +632,7 @@ export default function PropertyIntelligencePage() {
               ) : lookup.aiAnalysis ? (
                 <div className="bg-white rounded-lg border p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase">
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase">
                       AI Roof Analysis
                     </h3>
                     <span className={cn(
@@ -650,21 +645,21 @@ export default function PropertyIntelligencePage() {
 
                   <div className="space-y-3">
                     <div>
-                      <div className="text-sm text-gray-500">Age Estimate</div>
-                      <div className="font-medium">{lookup.aiAnalysis.roofAgeEstimate}</div>
+                      <div className="text-sm text-gray-700 font-medium">Age Estimate</div>
+                      <div className="font-semibold text-gray-900">{lookup.aiAnalysis.roofAgeEstimate}</div>
                     </div>
 
                     <div>
-                      <div className="text-sm text-gray-500">Condition</div>
-                      <div className="text-sm">{lookup.aiAnalysis.roofConditionSummary}</div>
+                      <div className="text-sm text-gray-700 font-medium">Condition</div>
+                      <div className="text-sm text-gray-900">{lookup.aiAnalysis.roofConditionSummary}</div>
                     </div>
 
                     {lookup.aiAnalysis.roofIssues.length > 0 && (
                       <div>
-                        <div className="text-sm text-gray-500 mb-1">Issues Detected</div>
+                        <div className="text-sm text-gray-700 font-medium mb-1">Issues Detected</div>
                         <ul className="space-y-1">
                           {lookup.aiAnalysis.roofIssues.map((issue, i) => (
-                            <li key={i} className="text-sm flex items-start gap-2">
+                            <li key={i} className="text-sm text-gray-900 flex items-start gap-2">
                               <span className="text-amber-500">•</span>
                               {issue}
                             </li>
@@ -674,7 +669,7 @@ export default function PropertyIntelligencePage() {
                     )}
 
                     <div className="flex items-center gap-2 pt-2">
-                      <span className="text-sm text-gray-500">Recommendation:</span>
+                      <span className="text-sm text-gray-700 font-medium">Recommendation:</span>
                       <span className={cn(
                         'px-2 py-0.5 rounded text-sm font-medium',
                         getRiskLevelColor(lookup.aiAnalysis.riskLevel)
@@ -689,7 +684,7 @@ export default function PropertyIntelligencePage() {
               {/* Hazard Detection */}
               {lookup.aiAnalysis && (
                 <div className="bg-white rounded-lg border p-4">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase mb-3">
                     Hazard Detection
                   </h3>
                   <div className="grid grid-cols-2 gap-3">
@@ -727,7 +722,7 @@ export default function PropertyIntelligencePage() {
               {/* Nearmap Features */}
               {lookup.nearmapData && (
                 <div className="bg-white rounded-lg border p-4">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase mb-3">
                     Detected Features
                   </h3>
                   <div className="grid grid-cols-3 gap-3">
@@ -763,12 +758,12 @@ export default function PropertyIntelligencePage() {
               {lookup.historicalSurveys && lookup.historicalSurveys.length > 1 && (
                 <div className="bg-white rounded-lg border p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase">
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase">
                       Historical Comparison
                     </h3>
                     <button
                       onClick={() => setShowHistorical(!showHistorical)}
-                      className="text-sm text-blue-600 hover:underline"
+                      className="text-sm text-blue-600 font-medium hover:underline"
                     >
                       {showHistorical ? 'Hide' : 'Show'} History
                     </button>
@@ -781,14 +776,14 @@ export default function PropertyIntelligencePage() {
                           key={i}
                           onClick={() => setSelectedHistoricalDate(survey.date)}
                           className={cn(
-                            'w-full flex items-center justify-between px-3 py-2 rounded text-sm',
+                            'w-full flex items-center justify-between px-3 py-2 rounded text-sm font-medium',
                             selectedHistoricalDate === survey.date
                               ? 'bg-blue-100 text-blue-700'
-                              : 'bg-gray-50 hover:bg-gray-100'
+                              : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
                           )}
                         >
                           <span>📅 {survey.date}</span>
-                          <span className="text-gray-400">View</span>
+                          <span className="text-gray-700">View</span>
                         </button>
                       ))}
                     </div>
@@ -816,10 +811,10 @@ export default function PropertyIntelligencePage() {
                   <h3 className="text-sm font-semibold text-blue-700 uppercase mb-2 flex items-center gap-2">
                     <span>🤖</span> AI Underwriting Notes
                   </h3>
-                  <p className="text-sm text-gray-700">{lookup.aiAnalysis.underwritingNotes}</p>
+                  <p className="text-sm text-gray-900">{lookup.aiAnalysis.underwritingNotes}</p>
 
                   <div className="flex items-center gap-2 mt-3">
-                    <span className="text-sm text-gray-500">Risk Level:</span>
+                    <span className="text-sm text-gray-700 font-medium">Risk Level:</span>
                     <span className={cn(
                       'px-2 py-0.5 rounded text-sm font-bold uppercase',
                       getRiskLevelColor(lookup.aiAnalysis.riskLevel)
@@ -875,11 +870,11 @@ function HazardItem({
           : '✅'}
       </span>
       <div>
-        <div className="text-sm font-medium">
+        <div className="text-sm font-semibold text-gray-900">
           {detected ? label : `No ${label.toLowerCase()}`}
         </div>
         {severity && severity !== 'none' && (
-          <div className="text-xs text-gray-500 capitalize">{severity}</div>
+          <div className="text-xs text-gray-700 font-medium capitalize">{severity}</div>
         )}
       </div>
     </div>
@@ -898,8 +893,8 @@ function FeatureItem({
   return (
     <div className="text-center p-3 bg-gray-50 rounded">
       <div className="text-2xl mb-1">{emoji}</div>
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className="text-sm font-medium">{value}</div>
+      <div className="text-xs text-gray-700 font-medium">{label}</div>
+      <div className="text-sm font-semibold text-gray-900">{value}</div>
     </div>
   );
 }

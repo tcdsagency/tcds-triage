@@ -188,3 +188,6 @@ export interface TranscriptionSegment {
   text: string;
   confidence: number;
 }
+
+// Life Insurance Types
+export * from './lifeInsurance.types';
