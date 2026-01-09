@@ -453,7 +453,7 @@ export default function DashboardPage() {
                   <span className="font-semibold text-sm">New Quote</span>
                 </Button>
               </Link>
-              <Link href="/service-request/new">
+              <Link href="/policy-change">
                 <Button variant="outline" className="w-full h-auto py-4 flex flex-col items-center gap-2 border-2 border-emerald-200 bg-emerald-50 hover:border-emerald-500 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 transition-all hover:scale-[1.02]">
                   <FileText className="w-6 h-6 text-emerald-600" />
                   <span className="font-semibold text-sm text-emerald-700 dark:text-emerald-300">Service Request</span>

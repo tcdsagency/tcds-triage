@@ -38,7 +38,7 @@ interface Alert {
   description: string;
   previousStatus: string;
   newStatus: string;
-  detectedAt: string;
+  createdAt: string;
   acknowledgedAt?: string;
   resolvedAt?: string;
   assignedTo?: string;
@@ -784,7 +784,7 @@ function DashboardTab({ stats, onViewAlert }: { stats: Stats | null; onViewAlert
                   <AlertTriangle className={`h-5 w-5 ${alert.priority === '1' ? 'text-red-500' : alert.priority === '2' ? 'text-orange-500' : 'text-yellow-500'}`} />
                   <div>
                     <p className="text-sm font-medium text-gray-900">{alert.title}</p>
-                    <p className="text-xs text-gray-500">{new Date(alert.detectedAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-gray-500">{new Date(alert.createdAt).toLocaleDateString()}</p>
                   </div>
                 </div>
                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${alert.status === 'new' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
@@ -887,7 +887,7 @@ function AlertsTab({
                       </p>
                     )}
                     <p className="mt-1 text-xs text-gray-400">
-                      Detected: {new Date(alert.detectedAt).toLocaleString()}
+                      Detected: {new Date(alert.createdAt).toLocaleString()}
                     </p>
                   </div>
                 </div>

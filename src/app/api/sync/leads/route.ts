@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { customers, users } from '@/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, and } from 'drizzle-orm';
 import { getAgencyZoomClient } from '@/lib/api/agencyzoom';
 
 export const maxDuration = 300; // Pro plan: 5 minutes
@@ -114,24 +114,45 @@ export async function POST(request: NextRequest) {
         const existing = existingMap.get(azId);
 
         try {
+          // Skip if this record was converted to a customer (no longer a lead)
+          if (existing && existing.isLead === false) {
+            continue; // Don't overwrite customer records
+          }
+
+          // Use upsert to handle duplicates atomically
+          // This will insert if not exists, or update if exists (based on unique index)
+          await db.insert(customers)
+            .values({
+              ...data,
+              createdAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: [customers.tenantId, customers.agencyzoomId],
+              set: {
+                firstName: data.firstName,
+                lastName: data.lastName,
+                email: data.email,
+                phone: data.phone,
+                phoneAlt: data.phoneAlt,
+                leadSource: data.leadSource,
+                pipelineStage: data.pipelineStage,
+                leadStatus: data.leadStatus,
+                producerId: data.producerId,
+                lastSyncedFromAz: data.lastSyncedFromAz,
+                updatedAt: new Date(),
+              },
+            });
+
           if (existing) {
-            // Skip if this record was converted to a customer (no longer a lead)
-            if (existing.isLead === false) {
-              continue; // Don't overwrite customer records
-            }
-            await db.update(customers)
-              .set(data)
-              .where(eq(customers.id, existing.id));
             totalUpdated++;
           } else {
-            await db.insert(customers).values({
-              ...data,
-              createdAt: new Date(), // Add createdAt for new leads
-            });
             totalCreated++;
+            // Add to map for subsequent iterations
+            existingMap.set(azId, { id: '', isLead: true });
           }
         } catch (err) {
-          // Skip errors, continue with next
+          const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+          log(`Error syncing lead ${azId}: ${errorMsg}`);
         }
       }
 
