@@ -212,6 +212,13 @@ async function syncThread(
     const threadMessages = await fetchThreadMessages(thread.id);
 
     for (const msg of threadMessages) {
+      // IMPORTANT: Skip incoming messages - they arrive via Twilio webhook
+      // This prevents duplicates since Twilio webhook uses a different externalId
+      if (msg.direction === "incoming") {
+        skipped++;
+        continue;
+      }
+
       if (!isWithinMonths(msg.messageDate, months)) {
         skipped++;
         continue;
@@ -222,9 +229,9 @@ async function syncThread(
         continue;
       }
 
-      const direction = msg.direction === "outgoing" ? "outbound" : "inbound";
-      const fromPhone = direction === "outbound" ? agencyPhone : contactPhone;
-      const toPhone = direction === "outbound" ? contactPhone : agencyPhone;
+      const direction = "outbound"; // Only outgoing messages reach here now
+      const fromPhone = agencyPhone;
+      const toPhone = contactPhone;
       const externalId = `az_sms_${msg.id}`;
 
       const existing = await db.query.messages.findFirst({

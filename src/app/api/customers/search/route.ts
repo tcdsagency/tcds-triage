@@ -74,18 +74,31 @@ export async function GET(request: NextRequest) {
         .limit(limit);
     } else if (query.length >= 2) {
       const searchTerm = `%${query}%`;
+
+      // Build search conditions - support name, email, and phone
+      const searchConditions = [
+        ilike(customers.firstName, searchTerm),
+        ilike(customers.lastName, searchTerm),
+        ilike(customers.email, searchTerm),
+        sql`${customers.firstName} || ' ' || ${customers.lastName} ILIKE ${searchTerm}`,
+      ];
+
+      // Add phone search if query contains at least 3 digits
+      const phoneDigits = query.replace(/\D/g, '');
+      if (phoneDigits.length >= 3) {
+        searchConditions.push(
+          sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ${'%' + phoneDigits + '%'}`,
+          sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phoneAlt}, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ${'%' + phoneDigits + '%'}`
+        );
+      }
+
       results = await db
         .select(selectFields)
         .from(customers)
         .where(
           and(
             baseFilters,
-            or(
-              ilike(customers.firstName, searchTerm),
-              ilike(customers.lastName, searchTerm),
-              ilike(customers.email, searchTerm),
-              sql`${customers.firstName} || ' ' || ${customers.lastName} ILIKE ${searchTerm}`
-            )
+            or(...searchConditions)
           )
         )
         .orderBy(desc(customers.updatedAt))

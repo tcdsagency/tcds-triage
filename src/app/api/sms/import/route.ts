@@ -232,6 +232,14 @@ async function importThreadMessages(
   }
 
   for (const msg of threadMessages) {
+    // IMPORTANT: Skip incoming messages - they arrive via Twilio webhook
+    // This prevents duplicates since Twilio webhook uses a different externalId (Twilio SID)
+    // AgencyZoom uses its own message ID, so the same message would be stored twice
+    if (msg.direction === "incoming") {
+      skipped++;
+      continue;
+    }
+
     // Filter by date
     if (!isWithinMonths(msg.messageDate, months)) {
       skipped++;
@@ -244,9 +252,10 @@ async function importThreadMessages(
       continue;
     }
 
-    const direction = msg.direction === "outgoing" ? "outbound" : "inbound";
-    const fromPhone = direction === "outbound" ? agencyPhone : contactPhone;
-    const toPhone = direction === "outbound" ? contactPhone : agencyPhone;
+    // Only outgoing messages from AgencyZoom reach here
+    const direction = "outbound";
+    const fromPhone = agencyPhone;
+    const toPhone = contactPhone;
 
     // Use message ID for deduplication
     const externalId = `az_sms_${msg.id}`;
