@@ -809,7 +809,10 @@ export default function CallPopup({
                                 })
                               : ""}
                           </span>
-                          <span className="text-gray-400">{note.createdBy?.name || "Agent"}</span>
+                          <div className="flex items-center gap-1">
+                            <AgentAvatar name={note.createdBy?.name} size="xs" />
+                            <span className="text-gray-400">{note.createdBy?.name || "Agent"}</span>
+                          </div>
                         </div>
                         <p className="text-gray-700 line-clamp-2">
                           {note.content?.substring(0, 150)}
