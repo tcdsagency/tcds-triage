@@ -202,8 +202,8 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError 
                 areaSqft: p.areaSqft,
               },
               geometry: {
-                type: 'Polygon' as const,
-                coordinates: p.coordinates,
+                type: (p.type === 'MultiPolygon' ? 'MultiPolygon' : 'Polygon') as 'Polygon' | 'MultiPolygon',
+                coordinates: p.coordinates as any,
               },
             })),
         };

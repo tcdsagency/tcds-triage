@@ -23,11 +23,20 @@ export interface RPRPropertyCommon {
     bedrooms: number;
     bathsFull: number;
     bathsHalf?: number;
+    totalBaths?: number;
     livingAreaInSqFt: number;
+    buildingAreaSqFt?: number;
+    totalRooms?: number;
     yearBuilt: number;
     stories?: number;
+    lotSizeSqFt?: number;
+    lotSizeAcres?: number;
     lastSaleDate?: string;
     lastSalePrice?: number;
+    propertyType?: string;
+    propertySubtype?: string;
+    zoning?: string;
+    style?: string;
   };
   owner?: {
     name: string;
@@ -44,26 +53,58 @@ export interface RPRPropertyCommon {
     valuationRangeLow: number;
     valuationRangeHigh: number;
   };
+  address?: {
+    county?: string;
+  };
+  centroid?: {
+    latitude: number;
+    longitude: number;
+  };
 }
 
 export interface RPRPropertyDetails {
   property: {
     roofType?: string;
+    roofMaterial?: string;
     foundation?: string;
+    foundationType?: string;
     exteriorWalls?: string;
     heatingType?: string;
     coolingType?: string;
+    hasCooling?: boolean;
     constructionType?: string;
   };
   features?: {
     pool?: string;
+    poolType?: string;
+    hasPool?: boolean;
     garageSpaces?: number;
+    garageType?: string;
+    parkingSpaces?: number;
     fireplaces?: number;
+    hasFireplace?: boolean;
     basement?: string;
+    basementType?: string;
+    basementSqft?: number;
+    interiorFeatures?: string[];
+    exteriorFeatures?: string[];
+    appliances?: string[];
+    flooring?: string[];
   };
   flood?: {
     floodZone?: string;
     floodRisk?: string;
+  };
+  hoa?: {
+    hasHoa?: boolean;
+    hoaFee?: number;
+    hoaFrequency?: string;
+  };
+  schools?: {
+    schoolDistrict?: string;
+    elementarySchool?: string;
+    middleSchool?: string;
+    highSchool?: string;
   };
 }
 
@@ -84,34 +125,78 @@ export interface RPRPropertyData {
     city: string;
     state: string;
     zip: string;
+    county?: string;
   };
+  // Basic property details
   beds: number;
   baths: number;
   sqft: number;
+  buildingSqft?: number;
   stories: number;
   yearBuilt: number;
-  roofType: string;
-  foundation: string;
-  exteriorWalls: string;
-  hvac: string;
+  propertyType?: string;
+  propertySubtype?: string;
+  style?: string;
+  // Lot information
   lotSqft: number;
   lotAcres: number;
+  zoning?: string;
+  // Construction details (insurance key)
+  roofType: string;
+  roofMaterial?: string;
+  foundation: string;
+  foundationType?: string;
+  exteriorWalls: string;
+  constructionType?: string;
+  hvac: string;
+  heatingType?: string;
+  coolingType?: string;
+  hasCooling?: boolean;
+  // Features (liability concerns)
+  hasPool?: boolean;
+  pool?: string;
+  poolType?: string;
+  garageSpaces?: number;
+  garageType?: string;
+  parkingSpaces?: number;
+  fireplaces?: number;
+  hasFireplace?: boolean;
+  basement?: string;
+  basementType?: string;
+  basementSqft?: number;
+  // Owner information
   ownerName: string;
   ownerOccupied: boolean;
   mailingAddress: string;
+  // Valuation & Tax
   assessedValue: number;
   estimatedValue: number;
+  valuationRangeLow?: number;
+  valuationRangeHigh?: number;
   taxAmount: number;
+  taxYear?: number;
   lastSaleDate: string;
   lastSalePrice: number;
+  // Risk factors
+  floodZone?: string;
+  floodRisk?: string;
+  // HOA
+  hasHoa?: boolean;
+  hoaFee?: number;
+  hoaFrequency?: string;
+  // Schools
   schools: {
     district: string;
     elementary: string;
     middle: string;
     high: string;
   };
-  floodZone?: string;
-  floodRisk?: string;
+  // Location
+  coordinates?: {
+    latitude: number;
+    longitude: number;
+  };
+  // Active listing data
   listing?: {
     active: boolean;
     price: number;
@@ -340,34 +425,82 @@ class RPRClient {
           city: location.city,
           state: location.state,
           zip: location.zip,
+          county: common.address?.county,
         },
+        // Basic property details
         beds: common.searchResult.bedrooms || 0,
-        baths: (common.searchResult.bathsFull || 0) + (common.searchResult.bathsHalf || 0) * 0.5,
+        baths:
+          common.searchResult.totalBaths ||
+          (common.searchResult.bathsFull || 0) + (common.searchResult.bathsHalf || 0) * 0.5,
         sqft: common.searchResult.livingAreaInSqFt || 0,
+        buildingSqft: common.searchResult.buildingAreaSqFt,
         stories: common.searchResult.stories || 1,
         yearBuilt: common.searchResult.yearBuilt || 0,
+        propertyType: common.searchResult.propertyType,
+        propertySubtype: common.searchResult.propertySubtype,
+        style: common.searchResult.style,
+        // Lot information
+        lotSqft: common.searchResult.lotSizeSqFt || 0,
+        lotAcres: common.searchResult.lotSizeAcres || 0,
+        zoning: common.searchResult.zoning,
+        // Construction details (insurance key)
         roofType: details?.property?.roofType || "Unknown",
+        roofMaterial: details?.property?.roofMaterial,
         foundation: details?.property?.foundation || "Unknown",
+        foundationType: details?.property?.foundationType,
         exteriorWalls: details?.property?.exteriorWalls || "Unknown",
+        constructionType: details?.property?.constructionType,
         hvac: `${details?.property?.heatingType || "Unknown"} / ${details?.property?.coolingType || "Unknown"}`,
-        lotSqft: 0, // Would need from details
-        lotAcres: 0,
+        heatingType: details?.property?.heatingType,
+        coolingType: details?.property?.coolingType,
+        hasCooling: details?.property?.hasCooling,
+        // Features (liability concerns)
+        hasPool: details?.features?.hasPool || Boolean(details?.features?.pool),
+        pool: details?.features?.pool,
+        poolType: details?.features?.poolType,
+        garageSpaces: details?.features?.garageSpaces,
+        garageType: details?.features?.garageType,
+        parkingSpaces: details?.features?.parkingSpaces,
+        fireplaces: details?.features?.fireplaces,
+        hasFireplace: details?.features?.hasFireplace || (details?.features?.fireplaces || 0) > 0,
+        basement: details?.features?.basement,
+        basementType: details?.features?.basementType,
+        basementSqft: details?.features?.basementSqft,
+        // Owner information
         ownerName: common.owner?.name || "Property Owner",
         ownerOccupied: common.owner?.occupied ?? true,
         mailingAddress: common.owner?.mailingAddress || "",
+        // Valuation & Tax
         assessedValue: common.tax?.assessedValue || 0,
         estimatedValue: common.valuation?.estimatedValue || 0,
+        valuationRangeLow: common.valuation?.valuationRangeLow,
+        valuationRangeHigh: common.valuation?.valuationRangeHigh,
         taxAmount: common.tax?.taxAmount || 0,
+        taxYear: common.tax?.assessedYear,
         lastSaleDate: common.searchResult.lastSaleDate || "",
         lastSalePrice: common.searchResult.lastSalePrice || 0,
-        schools: {
-          district: "Unknown",
-          elementary: "Unknown",
-          middle: "Unknown",
-          high: "Unknown",
-        },
+        // Risk factors
         floodZone: details?.flood?.floodZone,
         floodRisk: details?.flood?.floodRisk,
+        // HOA
+        hasHoa: details?.hoa?.hasHoa,
+        hoaFee: details?.hoa?.hoaFee,
+        hoaFrequency: details?.hoa?.hoaFrequency,
+        // Schools
+        schools: {
+          district: details?.schools?.schoolDistrict || "Unknown",
+          elementary: details?.schools?.elementarySchool || "Unknown",
+          middle: details?.schools?.middleSchool || "Unknown",
+          high: details?.schools?.highSchool || "Unknown",
+        },
+        // Location
+        coordinates: common.centroid
+          ? {
+              latitude: common.centroid.latitude,
+              longitude: common.centroid.longitude,
+            }
+          : undefined,
+        // Listing
         listing: listingData,
         currentStatus,
       };
@@ -418,9 +551,15 @@ class RPRClient {
     const estimatedValue = Math.round(assessedValue * 1.15);
 
     const roofTypes = ["Composition Shingle", "Metal", "Tile", "Slate", "Wood Shake"];
+    const roofMaterials = ["Asphalt", "Architectural Shingle", "Metal", "Clay Tile", "Slate"];
     const foundations = ["Slab", "Crawl Space", "Basement", "Pier and Beam"];
     const exteriors = ["Brick", "Vinyl Siding", "Stucco", "Wood", "Fiber Cement"];
-    const hvacTypes = ["Central A/C", "Heat Pump", "Forced Air", "Radiant"];
+    const constructionTypes = ["Frame", "Masonry", "Steel", "Mixed"];
+    const heatingTypes = ["Central Gas", "Heat Pump", "Electric", "Forced Air"];
+    const coolingTypes = ["Central Air", "Window Unit", "None", "Heat Pump"];
+    const garageTypes = ["Attached", "Detached", "Carport", "None"];
+    const poolTypes = ["In-Ground", "Above Ground", "None"];
+    const basementTypes = ["Full", "Partial", "Finished", "Unfinished", "None"];
     const statuses: Array<"off_market" | "active" | "pending" | "sold"> = [
       "off_market",
       "off_market",
@@ -431,6 +570,10 @@ class RPRClient {
     ];
 
     const currentStatus = statuses[hash % statuses.length];
+    const hasPool = hash % 5 === 0;
+    const hasFireplace = hash % 3 === 0;
+    const hasBasement = hash % 4 === 0;
+    const garageSpaces = hash % 4;
 
     return {
       propertyId: `RPR-MOCK-${hash}`,
@@ -439,32 +582,78 @@ class RPRClient {
         city: parsed.city || "Austin",
         state: parsed.state || "TX",
         zip: parsed.zip || "78701",
+        county: "County",
       },
+      // Basic property details
       beds,
       baths,
       sqft,
+      buildingSqft: sqft + 200,
       stories: 1 + (hash % 2),
       yearBuilt,
-      roofType: roofTypes[hash % roofTypes.length],
-      foundation: foundations[hash % foundations.length],
-      exteriorWalls: exteriors[hash % exteriors.length],
-      hvac: hvacTypes[hash % hvacTypes.length],
+      propertyType: "Single Family",
+      propertySubtype: "Detached",
+      style: hash % 2 === 0 ? "Ranch" : "Traditional",
+      // Lot information
       lotSqft: Math.round(lotAcres * 43560),
       lotAcres,
+      zoning: "R-1",
+      // Construction details (insurance key)
+      roofType: roofTypes[hash % roofTypes.length],
+      roofMaterial: roofMaterials[hash % roofMaterials.length],
+      foundation: foundations[hash % foundations.length],
+      foundationType: foundations[hash % foundations.length],
+      exteriorWalls: exteriors[hash % exteriors.length],
+      constructionType: constructionTypes[hash % constructionTypes.length],
+      hvac: `${heatingTypes[hash % heatingTypes.length]} / ${coolingTypes[hash % coolingTypes.length]}`,
+      heatingType: heatingTypes[hash % heatingTypes.length],
+      coolingType: coolingTypes[hash % coolingTypes.length],
+      hasCooling: hash % 10 !== 0,
+      // Features (liability concerns)
+      hasPool,
+      pool: hasPool ? poolTypes[hash % 2] : undefined,
+      poolType: hasPool ? poolTypes[hash % 2] : undefined,
+      garageSpaces,
+      garageType: garageSpaces > 0 ? garageTypes[hash % 3] : undefined,
+      parkingSpaces: garageSpaces + (hash % 2),
+      fireplaces: hasFireplace ? 1 + (hash % 2) : 0,
+      hasFireplace,
+      basement: hasBasement ? basementTypes[hash % 4] : undefined,
+      basementType: hasBasement ? basementTypes[hash % 4] : undefined,
+      basementSqft: hasBasement ? Math.round(sqft * 0.6) : undefined,
+      // Owner information
       ownerName: "Property Owner",
       ownerOccupied: hash % 3 !== 0,
       mailingAddress: address,
+      // Valuation & Tax
       assessedValue,
       estimatedValue,
+      valuationRangeLow: Math.round(estimatedValue * 0.9),
+      valuationRangeHigh: Math.round(estimatedValue * 1.1),
       taxAmount: Math.round(assessedValue * 0.025),
+      taxYear: new Date().getFullYear() - 1,
       lastSaleDate: `${2015 + (hash % 8)}-${String(1 + (hash % 12)).padStart(2, "0")}-15`,
       lastSalePrice: Math.round(assessedValue * 0.9),
+      // Risk factors
+      floodZone: hash % 10 === 0 ? "AE" : "X",
+      floodRisk: hash % 10 === 0 ? "Moderate" : "Minimal",
+      // HOA
+      hasHoa: hash % 4 === 0,
+      hoaFee: hash % 4 === 0 ? 100 + (hash % 200) : undefined,
+      hoaFrequency: hash % 4 === 0 ? "Monthly" : undefined,
+      // Schools
       schools: {
         district: "Local School District",
         elementary: "Oak Elementary",
         middle: "Central Middle School",
         high: "Regional High School",
       },
+      // Location
+      coordinates: {
+        latitude: 32.7767 + (hash % 100) / 1000,
+        longitude: -96.797 + (hash % 100) / 1000,
+      },
+      // Listing
       listing:
         currentStatus === "active"
           ? {
