@@ -220,6 +220,14 @@ export const tenants = pgTable('tenants', {
     deepgram?: {
       apiKey: string;
     };
+    donna?: {
+      username: string;
+      password: string;
+      baseUrl?: string;
+      authUrl?: string;
+      syncEnabled: boolean;
+      syncInterval: number;
+    };
   }>(),
   
   // Feature Flags
@@ -380,10 +388,42 @@ export const customers = pgTable('customers', {
   churnRiskScore: decimal('churn_risk_score', { precision: 3, scale: 2 }),
   healthScore: decimal('health_score', { precision: 3, scale: 2 }),
   crossSellOpportunities: jsonb('cross_sell_opportunities').$type<string[]>().default([]),
-  
+
+  // Donna AI (AgencyIQ/Crux) Insights
+  donnaData: jsonb('donna_data').$type<{
+    sentimentScore: number;
+    isPersonalVIP: boolean;
+    isCommercialVIP: boolean;
+    retentionProbability: number;
+    crossSellProbability: number;
+    estimatedWalletSize: number;
+    currentAnnualPremium: number;
+    potentialGap: number;
+    recommendations: Array<{
+      id: string;
+      type: string;
+      priority: 'high' | 'medium' | 'low';
+      title: string;
+      description: string;
+      suggestedAction?: string;
+      estimatedPremium?: number;
+      confidence?: number;
+    }>;
+    activities: Array<{
+      id: string;
+      type: string;
+      createdAt: string;
+      summary: string;
+      priority?: string;
+    }>;
+    lastSyncedAt: string;
+    donnaCustomerId: string;
+  }>(),
+
   // Sync Status
   lastSyncedFromAz: timestamp('last_synced_from_az'),
   lastSyncedFromHs: timestamp('last_synced_from_hs'),
+  lastSyncedFromDonna: timestamp('last_synced_from_donna'),
   
   // Archive Status (soft-delete - never hard delete, customer may reappear)
   isArchived: boolean('is_archived').default(false),

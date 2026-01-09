@@ -16,6 +16,18 @@ import AgentAssistSidebar from "@/components/features/AgentAssistSidebar";
 import { QuoteType as AgentAssistQuoteType } from "@/lib/agent-assist/types";
 import { useEligibility } from "@/hooks/useEligibility";
 import { EligibilityBanner, BlockerModal, EligibilityStatusBadge } from "@/components/features/EligibilityAlerts";
+import {
+  VisualOptionSelector,
+  VISUAL_PROPERTY_TYPES,
+  VISUAL_OCCUPANCY_TYPES,
+  VISUAL_CONSTRUCTION_TYPES,
+  VISUAL_FOUNDATION_TYPES,
+  VISUAL_ROOF_MATERIALS,
+  VISUAL_POOL_TYPES,
+  VISUAL_GARAGE_TYPES,
+  VISUAL_HEATING_TYPES,
+  VISUAL_VEHICLE_USAGE,
+} from "@/components/features/VisualOptionSelector";
 
 // =============================================================================
 // TYPES
@@ -2420,8 +2432,14 @@ export default function QuoteIntakePage() {
                   <Field label="State" value={homeownersFormData.propertyState} onChange={(v: string) => updateHomeownersField("propertyState", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
                   <Field label="ZIP" value={homeownersFormData.propertyZip} onChange={(v: string) => updateHomeownersField("propertyZip", v)} required placeholder="35203" />
                 </div>
-                <Field label="Property Type" value={homeownersFormData.propertyType} onChange={(v: string) => updateHomeownersField("propertyType", v)} options={PROPERTY_TYPES} />
-                <Field label="Occupancy" value={homeownersFormData.occupancy} onChange={(v: string) => updateHomeownersField("occupancy", v)} options={OCCUPANCY_TYPES} />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Property Type</label>
+                  <VisualOptionSelector options={VISUAL_PROPERTY_TYPES} value={homeownersFormData.propertyType} onChange={(v) => updateHomeownersField("propertyType", v)} columns={4} size="sm" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Occupancy</label>
+                  <VisualOptionSelector options={VISUAL_OCCUPANCY_TYPES} value={homeownersFormData.occupancy} onChange={(v) => updateHomeownersField("occupancy", v)} columns={4} size="sm" />
+                </div>
                 <div className="col-span-2 flex items-center gap-4">
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={homeownersFormData.recentPurchase} onChange={(e) => updateHomeownersField("recentPurchase", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500" />
@@ -2443,16 +2461,28 @@ export default function QuoteIntakePage() {
                 <Field label="Year Built" value={homeownersFormData.yearBuilt} onChange={(v: string) => updateHomeownersField("yearBuilt", v)} required placeholder="1995" error={errors.yearBuilt} />
                 <Field label="Square Footage" value={homeownersFormData.squareFootage} onChange={(v: string) => updateHomeownersField("squareFootage", v)} required placeholder="2,200" />
                 <Field label="Stories" value={homeownersFormData.stories} onChange={(v: string) => updateHomeownersField("stories", v)} options={STORIES_OPTIONS} />
-                <Field label="Construction Type" value={homeownersFormData.constructionType} onChange={(v: string) => updateHomeownersField("constructionType", v)} options={CONSTRUCTION_TYPES} />
-                <Field label="Foundation Type" value={homeownersFormData.foundationType} onChange={(v: string) => updateHomeownersField("foundationType", v)} options={FOUNDATION_TYPES} />
-                <Field label="Garage" value={homeownersFormData.garageType} onChange={(v: string) => updateHomeownersField("garageType", v)} options={GARAGE_TYPES} />
+              </div>
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Construction Type</label>
+                <VisualOptionSelector options={VISUAL_CONSTRUCTION_TYPES} value={homeownersFormData.constructionType} onChange={(v) => updateHomeownersField("constructionType", v)} columns={3} size="sm" />
+              </div>
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Foundation Type</label>
+                <VisualOptionSelector options={VISUAL_FOUNDATION_TYPES} value={homeownersFormData.foundationType} onChange={(v) => updateHomeownersField("foundationType", v)} columns={4} size="sm" />
+              </div>
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Garage</label>
+                <VisualOptionSelector options={VISUAL_GARAGE_TYPES} value={homeownersFormData.garageType} onChange={(v) => updateHomeownersField("garageType", v)} columns={4} size="sm" />
               </div>
             </Section>
 
             {/* Roof */}
             <Section id="roof" icon={Home} title="Roof Information">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Roof Material</label>
+                <VisualOptionSelector options={VISUAL_ROOF_MATERIALS} value={homeownersFormData.roofMaterial} onChange={(v) => updateHomeownersField("roofMaterial", v)} columns={4} size="sm" />
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Roof Material" value={homeownersFormData.roofMaterial} onChange={(v: string) => updateHomeownersField("roofMaterial", v)} options={ROOF_MATERIALS} />
                 <Field label="Roof Age (Years)" value={homeownersFormData.roofAge} onChange={(v: string) => updateHomeownersField("roofAge", v)} required placeholder="5" />
                 <Field label="Year Replaced" value={homeownersFormData.roofReplacementYear} onChange={(v: string) => updateHomeownersField("roofReplacementYear", v)} placeholder="2019 (if not original)" />
               </div>
@@ -2460,8 +2490,11 @@ export default function QuoteIntakePage() {
 
             {/* Systems */}
             <Section id="systems" icon={Shield} title="Home Systems">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Heating System</label>
+                <VisualOptionSelector options={VISUAL_HEATING_TYPES} value={homeownersFormData.heatingType} onChange={(v) => updateHomeownersField("heatingType", v)} columns={4} size="sm" />
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Heating System" value={homeownersFormData.heatingType} onChange={(v: string) => updateHomeownersField("heatingType", v)} options={HEATING_TYPES} />
                 <Field label="Electrical Updated" value={homeownersFormData.electricalUpdate} onChange={(v: string) => updateHomeownersField("electricalUpdate", v)} options={UPDATE_STATUS} />
                 <Field label="Plumbing Updated" value={homeownersFormData.plumbingUpdate} onChange={(v: string) => updateHomeownersField("plumbingUpdate", v)} options={UPDATE_STATUS} />
                 <Field label="Water Heater" value={homeownersFormData.waterHeaterType} onChange={(v: string) => updateHomeownersField("waterHeaterType", v)} options={[{ value: "gas", label: "Gas" }, { value: "electric", label: "Electric" }, { value: "tankless", label: "Tankless" }, { value: "solar", label: "Solar" }]} />
@@ -2511,7 +2544,10 @@ export default function QuoteIntakePage() {
                 </label>
                 {homeownersFormData.hasPool && (
                   <>
-                    <Field label="Pool Type" value={homeownersFormData.poolType} onChange={(v: string) => updateHomeownersField("poolType", v)} options={[{ value: "inground", label: "In-Ground" }, { value: "above_ground", label: "Above Ground" }]} />
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Pool Type</label>
+                      <VisualOptionSelector options={VISUAL_POOL_TYPES} value={homeownersFormData.poolType} onChange={(v) => updateHomeownersField("poolType", v)} columns={2} size="sm" />
+                    </div>
                     <label className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg cursor-pointer hover:bg-gray-900">
                       <input type="checkbox" checked={homeownersFormData.poolFenced} onChange={(e) => updateHomeownersField("poolFenced", e.target.checked)} className="w-4 h-4 rounded border-gray-600 text-amber-500 focus:ring-amber-500" />
                       <span className="text-sm text-gray-300">Pool Fenced</span>

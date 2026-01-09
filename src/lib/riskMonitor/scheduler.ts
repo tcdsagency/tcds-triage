@@ -101,14 +101,18 @@ export class RiskMonitorScheduler {
       };
     }
 
+    // Check if token service is configured (overrides legacy credential flags)
+    const tokenServiceConfigured = Boolean(process.env.TOKEN_SERVICE_URL);
+
     return {
       enabled: !record.isPaused,
       checkIntervalDays: record.recheckDays ?? 3,
       windowStartHour: record.scheduleStartHour ?? 21,
       windowEndHour: record.scheduleEndHour ?? 4,
       maxPropertiesPerRun: record.dailyRequestBudget ?? 100,
-      rprEnabled: record.rprCredentialsValid ?? true,
-      mmiEnabled: record.mmiCredentialsValid ?? true,
+      // Use token service if configured, otherwise fall back to legacy credential flags
+      rprEnabled: tokenServiceConfigured || (record.rprCredentialsValid ?? true),
+      mmiEnabled: tokenServiceConfigured || (record.mmiCredentialsValid ?? true),
       delayBetweenChecksMs: record.delayBetweenCallsMs ?? 5000,
       emailAlertsEnabled: record.emailNotificationsEnabled ?? false,
       alertEmailAddresses: (record.emailRecipients as string[]) ?? [],
