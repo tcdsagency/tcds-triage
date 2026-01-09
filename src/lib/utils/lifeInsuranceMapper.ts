@@ -27,6 +27,20 @@ export function mapMergedProfileToLifeInsurance(
     }
   }
 
+  // If still not set, try to get from household (look for "Insured" or first member)
+  if ((!firstName || !lastName) && profile.household && profile.household.length > 0) {
+    const primary = profile.household.find(
+      (m) => m.relationship?.toLowerCase() === "insured" ||
+             m.relationship?.toLowerCase() === "self" ||
+             m.relationship?.toLowerCase() === "named insured"
+    ) || profile.household[0];
+
+    if (primary) {
+      firstName = firstName || primary.firstName;
+      lastName = lastName || primary.lastName;
+    }
+  }
+
   // Try to get date of birth from household members if not on main profile
   let dateOfBirth = profile.dateOfBirth;
   if (!dateOfBirth && profile.household && profile.household.length > 0) {
@@ -102,8 +116,18 @@ export function mapMergedProfileToLifeInsurance(
       premium: p.premium,
     }));
 
-  // Extract state from address
-  const state = profile.address?.state?.toUpperCase() || "";
+  // Extract state from address or from property policies
+  let state = profile.address?.state?.toUpperCase() || "";
+
+  // If no state from main address, try to get from property policies
+  if (!state || state.length !== 2) {
+    for (const policy of profile.policies) {
+      if (policy.property?.address?.state) {
+        state = policy.property.address.state.toUpperCase();
+        break;
+      }
+    }
+  }
 
   return {
     id: profile.id,
