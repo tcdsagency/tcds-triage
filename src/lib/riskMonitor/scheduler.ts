@@ -372,8 +372,7 @@ export class RiskMonitorScheduler {
     const listingPrice = latestListing?.LIST_PRICE || result.rprData?.listing?.price;
     const salePrice =
       latestListing?.CLOSE_PRICE ||
-      result.mmiData?.lastSalePrice ||
-      result.rprData?.listing?.soldPrice;
+      result.mmiData?.lastSalePrice;
 
     // Create alert
     await db.insert(riskMonitorAlerts).values({
