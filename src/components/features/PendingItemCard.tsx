@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { AgencyZoomLink, getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
 
@@ -150,6 +151,7 @@ export default function PendingItemCard({
   onReviewClick,
   onFindMatch,
 }: PendingItemCardProps) {
+  const [showTranscript, setShowTranscript] = useState(false);
   const matchConfig = MATCH_STATUS_CONFIG[item.matchStatus] || MATCH_STATUS_CONFIG.unmatched;
   const typeConfig = TYPE_CONFIG[item.type] || TYPE_CONFIG.wrapup;
   const sentimentConfig = item.sentiment ? SENTIMENT_CONFIG[item.sentiment] : null;
@@ -162,9 +164,14 @@ export default function PendingItemCard({
     return `${Math.floor(minutes / 1440)}d ago`;
   };
 
+  // Check if this is a call with transcription
+  const hasTranscription = item.type === 'wrapup' && item.transcription;
+
   return (
     <div
       onClick={onSelect}
+      onMouseEnter={() => hasTranscription && setShowTranscript(true)}
+      onMouseLeave={() => setShowTranscript(false)}
       className={cn(
         'relative p-4 rounded-lg border-2 cursor-pointer transition-all',
         isSelected
@@ -172,6 +179,18 @@ export default function PendingItemCard({
           : cn(matchConfig.borderColor, 'hover:border-gray-400 dark:hover:border-gray-500 bg-white dark:bg-gray-800')
       )}
     >
+      {/* Transcription Tooltip */}
+      {showTranscript && item.transcription && (
+        <div className="absolute z-50 left-0 right-0 top-full mt-2 p-4 bg-gray-900 text-white rounded-lg shadow-2xl border border-gray-700 max-h-80 overflow-y-auto">
+          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-700">
+            <span className="text-lg">📝</span>
+            <span className="font-semibold text-sm">Call Transcription</span>
+          </div>
+          <div className="text-sm whitespace-pre-wrap leading-relaxed text-gray-200">
+            {item.transcription}
+          </div>
+        </div>
+      )}
       {/* Checkbox for bulk selection */}
       {onCheck && (
         <div className="absolute top-3 left-3" onClick={(e) => e.stopPropagation()}>
@@ -294,6 +313,13 @@ export default function PendingItemCard({
         {item.policies.length > 0 && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
             🔖 {item.policies.join(', ')}
+          </span>
+        )}
+
+        {/* Transcription available indicator */}
+        {hasTranscription && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300 cursor-help" title="Hover to view transcription">
+            📝 Transcript
           </span>
         )}
       </div>

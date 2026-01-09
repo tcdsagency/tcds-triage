@@ -28,6 +28,7 @@ import {
   FilePen,
   ClipboardCheck,
   Bell,
+  Link2,
 } from 'lucide-react';
 
 // Dashboard section
@@ -65,6 +66,7 @@ const customerNav = [
 const toolsNav = [
   { name: 'Quotes', href: '/quotes', icon: FileText },
   { name: 'Quote Extractor', href: '/quote-extractor', icon: FileSearch },
+  { name: 'Canopy Connect', href: '/canopy-connect', icon: Link2 },
   { name: 'Properties', href: '/properties', icon: Home },
   { name: 'Invoice', href: '/invoice', icon: Receipt },
   { name: 'Reviews', href: '/reviews', icon: Star },
