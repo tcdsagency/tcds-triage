@@ -21,6 +21,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });
     }
 
+    // Build base conditions
+    const baseConditions = [
+      eq(customers.tenantId, tenantId),
+      eq(customers.isLead, true),
+      isNull(customers.producerId), // Only show unassigned leads
+    ];
+
+    // Add status filter if specified
+    if (status && status !== 'all') {
+      if (status === 'new') {
+        // 'new' includes null/empty status
+        baseConditions.push(
+          or(
+            isNull(customers.leadStatus),
+            eq(customers.leadStatus, ''),
+            eq(customers.leadStatus, 'new')
+          )!
+        );
+      } else {
+        baseConditions.push(eq(customers.leadStatus, status));
+      }
+    }
+
     // Build base query
     let leads;
 
@@ -64,9 +87,7 @@ export async function GET(request: NextRequest) {
         .from(customers)
         .where(
           and(
-            eq(customers.tenantId, tenantId),
-            eq(customers.isLead, true),
-            isNull(customers.producerId), // Only show unassigned leads
+            ...baseConditions,
             or(...searchConditions)
           )
         )
@@ -91,13 +112,7 @@ export async function GET(request: NextRequest) {
           updatedAt: customers.updatedAt,
         })
         .from(customers)
-        .where(
-          and(
-            eq(customers.tenantId, tenantId),
-            eq(customers.isLead, true),
-            isNull(customers.producerId) // Only show unassigned leads
-          )
-        )
+        .where(and(...baseConditions))
         .orderBy(desc(customers.createdAt))
         .limit(limit);
     }

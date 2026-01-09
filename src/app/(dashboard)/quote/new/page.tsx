@@ -1688,12 +1688,19 @@ export default function QuoteIntakePage() {
   const [timeSinceLastSave, setTimeSinceLastSave] = useState<string>("");
 
   // Load saved draft on mount
+  // Note: All quote types now use the wizard at /quote/new/[type]
+  // If there's a saved draft with a selectedType, redirect to the wizard
   useEffect(() => {
     try {
       const savedDraft = localStorage.getItem("quote-draft");
       if (savedDraft) {
         const parsed = JSON.parse(savedDraft);
-        if (parsed.selectedType) setSelectedType(parsed.selectedType);
+        // If there's a saved quote type, redirect to the wizard instead of showing old form
+        if (parsed.selectedType) {
+          router.push(`/quote/new/${parsed.selectedType}`);
+          return;
+        }
+        // Only restore form data if no redirect (shouldn't happen normally)
         if (parsed.autoFormData) setAutoFormData(parsed.autoFormData);
         if (parsed.homeownersFormData) setHomeownersFormData(parsed.homeownersFormData);
         if (parsed.rentersFormData) setRentersFormData(parsed.rentersFormData);
@@ -1707,7 +1714,7 @@ export default function QuoteIntakePage() {
     } catch (e) {
       console.error("Failed to load draft:", e);
     }
-  }, []);
+  }, [router]);
 
   // Auto-save to localStorage on changes (debounced)
   useEffect(() => {

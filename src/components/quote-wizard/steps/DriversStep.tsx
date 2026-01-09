@@ -251,7 +251,7 @@ function DriverCard({
         </div>
 
         {/* License Info */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               License Number <span className="text-red-500">*</span>
@@ -297,6 +297,25 @@ function DriverCard({
             {errors[`${prefix}.licenseState`] && (
               <p className="mt-1 text-xs text-red-600">{errors[`${prefix}.licenseState`]}</p>
             )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Years Licensed
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="80"
+              value={driver.yearsLicensed}
+              onChange={(e) => onUpdate('yearsLicensed', e.target.value)}
+              placeholder="5"
+              className={cn(
+                'w-full px-3 py-2 rounded-lg border transition-colors',
+                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'border-gray-300 dark:border-gray-600',
+                'focus:outline-none focus:ring-2 focus:ring-emerald-500'
+              )}
+            />
           </div>
         </div>
 
