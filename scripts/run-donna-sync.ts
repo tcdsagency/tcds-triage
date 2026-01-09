@@ -12,11 +12,15 @@ async function main() {
   console.log('');
 
   try {
+    const limit = parseInt(process.argv[2] || '10');
+    console.log('Limit:', limit, 'customers\n');
+
     const result = await syncFromDonna({
       tenantId: TENANT_ID,
       fullSync: true,  // Sync all records regardless of stale threshold
       batchSize: 25,
       staleThresholdHours: 0,  // Force refresh all
+      maxRecords: limit,
     });
 
     console.log('\n=== Sync Complete ===');

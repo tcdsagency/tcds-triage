@@ -85,99 +85,97 @@ export async function syncFromDonna(
       `[DonnaSync] Found ${eligibleCustomers.length} customers to sync`
     );
 
-    // Process in batches
-    for (let i = 0; i < eligibleCustomers.length; i += batchSize) {
-      const batch = eligibleCustomers.slice(i, i + batchSize);
+    // Process customers sequentially to avoid session issues
+    for (let i = 0; i < eligibleCustomers.length; i++) {
+      const customer = eligibleCustomers[i];
+      result.total++;
 
-      // Add delay between batches to avoid rate limiting
-      if (i > 0) {
-        await delay(1000); // 1 second between batches
+      // Add delay between requests to avoid rate limiting (every 5 requests)
+      if (i > 0 && i % 5 === 0) {
+        await delay(500); // 0.5 second delay every 5 requests
       }
 
-      // Process batch (parallel within batch)
-      await Promise.all(
-        batch.map(async (customer) => {
-          result.total++;
-          const donnaId = getDonnaCustomerId(customer.hawksoftClientCode);
+      const donnaId = getDonnaCustomerId(customer.hawksoftClientCode);
 
-          if (!donnaId) {
-            result.skipped++;
-            if (options.includeDetails) {
-              result.details!.push({
-                customerId: customer.id,
-                donnaId: '',
-                action: 'skipped',
-                message: 'No HawkSoft code for Donna ID',
-              });
-            }
-            return;
+      if (!donnaId) {
+        result.skipped++;
+        if (options.includeDetails) {
+          result.details!.push({
+            customerId: customer.id,
+            donnaId: '',
+            action: 'skipped',
+            message: 'No HawkSoft code for Donna ID',
+          });
+        }
+        continue;
+      }
+
+      try {
+        // Get customer data (skip activities for now - endpoint is slow/unreliable)
+        console.log(`[DonnaSync] Fetching ${donnaId}...`);
+        const data = await client.getCustomerData(donnaId);
+
+        if (!data) {
+          result.notFound++;
+          if (options.includeDetails) {
+            result.details!.push({
+              customerId: customer.id,
+              donnaId,
+              action: 'not_found',
+              message: 'Customer not found in Donna',
+            });
           }
+          continue;
+        }
 
-          try {
-            const { data, activities } =
-              await client.getFullCustomerProfile(donnaId);
+        // Transform and store Donna data (empty activities for now)
+        const donnaData = transformDonnaData(data, [], donnaId);
 
-            if (!data) {
-              result.notFound++;
-              if (options.includeDetails) {
-                result.details!.push({
-                  customerId: customer.id,
-                  donnaId,
-                  action: 'not_found',
-                  message: 'Customer not found in Donna',
-                });
-              }
-              return;
-            }
+        if (!options.dryRun) {
+          await db
+            .update(customers)
+            .set({
+              donnaData,
+              lastSyncedFromDonna: new Date(),
+              // Also update churn risk if Donna data is available
+              ...(data.GbProbabilityRetention !== undefined && {
+                churnRiskScore: String(
+                  (1 - data.GbProbabilityRetention).toFixed(2)
+                ),
+              }),
+              updatedAt: new Date(),
+            })
+            .where(eq(customers.id, customer.id));
+        }
 
-            // Transform and store Donna data
-            const donnaData = transformDonnaData(data, activities, donnaId);
+        result.synced++;
+        if (options.includeDetails) {
+          result.details!.push({
+            customerId: customer.id,
+            donnaId,
+            action: 'synced',
+          });
+        }
+      } catch (error) {
+        result.errors++;
+        console.error(`[DonnaSync] Error syncing ${customer.id}:`, error);
+        if (options.includeDetails) {
+          result.details!.push({
+            customerId: customer.id,
+            donnaId,
+            action: 'error',
+            message:
+              error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
 
-            if (!options.dryRun) {
-              await db
-                .update(customers)
-                .set({
-                  donnaData,
-                  lastSyncedFromDonna: new Date(),
-                  // Also update churn risk if Donna data is available
-                  ...(data.GbProbabilityRetention !== undefined && {
-                    churnRiskScore: String(
-                      (1 - data.GbProbabilityRetention).toFixed(2)
-                    ),
-                  }),
-                  updatedAt: new Date(),
-                })
-                .where(eq(customers.id, customer.id));
-            }
-
-            result.synced++;
-            if (options.includeDetails) {
-              result.details!.push({
-                customerId: customer.id,
-                donnaId,
-                action: 'synced',
-              });
-            }
-          } catch (error) {
-            result.errors++;
-            console.error(`[DonnaSync] Error syncing ${customer.id}:`, error);
-            if (options.includeDetails) {
-              result.details!.push({
-                customerId: customer.id,
-                donnaId,
-                action: 'error',
-                message:
-                  error instanceof Error ? error.message : 'Unknown error',
-              });
-            }
-          }
-        })
-      );
-
-      // Log progress
-      console.log(
-        `[DonnaSync] Progress: ${Math.min(i + batchSize, eligibleCustomers.length)}/${eligibleCustomers.length}`
-      );
+      // Log progress every 25 records
+      if ((i + 1) % batchSize === 0 || i === eligibleCustomers.length - 1) {
+        console.log(
+          `[DonnaSync] Progress: ${i + 1}/${eligibleCustomers.length}`
+        );
+      }
     }
 
     // Log sync result to database
