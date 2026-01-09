@@ -127,8 +127,9 @@ export async function POST(request: NextRequest) {
           email: raw.email || c.email || null,
           phone: normalizePhone(raw.phone || c.phone),
           phoneAlt: normalizePhone(raw.phonecell || raw.secondaryphone || c.phoneCell || c.secondaryPhone),
-          address: (raw.address || c.address) ? {
-            street: raw.address || c.address || '',
+          // AgencyZoom uses streetAddress, not address
+          address: (raw.streetaddress || raw.streetAddress || raw.address || c.address) ? {
+            street: raw.streetaddress || raw.streetAddress || raw.address || c.address || '',
             city: raw.city || c.city || '',
             state: raw.state || c.state || '',
             zip: raw.zip || c.zip || '',

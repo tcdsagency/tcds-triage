@@ -141,7 +141,7 @@ async def extract_mmi_token():
 
 
 async def extract_rpr_token():
-    """Extract Bearer token from RPR login."""
+    """Extract Bearer token from RPR login via NAR SSO."""
     if not PLAYWRIGHT_AVAILABLE:
         return {"error": "Playwright not installed"}
 
@@ -160,7 +160,7 @@ async def extract_rpr_token():
         )
 
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080}
         )
 
@@ -169,69 +169,168 @@ async def extract_rpr_token():
         async def handle_request(request):
             nonlocal captured_token
             auth = request.headers.get("authorization", "")
-            if auth.startswith("Bearer ") and "webapi.narrpr.com" in request.url:
+            if auth.startswith("Bearer ") and ("narrpr.com" in request.url or "rpr" in request.url.lower()):
                 captured_token = auth.replace("Bearer ", "")
                 print(f"[RPR] Captured token from {request.url}", file=sys.stderr)
 
         page.on("request", handle_request)
 
         try:
-            print("[RPR] Navigating to login...", file=sys.stderr)
-            await page.goto("https://www.narrpr.com/", wait_until="networkidle", timeout=30000)
+            # Go directly to RPR login which redirects to NAR SSO
+            print("[RPR] Navigating to RPR login...", file=sys.stderr)
+            await page.goto("https://www.narrpr.com/home", wait_until="networkidle", timeout=45000)
 
-            login_btn = await page.query_selector('a[href*="login"], button:has-text("Log In")')
-            if login_btn:
-                await login_btn.click()
-                await page.wait_for_load_state("networkidle", timeout=15000)
+            print(f"[RPR] Current URL: {page.url}", file=sys.stderr)
 
-            await page.wait_for_selector('input[type="email"], input[name="email"]', timeout=15000)
+            # Check if we need to click login button
+            if "narrpr.com" in page.url and "login" not in page.url.lower():
+                login_btn = await page.query_selector('a[href*="login"], button:has-text("Log In"), a:has-text("Log In"), a:has-text("Sign In")')
+                if login_btn:
+                    print("[RPR] Clicking login button...", file=sys.stderr)
+                    await login_btn.click()
+                    await page.wait_for_load_state("networkidle", timeout=30000)
+                    print(f"[RPR] After login click URL: {page.url}", file=sys.stderr)
 
-            print("[RPR] Entering credentials...", file=sys.stderr)
-            email_input = await page.query_selector('input[type="email"], input[name="email"]')
-            if email_input:
-                await email_input.fill(email)
+            # Wait for email input (NAR SSO uses standard email field)
+            print("[RPR] Waiting for email input...", file=sys.stderr)
+            await page.wait_for_selector('input[type="email"], input[name="email"], input[id*="email"], input[placeholder*="email" i]', timeout=20000)
 
-            next_btn = await page.query_selector('button:has-text("Next"), button[type="submit"]')
-            if next_btn:
-                await next_btn.click()
-                await asyncio.sleep(2)
+            # Fill email - use type() instead of fill() for better compatibility
+            print("[RPR] Entering email...", file=sys.stderr)
+            email_selectors = ['input[type="email"]', 'input[name="email"]', 'input[id*="email"]', 'input[placeholder*="email" i]']
+            for selector in email_selectors:
+                email_input = await page.query_selector(selector)
+                if email_input:
+                    await email_input.click()
+                    await email_input.fill("")  # Clear first
+                    await page.keyboard.type(email, delay=50)  # Type slowly like a human
+                    print(f"[RPR] Email entered using {selector}", file=sys.stderr)
+                    break
 
+            # Wait a moment for validation
+            await asyncio.sleep(1)
+
+            # Try to click Next/Continue button - wait for it to be enabled
+            print("[RPR] Looking for Next/Continue button...", file=sys.stderr)
+            next_selectors = [
+                'button:has-text("Next")',
+                'button:has-text("Continue")',
+                'button[type="submit"]',
+                'input[type="submit"]',
+                'button:has-text("Sign In")',
+            ]
+
+            for selector in next_selectors:
+                try:
+                    btn = await page.query_selector(selector)
+                    if btn:
+                        # Wait for button to be enabled (up to 10 seconds)
+                        for _ in range(20):
+                            is_disabled = await btn.get_attribute("disabled")
+                            if not is_disabled:
+                                break
+                            await asyncio.sleep(0.5)
+
+                        await btn.click()
+                        print(f"[RPR] Clicked button: {selector}", file=sys.stderr)
+                        break
+                except Exception as e:
+                    print(f"[RPR] Button {selector} failed: {e}", file=sys.stderr)
+                    continue
+
+            # Wait for password field or page transition
+            await asyncio.sleep(2)
+            print(f"[RPR] After next click URL: {page.url}", file=sys.stderr)
+
+            # Check for password field
             password_input = await page.query_selector('input[type="password"]')
             if password_input:
-                await password_input.fill(password)
+                print("[RPR] Entering password...", file=sys.stderr)
+                await password_input.click()
+                await password_input.fill("")
+                await page.keyboard.type(password, delay=50)
+                await asyncio.sleep(1)
 
-            submit_btn = await page.query_selector('button[type="submit"], button:has-text("Sign In")')
-            if submit_btn:
-                await submit_btn.click()
+                # Click sign in/submit
+                submit_selectors = [
+                    'button:has-text("Sign In")',
+                    'button:has-text("Log In")',
+                    'button[type="submit"]',
+                    'input[type="submit"]',
+                ]
 
-            await page.wait_for_load_state("networkidle", timeout=30000)
+                for selector in submit_selectors:
+                    try:
+                        btn = await page.query_selector(selector)
+                        if btn:
+                            for _ in range(20):
+                                is_disabled = await btn.get_attribute("disabled")
+                                if not is_disabled:
+                                    break
+                                await asyncio.sleep(0.5)
+                            await btn.click()
+                            print(f"[RPR] Clicked submit: {selector}", file=sys.stderr)
+                            break
+                    except:
+                        continue
+            else:
+                # Single page login - try pressing Enter
+                print("[RPR] No password field found, trying Enter...", file=sys.stderr)
+                await page.keyboard.press("Enter")
+
+            # Wait for redirect back to RPR
+            print("[RPR] Waiting for login completion...", file=sys.stderr)
+            await page.wait_for_load_state("networkidle", timeout=45000)
             await asyncio.sleep(5)
 
-            if not captured_token:
-                # Try to trigger API calls
-                try:
-                    await page.goto("https://www.narrpr.com/search", wait_until="networkidle", timeout=15000)
-                    await asyncio.sleep(3)
-                except:
-                    pass
+            print(f"[RPR] Final URL: {page.url}", file=sys.stderr)
 
+            # If not captured yet, try navigating to trigger API calls
             if not captured_token:
-                # Try storage
+                print("[RPR] Token not captured, trying to trigger API...", file=sys.stderr)
+                try:
+                    await page.goto("https://www.narrpr.com/search", wait_until="networkidle", timeout=20000)
+                    await asyncio.sleep(3)
+                except Exception as e:
+                    print(f"[RPR] Search navigation failed: {e}", file=sys.stderr)
+
+            # Check localStorage/sessionStorage
+            if not captured_token:
+                print("[RPR] Checking storage for token...", file=sys.stderr)
                 token_from_storage = await page.evaluate("""
                     () => {
-                        const locs = [
-                            localStorage.getItem('token'),
-                            localStorage.getItem('accessToken'),
-                            sessionStorage.getItem('token'),
-                        ];
-                        for (const t of locs) if (t && t.length > 20) return t;
+                        const keys = ['token', 'accessToken', 'access_token', 'jwt', 'bearerToken', 'authToken'];
+                        for (const key of keys) {
+                            let t = localStorage.getItem(key) || sessionStorage.getItem(key);
+                            if (t && t.length > 20) return t;
+                        }
+                        // Check all localStorage for JWT-like tokens
+                        for (let i = 0; i < localStorage.length; i++) {
+                            const key = localStorage.key(i);
+                            const val = localStorage.getItem(key);
+                            if (val && val.startsWith('eyJ') && val.length > 50) return val;
+                        }
                         return null;
                     }
                 """)
                 if token_from_storage:
                     captured_token = token_from_storage
+                    print("[RPR] Found token in storage", file=sys.stderr)
+
+            # Check cookies
+            if not captured_token:
+                print("[RPR] Checking cookies for token...", file=sys.stderr)
+                cookies = await context.cookies()
+                for cookie in cookies:
+                    if 'token' in cookie['name'].lower() or 'jwt' in cookie['name'].lower():
+                        if len(cookie['value']) > 50:
+                            captured_token = unquote(cookie['value'])
+                            print(f"[RPR] Found token in cookie: {cookie['name']}", file=sys.stderr)
+                            break
 
             if not captured_token:
+                # Take screenshot for debugging
+                print(f"[RPR] Could not capture token. Final URL: {page.url}", file=sys.stderr)
                 return {"error": f"Could not capture token. URL: {page.url}"}
 
             expires_at = int((datetime.now() + timedelta(hours=1, minutes=-5)).timestamp() * 1000)
@@ -239,6 +338,7 @@ async def extract_rpr_token():
             return {"success": True, "token": captured_token, "expiresAt": expires_at}
 
         except Exception as e:
+            traceback.print_exc()
             return {"error": f"RPR extraction failed: {str(e)}"}
         finally:
             await browser.close()

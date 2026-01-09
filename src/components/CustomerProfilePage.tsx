@@ -69,6 +69,8 @@ import {
   formatAddress,
   getInitials
 } from "@/types/customer-profile";
+import { LifeInsuranceTab } from "@/components/features/life-insurance";
+import { mapMergedProfileToLifeInsurance, hasLifeInsurance, calculateOpportunityScore } from "@/lib/utils/lifeInsuranceMapper";
 
 // =============================================================================
 // ICON MAPPING
@@ -116,12 +118,13 @@ const STATUS_COLORS: Record<string, string> = {
 // TABS DEFINITION
 // =============================================================================
 
-type TabType = "overview" | "policies" | "household" | "notes" | "activity";
+type TabType = "overview" | "policies" | "household" | "life" | "notes" | "activity";
 
 const TABS: { id: TabType; label: string; icon: any }[] = [
   { id: "overview", label: "Overview", icon: User },
   { id: "policies", label: "Policies", icon: Shield },
   { id: "household", label: "Household", icon: Users },
+  { id: "life", label: "Life Insurance", icon: Heart },
   { id: "notes", label: "Notes", icon: MessageSquare },
   { id: "activity", label: "Activity", icon: Clock }
 ];
@@ -874,17 +877,23 @@ export default function CustomerProfilePage() {
                 )}
                 
                 {profile.policies.length > 0 && profile.policies.every(p => p.type !== "life") && (
-                  <div className="flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <Lightbulb className="w-4 h-4 text-blue-600 mt-0.5" />
-                    <div>
+                  <button
+                    onClick={() => setActiveTab("life")}
+                    className="w-full flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-left"
+                  >
+                    <Heart className="w-4 h-4 text-blue-600 mt-0.5" />
+                    <div className="flex-1">
                       <div className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                        Life Insurance
+                        Life Insurance Opportunity
                       </div>
                       <div className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
                         Customer may benefit from life insurance coverage
                       </div>
+                      <div className="text-xs text-blue-600 dark:text-blue-400 mt-1 font-medium">
+                        Click to get instant quotes →
+                      </div>
                     </div>
-                  </div>
+                  </button>
                 )}
                 
                 {profile.policies.length === 0 && (
@@ -917,7 +926,20 @@ export default function CustomerProfilePage() {
             {activeTab === "household" && (
               <HouseholdTab household={profile.household} />
             )}
-            
+
+            {activeTab === "life" && (
+              <LifeInsuranceTab
+                customerId={profile.id}
+                customerData={mapMergedProfileToLifeInsurance(profile)}
+                onQuoteGenerated={(quote) => {
+                  console.log("Life insurance quote generated:", quote);
+                }}
+                onApplicationStarted={(quoteId) => {
+                  console.log("Life insurance application started:", quoteId);
+                }}
+              />
+            )}
+
             {activeTab === "notes" && (
               <NotesTab
                 notes={profile.notes}

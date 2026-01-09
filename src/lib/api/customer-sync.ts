@@ -632,7 +632,8 @@ async function upsertFromAgencyZoom(
   const phone = raw.phone || azCustomer.phone || raw.phonecell || azCustomer.phoneCell || null;
   const phoneCell = raw.phonecell || azCustomer.phoneCell || null;
   const secondaryPhone = raw.secondaryphone || azCustomer.secondaryPhone || null;
-  const address = raw.address || azCustomer.address || null;
+  // AgencyZoom uses streetAddress, not address
+  const streetAddress = raw.streetaddress || raw.streetAddress || raw.address || azCustomer.address || null;
   const city = raw.city || azCustomer.city || '';
   const state = raw.state || azCustomer.state || '';
   const zip = raw.zip || azCustomer.zip || '';
@@ -651,8 +652,8 @@ async function upsertFromAgencyZoom(
     email: email || secondaryEmail,
     phone: normalizePhone(phone),
     phoneAlt: normalizePhone(secondaryPhone || (phone && phoneCell ? phoneCell : null)),
-    address: address ? {
-      street: address,
+    address: streetAddress ? {
+      street: streetAddress,
       city,
       state,
       zip,
