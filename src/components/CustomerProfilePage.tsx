@@ -72,6 +72,7 @@ import {
 import { LifeInsuranceTab } from "@/components/features/life-insurance";
 import { mapMergedProfileToLifeInsurance, hasLifeInsurance, calculateOpportunityScore } from "@/lib/utils/lifeInsuranceMapper";
 import { DonnaInsightsCard } from "@/components/features/DonnaInsightsCard";
+import { MortgageePaymentStatus } from "@/components/features/MortgageePaymentStatus";
 
 // =============================================================================
 // ICON MAPPING
@@ -1787,7 +1788,17 @@ function PolicyCard({
               </div>
             </div>
           )}
-          
+
+          {/* Mortgagee Payment Status - for home policies */}
+          {policy.type === "home" && policy.lienholders && policy.lienholders.length > 0 && (
+            <div className="mb-4">
+              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
+                Mortgagee Payment Status
+              </div>
+              <MortgageePaymentStatus policyId={policy.id} compact />
+            </div>
+          )}
+
           {/* Carrier Quick Link */}
           {policy.carrier.portalUrl && (
             <a
