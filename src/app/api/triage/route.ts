@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { triageItems, customers, users, calls } from "@/db/schema";
-import { eq, and, desc, asc, sql, inArray, gte, lte, count } from "drizzle-orm";
+import { eq, and, desc, asc, sql, inArray, gte, lte, count, ne } from "drizzle-orm";
 
 // =============================================================================
 // TYPES - Must match database enums in schema.ts
@@ -384,6 +384,67 @@ export async function POST(request: NextRequest) {
     console.error("Triage create error:", error);
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Create failed" },
+      { status: 500 }
+    );
+  }
+}
+
+// =============================================================================
+// DELETE - Purge Triage Queue (all items or by status)
+// =============================================================================
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (!tenantId) {
+      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+    const keepCompleted = searchParams.get("keepCompleted") === "true";
+
+    // Count before delete
+    const [{ beforeCount }] = await db
+      .select({ beforeCount: count() })
+      .from(triageItems)
+      .where(eq(triageItems.tenantId, tenantId));
+
+    // Delete items
+    if (keepCompleted) {
+      // Only delete non-completed items
+      await db
+        .delete(triageItems)
+        .where(
+          and(
+            eq(triageItems.tenantId, tenantId),
+            ne(triageItems.status, "completed")
+          )
+        );
+    } else {
+      // Delete all items
+      await db
+        .delete(triageItems)
+        .where(eq(triageItems.tenantId, tenantId));
+    }
+
+    // Count after delete
+    const [{ afterCount }] = await db
+      .select({ afterCount: count() })
+      .from(triageItems)
+      .where(eq(triageItems.tenantId, tenantId));
+
+    const deleted = beforeCount - afterCount;
+
+    return NextResponse.json({
+      success: true,
+      message: `Purged ${deleted} triage items`,
+      deleted,
+      remaining: afterCount,
+    });
+  } catch (error) {
+    console.error("Triage purge error:", error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : "Purge failed" },
       { status: 500 }
     );
   }
