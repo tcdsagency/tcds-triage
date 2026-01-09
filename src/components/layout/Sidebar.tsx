@@ -36,7 +36,7 @@ const dashboardNav = [
 // Intake & Reception section (base items - Supervisor added conditionally)
 const getIntakeNav = (canAccessSupervisor: boolean) => {
   const baseItems = [
-    { name: 'Triage Queue', href: '/triage', icon: ClipboardList },
+    { name: 'Pending Review', href: '/pending-review', icon: ClipboardCheck },
     { name: 'Lead Queue', href: '/leads', icon: UserPlus },
     { name: 'Calls', href: '/calls', icon: Phone },
   ];
@@ -46,7 +46,6 @@ const getIntakeNav = (canAccessSupervisor: boolean) => {
   }
 
   baseItems.push({ name: 'Messages', href: '/messages', icon: MessageSquare });
-  baseItems.push({ name: 'Wrapup Review', href: '/wrapup-review', icon: ClipboardCheck });
 
   return baseItems;
 };
