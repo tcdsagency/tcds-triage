@@ -865,18 +865,20 @@ export async function POST(request: NextRequest) {
     // All CRM posting is now handled through the Wrapup Review UI
     // This ensures agents can review/edit summaries before posting and avoids duplicate notes
 
-    // 6. Log for E&O compliance (log all calls, not just matched ones)
-    // This creates an internal audit trail even for unmatched calls
-    await db.insert(activities).values({
-      tenantId,
-      customerId: call.customerId || null, // Can be null for unmatched calls
-      callId: call.id,
-      createdById: call.agentId,
-      type: "call",
-      title: `Call ${direction === "inbound" ? "received" : "placed"} - ${body.duration}s`,
-      description: analysis?.summary || `${direction} call completed. Duration: ${body.duration}s. Match: ${matchResult.method} (${matchResult.confidence})`,
-      aiGenerated: !!analysis,
-    });
+    // 6. Log for E&O compliance (only for matched calls with a customer)
+    // Unmatched calls are tracked via wrapup_drafts with match_status='unmatched'
+    if (call.customerId) {
+      await db.insert(activities).values({
+        tenantId,
+        customerId: call.customerId,
+        callId: call.id,
+        createdById: call.agentId,
+        type: "call",
+        title: `Call ${direction === "inbound" ? "received" : "placed"} - ${body.duration}s`,
+        description: analysis?.summary || `${direction} call completed. Duration: ${body.duration}s. Match: ${matchResult.method} (${matchResult.confidence})`,
+        aiGenerated: !!analysis,
+      });
+    }
 
     const processingTime = Date.now() - startTime;
     console.log(`[Call-Completed] Processed in ${processingTime}ms`);
