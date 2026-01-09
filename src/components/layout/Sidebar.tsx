@@ -25,6 +25,7 @@ import {
   Star,
   Headphones,
   FilePen,
+  ClipboardCheck,
 } from 'lucide-react';
 
 // Dashboard section
@@ -45,6 +46,7 @@ const getIntakeNav = (canAccessSupervisor: boolean) => {
   }
 
   baseItems.push({ name: 'Messages', href: '/messages', icon: MessageSquare });
+  baseItems.push({ name: 'Wrapup Review', href: '/wrapup-review', icon: ClipboardCheck });
 
   return baseItems;
 };
