@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
+import { FloodZoneIndicator, FloodRisk } from '@/components/ui/flood-zone-indicator';
 
 // Dynamic import for Leaflet map (client-side only)
 const NearmapMap = dynamic(
@@ -84,6 +85,8 @@ interface RPRData {
   taxAmount: number;
   lastSaleDate: string;
   lastSalePrice: number;
+  floodZone?: string;
+  floodRisk?: string;
   schools: { district: string; elementary: string; middle: string; high: string };
   listing?: { active: boolean; price: number; daysOnMarket: number; agent: string };
 }
@@ -553,6 +556,23 @@ export default function PropertyIntelligencePage() {
                           <InfoRow label="Last Sale" value={`${formatCurrency(lookup.rprData.lastSalePrice)} (${lookup.rprData.lastSaleDate})`} />
                           <InfoRow label="Est. Value" value={formatCurrency(lookup.rprData.estimatedValue)} highlight />
                         </div>
+                      </div>
+                    )}
+
+                    {/* Flood Zone */}
+                    {lookup.rprData?.floodZone && (
+                      <div className="bg-white border rounded-lg p-4">
+                        <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                          Flood Zone <SourceBadge source="RPR" />
+                        </h3>
+                        <FloodZoneIndicator
+                          zone={lookup.rprData.floodZone}
+                          risk={(lookup.rprData.floodRisk as FloodRisk) || 'Unknown'}
+                          inSFHA={lookup.rprData.floodZone?.startsWith('A') || lookup.rprData.floodZone?.startsWith('V')}
+                          showDescription
+                          showInsuranceWarning
+                          size="md"
+                        />
                       </div>
                     )}
 

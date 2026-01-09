@@ -20,7 +20,9 @@ import {
   Building2,
   Eye,
   Play,
+  Droplets,
 } from 'lucide-react';
+import { FloodZoneBadge, FloodRisk } from '@/components/ui/flood-zone-indicator';
 
 // =============================================================================
 // TYPES
@@ -64,6 +66,9 @@ interface Policy {
   listingDetectedAt?: string;
   listingPrice?: number;
   createdAt: string;
+  // Flood zone data from RPR
+  floodZone?: string;
+  floodRisk?: string;
 }
 
 interface ActivityLog {
@@ -908,9 +913,17 @@ function PoliciesTab({
                 <div>
                   <p className="text-sm font-medium text-gray-900">{policy.customerName}</p>
                   <p className="text-sm text-gray-500">{policy.propertyAddress}</p>
-                  <p className="mt-1 text-xs text-gray-400">
-                    Policy: {policy.policyNumber} • {policy.policyType}
-                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <p className="text-xs text-gray-400">
+                      Policy: {policy.policyNumber} • {policy.policyType}
+                    </p>
+                    {policy.floodZone && (
+                      <FloodZoneBadge
+                        zone={policy.floodZone}
+                        risk={(policy.floodRisk as FloodRisk) || 'Unknown'}
+                      />
+                    )}
+                  </div>
                   {policy.lastCheckedAt && (
                     <p className="text-xs text-gray-400">
                       Last checked: {new Date(policy.lastCheckedAt).toLocaleDateString()}

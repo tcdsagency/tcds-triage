@@ -161,6 +161,10 @@ export interface PropertyDetails {
   poolPresent?: boolean;
   trampolinePresent?: boolean;
   dogBreed?: string;
+  // Flood Zone
+  floodZone?: string;
+  floodRisk?: 'High' | 'Moderate' | 'Low' | 'Minimal' | 'Unknown';
+  inSFHA?: boolean; // Special Flood Hazard Area
   // Nearmap AI data
   riskScore?: number;
   hazardExposure?: {

@@ -49,6 +49,9 @@ interface PropertyData {
   roofCondition?: string;
   roofConditionScore?: number;
   treeOverhang?: boolean;
+  // Flood Zone
+  floodZone?: string;
+  floodRisk?: string;
   // Raw data for reference
   rprData?: Record<string, unknown>;
   nearmapData?: Record<string, unknown>;
@@ -288,6 +291,9 @@ export function AddressLookup({
           roofCondition: nearmap?.roof?.condition,
           roofConditionScore: nearmap?.roof?.conditionScore,
           treeOverhang: nearmap?.vegetation?.proximityToStructure === 'touching',
+          // Flood Zone from RPR
+          floodZone: rpr?.floodZone,
+          floodRisk: rpr?.floodRisk,
           // Raw data
           rprData: rpr,
           nearmapData: nearmap,

@@ -42,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AgentAvatar } from "@/components/ui/agent-avatar";
+import { FloodZoneBadge, FloodRisk } from "@/components/ui/flood-zone-indicator";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -1680,6 +1681,12 @@ function PolicyCard({
                   )}
                   {policy.property.nearmapData?.solarPanels && (
                     <Badge variant="outline" className="text-xs">☀️ Solar</Badge>
+                  )}
+                  {policy.property.floodZone && (
+                    <FloodZoneBadge
+                      zone={policy.property.floodZone}
+                      risk={(policy.property.floodRisk as FloodRisk) || 'Unknown'}
+                    />
                   )}
                 </div>
               </div>
