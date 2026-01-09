@@ -9,6 +9,7 @@ import LiveAssistCard, { LiveAssistCompact } from "./LiveAssistCard";
 import { MergedProfile } from "@/types/customer-profile";
 import { Playbook, AgentSuggestion, TelemetryFeedback } from "@/lib/agent-assist/types";
 import { AgentAvatar } from "@/components/ui/agent-avatar";
+import { AgencyZoomButton, getAgencyZoomUrl } from "@/components/ui/agencyzoom-link";
 
 // =============================================================================
 // TYPES
@@ -928,14 +929,27 @@ export default function CallPopup({
                 </div>
               )}
 
-              {/* Open Full Profile Button */}
-              <button
-                onClick={openCustomerProfile}
-                className="w-full px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center gap-2"
-              >
-                <span>👤</span>
-                Open Full Profile
-              </button>
+              {/* Action Buttons */}
+              <div className="space-y-2">
+                {/* AgencyZoom Button */}
+                {customerLookup?.agencyzoomId && (
+                  <AgencyZoomButton
+                    href={getAgencyZoomUrl(customerLookup.agencyzoomId, "customer")}
+                    variant="default"
+                    size="sm"
+                    className="w-full justify-center"
+                  />
+                )}
+
+                {/* Open Full Profile Button */}
+                <button
+                  onClick={openCustomerProfile}
+                  className="w-full px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center gap-2"
+                >
+                  <span>👤</span>
+                  Open Full Profile
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1069,6 +1083,13 @@ export default function CallPopup({
           </button>
         </div>
         <div className="flex gap-2">
+          {customerLookup?.agencyzoomId && (
+            <AgencyZoomButton
+              href={getAgencyZoomUrl(customerLookup.agencyzoomId, "customer")}
+              variant="outline"
+              size="sm"
+            />
+          )}
           {customerLookup && (
             <button
               onClick={openCustomerProfile}

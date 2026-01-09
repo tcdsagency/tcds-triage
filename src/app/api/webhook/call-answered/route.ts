@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
       if (agent) {
         agentId = agent.id;
-        agentName = `${agent.firstName} ${agent.lastName}`;
+        agentName = `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || 'Unknown';
         console.log(`[Call-Answered] Agent: ${agentName} (${extension})`);
       }
     }
