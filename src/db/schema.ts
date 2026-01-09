@@ -157,6 +157,33 @@ export const mortgageeCheckStatusEnum = pgEnum('mortgagee_check_status', [
   'site_blocked',   // Rate limited or blocked
 ]);
 
+export const policyNoticeTypeEnum = pgEnum('policy_notice_type', [
+  'billing',        // Payment due, past due, cancellation for non-payment
+  'policy',         // Renewals, endorsements, cancellations
+  'claim',          // New claims, status updates, settlements
+]);
+
+export const policyNoticeUrgencyEnum = pgEnum('policy_notice_urgency', [
+  'low',
+  'medium',
+  'high',
+  'urgent',
+]);
+
+export const policyNoticeReviewStatusEnum = pgEnum('policy_notice_review_status', [
+  'pending',        // Not yet reviewed
+  'assigned',       // Assigned to an agent
+  'reviewed',       // Agent has reviewed
+  'actioned',       // Action taken and sent to AgencyZoom
+  'dismissed',      // Dismissed (no action needed)
+]);
+
+export const webhookDeliveryStatusEnum = pgEnum('webhook_delivery_status', [
+  'pending',        // Queued to send
+  'success',        // Successfully delivered
+  'failed',         // Delivery failed (will retry)
+]);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MULTI-TENANCY: TENANTS (Agencies)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3312,6 +3339,156 @@ export const mortgageePaymentActivityLogRelations = relations(mortgageePaymentAc
   tenant: one(tenants, {
     fields: [mortgageePaymentActivityLog.tenantId],
     references: [tenants.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// POLICY NOTICES (from Adapt Insurance API)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const policyNotices = pgTable('policy_notices', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // External Reference
+  adaptNoticeId: varchar('adapt_notice_id', { length: 100 }).unique(), // ID from Adapt API
+
+  // Notice Type
+  noticeType: policyNoticeTypeEnum('notice_type').notNull(),
+  urgency: policyNoticeUrgencyEnum('urgency').default('medium'),
+
+  // Policy Info
+  policyNumber: varchar('policy_number', { length: 50 }),
+  insuredName: text('insured_name'),
+  carrier: varchar('carrier', { length: 100 }),
+  lineOfBusiness: varchar('line_of_business', { length: 50 }), // auto, home, etc.
+
+  // Customer Match
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+  policyId: uuid('policy_id').references(() => policies.id, { onDelete: 'set null' }),
+
+  // Notice Content
+  title: text('title').notNull(),
+  description: text('description'),
+
+  // Billing-specific Fields
+  amountDue: decimal('amount_due', { precision: 12, scale: 2 }),
+  dueDate: date('due_date'),
+  gracePeriodEnd: date('grace_period_end'),
+
+  // Claims-specific Fields
+  claimNumber: varchar('claim_number', { length: 50 }),
+  claimDate: date('claim_date'),
+  claimStatus: varchar('claim_status', { length: 50 }),
+
+  // Review Workflow
+  reviewStatus: policyNoticeReviewStatusEnum('review_status').default('pending'),
+  assignedToId: uuid('assigned_to_id').references(() => users.id, { onDelete: 'set null' }),
+  assignedAt: timestamp('assigned_at'),
+  reviewedById: uuid('reviewed_by_id').references(() => users.id, { onDelete: 'set null' }),
+  reviewedAt: timestamp('reviewed_at'),
+  reviewNotes: text('review_notes'),
+
+  // Action Taken
+  actionTaken: varchar('action_taken', { length: 100 }), // e.g., 'contact_customer', 'send_reminder', 'escalate'
+  actionDetails: text('action_details'),
+  actionedAt: timestamp('actioned_at'),
+
+  // Zapier Webhook
+  zapierWebhookSent: boolean('zapier_webhook_sent').default(false),
+  zapierWebhookSentAt: timestamp('zapier_webhook_sent_at'),
+  zapierWebhookStatus: varchar('zapier_webhook_status', { length: 20 }), // success, failed
+
+  // Raw Data
+  rawPayload: jsonb('raw_payload'), // Original payload from Adapt API
+
+  // Dates
+  noticeDate: timestamp('notice_date'), // When the notice was generated
+  fetchedAt: timestamp('fetched_at').defaultNow(), // When we fetched it
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('policy_notices_tenant_idx').on(table.tenantId),
+  index('policy_notices_adapt_id_idx').on(table.adaptNoticeId),
+  index('policy_notices_status_idx').on(table.tenantId, table.reviewStatus),
+  index('policy_notices_type_idx').on(table.tenantId, table.noticeType),
+  index('policy_notices_urgency_idx').on(table.tenantId, table.urgency, table.reviewStatus),
+  index('policy_notices_assigned_idx').on(table.assignedToId),
+  index('policy_notices_customer_idx').on(table.customerId),
+  index('policy_notices_policy_idx').on(table.policyId),
+  index('policy_notices_due_date_idx').on(table.tenantId, table.dueDate),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// POLICY NOTICE WEBHOOK DELIVERIES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const policyNoticeWebhookDeliveries = pgTable('policy_notice_webhook_deliveries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  policyNoticeId: uuid('policy_notice_id').notNull().references(() => policyNotices.id, { onDelete: 'cascade' }),
+
+  // Webhook Details
+  webhookUrl: text('webhook_url').notNull(),
+  payload: jsonb('payload').notNull(), // The payload that was/will be sent
+
+  // Delivery Status
+  status: webhookDeliveryStatusEnum('status').default('pending'),
+  httpStatus: integer('http_status'), // HTTP response code
+  responseBody: text('response_body'), // Response from webhook
+  errorMessage: text('error_message'),
+
+  // Retry Logic
+  attemptCount: integer('attempt_count').default(0).notNull(),
+  nextRetryAt: timestamp('next_retry_at'),
+  maxAttempts: integer('max_attempts').default(5).notNull(),
+
+  // Timing
+  sentAt: timestamp('sent_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('pnwd_tenant_idx').on(table.tenantId),
+  index('pnwd_notice_idx').on(table.policyNoticeId),
+  index('pnwd_status_idx').on(table.status),
+  index('pnwd_retry_idx').on(table.status, table.nextRetryAt),
+]);
+
+// Policy Notice Relations
+export const policyNoticesRelations = relations(policyNotices, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [policyNotices.tenantId],
+    references: [tenants.id],
+  }),
+  customer: one(customers, {
+    fields: [policyNotices.customerId],
+    references: [customers.id],
+  }),
+  policy: one(policies, {
+    fields: [policyNotices.policyId],
+    references: [policies.id],
+  }),
+  assignedTo: one(users, {
+    fields: [policyNotices.assignedToId],
+    references: [users.id],
+    relationName: 'assignedNotices',
+  }),
+  reviewedBy: one(users, {
+    fields: [policyNotices.reviewedById],
+    references: [users.id],
+    relationName: 'reviewedNotices',
+  }),
+  webhookDeliveries: many(policyNoticeWebhookDeliveries),
+}));
+
+export const policyNoticeWebhookDeliveriesRelations = relations(policyNoticeWebhookDeliveries, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [policyNoticeWebhookDeliveries.tenantId],
+    references: [tenants.id],
+  }),
+  policyNotice: one(policyNotices, {
+    fields: [policyNoticeWebhookDeliveries.policyNoticeId],
+    references: [policyNotices.id],
   }),
 }));
 
