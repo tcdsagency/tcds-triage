@@ -46,9 +46,11 @@ export async function POST(
           : null,
         mmiData: result.mmiData
           ? {
-              marketStatus: result.mmiData.marketStatus,
-              valuation: result.mmiData.valuation,
-              saleHistory: result.mmiData.saleHistory.slice(0, 3),
+              currentStatus: result.mmiData.currentStatus,
+              listingHistory: result.mmiData.listingHistory?.slice(0, 3) || [],
+              deedHistory: result.mmiData.deedHistory?.slice(0, 3) || [],
+              lastSaleDate: result.mmiData.lastSaleDate,
+              lastSalePrice: result.mmiData.lastSalePrice,
             }
           : null,
       },

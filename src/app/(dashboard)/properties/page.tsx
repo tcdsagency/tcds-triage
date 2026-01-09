@@ -391,18 +391,14 @@ export default function PropertyIntelligencePage() {
               {/* Street View */}
               <div className="h-48 bg-gray-100 border-t relative">
                 {lookup.lat && lookup.lng ? (
-                  <a
-                    href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lookup.lat},${lookup.lng}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300 transition-colors group"
-                  >
-                    <div className="text-center">
-                      <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">🚗</div>
-                      <p className="text-sm text-gray-800 font-medium">View Street View</p>
-                      <p className="text-xs text-gray-600 mt-1">Click to open in Google Maps</p>
-                    </div>
-                  </a>
+                  <iframe
+                    src={`https://www.google.com/maps/embed/v1/streetview?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&location=${lookup.lat},${lookup.lng}&heading=0&pitch=0&fov=90`}
+                    className="absolute inset-0 w-full h-full"
+                    style={{ border: 0 }}
+                    allowFullScreen
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
                     <div className="text-center">
