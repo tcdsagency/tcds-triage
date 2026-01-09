@@ -6,6 +6,8 @@ import { useCallWebSocket } from "@/hooks/useCallWebSocket";
 import TranscriptView from "./TranscriptView";
 import CoachingTip, { CoachingTipCompact } from "./CoachingTip";
 import LiveAssistCard, { LiveAssistCompact } from "./LiveAssistCard";
+import CustomerAssistCards from "./CustomerAssistCards";
+import LeadAssistCards from "./LeadAssistCards";
 import { MergedProfile } from "@/types/customer-profile";
 import { Playbook, AgentSuggestion, TelemetryFeedback } from "@/lib/agent-assist/types";
 import { AgentAvatar } from "@/components/ui/agent-avatar";
@@ -722,14 +724,25 @@ export default function CallPopup({
           ) : error ? (
             <div className="p-4 text-red-600 text-sm">{error}</div>
           ) : !customerLookup ? (
-            // NO MATCH - Unknown caller
-            <div className="p-6 text-center">
-              <div className="text-5xl mb-3">❓</div>
-              <h3 className="font-semibold text-lg mb-1">Unknown Caller</h3>
-              <p className="text-gray-500 mb-4">{phoneNumber}</p>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
-                Create Lead
-              </button>
+            // NO MATCH - Unknown caller with Lead Assist
+            <div className="p-4">
+              <div className="text-center mb-4">
+                <div className="text-4xl mb-2">❓</div>
+                <h3 className="font-semibold text-lg">Unknown Caller</h3>
+                <p className="text-gray-500 text-sm">{phoneNumber}</p>
+              </div>
+
+              {/* Lead Assist Cards */}
+              <LeadAssistCards
+                phoneNumber={phoneNumber}
+                onCreateLead={() => {
+                  // TODO: Open create lead modal or navigate
+                  window.open("/leads/new", "_blank");
+                }}
+                onStartQuote={(quoteType) => {
+                  window.open(`/quote/new?type=${quoteType}`, "_blank");
+                }}
+              />
             </div>
           ) : (
             // CUSTOMER FOUND - Show MergedProfile data
@@ -961,6 +974,11 @@ export default function CallPopup({
                   className="w-full justify-center"
                 />
               </div>
+
+              {/* Customer Assist Cards - Renewals, Open Items, Activity */}
+              {profile && (
+                <CustomerAssistCards profile={profile} className="mt-4" />
+              )}
             </div>
           )}
         </div>
