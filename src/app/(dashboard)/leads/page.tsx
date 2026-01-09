@@ -6,39 +6,44 @@ import { CanopyConnectSMS } from '@/components/CanopyConnectSMS';
 
 interface Lead {
   id: string;
-  firstName: string;
-  lastName: string;
-  displayName: string;
-  email: string | null;
-  phone: string | null;
-  phoneAlt: string | null;
-  leadSource: string | null;
-  leadStatus: string | null;
-  pipelineStage: string | null;
-  agencyzoomId: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  contactAddress: string | null;
+  source: string | null;
+  sourceReference: string | null;
+  insuranceType: string | null;
+  leadNotes: string | null;
+  priority: string | null;
+  status: string | null; // queued, notified, escalated, claimed, converted, expired
+  assignedUserId: string | null;
+  claimedBy: string | null;
+  claimedAt: string | null;
+  convertedAt: string | null;
+  convertedCustomerId: string | null;
   createdAt: string;
   updatedAt: string;
-  producer: { id: string; firstName: string; lastName: string } | null;
-  csr: { id: string; firstName: string; lastName: string } | null;
+  assignedUser: { id: string; firstName: string | null; lastName: string | null; email: string | null } | null;
+  claimedByUser: { id: string; firstName: string | null; lastName: string | null; email: string | null } | null;
 }
 
 interface Counts {
   total: number;
-  new: number;
-  contacted: number;
-  qualified: number;
-  quoted: number;
-  won: number;
-  lost: number;
+  queued: number;
+  notified: number;
+  escalated: number;
+  claimed: number;
+  converted: number;
+  expired: number;
 }
 
 const STATUS_OPTIONS = [
-  { value: 'new', label: 'New', color: 'bg-blue-100 text-blue-800' },
-  { value: 'contacted', label: 'Contacted', color: 'bg-yellow-100 text-yellow-800' },
-  { value: 'qualified', label: 'Qualified', color: 'bg-purple-100 text-purple-800' },
-  { value: 'quoted', label: 'Quoted', color: 'bg-orange-100 text-orange-800' },
-  { value: 'won', label: 'Won', color: 'bg-green-100 text-green-800' },
-  { value: 'lost', label: 'Lost', color: 'bg-gray-100 text-gray-600' },
+  { value: 'queued', label: 'Queued', color: 'bg-blue-100 text-blue-800' },
+  { value: 'notified', label: 'Notified', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'escalated', label: 'Escalated', color: 'bg-red-100 text-red-800' },
+  { value: 'claimed', label: 'Claimed', color: 'bg-purple-100 text-purple-800' },
+  { value: 'converted', label: 'Converted', color: 'bg-green-100 text-green-800' },
+  { value: 'expired', label: 'Expired', color: 'bg-gray-100 text-gray-600' },
 ];
 
 export default function LeadsPage() {
@@ -54,14 +59,24 @@ export default function LeadsPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (search) params.set('q', search);
       if (filter && filter !== 'all') params.set('status', filter);
       params.set('limit', '100');
 
-      const res = await fetch(`/api/leads/synced?${params}`);
+      // Use /api/leads for web app/webhook leads only (not synced AgencyZoom leads)
+      const res = await fetch(`/api/leads?${params}`);
       const data = await res.json();
       if (data.success) {
-        setLeads(data.leads);
+        // Filter by search locally since the API doesn't support search
+        let filteredLeads = data.leads;
+        if (search && search.length >= 2) {
+          const searchLower = search.toLowerCase();
+          filteredLeads = data.leads.filter((lead: Lead) =>
+            (lead.contactName?.toLowerCase().includes(searchLower)) ||
+            (lead.contactPhone?.includes(search)) ||
+            (lead.contactEmail?.toLowerCase().includes(searchLower))
+          );
+        }
+        setLeads(filteredLeads);
         setCounts(data.counts);
       }
     } catch (err) {
@@ -89,19 +104,19 @@ export default function LeadsPage() {
 
   const getStatusBadge = (status: string | null) => {
     switch (status) {
-      case 'new':
+      case 'queued':
       case null:
-        return <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">New</span>;
-      case 'contacted':
-        return <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">Contacted</span>;
-      case 'qualified':
-        return <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full">Qualified</span>;
-      case 'quoted':
-        return <span className="px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded-full">Quoted</span>;
-      case 'won':
-        return <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">Won</span>;
-      case 'lost':
-        return <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-full">Lost</span>;
+        return <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">Queued</span>;
+      case 'notified':
+        return <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">Notified</span>;
+      case 'escalated':
+        return <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">Escalated</span>;
+      case 'claimed':
+        return <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full">Claimed</span>;
+      case 'converted':
+        return <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">Converted</span>;
+      case 'expired':
+        return <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-full">Expired</span>;
       default:
         return <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-full">{status}</span>;
     }
@@ -117,22 +132,10 @@ export default function LeadsPage() {
     });
   };
 
-  const openInAgencyZoom = (agencyzoomId: string) => {
-    window.open(`https://app.agencyzoom.com/lead/index?id=${agencyzoomId}`, '_blank');
-  };
-
   const updateLeadStatus = async (leadId: string, newStatus: string) => {
-    // Skip for API-only leads (not in our DB)
-    if (leadId.startsWith('az-lead-')) {
-      toast.info('Update this lead in AgencyZoom', {
-        description: 'This lead is only in AgencyZoom and cannot be updated here.',
-      });
-      return;
-    }
-
     setUpdatingStatus(true);
     try {
-      const res = await fetch(`/api/customers/${leadId}/lead-status`, {
+      const res = await fetch(`/api/leads/${leadId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
@@ -141,10 +144,10 @@ export default function LeadsPage() {
       if (data.success) {
         // Update local state
         setLeads(leads.map(l =>
-          l.id === leadId ? { ...l, leadStatus: newStatus } : l
+          l.id === leadId ? { ...l, status: newStatus } : l
         ));
         if (selectedLead?.id === leadId) {
-          setSelectedLead({ ...selectedLead, leadStatus: newStatus });
+          setSelectedLead({ ...selectedLead, status: newStatus });
         }
         toast.success('Status updated', {
           description: `Lead moved to ${newStatus}`,
@@ -172,7 +175,7 @@ export default function LeadsPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Lead Queue</h1>
-          <p className="text-gray-600 mt-1">AgencyZoom leads • {counts?.total || 0} total</p>
+          <p className="text-gray-600 mt-1">Web app & webhook leads • {counts?.total || 0} total</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -186,48 +189,55 @@ export default function LeadsPage() {
 
       {/* Stats */}
       {counts && (
-        <div className="grid grid-cols-6 gap-4">
-          <div 
+        <div className="grid grid-cols-7 gap-4">
+          <div
             onClick={() => setFilter('all')}
             className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'all' ? 'ring-2 ring-blue-500' : ''}`}
           >
             <div className="text-2xl font-bold text-gray-600">{counts.total}</div>
             <div className="text-sm text-gray-500">Total</div>
           </div>
-          <div 
-            onClick={() => setFilter('new')}
-            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'new' ? 'ring-2 ring-blue-500' : ''}`}
+          <div
+            onClick={() => setFilter('queued')}
+            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'queued' ? 'ring-2 ring-blue-500' : ''}`}
           >
-            <div className="text-2xl font-bold text-blue-600">{counts.new}</div>
-            <div className="text-sm text-gray-500">New</div>
+            <div className="text-2xl font-bold text-blue-600">{counts.queued}</div>
+            <div className="text-sm text-gray-500">Queued</div>
           </div>
-          <div 
-            onClick={() => setFilter('contacted')}
-            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'contacted' ? 'ring-2 ring-blue-500' : ''}`}
+          <div
+            onClick={() => setFilter('notified')}
+            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'notified' ? 'ring-2 ring-blue-500' : ''}`}
           >
-            <div className="text-2xl font-bold text-yellow-600">{counts.contacted}</div>
-            <div className="text-sm text-gray-500">Contacted</div>
+            <div className="text-2xl font-bold text-yellow-600">{counts.notified}</div>
+            <div className="text-sm text-gray-500">Notified</div>
           </div>
-          <div 
-            onClick={() => setFilter('qualified')}
-            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'qualified' ? 'ring-2 ring-blue-500' : ''}`}
+          <div
+            onClick={() => setFilter('escalated')}
+            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'escalated' ? 'ring-2 ring-blue-500' : ''}`}
           >
-            <div className="text-2xl font-bold text-purple-600">{counts.qualified}</div>
-            <div className="text-sm text-gray-500">Qualified</div>
+            <div className="text-2xl font-bold text-red-600">{counts.escalated}</div>
+            <div className="text-sm text-gray-500">Escalated</div>
           </div>
-          <div 
-            onClick={() => setFilter('quoted')}
-            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'quoted' ? 'ring-2 ring-blue-500' : ''}`}
+          <div
+            onClick={() => setFilter('claimed')}
+            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'claimed' ? 'ring-2 ring-blue-500' : ''}`}
           >
-            <div className="text-2xl font-bold text-orange-600">{counts.quoted}</div>
-            <div className="text-sm text-gray-500">Quoted</div>
+            <div className="text-2xl font-bold text-purple-600">{counts.claimed}</div>
+            <div className="text-sm text-gray-500">Claimed</div>
           </div>
-          <div 
-            onClick={() => setFilter('won')}
-            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'won' ? 'ring-2 ring-blue-500' : ''}`}
+          <div
+            onClick={() => setFilter('converted')}
+            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'converted' ? 'ring-2 ring-blue-500' : ''}`}
           >
-            <div className="text-2xl font-bold text-green-600">{counts.won}</div>
-            <div className="text-sm text-gray-500">Won</div>
+            <div className="text-2xl font-bold text-green-600">{counts.converted}</div>
+            <div className="text-sm text-gray-500">Converted</div>
+          </div>
+          <div
+            onClick={() => setFilter('expired')}
+            className={`bg-white rounded-lg shadow-sm p-4 cursor-pointer hover:ring-2 hover:ring-blue-300 ${filter === 'expired' ? 'ring-2 ring-blue-500' : ''}`}
+          >
+            <div className="text-2xl font-bold text-gray-500">{counts.expired}</div>
+            <div className="text-sm text-gray-500">Expired</div>
           </div>
         </div>
       )}
@@ -272,7 +282,7 @@ export default function LeadsPage() {
                 </div>
                 <p className="text-lg font-semibold text-gray-900 mb-1">No leads found</p>
                 <p className="text-sm text-gray-500 max-w-xs">
-                  {search ? `No results for "${search}"` : 'Try adjusting your filters or sync leads from AgencyZoom'}
+                  {search ? `No results for "${search}"` : 'Try adjusting your filters or add a new lead'}
                 </p>
               </div>
             ) : (
@@ -287,17 +297,24 @@ export default function LeadsPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="font-medium text-gray-900">
-                        {lead.displayName || lead.phone || 'Unknown'}
+                        {lead.contactName || lead.contactPhone || 'Unknown'}
                       </div>
                       <div className="text-sm text-gray-500">{formatTime(lead.createdAt)}</div>
-                      {lead.leadSource && (
-                        <div className="text-xs text-gray-400 mt-1">Source: {lead.leadSource}</div>
+                      {lead.source && (
+                        <div className="text-xs text-gray-400 mt-1">Source: {lead.source}</div>
+                      )}
+                      {lead.insuranceType && (
+                        <div className="text-xs text-blue-500 mt-1">{lead.insuranceType}</div>
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      {getStatusBadge(lead.leadStatus)}
-                      {lead.pipelineStage && (
-                        <span className="text-xs text-gray-400">{lead.pipelineStage}</span>
+                      {getStatusBadge(lead.status)}
+                      {lead.priority && lead.priority !== 'normal' && (
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          lead.priority === 'urgent' ? 'bg-red-100 text-red-700' :
+                          lead.priority === 'high' ? 'bg-orange-100 text-orange-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>{lead.priority}</span>
                       )}
                     </div>
                   </div>
@@ -314,9 +331,9 @@ export default function LeadsPage() {
               <div className="mb-6">
                 <div className="flex justify-between items-start">
                   <h2 className="text-xl font-bold text-gray-900">
-                    {selectedLead.displayName || 'Unknown Lead'}
+                    {selectedLead.contactName || 'Unknown Lead'}
                   </h2>
-                  {getStatusBadge(selectedLead.leadStatus)}
+                  {getStatusBadge(selectedLead.status)}
                 </div>
                 <div className="text-sm text-gray-500 mt-1">
                   Created {formatTime(selectedLead.createdAt)}
@@ -327,28 +344,26 @@ export default function LeadsPage() {
               <div className="mb-6">
                 <h3 className="font-semibold text-gray-700 mb-3">Contact Information</h3>
                 <div className="space-y-3">
-                  {selectedLead.phone && (
+                  {selectedLead.contactPhone && (
                     <div className="flex items-center gap-3">
                       <span className="text-gray-400">📞</span>
-                      <a href={`tel:${selectedLead.phone}`} className="text-blue-600 hover:underline">
-                        {selectedLead.phone}
+                      <a href={`tel:${selectedLead.contactPhone}`} className="text-blue-600 hover:underline">
+                        {selectedLead.contactPhone}
                       </a>
                     </div>
                   )}
-                  {selectedLead.phoneAlt && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-gray-400">📱</span>
-                      <a href={`tel:${selectedLead.phoneAlt}`} className="text-blue-600 hover:underline">
-                        {selectedLead.phoneAlt}
-                      </a>
-                    </div>
-                  )}
-                  {selectedLead.email && (
+                  {selectedLead.contactEmail && (
                     <div className="flex items-center gap-3">
                       <span className="text-gray-400">✉️</span>
-                      <a href={`mailto:${selectedLead.email}`} className="text-blue-600 hover:underline">
-                        {selectedLead.email}
+                      <a href={`mailto:${selectedLead.contactEmail}`} className="text-blue-600 hover:underline">
+                        {selectedLead.contactEmail}
                       </a>
+                    </div>
+                  )}
+                  {selectedLead.contactAddress && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-gray-400">📍</span>
+                      <span className="text-gray-700">{selectedLead.contactAddress}</span>
                     </div>
                   )}
                 </div>
@@ -362,9 +377,9 @@ export default function LeadsPage() {
                     <button
                       key={opt.value}
                       onClick={() => updateLeadStatus(selectedLead.id, opt.value)}
-                      disabled={updatingStatus || selectedLead.leadStatus === opt.value || (!selectedLead.leadStatus && opt.value === 'new')}
+                      disabled={updatingStatus || selectedLead.status === opt.value || (!selectedLead.status && opt.value === 'queued')}
                       className={`px-3 py-1.5 text-sm rounded-full transition-all ${
-                        (selectedLead.leadStatus === opt.value || (!selectedLead.leadStatus && opt.value === 'new'))
+                        (selectedLead.status === opt.value || (!selectedLead.status && opt.value === 'queued'))
                           ? `${opt.color} ring-2 ring-offset-1 ring-blue-500 cursor-default`
                           : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
                       } ${updatingStatus ? 'opacity-50 cursor-wait' : ''}`}
@@ -381,61 +396,63 @@ export default function LeadsPage() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-gray-500">Source:</span>
-                    <span className="ml-2 font-medium">{selectedLead.leadSource || '-'}</span>
+                    <span className="ml-2 font-medium">{selectedLead.source || '-'}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Pipeline:</span>
-                    <span className="ml-2 font-medium">{selectedLead.pipelineStage || '-'}</span>
+                    <span className="text-gray-500">Insurance Type:</span>
+                    <span className="ml-2 font-medium">{selectedLead.insuranceType || '-'}</span>
                   </div>
-                  {selectedLead.producer && (
+                  <div>
+                    <span className="text-gray-500">Priority:</span>
+                    <span className="ml-2 font-medium capitalize">{selectedLead.priority || 'normal'}</span>
+                  </div>
+                  {selectedLead.assignedUser && (
                     <div>
-                      <span className="text-gray-500">Producer:</span>
+                      <span className="text-gray-500">Assigned To:</span>
                       <span className="ml-2 font-medium">
-                        {selectedLead.producer.firstName} {selectedLead.producer.lastName}
+                        {selectedLead.assignedUser.firstName} {selectedLead.assignedUser.lastName}
                       </span>
                     </div>
                   )}
-                  {selectedLead.csr && (
+                  {selectedLead.claimedByUser && (
                     <div>
-                      <span className="text-gray-500">CSR:</span>
+                      <span className="text-gray-500">Claimed By:</span>
                       <span className="ml-2 font-medium">
-                        {selectedLead.csr.firstName} {selectedLead.csr.lastName}
+                        {selectedLead.claimedByUser.firstName} {selectedLead.claimedByUser.lastName}
                       </span>
                     </div>
                   )}
                 </div>
+                {selectedLead.leadNotes && (
+                  <div className="mt-4">
+                    <span className="text-gray-500 block mb-1">Notes:</span>
+                    <p className="text-gray-700 bg-white p-2 rounded border text-sm">{selectedLead.leadNotes}</p>
+                  </div>
+                )}
               </div>
 
               {/* Actions */}
               <div className="flex flex-wrap gap-3 mt-8">
-                {selectedLead.phone && (
+                {selectedLead.contactPhone && (
                   <a
-                    href={`tel:${selectedLead.phone}`}
+                    href={`tel:${selectedLead.contactPhone}`}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
                   >
                     📞 Call
                   </a>
                 )}
-                {selectedLead.agencyzoomId && (
-                  <button
-                    onClick={() => openInAgencyZoom(selectedLead.agencyzoomId!)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-                  >
-                    🔗 Open in AgencyZoom
-                  </button>
-                )}
-                {selectedLead.email && (
+                {selectedLead.contactEmail && (
                   <a
-                    href={`mailto:${selectedLead.email}`}
+                    href={`mailto:${selectedLead.contactEmail}`}
                     className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
                   >
                     ✉️ Email
                   </a>
                 )}
-                {selectedLead.phone && (
+                {selectedLead.contactPhone && (
                   <CanopyConnectSMS
-                    customerPhone={selectedLead.phone}
-                    customerName={selectedLead.firstName}
+                    customerPhone={selectedLead.contactPhone}
+                    customerName={selectedLead.contactName?.split(' ')[0] || ''}
                     variant="outline"
                     size="default"
                   />

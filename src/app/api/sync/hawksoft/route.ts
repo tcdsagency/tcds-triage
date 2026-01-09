@@ -107,7 +107,12 @@ export async function POST(request: Request) {
       const apiBatch = hsClientNumbers.slice(i, i + apiBatchSize);
       
       try {
-        const hsClients = await hsClient.getClients(apiBatch, ['details', 'policies', 'people']);
+        // Include expands to get LOB data (loBs, autos, locations)
+        const hsClients = await hsClient.getClients(
+          apiBatch,
+          ['details', 'policies', 'people'],
+          ['policies.autos', 'policies.locations', 'policies.drivers']
+        );
         log(`API batch ${Math.floor(i / apiBatchSize) + 1}: ${hsClients.length} clients`);
 
         for (const hsData of hsClients) {
@@ -143,12 +148,16 @@ export async function POST(request: Request) {
                   .where(eq(policies.hawksoftPolicyId, policyId))
                   .limit(1);
 
+                // Debug first 5 policies to see field structure
+                const debugLogger = policiesSynced < 5 ? log : undefined;
+                const extractedLOB = extractLineOfBusiness(policy, debugLogger);
+
                 const policyData = {
                   tenantId,
                   customerId,
                   hawksoftPolicyId: policyId,
                   policyNumber: policy.policyNumber || 'Unknown',
-                  lineOfBusiness: extractLineOfBusiness(policy),
+                  lineOfBusiness: extractedLOB,
                   carrier: policy.carrier || null,
                   effectiveDate: policy.effectiveDate ? new Date(policy.effectiveDate) : new Date(),
                   expirationDate: policy.expirationDate ? new Date(policy.expirationDate) : new Date(),
@@ -228,7 +237,14 @@ function mapPolicyStatus(status: string | undefined): 'active' | 'pending' | 'ex
  *
  * Priority: loBs[0].code → title → autos/locations presence → type → lineOfBusiness → 'Unknown'
  */
-function extractLineOfBusiness(policy: any): string {
+function extractLineOfBusiness(policy: any, debugLog?: (msg: string) => void): string {
+  // Debug: Log all available fields on first few policies
+  if (debugLog) {
+    // Show loBs content if present
+    const lobsContent = policy.loBs?.length > 0 ? JSON.stringify(policy.loBs[0]) : 'empty';
+    debugLog(`Policy ${policy.policyNumber}: title="${policy.title}", loBs[0]=${lobsContent}, autos=${policy.autos?.length || 0}, locations=${policy.locations?.length || 0}`);
+  }
+
   // loBs[0].code is the most reliable source (e.g., "AUTOP", "HOMEP", "DFIRE")
   if (policy.loBs && policy.loBs.length > 0 && policy.loBs[0].code) {
     return policy.loBs[0].code;
@@ -241,12 +257,12 @@ function extractLineOfBusiness(policy: any): string {
 
   // Check for presence of autos (indicates auto policy)
   if (policy.autos && policy.autos.length > 0) {
-    return 'Auto';
+    return 'Personal Auto';
   }
 
   // Check for presence of locations (indicates property policy)
   if (policy.locations && policy.locations.length > 0) {
-    return 'Property';
+    return 'Homeowners';
   }
 
   // Fall back to type if not "General"

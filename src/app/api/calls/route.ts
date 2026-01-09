@@ -154,15 +154,23 @@ export async function GET(request: NextRequest) {
 
     // Transform to match expected format
     const formattedCalls = callRecords.map((call) => {
-      const phoneNumber = call.direction === "inbound" ? call.fromNumber : call.toNumber;
-      const normalizedPhone = phoneNumber?.replace(/\D/g, '').slice(-10) || '';
+      // Determine customer phone (external number) based on direction
+      // Inbound: customer called us, so fromNumber is customer's phone
+      // Outbound: we called customer, so toNumber is customer's phone
+      const direction = call.direction || call.directionLive || "inbound";
+      const customerPhone = direction === "inbound" ? call.fromNumber : call.toNumber;
+      const agentPhone = direction === "inbound" ? call.toNumber : call.fromNumber;
+      const normalizedPhone = customerPhone?.replace(/\D/g, '').slice(-10) || '';
       const matchedCustomer = !call.customerId ? phoneCustomerMap.get(normalizedPhone) : null;
 
       return {
         id: call.id,
-        direction: call.direction || call.directionLive || "inbound",
+        direction,
         status: call.status || "completed",
-        phoneNumber,
+        phoneNumber: customerPhone, // Customer's phone number (external)
+        agentPhone, // Agent's/our phone number
+        fromNumber: call.fromNumber,
+        toNumber: call.toNumber,
         customerName: call.customerFirstName && call.customerLastName
           ? `${call.customerFirstName} ${call.customerLastName}`
           : matchedCustomer
@@ -180,6 +188,7 @@ export async function GET(request: NextRequest) {
         sentiment: (call.aiSentiment as any)?.score,
         hasRecording: !!call.recordingUrl,
         hasTranscript: !!call.transcription,
+        transcript: call.transcription, // Include actual transcript
         summary: call.aiSummary,
         tags: [],
       };

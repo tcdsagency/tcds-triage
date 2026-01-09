@@ -15,6 +15,7 @@ interface CompleteRequest {
   itemType: 'wrapup' | 'message' | 'lead';
   action: 'note' | 'ticket' | 'lead' | 'skip' | 'acknowledge' | 'void';
   customerId?: string;
+  isLead?: boolean; // true if matched to a lead (not a customer)
   noteContent?: string;
   ticketDetails?: {
     subject: string;
@@ -152,30 +153,47 @@ export async function POST(
         return NextResponse.json({ success: true, action: "void", message: "Wrapup voided" });
       }
 
-      const customerId = body.customerId
-        ? parseInt(body.customerId)
-        : (wrapup.aiExtraction as { agencyZoomCustomerId?: string })?.agencyZoomCustomerId
-          ? parseInt((wrapup.aiExtraction as { agencyZoomCustomerId: string }).agencyZoomCustomerId)
-          : null;
+      // Extract IDs and check if it's a lead or customer
+      const aiExtraction = wrapup.aiExtraction as {
+        agencyZoomCustomerId?: string;
+        agencyZoomLeadId?: string;
+        isLead?: boolean;
+      } | null;
 
-      if (!customerId && (body.action === 'note' || body.action === 'ticket')) {
-        return NextResponse.json({ error: "Customer ID required" }, { status: 400 });
+      const isLead = body.isLead || aiExtraction?.isLead;
+
+      // Get the ID - prefer explicit body.customerId, then check aiExtraction
+      let contactId: number | null = null;
+      if (body.customerId) {
+        contactId = parseInt(body.customerId);
+      } else if (isLead && aiExtraction?.agencyZoomLeadId) {
+        contactId = parseInt(aiExtraction.agencyZoomLeadId);
+      } else if (!isLead && aiExtraction?.agencyZoomCustomerId) {
+        contactId = parseInt(aiExtraction.agencyZoomCustomerId);
       }
 
-      if (body.action === 'note' && customerId && azClient) {
+      if (!contactId && (body.action === 'note' || body.action === 'ticket')) {
+        return NextResponse.json({ error: "Customer or Lead ID required" }, { status: 400 });
+      }
+
+      if (body.action === 'note' && contactId && azClient) {
         const noteText = formatNoteText('wrapup', body.noteContent || wrapup.aiCleanedSummary || wrapup.summary || '', {
           phone: wrapup.customerPhone || undefined,
           requestType: wrapup.requestType || undefined,
         });
 
-        const noteResult = await azClient.addNote(customerId, noteText);
+        // Use addLeadNote for leads, addNote for customers
+        const noteResult = isLead
+          ? await azClient.addLeadNote(contactId, noteText)
+          : await azClient.addNote(contactId, noteText);
+
         if (noteResult.success) {
           await db
             .update(wrapupDrafts)
             .set({
               status: "completed",
               reviewerDecision: "approved",
-              outcome: "note_posted",
+              outcome: isLead ? "lead_note_posted" : "note_posted",
               agencyzoomNoteId: noteResult.id?.toString(),
               completedAt: new Date(),
             })
@@ -183,11 +201,16 @@ export async function POST(
 
           result = { success: true, action: "note", noteId: noteResult.id };
         } else {
-          return NextResponse.json({ error: "Failed to post note" }, { status: 500 });
+          return NextResponse.json({ error: `Failed to post note to ${isLead ? 'lead' : 'customer'}` }, { status: 500 });
         }
       }
 
-      if (body.action === 'ticket' && customerId && azClient) {
+      if (body.action === 'ticket' && contactId && azClient) {
+        // Tickets are only supported for customers, not leads
+        if (isLead) {
+          return NextResponse.json({ error: "Cannot create tickets for leads - use note or convert to customer first" }, { status: 400 });
+        }
+
         // First create note
         const noteText = formatNoteText('wrapup', body.noteContent || wrapup.aiCleanedSummary || wrapup.summary || '', {
           phone: wrapup.customerPhone || undefined,
@@ -195,7 +218,7 @@ export async function POST(
         });
 
         let noteId: number | undefined;
-        const noteResult = await azClient.addNote(customerId, noteText);
+        const noteResult = await azClient.addNote(contactId, noteText);
         if (noteResult.success) {
           noteId = noteResult.id;
         }
@@ -204,7 +227,7 @@ export async function POST(
         const ticketPayload = {
           subject: body.ticketDetails?.subject || `Follow-up: ${wrapup.requestType || 'Call'} - ${wrapup.customerName || 'Customer'}`,
           description: body.ticketDetails?.description || body.noteContent || wrapup.aiCleanedSummary || wrapup.summary || '',
-          customerId,
+          customerId: contactId,
           pipelineId: 1,
           stageId: 1,
           priorityId: body.ticketDetails?.priority === 'high' ? 1 : body.ticketDetails?.priority === 'low' ? 3 : 2,

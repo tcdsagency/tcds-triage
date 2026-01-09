@@ -219,8 +219,19 @@ export class RiskMonitorScheduler {
       // Update policy record
       await this.updatePolicyStatus(policy, result.newStatus, rprData, mmiData);
 
+      // Extract sale date for filtering (from MMI or RPR)
+      let saleDate: Date | null = null;
+      const latestMMIListing = mmiData?.listingHistory?.[0];
+      if (latestMMIListing?.SOLD_DATE) {
+        saleDate = new Date(latestMMIListing.SOLD_DATE);
+      } else if (mmiData?.lastSaleDate) {
+        saleDate = new Date(mmiData.lastSaleDate);
+      } else if (rprData?.lastSaleDate) {
+        saleDate = new Date(rprData.lastSaleDate);
+      }
+
       // Check if status changed and create alert if needed
-      if (this.shouldCreateAlert(result.previousStatus, result.newStatus)) {
+      if (this.shouldCreateAlert(result.previousStatus, result.newStatus, policy, saleDate)) {
         await this.createAlert(policy, result);
         result.alertCreated = true;
       }
@@ -352,12 +363,23 @@ export class RiskMonitorScheduler {
 
   /**
    * Determine if an alert should be created
+   *
+   * Alert criteria:
+   * - Active/Pending listings: Always alert (customer may be moving)
+   * - Sold: Only alert if:
+   *   1. Sale occurred within last 12 months
+   *   2. Customer has been a client for more than 12 months (established customer)
    */
-  private shouldCreateAlert(previousStatus: string, newStatus: string): boolean {
+  private shouldCreateAlert(
+    previousStatus: string,
+    newStatus: string,
+    policy: typeof riskMonitorPolicies.$inferSelect,
+    saleDate?: Date | null
+  ): boolean {
     // No change
     if (previousStatus === newStatus) return false;
 
-    // Alert on these transitions
+    // Define valid transitions
     const alertTransitions: Record<string, string[]> = {
       off_market: ["active", "pending", "sold"],
       unknown: ["active", "pending", "sold"],
@@ -365,7 +387,40 @@ export class RiskMonitorScheduler {
       pending: ["sold"],
     };
 
-    return alertTransitions[previousStatus]?.includes(newStatus) ?? false;
+    // Check if this is a valid transition
+    if (!alertTransitions[previousStatus]?.includes(newStatus)) {
+      return false;
+    }
+
+    // For active/pending listings - always alert
+    if (newStatus === "active" || newStatus === "pending") {
+      return true;
+    }
+
+    // For sold properties - apply additional filtering
+    if (newStatus === "sold") {
+      const now = new Date();
+      const twelveMonthsAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+      // Check 1: Sale must be within last 12 months
+      const effectiveSaleDate = saleDate || policy.lastSaleDate;
+      if (!effectiveSaleDate || effectiveSaleDate < twelveMonthsAgo) {
+        console.log(`[RiskMonitor] Skipping sold alert - sale date (${effectiveSaleDate?.toISOString()}) is older than 12 months`);
+        return false;
+      }
+
+      // Check 2: Customer must have been a client for more than 12 months
+      const customerSince = policy.customerSinceDate;
+      if (!customerSince || customerSince > twelveMonthsAgo) {
+        console.log(`[RiskMonitor] Skipping sold alert - customer since date (${customerSince?.toISOString()}) is less than 12 months ago`);
+        return false;
+      }
+
+      // Both criteria met
+      return true;
+    }
+
+    return false;
   }
 
   /**

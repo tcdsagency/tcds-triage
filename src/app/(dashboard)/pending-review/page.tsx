@@ -129,6 +129,9 @@ export default function PendingReviewPage() {
       }
     }
 
+    // Determine if this is a lead (has leadId but no customerId, or contactType is 'lead')
+    const isLead = !!item.agencyzoomLeadId && !item.agencyzoomCustomerId;
+
     setActionLoading(true);
     try {
       const res = await fetch(`/api/pending-review/${item.id}/complete`, {
@@ -138,6 +141,7 @@ export default function PendingReviewPage() {
           itemType: item.type,
           action,
           customerId: item.agencyzoomCustomerId || item.agencyzoomLeadId,
+          isLead,
         }),
       });
 
@@ -177,6 +181,9 @@ export default function PendingReviewPage() {
   ) => {
     if (!reviewModalItem) return;
 
+    // Determine if this is a lead
+    const isLead = !!reviewModalItem.agencyzoomLeadId && !reviewModalItem.agencyzoomCustomerId;
+
     setActionLoading(true);
     try {
       const res = await fetch(`/api/pending-review/${reviewModalItem.id}/complete`, {
@@ -186,6 +193,7 @@ export default function PendingReviewPage() {
           itemType: reviewModalItem.type,
           action,
           customerId: reviewModalItem.agencyzoomCustomerId || reviewModalItem.agencyzoomLeadId,
+          isLead,
           noteContent,
         }),
       });
