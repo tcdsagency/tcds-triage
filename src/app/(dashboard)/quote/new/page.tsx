@@ -6,7 +6,7 @@ import {
   ArrowLeft, Sparkles, Car, Home, Ship, Building2, Droplets,
   ChevronDown, ChevronRight, Loader2, Search,
   User, Phone, Mail, Shield, DollarSign, FileText,
-  Plus, Trash2, Wand2, Send, Check, Cloud, HelpCircle
+  Plus, Trash2, Wand2, Send, Check, Cloud, HelpCircle, Navigation2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1362,6 +1362,9 @@ export default function QuoteIntakePage() {
   const [currentFormSection, setCurrentFormSection] = useState<string>("customer-info");
   const [showAgentAssist, setShowAgentAssist] = useState(true);
 
+  // Guided mode for new agents - only shows current section
+  const [guidedMode, setGuidedMode] = useState(false);
+
   // Blocker modal state
   const [showBlockerModal, setShowBlockerModal] = useState(false);
 
@@ -2169,10 +2172,18 @@ export default function QuoteIntakePage() {
             </div>
             <div className="flex items-center gap-2">
               <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-amber-500 to-green-500 transition-all" style={{ width: `${completion}%` }} />
+                <div className={cn(
+                  "h-full bg-gradient-to-r transition-all",
+                  eligibilityStatus === 'DECLINE' && "from-red-500 to-red-600",
+                  eligibilityStatus === 'REVIEW' && "from-amber-500 to-amber-600",
+                  eligibilityStatus === 'ELIGIBLE' && "from-emerald-500 to-emerald-600"
+                )} style={{ width: `${completion}%` }} />
               </div>
               <span className="text-sm font-medium text-gray-300">{completion}%</span>
             </div>
+            <Button variant="outline" size="sm" onClick={() => setGuidedMode(!guidedMode)} className={cn("border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10", guidedMode && "bg-cyan-500/20 text-cyan-300")}>
+              <Navigation2 className="w-4 h-4 mr-2" />{guidedMode ? "Guided" : "Free"}
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setShowAgentAssist(!showAgentAssist)} className={cn("border-indigo-400 text-indigo-300 hover:bg-indigo-500/20 hover:text-indigo-200", showAgentAssist && "bg-indigo-500/30 text-indigo-200")}>
               <HelpCircle className="w-4 h-4 mr-2" />Assist
             </Button>
@@ -3999,6 +4010,8 @@ export default function QuoteIntakePage() {
                   element.scrollIntoView({ behavior: "smooth", block: "start" });
                 }
               }}
+              eligibilityAlerts={eligibilityAlerts}
+              onAcknowledgeAlert={acknowledgeAlert}
             />
           </div>
         )}

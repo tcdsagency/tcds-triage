@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import type { FormSectionGuidance, FormGuidanceTip, QuoteType } from "@/lib/agent-assist/types";
 import { QUOTE_FORM_GUIDANCE } from "@/lib/agent-assist/form-guidance";
+import { EligibilityAlert } from "@/lib/eligibility/types";
+import { UnderwritingAlertsSection } from "./EligibilityAlerts";
 
 // Field completion tracking for checklists
 export interface FieldCompletionStatus {
@@ -17,6 +19,9 @@ interface AgentAssistSidebarProps {
   fieldCompletion?: FieldCompletionStatus;
   onSectionClick?: (sectionId: string) => void;
   className?: string;
+  // Eligibility alerts
+  eligibilityAlerts?: EligibilityAlert[];
+  onAcknowledgeAlert?: (alertId: string) => void;
 }
 
 // Tip type styling - using high contrast colors for readability in dark mode
@@ -202,6 +207,8 @@ export default function AgentAssistSidebar({
   fieldCompletion,
   onSectionClick,
   className,
+  eligibilityAlerts = [],
+  onAcknowledgeAlert,
 }: AgentAssistSidebarProps) {
   const [localExpanded, setLocalExpanded] = useState<string[]>([]);
   const guidance = QUOTE_FORM_GUIDANCE[quoteType] || [];
@@ -245,6 +252,14 @@ export default function AgentAssistSidebar({
           Section {currentIndex + 1} of {guidance.length}
         </p>
       </div>
+
+      {/* Underwriting Alerts - Show at top when there are alerts */}
+      {eligibilityAlerts.length > 0 && (
+        <UnderwritingAlertsSection
+          alerts={eligibilityAlerts}
+          onAcknowledge={onAcknowledgeAlert}
+        />
+      )}
 
       {/* Sections */}
       <div className="flex-1 overflow-y-auto">
