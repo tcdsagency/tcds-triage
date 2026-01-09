@@ -3,10 +3,12 @@
  * ====================================
  * Handles authentication and API calls to Donna AI.
  *
- * Auth flow:
- * 1. POST /am/donna/login with username/password → Session cookies
- * 2. Use session cookies in subsequent requests
- * 3. Session valid ~4 hours, auto-refresh at 3.5 hours
+ * Auth flow (OAuth2):
+ * 1. GET /api/auth/login → Redirects to OAuth authorize
+ * 2. GET /am/donna/login → Returns login form
+ * 3. POST /am/donna/login with credentials + XSRF token
+ * 4. Follow redirects to callback with auth code
+ * 5. Session cookies are set, valid ~4 hours
  *
  * Customer ID format: TCDS-{hawksoftClientNumber}
  */
@@ -29,82 +31,169 @@ import type {
 export class DonnaClient {
   private config: DonnaConfig;
   private baseUrl: string;
-  private authUrl: string;
   private session: DonnaSession | null = null;
 
   constructor(config: DonnaConfig) {
     this.config = config;
     this.baseUrl = config.baseUrl || 'https://donna.gocrux.com';
-    this.authUrl = config.authUrl || 'https://id-au-ui.gocrux.com';
   }
 
   // --------------------------------------------------------------------------
-  // AUTHENTICATION (Session-based)
+  // AUTHENTICATION (OAuth2 flow)
   // --------------------------------------------------------------------------
 
   /**
-   * Login to Donna AI and get session cookies
-   * Donna uses session-based auth via /am/donna/login
+   * Extract cookies from response headers
+   */
+  private extractCookies(headers: Headers): string[] {
+    const setCookies: string[] = [];
+    // @ts-ignore - getSetCookie exists in Node 18+
+    const rawCookies = headers.getSetCookie?.() || [];
+    for (const cookie of rawCookies) {
+      const cookieValue = cookie.split(';')[0].trim();
+      if (cookieValue && !cookieValue.startsWith('Secure') && !cookieValue.startsWith('HttpOnly')) {
+        setCookies.push(cookieValue);
+      }
+    }
+    return setCookies;
+  }
+
+  /**
+   * Update cookies, replacing existing ones with same name
+   */
+  private updateCookies(allCookies: string[], newCookies: string[]): string[] {
+    for (const cookie of newCookies) {
+      const name = cookie.split('=')[0];
+      allCookies = allCookies.filter(c => !c.startsWith(name + '='));
+      allCookies.push(cookie);
+    }
+    return allCookies;
+  }
+
+  /**
+   * Login to Donna AI using OAuth2 flow
    */
   private async login(): Promise<void> {
-    const loginUrl = `${this.authUrl}/am/donna/login`;
+    console.log('[Donna] Starting OAuth2 login flow...');
+    let allCookies: string[] = [];
 
-    console.log('[Donna] Logging in...');
-
-    const response = await fetch(loginUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        username: this.config.username,
-        password: this.config.password,
-      }),
-      credentials: 'include',
+    // Step 1: Start OAuth flow at donna.gocrux.com
+    const startResponse = await fetch(`${this.baseUrl}/api/auth/login`, {
+      redirect: 'manual'
     });
+    allCookies = this.updateCookies(allCookies, this.extractCookies(startResponse.headers));
+    const authorizeUrl = startResponse.headers.get('location');
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error('[Donna] Login failed:', response.status, error);
-      throw new Error(`Donna login failed: ${response.status} ${error}`);
+    if (!authorizeUrl) {
+      throw new Error('Donna OAuth: No authorize URL in response');
     }
 
-    // Extract session cookies from response headers
-    const setCookieHeader = response.headers.get('set-cookie');
-    const cookies: string[] = [];
+    // Step 2: Get OAuth authorize page (redirects to login form)
+    const authorizeResponse = await fetch(authorizeUrl, {
+      redirect: 'manual',
+      headers: { Cookie: allCookies.join('; ') }
+    });
+    allCookies = this.updateCookies(allCookies, this.extractCookies(authorizeResponse.headers));
+    const loginUrl = authorizeResponse.headers.get('location');
 
-    if (setCookieHeader) {
-      // Parse multiple cookies from set-cookie header
-      const cookieParts = setCookieHeader.split(/,(?=\s*[^;,]+=[^;,]+)/);
-      for (const part of cookieParts) {
-        const cookieValue = part.split(';')[0].trim();
-        if (cookieValue) {
-          cookies.push(cookieValue);
+    if (!loginUrl) {
+      throw new Error('Donna OAuth: No login URL from authorize');
+    }
+
+    // Step 3: Get login form to extract XSRF token
+    const loginFormResponse = await fetch(loginUrl, {
+      redirect: 'manual',
+      headers: { Cookie: allCookies.join('; ') }
+    });
+    allCookies = this.updateCookies(allCookies, this.extractCookies(loginFormResponse.headers));
+
+    const html = await loginFormResponse.text();
+
+    // Extract form action URL
+    const actionMatch = html.match(/action="([^"]+)"/);
+    let formAction = actionMatch?.[1] || loginUrl;
+    formAction = formAction.replace(/&amp;/g, '&');
+
+    // Extract hidden fields (XSRF token, client_id)
+    const hiddenFields: Record<string, string> = {};
+    const patterns = [
+      /<input[^>]+type="hidden"[^>]+name="([^"]+)"[^>]+value="([^"]*)"[^>]*>/gi,
+      /<input[^>]+name="([^"]+)"[^>]+type="hidden"[^>]+value="([^"]*)"[^>]*>/gi,
+      /<input[^>]+value="([^"]*)"[^>]+name="([^"]+)"[^>]+type="hidden"[^>]*>/gi
+    ];
+    for (const pattern of patterns) {
+      const matches = html.matchAll(pattern);
+      for (const match of matches) {
+        // Pattern might swap name/value positions
+        if (match[1].startsWith('X-') || match[1] === 'client_id') {
+          hiddenFields[match[1]] = match[2];
+        } else if (match[2].startsWith('X-') || match[2] === 'client_id') {
+          hiddenFields[match[2]] = match[1];
         }
       }
     }
 
-    // Also try to get cookies from response body if present
-    try {
-      const data = await response.json();
-      if (data.token) {
-        cookies.push(`token=${data.token}`);
-      }
-      if (data.sessionId) {
-        cookies.push(`sessionId=${data.sessionId}`);
-      }
-    } catch {
-      // Response might not be JSON, that's OK
+    // Step 4: Submit login form
+    const formData = new URLSearchParams({
+      ...hiddenFields,
+      username: this.config.username,
+      password: this.config.password,
+    });
+
+    console.log('[Donna] Submitting login credentials...');
+    const submitResponse = await fetch(formAction, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Cookie: allCookies.join('; ')
+      },
+      body: formData.toString(),
+      redirect: 'manual'
+    });
+    allCookies = this.updateCookies(allCookies, this.extractCookies(submitResponse.headers));
+
+    if (submitResponse.status !== 302) {
+      throw new Error(`Donna login failed with status ${submitResponse.status}`);
     }
 
-    if (cookies.length === 0) {
-      console.warn('[Donna] No cookies received from login response');
+    // Step 5: Follow redirects to complete OAuth flow
+    let redirectUrl = submitResponse.headers.get('location');
+    if (redirectUrl) {
+      redirectUrl = redirectUrl.replace(/&amp;/g, '&');
+    }
+
+    for (let i = 0; i < 10 && redirectUrl; i++) {
+      // Handle relative URLs
+      let fullUrl = redirectUrl;
+      if (redirectUrl.startsWith('/')) {
+        const hasAMCookie = allCookies.some(c => c.includes('GRAVITEE_IO_AM'));
+        fullUrl = (hasAMCookie ? 'https://id-au-ui.gocrux.com' : this.baseUrl) + redirectUrl;
+      }
+
+      const response = await fetch(fullUrl, {
+        redirect: 'manual',
+        headers: { Cookie: allCookies.join('; ') }
+      });
+      allCookies = this.updateCookies(allCookies, this.extractCookies(response.headers));
+
+      if (response.status !== 302 && response.status !== 301) {
+        break;
+      }
+
+      redirectUrl = response.headers.get('location');
+      if (redirectUrl) {
+        redirectUrl = redirectUrl.replace(/&amp;/g, '&');
+      }
+    }
+
+    // Verify we got the session cookie
+    const hasSessionCookie = allCookies.some(c => c.startsWith('donna-prod='));
+    if (!hasSessionCookie) {
+      console.warn('[Donna] No donna-prod session cookie found');
     }
 
     this.session = {
-      cookies,
-      // Session expires in 4 hours, refresh at 3.5 hours to be safe
+      cookies: allCookies,
       expiresAt: new Date(Date.now() + 3.5 * 60 * 60 * 1000),
     };
 
