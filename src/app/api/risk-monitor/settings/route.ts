@@ -20,10 +20,10 @@ export async function GET(request: NextRequest) {
       .where(eq(riskMonitorSettings.tenantId, tenantId))
       .limit(1);
 
-    // Check credential configuration from env
+    // Check credential configuration - using token service now
     const credentialStatus = {
-      rprConfigured: Boolean(process.env.RPR_USERNAME && process.env.RPR_PASSWORD),
-      mmiConfigured: Boolean(process.env.MMI_API_KEY && process.env.MMI_API_SECRET),
+      rprConfigured: Boolean(process.env.TOKEN_SERVICE_URL),
+      mmiConfigured: Boolean(process.env.TOKEN_SERVICE_URL),
     };
 
     if (!settings) {
