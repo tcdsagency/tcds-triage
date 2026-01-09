@@ -639,6 +639,7 @@ export const propertyLookups = pgTable('property_lookups', {
       construction: boolean;
     };
     tileUrl: string;
+    staticImageUrl?: string;
   }>(),
 
   // RPR Data (cached)

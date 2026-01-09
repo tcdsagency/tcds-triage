@@ -50,6 +50,7 @@ export interface NearmapFeatures {
     construction: boolean;
   };
   tileUrl: string;
+  staticImageUrl?: string;
 }
 
 export interface NearmapSurvey {
@@ -195,8 +196,9 @@ class NearmapClient {
       // Check if AI features are available for this survey
       const hasAiFeatures = latestSurvey.resources?.aifeatures && latestSurvey.resources.aifeatures.length > 0;
 
-      // Build tile URL
+      // Build tile URL and static image URL
       const tileUrl = this.getTileUrl(lat, lng, 19);
+      const staticImageUrl = this.getStaticImageUrl(lat, lng, 800, 600);
 
       // Try to get AI features via polygon endpoint (newer API format)
       let roofData = null;
@@ -214,14 +216,8 @@ class NearmapClient {
         ]);
       }
 
-      // If we got real data, use it; otherwise return null (no mock data)
-      const hasRealData = roofData || buildingData || poolData || solarData;
-
-      if (!hasRealData) {
-        console.log('Nearmap: No AI feature data available for this location');
-        return null;
-      }
-
+      // Return data with whatever we have - at minimum we have survey info and image URLs
+      // AI feature data is optional
       return {
         surveyDate: latestSurvey.captureDate,
         building: {
@@ -257,6 +253,7 @@ class NearmapClient {
           construction: false,
         },
         tileUrl,
+        staticImageUrl,
       };
     } catch (error) {
       console.error('Nearmap getFeatures error:', error);
