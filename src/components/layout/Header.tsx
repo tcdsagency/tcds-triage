@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client';
 import { Bell, Search, Menu, LogOut, User, MessageSquare, Check, ExternalLink, Wifi, WifiOff, Users, FileText, Phone, Loader2 } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { useSMSStream } from '@/hooks/useSMSStream';
+import { NotificationBell } from '@/components/features/NotificationBell';
+import { useRealtimeNotifications } from '@/components/providers/NotificationProvider';
 
 interface HeaderProps {
   user: SupabaseUser;
@@ -150,6 +152,9 @@ export function Header({ user }: HeaderProps) {
     acknowledgeMessage,
     acknowledgeAll,
   } = useSMSStream(true);
+
+  // Enable browser notifications via WebSocket
+  useRealtimeNotifications();
 
   // Acknowledge a single message
   const handleAcknowledge = async (messageId: string, e: React.MouseEvent) => {
@@ -386,6 +391,9 @@ export function Header({ user }: HeaderProps) {
               </div>
             )}
           </div>
+
+          {/* Browser Notification Settings */}
+          <NotificationBell />
 
           {/* Separator */}
           <div className="hidden lg:block lg:h-6 lg:w-px lg:bg-gray-200" />

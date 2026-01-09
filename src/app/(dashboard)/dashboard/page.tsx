@@ -35,25 +35,26 @@ import { Skeleton, SkeletonStatCard } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-interface TriageItem {
+interface PendingItem {
   id: string;
   type: string;
-  title: string;
-  description?: string;
-  priority: string;
-  status: string;
-  customer_name?: string;
-  created_at: string;
+  contactName: string | null;
+  contactPhone: string;
+  summary: string;
+  matchStatus: string;
+  requestType: string | null;
+  ageMinutes: number;
+  timestamp: string;
 }
 
 interface DashboardStats {
   totalCustomers: number;
   activeLeads: number;
   pendingQuotes: number;
-  triageCount: number;
+  pendingReviewCount: number;
   // Yesterday's values for trend indicators
   yesterdayLeads?: number;
-  yesterdayTriage?: number;
+  yesterdayPendingReview?: number;
   yesterdayQuotes?: number;
   todaysCalls?: number;
 }
@@ -79,14 +80,14 @@ interface DonnaAlert {
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [triageItems, setTriageItems] = useState<TriageItem[]>([]);
+  const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     totalCustomers: 0,
     activeLeads: 0,
     pendingQuotes: 0,
-    triageCount: 0,
+    pendingReviewCount: 0,
     yesterdayLeads: 2,
-    yesterdayTriage: 3,
+    yesterdayPendingReview: 3,
     yesterdayQuotes: 1,
     todaysCalls: 0,
   });
@@ -116,13 +117,13 @@ export default function DashboardPage() {
         console.error("User fetch error:", userErr);
       }
 
-      // Fetch triage items
-      const triageRes = await fetch("/api/triage?status=pending&limit=5");
-      if (triageRes.ok) {
-        const triageData = await triageRes.json();
-        if (triageData.success) {
-          setTriageItems(triageData.items || []);
-          setStats(prev => ({ ...prev, triageCount: triageData.total || 0 }));
+      // Fetch pending review items
+      const pendingRes = await fetch("/api/pending-review?limit=5");
+      if (pendingRes.ok) {
+        const pendingData = await pendingRes.json();
+        if (pendingData.success) {
+          setPendingItems(pendingData.items || []);
+          setStats(prev => ({ ...prev, pendingReviewCount: pendingData.counts?.total || 0 }));
         }
       }
 
@@ -196,11 +197,29 @@ export default function DashboardPage() {
 
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case "call": return Phone;
+      case "call":
+      case "wrapup": return Phone;
       case "quote": return FileText;
+      case "message": return MessageSquare;
       case "service": return Users;
       default: return AlertCircle;
     }
+  };
+
+  const getMatchStatusColor = (matchStatus: string) => {
+    switch (matchStatus) {
+      case "matched": return "bg-green-500";
+      case "needs_review": return "bg-amber-500";
+      case "unmatched": return "bg-red-500";
+      case "after_hours": return "bg-purple-500";
+      default: return "bg-gray-400";
+    }
+  };
+
+  const formatAgeMinutes = (minutes: number) => {
+    if (minutes < 60) return `${minutes}m ago`;
+    if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+    return `${Math.floor(minutes / 1440)}d ago`;
   };
 
   if (loading) {
@@ -274,10 +293,10 @@ export default function DashboardPage() {
             </p>
             {/* Quick Priority Summary */}
             <div className="flex flex-wrap items-center gap-3 mt-4">
-              {stats.triageCount > 0 && (
+              {stats.pendingReviewCount > 0 && (
                 <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30">
                   <AlertCircle className="w-3 h-3 mr-1" />
-                  {stats.triageCount} items need attention
+                  {stats.pendingReviewCount} items need review
                 </Badge>
               )}
               {stats.activeLeads > 0 && (
@@ -286,7 +305,7 @@ export default function DashboardPage() {
                   {stats.activeLeads} active leads
                 </Badge>
               )}
-              {stats.triageCount === 0 && stats.activeLeads === 0 && (
+              {stats.pendingReviewCount === 0 && stats.activeLeads === 0 && (
                 <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                   <CheckCircle2 className="w-3 h-3 mr-1" />
                   All caught up!
@@ -323,15 +342,15 @@ export default function DashboardPage() {
           } : undefined}
         />
         <StatCard
-          title="Triage Queue"
-          value={stats.triageCount}
+          title="Pending Review"
+          value={stats.pendingReviewCount}
           icon={AlertCircle}
           color="bg-amber-500"
-          href="/triage"
-          subtitle={stats.triageCount === 0 ? "All clear!" : undefined}
-          change={stats.yesterdayTriage !== undefined && stats.triageCount > 0 ? {
-            value: `${Math.abs(stats.triageCount - stats.yesterdayTriage)} from yesterday`,
-            positive: stats.triageCount <= stats.yesterdayTriage
+          href="/pending-review"
+          subtitle={stats.pendingReviewCount === 0 ? "All clear!" : undefined}
+          change={stats.yesterdayPendingReview !== undefined && stats.pendingReviewCount > 0 ? {
+            value: `${Math.abs(stats.pendingReviewCount - stats.yesterdayPendingReview)} from yesterday`,
+            positive: stats.pendingReviewCount <= stats.yesterdayPendingReview
           } : undefined}
         />
         <StatCard
@@ -357,55 +376,55 @@ export default function DashboardPage() {
 
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Triage Queue */}
+        {/* Pending Review */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-amber-500" />
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Triage Queue</h2>
-              {stats.triageCount > 0 && (
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Pending Review</h2>
+              {stats.pendingReviewCount > 0 && (
                 <Badge variant="secondary" className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                  {stats.triageCount}
+                  {stats.pendingReviewCount}
                 </Badge>
               )}
             </div>
-            <Link href="/triage" className="text-sm text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1">
+            <Link href="/pending-review" className="text-sm text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1">
               View all <ChevronRight className="w-4 h-4" />
             </Link>
           </div>
           <div className="divide-y divide-gray-100 dark:divide-gray-700">
-            {triageItems.length === 0 ? (
+            {pendingItems.length === 0 ? (
               <div className="px-6 py-8 text-center">
                 <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-4">
                   <CheckCircle2 className="w-8 h-8 text-emerald-500" />
                 </div>
                 <h3 className="font-semibold text-gray-900 dark:text-white mb-1">All caught up!</h3>
-                <p className="text-gray-600 dark:text-gray-400 text-sm">No pending triage items.</p>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">No items pending review.</p>
               </div>
             ) : (
-              triageItems.map((item) => {
+              pendingItems.map((item) => {
                 const TypeIcon = getTypeIcon(item.type);
                 return (
                   <Link
                     key={item.id}
-                    href={`/triage?id=${item.id}`}
+                    href={`/pending-review?id=${item.id}`}
                     className="px-6 py-4 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                   >
-                    <div className={cn("h-2 w-2 rounded-full", getPriorityColor(item.priority))} />
+                    <div className={cn("h-2 w-2 rounded-full", getMatchStatusColor(item.matchStatus))} />
                     <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                       <TypeIcon className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                        {item.title}
+                        {item.contactName || item.contactPhone}
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {item.customer_name || "Unknown"}
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {item.requestType || item.summary?.substring(0, 50)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                       <Clock className="h-3 w-3" />
-                      {formatTimeAgo(item.created_at)}
+                      {formatAgeMinutes(item.ageMinutes)}
                     </div>
                   </Link>
                 );

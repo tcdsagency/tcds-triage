@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { calls, triageItems, leadQueueEntries, quotes, users } from "@/db/schema";
+import { calls, wrapupDrafts, leadQueueEntries, quotes, users } from "@/db/schema";
 import { eq, and, gte, lte, desc, count, sql } from "drizzle-orm";
 
 // =============================================================================
@@ -50,20 +50,20 @@ export async function GET(request: NextRequest) {
           )
         ),
 
-      // Triage statistics
+      // Wrapup/Review statistics
       db
         .select({
           total: count(),
-          completed: sql<number>`count(*) filter (where ${triageItems.status} = 'completed')`,
-          pending: sql<number>`count(*) filter (where ${triageItems.status} = 'pending')`,
-          urgent: sql<number>`count(*) filter (where ${triageItems.priority} = 'urgent')`,
+          completed: sql<number>`count(*) filter (where ${wrapupDrafts.status} = 'completed')`,
+          pending: sql<number>`count(*) filter (where ${wrapupDrafts.status} = 'pending_review')`,
+          matched: sql<number>`count(*) filter (where ${wrapupDrafts.matchStatus} = 'matched')`,
         })
-        .from(triageItems)
+        .from(wrapupDrafts)
         .where(
           and(
-            eq(triageItems.tenantId, tenantId),
-            gte(triageItems.createdAt, statsDate),
-            lte(triageItems.createdAt, statsEndDate)
+            eq(wrapupDrafts.tenantId, tenantId),
+            gte(wrapupDrafts.createdAt, statsDate),
+            lte(wrapupDrafts.createdAt, statsEndDate)
           )
         ),
 
@@ -100,24 +100,24 @@ export async function GET(request: NextRequest) {
           )
         ),
 
-      // Pending triage items (for morning briefing)
+      // Pending review items (for morning briefing)
       db
         .select({
-          id: triageItems.id,
-          type: triageItems.type,
-          priority: triageItems.priority,
-          title: triageItems.title,
-          description: triageItems.description,
-          createdAt: triageItems.createdAt,
+          id: wrapupDrafts.id,
+          type: sql<string>`'wrapup'`,
+          matchStatus: wrapupDrafts.matchStatus,
+          contactName: wrapupDrafts.customerName,
+          summary: wrapupDrafts.aiCleanedSummary,
+          createdAt: wrapupDrafts.createdAt,
         })
-        .from(triageItems)
+        .from(wrapupDrafts)
         .where(
           and(
-            eq(triageItems.tenantId, tenantId),
-            eq(triageItems.status, "pending")
+            eq(wrapupDrafts.tenantId, tenantId),
+            eq(wrapupDrafts.status, "pending_review")
           )
         )
-        .orderBy(desc(triageItems.createdAt))
+        .orderBy(desc(wrapupDrafts.createdAt))
         .limit(10),
 
       // Unclaimed leads
@@ -172,16 +172,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Build briefing data
+    // Build briefing data (triageStats renamed to wrapupStats internally)
+    const wrapupStats = triageStats[0] || { total: 0, completed: 0, pending: 0, matched: 0 };
     const stats = {
       calls: callStats[0] || { total: 0, answered: 0, missed: 0 },
-      triage: triageStats[0] || { total: 0, completed: 0, pending: 0, urgent: 0 },
+      pendingReview: wrapupStats,
       leads: leadStats[0] || { total: 0, claimed: 0, unclaimed: 0 },
       quotes: quoteStats[0] || { total: 0, accepted: 0, presented: 0, draft: 0 },
     };
 
+    // pendingTriage renamed to pendingReview internally
+    const pendingReview = pendingTriage;
+
     // Generate AI summary
-    const aiSummary = await generateBriefingSummary(type, stats, pendingTriage, pendingLeads);
+    const aiSummary = await generateBriefingSummary(type, stats, pendingReview, pendingLeads);
 
     // Build response
     const briefing = {
@@ -194,11 +198,11 @@ export async function GET(request: NextRequest) {
       summary: aiSummary,
       stats,
       priorities: type === "morning" ? {
-        urgentTriageItems: pendingTriage.filter((t) => t.priority === "urgent").length,
-        pendingTriageItems: pendingTriage.length,
+        needsReviewItems: pendingReview.filter((t) => t.matchStatus === "unmatched" || t.matchStatus === "multiple_matches").length,
+        pendingReviewItems: pendingReview.length,
         unclaimedLeads: pendingLeads.length,
       } : undefined,
-      pendingItems: type === "morning" ? pendingTriage : undefined,
+      pendingItems: type === "morning" ? pendingReview : undefined,
       unclaimedLeads: type === "morning" ? pendingLeads : undefined,
       topPerformers: type === "eod" ? topAgents.map((a) => ({
         name: agentMap[a.agentId || ""] || "Unknown",
