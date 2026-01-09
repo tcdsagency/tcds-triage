@@ -28,6 +28,7 @@ import {
   VISUAL_HEATING_TYPES,
   VISUAL_VEHICLE_USAGE,
 } from "@/components/features/VisualOptionSelector";
+import { AddressLookup } from "@/components/features/AddressLookup";
 
 // =============================================================================
 // TYPES
@@ -1713,6 +1714,96 @@ export default function QuoteIntakePage() {
     if (errors[field]) setErrors(prev => { const n = {...prev}; delete n[field]; return n; });
   };
 
+  // Handle property data from RPR/Nearmap lookup
+  const handlePropertyData = useCallback((data: {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+    lat: number;
+    lng: number;
+    yearBuilt?: number;
+    squareFootage?: number;
+    stories?: number;
+    roofType?: string;
+    foundation?: string;
+    constructionType?: string;
+    hasPool?: boolean;
+    hasSolar?: boolean;
+    roofCondition?: string;
+    roofConditionScore?: number;
+    estimatedValue?: number;
+  }) => {
+    setHomeownersFormData(prev => {
+      const updates: Partial<HomeownersFormData> = {
+        propertyCity: data.city || prev.propertyCity,
+        propertyState: data.state || prev.propertyState,
+        propertyZip: data.zip || prev.propertyZip,
+      };
+
+      // Prefill year built
+      if (data.yearBuilt) {
+        updates.yearBuilt = String(data.yearBuilt);
+        // Calculate roof age if year built available and roof not updated
+        const currentYear = new Date().getFullYear();
+        const roofAge = currentYear - data.yearBuilt;
+        if (roofAge >= 0 && roofAge < 100) {
+          updates.roofAge = String(roofAge);
+        }
+      }
+
+      // Prefill square footage
+      if (data.squareFootage) {
+        updates.squareFootage = data.squareFootage.toLocaleString();
+      }
+
+      // Prefill stories
+      if (data.stories) {
+        updates.stories = String(data.stories);
+      }
+
+      // Prefill roof material (already normalized by AddressLookup)
+      if (data.roofType) {
+        updates.roofMaterial = data.roofType;
+      }
+
+      // Prefill foundation type
+      if (data.foundation) {
+        updates.foundationType = data.foundation;
+      }
+
+      // Prefill construction type
+      if (data.constructionType) {
+        updates.constructionType = data.constructionType;
+      }
+
+      // Prefill pool
+      if (data.hasPool !== undefined) {
+        updates.hasPool = data.hasPool;
+        if (data.hasPool) {
+          updates.poolType = 'inground'; // Default - Nearmap detects in-ground pools
+        }
+      }
+
+      // Prefill dwelling coverage estimate based on estimated value
+      if (data.estimatedValue && data.estimatedValue > 50000) {
+        updates.dwellingCoverage = `$${data.estimatedValue.toLocaleString()}`;
+      }
+
+      return { ...prev, ...updates };
+    });
+
+    // Clear any errors for prefilled fields
+    setErrors(prev => {
+      const n = { ...prev };
+      delete n.propertyCity;
+      delete n.propertyState;
+      delete n.propertyZip;
+      delete n.yearBuilt;
+      return n;
+    });
+  }, []);
+
   // Mobile Home form field updates
   const updateMobileHomeField = (field: keyof MobileHomeFormData, value: any) => {
     setMobileHomeFormData(prev => ({ ...prev, [field]: value }));
@@ -2426,7 +2517,16 @@ export default function QuoteIntakePage() {
             {/* Property Location */}
             <Section id="property" icon={Home} title="Property Information">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Property Address" value={homeownersFormData.propertyAddress} onChange={(v: string) => updateHomeownersField("propertyAddress", v)} required placeholder="123 Main St" className="col-span-2" error={errors.propertyAddress} />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Property Address <span className="text-red-400">*</span></label>
+                  <AddressLookup
+                    value={homeownersFormData.propertyAddress}
+                    onChange={(v) => updateHomeownersField("propertyAddress", v)}
+                    onPropertyData={handlePropertyData}
+                    placeholder="Start typing address..."
+                    error={errors.propertyAddress}
+                  />
+                </div>
                 <Field label="City" value={homeownersFormData.propertyCity} onChange={(v: string) => updateHomeownersField("propertyCity", v)} required placeholder="Birmingham" />
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="State" value={homeownersFormData.propertyState} onChange={(v: string) => updateHomeownersField("propertyState", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
