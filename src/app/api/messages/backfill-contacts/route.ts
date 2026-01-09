@@ -116,16 +116,16 @@ export async function POST(request: NextRequest) {
         const firstName = localContact.firstName || '';
         const lastName = localContact.lastName || '';
         const fullName = `${firstName} ${lastName}`.trim();
-        const contactInfo = {
-          id: localContact.agencyzoomId || localContact.id,
-          name: fullName || null, // Don't set empty string
-          type: (localContact.isLead ? "lead" : "customer") as "customer" | "lead",
-        };
         // Only update if we have a valid name
-        if (!contactInfo.name) {
+        if (!fullName) {
           skipped++;
           continue;
         }
+        const contactInfo = {
+          id: localContact.agencyzoomId || localContact.id,
+          name: fullName,
+          type: (localContact.isLead ? "lead" : "customer") as "customer" | "lead",
+        };
         phoneCache.set(normalizedPhone, contactInfo);
 
         await db
