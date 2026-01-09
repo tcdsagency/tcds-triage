@@ -2878,3 +2878,115 @@ export const apiRetryQueue = pgTable('api_retry_queue', {
   index('api_retry_queue_wrapup_idx').on(table.wrapupDraftId),
 ]);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// LIFE INSURANCE QUOTES (Back9 Integration)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const lifeQuoteStatusEnum = pgEnum('life_quote_status', [
+  'quoted',
+  'emailed',
+  'application_started',
+  'application_submitted',
+  'policy_issued',
+  'declined',
+  'expired',
+]);
+
+export const lifeQuotes = pgTable('life_quotes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  customerId: uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+
+  // Quote request data
+  requestParams: jsonb('request_params').notNull().$type<{
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string;
+    gender: string;
+    state: string;
+    healthClass: string;
+    tobaccoUse: string;
+    coverageAmount: number;
+    termLength: number;
+    policyType: string;
+  }>(),
+
+  // Best quote from results
+  bestQuote: jsonb('best_quote').notNull().$type<{
+    id: string;
+    carrier: {
+      id: string;
+      name: string;
+      logoUrl?: string;
+      amBestRating: string;
+      amBestRatingNumeric: number;
+    };
+    productName: string;
+    monthlyPremium: number;
+    annualPremium: number;
+    deathBenefit: number;
+    termLength: number;
+    policyType: string;
+    features: string[];
+    illustrationUrl?: string;
+    applicationUrl?: string;
+  }>(),
+
+  // All quotes returned
+  allQuotes: jsonb('all_quotes').notNull().$type<Array<{
+    id: string;
+    carrier: {
+      id: string;
+      name: string;
+      logoUrl?: string;
+      amBestRating: string;
+      amBestRatingNumeric: number;
+    };
+    productName: string;
+    monthlyPremium: number;
+    annualPremium: number;
+    deathBenefit: number;
+    termLength: number;
+    policyType: string;
+    features: string[];
+    illustrationUrl?: string;
+    applicationUrl?: string;
+  }>>(),
+
+  // Status
+  status: lifeQuoteStatusEnum('status').notNull().default('quoted'),
+
+  // Metadata
+  emailedToCustomer: boolean('emailed_to_customer').default(false),
+  applicationStarted: boolean('application_started').default(false),
+  selectedQuoteId: text('selected_quote_id'),
+  notes: text('notes'),
+
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('life_quotes_customer_idx').on(table.customerId),
+  index('life_quotes_agent_idx').on(table.agentId),
+  index('life_quotes_status_idx').on(table.status),
+  index('life_quotes_created_at_idx').on(table.createdAt),
+  index('life_quotes_tenant_idx').on(table.tenantId),
+]);
+
+// Life Quote Relations
+export const lifeQuotesRelations = relations(lifeQuotes, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [lifeQuotes.tenantId],
+    references: [tenants.id],
+  }),
+  customer: one(customers, {
+    fields: [lifeQuotes.customerId],
+    references: [customers.id],
+  }),
+  agent: one(users, {
+    fields: [lifeQuotes.agentId],
+    references: [users.id],
+  }),
+}));
+
