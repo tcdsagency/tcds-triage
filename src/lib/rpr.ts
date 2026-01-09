@@ -1,10 +1,10 @@
 // RPR (Realtors Property Resource) API Client
-// Uses browser automation to extract auth token, then makes REST API calls
+// Uses token service on GCP VM for authentication
 // Base URL: https://webapi.narrpr.com
-// Requires RPR_EMAIL and RPR_PASSWORD environment variables
 
-import { spawn } from "child_process";
-import path from "path";
+// Token service configuration
+const TOKEN_SERVICE_URL = process.env.TOKEN_SERVICE_URL || "http://34.145.14.37:8899";
+const TOKEN_SERVICE_SECRET = process.env.TOKEN_SERVICE_SECRET || "tcds_token_service_2025";
 
 // =============================================================================
 // TYPES
@@ -140,7 +140,7 @@ class RPRClient {
    * Check if API credentials are configured
    */
   isConfigured(): boolean {
-    return Boolean(process.env.RPR_EMAIL && process.env.RPR_PASSWORD);
+    return Boolean(TOKEN_SERVICE_URL);
   }
 
   /**
@@ -152,64 +152,42 @@ class RPRClient {
   }
 
   /**
-   * Extract token using Python Playwright script
+   * Fetch token from token service on GCP VM
    */
   private async extractToken(): Promise<TokenData | null> {
-    return new Promise((resolve) => {
-      const scriptPath = path.join(process.cwd(), "server/scripts/rpr_token_extractor.py");
+    try {
+      console.log("[RPR] Fetching token from token service...");
 
-      const env = {
-        ...process.env,
-        RPR_EMAIL: process.env.RPR_EMAIL || "",
-        RPR_PASSWORD: process.env.RPR_PASSWORD || "",
-      };
-
-      console.log("[RPR] Extracting token via browser automation...");
-
-      const python = spawn("python3", [scriptPath], { env });
-
-      let stdout = "";
-      let stderr = "";
-
-      python.stdout.on("data", (data) => {
-        stdout += data.toString();
+      const response = await fetch(`${TOKEN_SERVICE_URL}/tokens/rpr`, {
+        headers: {
+          Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
+        },
+        // 2 minute timeout for token extraction
+        signal: AbortSignal.timeout(120000),
       });
 
-      python.stderr.on("data", (data) => {
-        stderr += data.toString();
-        console.log("[RPR]", data.toString().trim());
-      });
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`[RPR] Token service error: ${response.status} - ${error}`);
+        return null;
+      }
 
-      python.on("close", (code) => {
-        if (code !== 0) {
-          console.error("[RPR] Token extraction failed with code:", code);
-          console.error("[RPR] stderr:", stderr);
-          resolve(null);
-          return;
-        }
+      const result = await response.json();
 
-        try {
-          const result = JSON.parse(stdout.trim());
-          if (result.success && result.token) {
-            resolve({
-              token: result.token,
-              expiresAt: result.expiresAt,
-            });
-          } else {
-            console.error("[RPR] Token extraction error:", result.error);
-            resolve(null);
-          }
-        } catch (e) {
-          console.error("[RPR] Failed to parse token response:", stdout);
-          resolve(null);
-        }
-      });
-
-      python.on("error", (err) => {
-        console.error("[RPR] Failed to spawn Python process:", err);
-        resolve(null);
-      });
-    });
+      if (result.success && result.token) {
+        console.log("[RPR] Token received from service (cached:", result.cached, ")");
+        return {
+          token: result.token,
+          expiresAt: result.expiresAt,
+        };
+      } else {
+        console.error("[RPR] Token service returned error:", result.error);
+        return null;
+      }
+    } catch (error: any) {
+      console.error("[RPR] Failed to fetch token from service:", error.message);
+      return null;
+    }
   }
 
   /**

@@ -1,10 +1,10 @@
 // MMI (Market Data) API Client
-// Uses browser automation to extract auth token, then makes REST API calls
+// Uses token service on GCP VM for authentication
 // Base URL: https://api.mmi.run/api/v2
-// Requires MMI_EMAIL and MMI_PASSWORD environment variables
 
-import { spawn } from "child_process";
-import path from "path";
+// Token service configuration
+const TOKEN_SERVICE_URL = process.env.TOKEN_SERVICE_URL || "http://34.145.14.37:8899";
+const TOKEN_SERVICE_SECRET = process.env.TOKEN_SERVICE_SECRET || "tcds_token_service_2025";
 
 // =============================================================================
 // TYPES
@@ -80,7 +80,8 @@ class MMIClient {
    * Check if API credentials are configured
    */
   isConfigured(): boolean {
-    return Boolean(process.env.MMI_EMAIL && process.env.MMI_PASSWORD);
+    // Check if token service is available (always true if we have the URL)
+    return Boolean(TOKEN_SERVICE_URL);
   }
 
   /**
@@ -93,64 +94,42 @@ class MMIClient {
   }
 
   /**
-   * Extract token using Python Playwright script
+   * Fetch token from token service on GCP VM
    */
   private async extractToken(): Promise<TokenData | null> {
-    return new Promise((resolve) => {
-      const scriptPath = path.join(process.cwd(), "server/scripts/mmi_cookie_extractor.py");
+    try {
+      console.log("[MMI] Fetching token from token service...");
 
-      const env = {
-        ...process.env,
-        MMI_EMAIL: process.env.MMI_EMAIL || "",
-        MMI_PASSWORD: process.env.MMI_PASSWORD || "",
-      };
-
-      console.log("[MMI] Extracting token via browser automation...");
-
-      const python = spawn("python3", [scriptPath], { env });
-
-      let stdout = "";
-      let stderr = "";
-
-      python.stdout.on("data", (data) => {
-        stdout += data.toString();
+      const response = await fetch(`${TOKEN_SERVICE_URL}/tokens/mmi`, {
+        headers: {
+          Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
+        },
+        // 2 minute timeout for token extraction (browser automation takes time)
+        signal: AbortSignal.timeout(120000),
       });
 
-      python.stderr.on("data", (data) => {
-        stderr += data.toString();
-        console.log("[MMI]", data.toString().trim());
-      });
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`[MMI] Token service error: ${response.status} - ${error}`);
+        return null;
+      }
 
-      python.on("close", (code) => {
-        if (code !== 0) {
-          console.error("[MMI] Token extraction failed with code:", code);
-          console.error("[MMI] stderr:", stderr);
-          resolve(null);
-          return;
-        }
+      const result = await response.json();
 
-        try {
-          const result = JSON.parse(stdout.trim());
-          if (result.success && result.token) {
-            resolve({
-              token: result.token,
-              expiresAt: result.expiresAt,
-            });
-          } else {
-            console.error("[MMI] Token extraction error:", result.error);
-            resolve(null);
-          }
-        } catch (e) {
-          console.error("[MMI] Failed to parse token response:", stdout);
-          resolve(null);
-        }
-      });
-
-      python.on("error", (err) => {
-        console.error("[MMI] Failed to spawn Python process:", err);
-        resolve(null);
-      });
-    });
+      if (result.success && result.token) {
+        console.log("[MMI] Token received from service (cached:", result.cached, ")");
+        return {
+          token: result.token,
+          expiresAt: result.expiresAt,
+        };
+      } else {
+        console.error("[MMI] Token service returned error:", result.error);
+        return null;
+      }
+    } catch (error: any) {
+      console.error("[MMI] Failed to fetch token from service:", error.message);
+      return null;
+    }
   }
 
   /**
