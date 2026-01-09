@@ -67,6 +67,7 @@ export interface PendingItemCardProps {
   onCheck?: (checked: boolean) => void;
   onQuickAction?: (action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'void') => void;
   onReviewClick?: () => void;
+  onFindMatch?: () => void;
 }
 
 // =============================================================================
@@ -147,6 +148,7 @@ export default function PendingItemCard({
   onCheck,
   onQuickAction,
   onReviewClick,
+  onFindMatch,
 }: PendingItemCardProps) {
   const matchConfig = MATCH_STATUS_CONFIG[item.matchStatus] || MATCH_STATUS_CONFIG.unmatched;
   const typeConfig = TYPE_CONFIG[item.type] || TYPE_CONFIG.wrapup;
@@ -317,9 +319,19 @@ export default function PendingItemCard({
       {/* Quick Actions */}
       {onQuickAction && (
         <div
-          className="flex items-center gap-2 pt-3 border-t border-gray-200 dark:border-gray-700"
+          className="flex flex-wrap items-center gap-2 pt-3 border-t border-gray-200 dark:border-gray-700"
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Find Match button - for unmatched or needs_review items */}
+          {(item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review') && onFindMatch && (
+            <button
+              onClick={onFindMatch}
+              className="px-3 py-1.5 text-xs rounded-lg font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+            >
+              🔍 Find Match
+            </button>
+          )}
+
           {/* Review & Post button - opens modal for editing */}
           {(item.matchStatus === 'matched' || item.agencyzoomCustomerId || item.agencyzoomLeadId) && onReviewClick && (
             <button
