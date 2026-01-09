@@ -10,6 +10,7 @@ import { MergedProfile } from "@/types/customer-profile";
 import { Playbook, AgentSuggestion, TelemetryFeedback } from "@/lib/agent-assist/types";
 import { AgentAvatar } from "@/components/ui/agent-avatar";
 import { AgencyZoomButton, getAgencyZoomUrl } from "@/components/ui/agencyzoom-link";
+import { CanopyConnectSMS } from "@/components/CanopyConnectSMS";
 
 // =============================================================================
 // TYPES
@@ -949,6 +950,16 @@ export default function CallPopup({
                   <span>👤</span>
                   Open Full Profile
                 </button>
+
+                {/* Send Canopy Connect */}
+                <CanopyConnectSMS
+                  customerPhone={phoneNumber}
+                  customerName={customerLookup?.name?.split(' ')[0]}
+                  customerId={customerLookup?.id}
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-center"
+                />
               </div>
             </div>
           )}

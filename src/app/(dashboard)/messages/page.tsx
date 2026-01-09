@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { CanopyConnectSMS } from "@/components/CanopyConnectSMS";
 
 // Types from API
 interface SMSMessage {
@@ -469,6 +470,13 @@ export default function MessagesPage() {
                 <Phone className="w-4 h-4 mr-2" />
                 Call
               </Button>
+              <CanopyConnectSMS
+                customerPhone={selectedConversation.contact.phone}
+                customerName={selectedConversation.contact.name?.split(' ')[0]}
+                customerId={selectedConversation.contact.id}
+                variant="outline"
+                size="sm"
+              />
               <Button variant="outline" size="sm">
                 <User className="w-4 h-4 mr-2" />
                 Profile

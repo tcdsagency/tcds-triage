@@ -19,6 +19,7 @@ import {
   XCircle,
   ChevronRight,
 } from 'lucide-react';
+import { CanopyConnectSMS } from '@/components/CanopyConnectSMS';
 
 export function ReviewStep() {
   const { formData, updateField, updateNestedField, eligibility, goToStep } = useQuoteWizard();
@@ -160,9 +161,17 @@ export function ReviewStep() {
 
       {/* Current Insurance */}
       <section>
-        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
-          Current Insurance
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+            Current Insurance
+          </h3>
+          <CanopyConnectSMS
+            customerPhone={formData.phone}
+            customerName={formData.firstName}
+            variant="outline"
+            size="sm"
+          />
+        </div>
         <div className="space-y-4">
           <label className="flex items-center gap-3 cursor-pointer">
             <input

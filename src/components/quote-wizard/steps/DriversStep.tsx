@@ -10,6 +10,7 @@ import { useQuoteWizard } from '../QuoteWizardProvider';
 import { cn } from '@/lib/utils';
 import { Plus, Trash2, User } from 'lucide-react';
 import { Driver } from '../config/types';
+import { CanopyConnectSMS } from '@/components/CanopyConnectSMS';
 
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
@@ -39,10 +40,18 @@ export function DriversStep() {
 
   return (
     <div className="space-y-6">
-      {/* Instructions */}
-      <p className="text-gray-600 dark:text-gray-400">
-        Add all licensed drivers in your household, including those who don&apos;t drive regularly.
-      </p>
+      {/* Header with Canopy Connect */}
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-gray-600 dark:text-gray-400">
+          Add all licensed drivers in your household, including those who don&apos;t drive regularly.
+        </p>
+        <CanopyConnectSMS
+          customerPhone={formData.phone}
+          customerName={formData.firstName}
+          variant="outline"
+          size="sm"
+        />
+      </div>
 
       {/* Driver list */}
       <div className="space-y-6">
