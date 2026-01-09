@@ -294,13 +294,33 @@ export class HawkSoftAPI {
    * HawkSoft may return these fields in various formats
    */
   private normalizeClient(client: any): HawkSoftClient {
+    // Log raw client data to identify field names (temporary debugging)
+    const agentFields = Object.keys(client).filter(k =>
+      k.toLowerCase().includes('producer') ||
+      k.toLowerCase().includes('csr') ||
+      k.toLowerCase().includes('agent') ||
+      k.toLowerCase().includes('rep') ||
+      k.toLowerCase().includes('service')
+    );
+
+    if (agentFields.length > 0) {
+      console.log(`[HawkSoft] Client ${client.clientNumber} agent fields:`,
+        agentFields.reduce((acc, k) => ({ ...acc, [k]: client[k] }), {})
+      );
+    } else {
+      // Log ALL fields for first client to see what's available
+      console.log(`[HawkSoft] Client ${client.clientNumber} ALL fields:`, Object.keys(client));
+    }
+
     // Map various HawkSoft field names to our normalized structure
     const normalized = { ...client } as HawkSoftClient;
 
     // Normalize producer (may be in different field names)
     if (!normalized.producer) {
-      const producerId = client.producerId || client.ProducerId || client.agentId || client.AgentId;
-      const producerName = client.producerName || client.ProducerName || client.agentName || client.AgentName;
+      const producerId = client.producerId || client.ProducerId || client.agentId || client.AgentId ||
+                         client.agent1Id || client.Agent1Id || client.primaryAgentId;
+      const producerName = client.producerName || client.ProducerName || client.agentName || client.AgentName ||
+                           client.agent1Name || client.Agent1Name || client.primaryAgentName;
       const producerEmail = client.producerEmail || client.ProducerEmail || client.agentEmail || client.AgentEmail;
 
       if (producerId || producerName) {
@@ -309,13 +329,16 @@ export class HawkSoftAPI {
           name: producerName || 'Unknown Producer',
           email: producerEmail,
         };
+        console.log(`[HawkSoft] Client ${client.clientNumber} producer mapped:`, normalized.producer);
       }
     }
 
     // Normalize CSR (may be in different field names)
     if (!normalized.csr) {
-      const csrId = client.csrId || client.CsrId || client.serviceRepId || client.ServiceRepId;
-      const csrName = client.csrName || client.CsrName || client.serviceRepName || client.ServiceRepName;
+      const csrId = client.csrId || client.CsrId || client.serviceRepId || client.ServiceRepId ||
+                    client.agent2Id || client.Agent2Id || client.secondaryAgentId;
+      const csrName = client.csrName || client.CsrName || client.serviceRepName || client.ServiceRepName ||
+                      client.agent2Name || client.Agent2Name || client.secondaryAgentName;
       const csrEmail = client.csrEmail || client.CsrEmail || client.serviceRepEmail || client.ServiceRepEmail;
 
       if (csrId || csrName) {
@@ -324,6 +347,7 @@ export class HawkSoftAPI {
           name: csrName || 'Unknown CSR',
           email: csrEmail,
         };
+        console.log(`[HawkSoft] Client ${client.clientNumber} CSR mapped:`, normalized.csr);
       }
     }
 
