@@ -13,7 +13,17 @@ import { QuoteWizardProvider } from '@/components/quote-wizard/QuoteWizardProvid
 import { QuoteWizardLayout } from '@/components/quote-wizard/QuoteWizardLayout';
 import { useQuoteWizard } from '@/components/quote-wizard/QuoteWizardProvider';
 import { QuoteType, StepConfig } from '@/components/quote-wizard/config/types';
+
+// Import step configurations
 import { personalAutoSteps } from '@/components/quote-wizard/config/personal-auto';
+import { homeownersSteps } from '@/components/quote-wizard/config/homeowners';
+import { rentersSteps } from '@/components/quote-wizard/config/renters';
+import { mobileHomeSteps } from '@/components/quote-wizard/config/mobile-home';
+import { umbrellaSteps } from '@/components/quote-wizard/config/umbrella';
+import { bopSteps } from '@/components/quote-wizard/config/bop';
+import { generalLiabilitySteps } from '@/components/quote-wizard/config/general-liability';
+import { workersCompSteps } from '@/components/quote-wizard/config/workers-comp';
+import { recreationalSteps } from '@/components/quote-wizard/config/recreational';
 
 // Import step components
 import {
@@ -22,6 +32,13 @@ import {
   DriversStep,
   CoverageStep,
   ReviewStep,
+  PropertyStep,
+  PropertyDetailsStep,
+  HomeCoverageStep,
+  BusinessStep,
+  EmployeesStep,
+  UnderlyingPoliciesStep,
+  UmbrellaCoverageStep,
 } from '@/components/quote-wizard/steps';
 
 // =============================================================================
@@ -40,35 +57,35 @@ const QUOTE_TYPES: Record<QuoteType, QuoteTypeInfo> = {
   },
   homeowners: {
     label: 'Homeowners',
-    steps: personalAutoSteps, // TODO: Create homeowners steps
+    steps: homeownersSteps,
   },
   renters: {
     label: 'Renters',
-    steps: personalAutoSteps, // TODO: Create renters steps
+    steps: rentersSteps,
   },
   mobile_home: {
     label: 'Mobile Home',
-    steps: personalAutoSteps, // TODO: Create mobile home steps
+    steps: mobileHomeSteps,
   },
   umbrella: {
     label: 'Umbrella',
-    steps: personalAutoSteps, // TODO: Create umbrella steps
+    steps: umbrellaSteps,
   },
   bop: {
     label: 'Business Owner\'s Policy',
-    steps: personalAutoSteps, // TODO: Create BOP steps
+    steps: bopSteps,
   },
   general_liability: {
     label: 'General Liability',
-    steps: personalAutoSteps, // TODO: Create GL steps
+    steps: generalLiabilitySteps,
   },
   workers_comp: {
     label: 'Workers Compensation',
-    steps: personalAutoSteps, // TODO: Create WC steps
+    steps: workersCompSteps,
   },
   recreational: {
     label: 'Recreational Vehicle',
-    steps: personalAutoSteps, // TODO: Create recreational steps
+    steps: recreationalSteps,
   },
 };
 
@@ -77,11 +94,30 @@ const QUOTE_TYPES: Record<QuoteType, QuoteTypeInfo> = {
 // =============================================================================
 
 const STEP_COMPONENTS: Record<string, React.ComponentType> = {
+  // Shared steps
   contact: ContactStep,
+  review: ReviewStep,
+
+  // Auto steps
   vehicles: VehiclesStep,
   drivers: DriversStep,
   coverage: CoverageStep,
-  review: ReviewStep,
+
+  // Property steps
+  property: PropertyStep,
+  details: PropertyDetailsStep,
+
+  // Home coverage (for homeowners/renters/mobile home)
+  homeCoverage: HomeCoverageStep,
+
+  // Commercial steps
+  business: BusinessStep,
+  location: PropertyStep, // Reuse PropertyStep for business location
+  employees: EmployeesStep,
+
+  // Umbrella steps
+  underlying: UnderlyingPoliciesStep,
+  umbrellaCoverage: UmbrellaCoverageStep,
 };
 
 // =============================================================================

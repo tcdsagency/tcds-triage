@@ -2415,18 +2415,13 @@ export default function QuoteIntakePage() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {QUOTE_TYPES.map((type) => {
-              // Use wizard for personal_auto, fall back to old form for others
-              const useWizard = type.id === 'personal_auto';
+              // All quote types now use the wizard
               return (
                 <button
                   key={type.id}
                   onClick={() => {
                     if (!type.available) return;
-                    if (useWizard) {
-                      router.push(`/quote/new/${type.id}`);
-                    } else {
-                      setSelectedType(type.id);
-                    }
+                    router.push(`/quote/new/${type.id}`);
                   }}
                   disabled={!type.available}
                   className={cn(
@@ -2437,7 +2432,6 @@ export default function QuoteIntakePage() {
                   <type.icon className={cn("w-8 h-8 mb-3", type.available ? "text-amber-500" : "text-gray-600")} />
                   <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-white">{type.name}</h3>
-                    {useWizard && <Badge className="bg-emerald-500/20 text-emerald-400 text-[10px]">NEW</Badge>}
                   </div>
                   <p className="text-sm text-gray-400 mt-1">{type.description}</p>
                   {!type.available && <Badge variant="secondary" className="mt-2 text-xs">Coming Soon</Badge>}
