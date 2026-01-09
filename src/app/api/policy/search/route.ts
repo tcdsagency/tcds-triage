@@ -5,7 +5,7 @@ import { eq, or, ilike, sql, and, desc, ne, isNull } from 'drizzle-orm';
 import { getPolicyTypeFromLineOfBusiness } from '@/types/customer-profile';
 
 /**
- * GET /api/policy/search?q=query&limit=20
+ * GET /api/policy/search?q=query&limit=20&activeOnly=true
  *
  * Searches policies by:
  * - Policy number
@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('q') || '';
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
+    const activeOnly = searchParams.get('activeOnly') === 'true';
     const tenantId = process.env.DEFAULT_TENANT_ID;
 
     if (!tenantId) {
@@ -114,6 +115,7 @@ export async function GET(request: NextRequest) {
         id: p.id,
         policyNumber: p.policyNumber,
         type: policyType,
+        lineOfBusiness: p.lineOfBusiness, // Include raw LOB for debugging
         carrier: p.carrier || 'Unknown Carrier',
         insuredName: `${p.customerFirstName || ''} ${p.customerLastName || ''}`.trim() || 'Unknown',
         effectiveDate: p.effectiveDate ? new Date(p.effectiveDate).toISOString().split('T')[0] : '',
@@ -126,11 +128,16 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Filter to active only if requested
+    const finalResults = activeOnly
+      ? transformedResults.filter(p => p.isActive)
+      : transformedResults;
+
     return NextResponse.json({
       success: true,
       query,
-      count: transformedResults.length,
-      results: transformedResults,
+      count: finalResults.length,
+      results: finalResults,
     });
   } catch (error) {
     console.error('Policy search error:', error);

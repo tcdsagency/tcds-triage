@@ -16,6 +16,7 @@ export type QuoteType =
   | 'homeowners'
   | 'renters'
   | 'mobile_home'
+  | 'flood'
   | 'umbrella'
   | 'bop'
   | 'general_liability'
@@ -77,10 +78,16 @@ export interface QuoteFormData {
   zip: string;
 
   // Property Address (for home quotes)
+  propertySameAsMailing: boolean;
   propertyAddress: string;
   propertyCity: string;
   propertyState: string;
   propertyZip: string;
+  yearsAtPropertyAddress: string;
+  priorAddress: string;
+  priorCity: string;
+  priorState: string;
+  priorZip: string;
 
   // Property Details
   propertyType: string;
@@ -95,6 +102,9 @@ export interface QuoteFormData {
   // Roof
   roofMaterial: string;
   roofAge: string;
+
+  // RPR Data (auto-filled from property lookup)
+  rprData: Record<string, unknown> | null;
 
   // Systems
   heatingType: string;
@@ -328,10 +338,16 @@ export const initialFormData: QuoteFormData = {
   zip: '',
 
   // Property Address
+  propertySameAsMailing: true,
   propertyAddress: '',
   propertyCity: '',
   propertyState: '',
   propertyZip: '',
+  yearsAtPropertyAddress: '',
+  priorAddress: '',
+  priorCity: '',
+  priorState: '',
+  priorZip: '',
 
   // Property Details
   propertyType: '',
@@ -346,6 +362,9 @@ export const initialFormData: QuoteFormData = {
   // Roof
   roofMaterial: '',
   roofAge: '',
+
+  // RPR Data
+  rprData: null,
 
   // Systems
   heatingType: '',

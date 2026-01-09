@@ -152,10 +152,64 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Get active calls (filter out stale calls older than 30 minutes without endedAt)
+    // Auto-cleanup stale ringing calls: If a call has been "ringing" for more than 3 minutes,
+    // it's almost certainly missed/stale (webhook didn't fire). Mark it as missed in the DB.
+    const threeMinutesAgo = Date.now() - (3 * 60 * 1000);
+    const staleRingingCalls = todaysCalls.filter(
+      (c) => !c.endedAt && c.status === "ringing" && c.startedAt &&
+             new Date(c.startedAt).getTime() < threeMinutesAgo
+    );
+
+    if (staleRingingCalls.length > 0) {
+      console.log(`[Supervisor] Auto-cleaning ${staleRingingCalls.length} stale ringing calls`);
+      // Update stale calls in background (don't await to keep response fast)
+      Promise.all(
+        staleRingingCalls.map((call) =>
+          db.update(calls)
+            .set({
+              status: "missed",
+              endedAt: new Date(),
+            })
+            .where(eq(calls.id, call.id))
+            .catch((e) => console.error(`Failed to cleanup call ${call.id}:`, e))
+        )
+      );
+    }
+
+    // Also cleanup any calls stuck in other statuses for more than 2 hours (definitely stale)
+    const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
+    const veryStaleCallsToClean = todaysCalls.filter(
+      (c) => !c.endedAt && c.startedAt && new Date(c.startedAt).getTime() < twoHoursAgo
+    );
+
+    if (veryStaleCallsToClean.length > 0) {
+      console.log(`[Supervisor] Auto-cleaning ${veryStaleCallsToClean.length} very stale calls (>2hrs)`);
+      Promise.all(
+        veryStaleCallsToClean.map((call) =>
+          db.update(calls)
+            .set({
+              status: call.status === "ringing" ? "missed" : "completed",
+              endedAt: new Date(),
+            })
+            .where(eq(calls.id, call.id))
+            .catch((e) => console.error(`Failed to cleanup call ${call.id}:`, e))
+        )
+      );
+    }
+
+    // Get active calls - exclude stale ringing (>3min) and very old calls (>30min)
     const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
     const activeCalls: ActiveCall[] = todaysCalls
-      .filter((c) => !c.endedAt && c.startedAt && new Date(c.startedAt).getTime() > thirtyMinutesAgo)
+      .filter((c) => {
+        if (c.endedAt) return false;
+        if (!c.startedAt) return false;
+        const startTime = new Date(c.startedAt).getTime();
+        // Exclude calls older than 30 minutes
+        if (startTime < thirtyMinutesAgo) return false;
+        // Exclude ringing calls older than 3 minutes (stale)
+        if (c.status === "ringing" && startTime < threeMinutesAgo) return false;
+        return true;
+      })
       .map((call) => {
         const agent = agents.find((a) => a.id === call.agentId);
         const duration = call.startedAt

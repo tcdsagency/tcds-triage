@@ -614,12 +614,13 @@ export function getPolicyTypeFromLineOfBusiness(lob: string): PolicyType {
   // Skip "Unknown" - should not match any type
   if (lobLower === "unknown") return "other";
 
-  // Auto policies - HawkSoft codes: AUTOP, PA, PPA, AUTO, PERAU, etc.
+  // Auto policies - HawkSoft codes: AUTOP, PA, PPA, AUTO, PERAU, APL, etc.
   if (lobLower.includes("auto") || lobLower.includes("vehicle") ||
       lobLower === "autop" || lobLower === "pa" || lobLower === "ppa" ||
       lobLower === "perau" || lobLower === "private passenger" ||
       lobLower.includes("car") || lobLower.startsWith("pp") ||
-      lobLower === "personal auto") return "auto";
+      lobLower === "personal auto" || lobLower === "apl" ||
+      lobLower === "personal lines auto" || lobLower === "pl auto") return "auto";
 
   // Home policies - HawkSoft codes: DFIRE, HOME, HO-3, HO3, HO-6, HOMEOWNER, HOMEP, DWELLING, etc.
   if (lobLower.includes("home") || lobLower.includes("dwelling") ||
@@ -629,7 +630,9 @@ export function getPolicyTypeFromLineOfBusiness(lob: string): PolicyType {
       lobLower === "df" || lobLower === "dp" || lobLower === "dp3" || lobLower === "dp1" ||
       lobLower.includes("property") || lobLower.includes("house") ||
       lobLower.includes("condo") || lobLower.includes("tenant") || lobLower.includes("renter") ||
-      lobLower === "fire" || lobLower === "dwelling fire") return "home";
+      lobLower === "fire" || lobLower === "dwelling fire" ||
+      lobLower === "hpl" || lobLower === "personal lines home" || lobLower === "pl home" ||
+      lobLower === "hob" || lobLower === "hoa") return "home";
 
   // Umbrella policies - HawkSoft codes: PUMBR, UMBR, PUP, UMBRELLA, EXCES
   if (lobLower.includes("umbrella") || lobLower.includes("excess") ||

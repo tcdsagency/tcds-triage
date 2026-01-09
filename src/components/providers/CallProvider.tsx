@@ -64,6 +64,7 @@ export function CallProvider({ children }: CallProviderProps) {
   const myExtensionRef = useRef<string | null>(null);
   const activeCallRef = useRef<ActiveCall | null>(null);
   const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Keep activeCallRef in sync
   useEffect(() => {
@@ -226,9 +227,65 @@ export function CallProvider({ children }: CallProviderProps) {
     };
   }, []);
 
-  // Note: Realtime push via WebSocket - broadcasts come from realtime.tcdsagency.com
-  // The 3CX bridge posts to webhooks, which should push to realtime server
-  // If popup not showing, check if realtime server has /api/broadcast endpoint
+  // Polling fallback: Check call status every 10 seconds in case WebSocket misses events
+  // This ensures popup closes even if realtime broadcast fails
+  useEffect(() => {
+    if (!activeCall || activeCall.status === "ended") {
+      // No active call or already ended - clear polling
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const checkCallStatus = async () => {
+      try {
+        const res = await fetch(`/api/calls/${activeCall.sessionId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.call) {
+            const dbStatus = data.call.status;
+            const hasEnded = data.call.endedAt || dbStatus === "completed" || dbStatus === "missed";
+
+            if (hasEnded && activeCallRef.current?.status !== "ended") {
+              console.log(`[CallProvider] Polling detected call ended (status: ${dbStatus}), closing popup`);
+              setActiveCall(prev => prev ? { ...prev, status: "ended" } : null);
+
+              // Auto-close after 30 seconds for wrap-up
+              if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+              closeTimeoutRef.current = setTimeout(() => {
+                console.log(`[CallProvider] Auto-closing popup after polling detected end`);
+                setIsPopupVisible(false);
+                setActiveCall(null);
+                closeTimeoutRef.current = null;
+              }, 30000);
+            }
+          }
+        } else if (res.status === 404) {
+          // Call not found - might be deleted or never existed, close popup
+          console.log(`[CallProvider] Call ${activeCall.sessionId} not found, closing popup`);
+          setIsPopupVisible(false);
+          setActiveCall(null);
+        }
+      } catch (e) {
+        console.error("[CallProvider] Polling error:", e);
+      }
+    };
+
+    // Start polling every 10 seconds
+    pollIntervalRef.current = setInterval(checkCallStatus, 10000);
+
+    // Also check immediately
+    checkCallStatus();
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    };
+  }, [activeCall?.sessionId, activeCall?.status]);
 
   const handleCallEvent = useCallback(async (data: any) => {
     console.log("[CallProvider] Event:", data.type, data);
@@ -315,24 +372,40 @@ export function CallProvider({ children }: CallProviderProps) {
         break;
 
       case "call_ended": {
-        // Match by sessionId (UUID), externalCallId (3CX call ID), or extension
+        // Match by multiple fields to handle different ID formats from 3CX/VoIPTools
         // Use ref to avoid stale closure
+        const eventPhone = data.phoneNumber || data.callerNumber || data.calleeNumber;
+        const currentPhone = currentCall?.phoneNumber;
+
         const matchesSession = currentCall && (
+          // Direct session ID match
           data.sessionId === currentCall.sessionId ||
+          // Cross-match external/session IDs
           data.sessionId === currentCall.externalCallId ||
           data.externalCallId === currentCall.sessionId ||
           data.externalCallId === currentCall.externalCallId ||
-          (data.extension && data.extension === currentCall.extension)
+          // Extension match (same agent)
+          (data.extension && data.extension === currentCall.extension) ||
+          // Phone number match as last resort (if extensions also match or no extension in event)
+          (eventPhone && currentPhone && eventPhone === currentPhone &&
+           (!data.extension || data.extension === currentCall.extension))
         );
 
         if (matchesSession) {
-          console.log(`[CallProvider] Call ended - session ${data.sessionId}, closing popup after timeout`);
+          console.log(`[CallProvider] Call ended - session ${data.sessionId}, matched to ${currentCall.sessionId}`);
           setActiveCall((prev) =>
             prev ? { ...prev, status: "ended" } : null
           );
 
-          // Keep popup visible for wrap-up, auto-close after 30s (reduced from 60s)
+          // Clear polling since we got the event
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+
+          // Keep popup visible for wrap-up, auto-close after 30s
           // Store timeout ref so we can cancel if a new call comes in
+          if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
           closeTimeoutRef.current = setTimeout(() => {
             console.log(`[CallProvider] Auto-closing popup after call ended`);
             setIsPopupVisible(false);
@@ -340,7 +413,16 @@ export function CallProvider({ children }: CallProviderProps) {
             closeTimeoutRef.current = null;
           }, 30000);
         } else {
-          console.log(`[CallProvider] Ignoring call_ended - no matching session (received: ${data.sessionId}, current: ${currentCall?.sessionId})`);
+          console.log(`[CallProvider] Ignoring call_ended - no match`, {
+            eventSessionId: data.sessionId,
+            eventExternalId: data.externalCallId,
+            eventExtension: data.extension,
+            eventPhone,
+            currentSessionId: currentCall?.sessionId,
+            currentExternalId: currentCall?.externalCallId,
+            currentExtension: currentCall?.extension,
+            currentPhone,
+          });
         }
         break;
       }
