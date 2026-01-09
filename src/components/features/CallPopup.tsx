@@ -8,6 +8,7 @@ import CoachingTip, { CoachingTipCompact } from "./CoachingTip";
 import LiveAssistCard, { LiveAssistCompact } from "./LiveAssistCard";
 import { MergedProfile } from "@/types/customer-profile";
 import { Playbook, AgentSuggestion, TelemetryFeedback } from "@/lib/agent-assist/types";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
 
 // =============================================================================
 // TYPES

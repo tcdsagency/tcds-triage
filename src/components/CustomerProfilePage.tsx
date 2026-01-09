@@ -41,6 +41,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -590,10 +591,10 @@ export default function CustomerProfilePage() {
                     if (profile?.contact?.phone) params.set('phone', profile.contact.phone);
                     if (profile?.hawksoftId) params.set('hawksoftId', String(profile.hawksoftId));
                     // Pass policy info if they only have one active policy
-                    const activePolicies = profile?.policies?.filter(p => p.isActive) || [];
+                    const activePolicies = profile?.policies?.filter(p => p.status === 'active') || [];
                     if (activePolicies.length === 1) {
                       params.set('policyNumber', activePolicies[0].policyNumber);
-                      params.set('carrier', activePolicies[0].carrier || '');
+                      params.set('carrier', activePolicies[0].carrier?.name || '');
                     }
                     router.push(`/policy-change?${params.toString()}`);
                   }}>
@@ -876,8 +877,15 @@ export default function CustomerProfilePage() {
                     <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
                       Producer
                     </div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {profile.producer.name}
+                    <div className="flex items-center gap-2">
+                      <AgentAvatar
+                        name={profile.producer.name}
+                        avatarUrl={profile.producer.avatarUrl}
+                        size="sm"
+                      />
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {profile.producer.name}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -886,8 +894,15 @@ export default function CustomerProfilePage() {
                     <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
                       CSR
                     </div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {profile.csr.name}
+                    <div className="flex items-center gap-2">
+                      <AgentAvatar
+                        name={profile.csr.name}
+                        avatarUrl={profile.csr.avatarUrl}
+                        size="sm"
+                      />
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {profile.csr.name}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -1322,7 +1337,12 @@ function OverviewTab({
                   {note.content}
                 </p>
                 <div className="flex items-center gap-2 mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  {note.createdBy && <span>{note.createdBy.name}</span>}
+                  {note.createdBy && (
+                    <>
+                      <AgentAvatar name={note.createdBy.name} size="xs" />
+                      <span>{note.createdBy.name}</span>
+                    </>
+                  )}
                   <span>•</span>
                   <span>{new Date(note.createdAt).toLocaleDateString()}</span>
                 </div>
@@ -1953,6 +1973,7 @@ function NotesTab({
               <div className="flex items-center gap-2 mt-3 text-xs text-gray-500 dark:text-gray-400">
                 {note.createdBy && (
                   <>
+                    <AgentAvatar name={note.createdBy.name} size="xs" />
                     <span>{note.createdBy.name}</span>
                     <span>•</span>
                   </>
