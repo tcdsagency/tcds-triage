@@ -8,6 +8,7 @@ import {
   FileText,
   Users,
   TrendingUp,
+  TrendingDown,
   Clock,
   AlertCircle,
   CheckCircle2,
@@ -26,6 +27,7 @@ import {
   Target,
   Award,
   Zap,
+  Heart,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +67,15 @@ interface TeamMember {
   avatarUrl?: string;
 }
 
+interface DonnaAlert {
+  customerId: string;
+  customerName: string;
+  alertType: 'churn_risk' | 'low_sentiment' | 'cross_sell';
+  value: number;
+  severity: 'high' | 'medium' | 'low';
+  message: string;
+}
+
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -82,6 +93,7 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string>("Agent");
   const [teamPresence, setTeamPresence] = useState<TeamMember[]>([]);
   const [presenceConnected, setPresenceConnected] = useState(false);
+  const [donnaAlerts, setDonnaAlerts] = useState<DonnaAlert[]>([]);
 
   const fetchDashboardData = async (showRefresh = false) => {
     try {
@@ -135,6 +147,19 @@ export default function DashboardPage() {
         }
       } catch (presenceErr) {
         console.error("Presence fetch error:", presenceErr);
+      }
+
+      // Fetch Donna AI alerts
+      try {
+        const donnaRes = await fetch("/api/donna/alerts?limit=10");
+        if (donnaRes.ok) {
+          const donnaData = await donnaRes.json();
+          if (donnaData.success) {
+            setDonnaAlerts(donnaData.alerts || []);
+          }
+        }
+      } catch (donnaErr) {
+        console.error("Donna alerts fetch error:", donnaErr);
       }
 
     } catch (err) {
@@ -425,6 +450,73 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Donna AI Alerts */}
+      {donnaAlerts.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Heart className="w-5 h-5 text-pink-500" />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Donna AI Alerts
+              </h2>
+              <Badge className="bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400 text-xs">
+                {donnaAlerts.length}
+              </Badge>
+            </div>
+            <Link href="/customers?filter=donna_alerts">
+              <Button variant="ghost" size="sm" className="text-gray-500 hover:text-gray-700">
+                View All <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
+          </div>
+          <div className="divide-y divide-gray-100 dark:divide-gray-700">
+            {donnaAlerts.slice(0, 5).map((alert) => (
+              <Link
+                key={`${alert.customerId}-${alert.alertType}`}
+                href={`/customers/${alert.customerId}`}
+                className="px-6 py-4 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+              >
+                <div className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center",
+                  alert.alertType === 'churn_risk' && "bg-red-100 dark:bg-red-900/30",
+                  alert.alertType === 'low_sentiment' && "bg-yellow-100 dark:bg-yellow-900/30",
+                  alert.alertType === 'cross_sell' && "bg-blue-100 dark:bg-blue-900/30",
+                )}>
+                  {alert.alertType === 'churn_risk' && (
+                    <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+                  )}
+                  {alert.alertType === 'low_sentiment' && (
+                    <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+                  )}
+                  {alert.alertType === 'cross_sell' && (
+                    <Target className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {alert.customerName}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {alert.message}
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-xs",
+                    alert.severity === 'high' && "border-red-300 text-red-700 dark:border-red-700 dark:text-red-400",
+                    alert.severity === 'medium' && "border-yellow-300 text-yellow-700 dark:border-yellow-700 dark:text-yellow-400",
+                    alert.severity === 'low' && "border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-400",
+                  )}
+                >
+                  {alert.severity}
+                </Badge>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Team Presence - Enhanced */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
