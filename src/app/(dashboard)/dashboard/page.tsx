@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   Phone,
@@ -422,31 +422,31 @@ export default function DashboardPage() {
               Quick Actions
             </h2>
           </div>
-          <div className="p-6 grid grid-cols-2 gap-4">
-            <Link href="/quote/new">
-              <Button className="w-full h-auto py-5 flex flex-col items-center gap-2 bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 shadow-lg shadow-orange-500/20 transition-all hover:shadow-orange-500/40 hover:scale-[1.02]">
-                <Sparkles className="w-7 h-7" />
-                <span className="font-semibold">New Quote</span>
-              </Button>
-            </Link>
-            <Link href="/customers">
-              <Button variant="outline" className="w-full h-auto py-5 flex flex-col items-center gap-2 border-2 border-blue-200 bg-blue-50 hover:border-blue-500 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 transition-all hover:scale-[1.02] group">
-                <Search className="w-7 h-7 text-blue-600" />
-                <span className="font-semibold text-blue-700 dark:text-blue-300">Find Customer</span>
-              </Button>
-            </Link>
-            <Link href="/ai-tasks">
-              <Button variant="outline" className="w-full h-auto py-5 flex flex-col items-center gap-2 border-2 border-emerald-200 bg-emerald-50 hover:border-emerald-500 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 transition-all hover:scale-[1.02] group">
-                <PhoneCall className="w-7 h-7 text-emerald-600" />
-                <span className="font-semibold text-emerald-700 dark:text-emerald-300">Who to Call?</span>
-              </Button>
-            </Link>
-            <Link href="/messages">
-              <Button variant="outline" className="w-full h-auto py-5 flex flex-col items-center gap-2 border-2 border-purple-200 bg-purple-50 hover:border-purple-500 hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/40 transition-all hover:scale-[1.02] group">
-                <MessageSquare className="w-7 h-7 text-purple-600" />
-                <span className="font-semibold text-purple-700 dark:text-purple-300">Messages</span>
-              </Button>
-            </Link>
+          <div className="p-6 space-y-4">
+            {/* Customer/Lead Search Box */}
+            <CustomerSearchBox />
+
+            {/* Action Buttons Grid */}
+            <div className="grid grid-cols-3 gap-3">
+              <Link href="/quote/new">
+                <Button className="w-full h-auto py-4 flex flex-col items-center gap-2 bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 shadow-lg shadow-orange-500/20 transition-all hover:shadow-orange-500/40 hover:scale-[1.02]">
+                  <Sparkles className="w-6 h-6" />
+                  <span className="font-semibold text-sm">New Quote</span>
+                </Button>
+              </Link>
+              <Link href="/service-request/new">
+                <Button variant="outline" className="w-full h-auto py-4 flex flex-col items-center gap-2 border-2 border-emerald-200 bg-emerald-50 hover:border-emerald-500 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 transition-all hover:scale-[1.02]">
+                  <FileText className="w-6 h-6 text-emerald-600" />
+                  <span className="font-semibold text-sm text-emerald-700 dark:text-emerald-300">Service Request</span>
+                </Button>
+              </Link>
+              <Link href="/calls">
+                <Button variant="outline" className="w-full h-auto py-4 flex flex-col items-center gap-2 border-2 border-blue-200 bg-blue-50 hover:border-blue-500 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 transition-all hover:scale-[1.02]">
+                  <Phone className="w-6 h-6 text-blue-600" />
+                  <span className="font-semibold text-sm text-blue-700 dark:text-blue-300">Call History</span>
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -729,4 +729,168 @@ function formatTimeAgo(dateString: string): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString();
+}
+
+interface SearchResult {
+  id: string;
+  type: "customer" | "lead";
+  name: string;
+  phone?: string;
+  email?: string;
+}
+
+function CustomerSearchBox() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const performSearch = async (searchQuery: string) => {
+    if (searchQuery.length < 2) {
+      setResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      // Search both customers and leads in parallel
+      const [customersRes, leadsRes] = await Promise.all([
+        fetch(`/api/customers/search?q=${encodeURIComponent(searchQuery)}&limit=5`),
+        fetch(`/api/leads?search=${encodeURIComponent(searchQuery)}&limit=5`),
+      ]);
+
+      const searchResults: SearchResult[] = [];
+
+      if (customersRes.ok) {
+        const customersData = await customersRes.json();
+        if (customersData.customers) {
+          customersData.customers.forEach((c: any) => {
+            searchResults.push({
+              id: c.id || c.azCustomerId,
+              type: "customer",
+              name: c.name || `${c.firstName} ${c.lastName}`.trim(),
+              phone: c.phone || c.mobilePhone,
+              email: c.email,
+            });
+          });
+        }
+      }
+
+      if (leadsRes.ok) {
+        const leadsData = await leadsRes.json();
+        if (leadsData.leads) {
+          leadsData.leads.forEach((l: any) => {
+            searchResults.push({
+              id: l.id || l.azLeadId,
+              type: "lead",
+              name: l.name || `${l.firstName} ${l.lastName}`.trim(),
+              phone: l.phone || l.mobilePhone,
+              email: l.email,
+            });
+          });
+        }
+      }
+
+      setResults(searchResults);
+    } catch (error) {
+      console.error("Search error:", error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setQuery(value);
+    setShowResults(true);
+
+    // Debounce search
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      performSearch(value);
+    }, 300);
+  };
+
+  const handleResultClick = (result: SearchResult) => {
+    setQuery("");
+    setResults([]);
+    setShowResults(false);
+    // Navigate to customer or lead page
+    if (result.type === "customer") {
+      window.location.href = `/customers/${result.id}`;
+    } else {
+      window.location.href = `/leads/${result.id}`;
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={handleInputChange}
+          onFocus={() => setShowResults(true)}
+          onBlur={() => setTimeout(() => setShowResults(false), 200)}
+          placeholder="Search customers & leads by name or phone..."
+          className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:bg-white dark:focus:bg-gray-800 transition-all"
+        />
+        {isSearching && (
+          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 animate-spin" />
+        )}
+      </div>
+
+      {/* Search Results Dropdown */}
+      {showResults && (query.length >= 2 || results.length > 0) && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-auto">
+          {results.length === 0 && !isSearching && query.length >= 2 ? (
+            <div className="p-4 text-center text-gray-500 dark:text-gray-400">
+              <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No results found for "{query}"</p>
+              <Link href={`/leads/new?phone=${encodeURIComponent(query)}`} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium mt-2 inline-flex items-center gap-1">
+                <UserPlus className="w-4 h-4" /> Create new lead
+              </Link>
+            </div>
+          ) : (
+            results.map((result) => (
+              <button
+                key={`${result.type}-${result.id}`}
+                onClick={() => handleResultClick(result)}
+                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left border-b border-gray-100 dark:border-gray-700 last:border-0"
+              >
+                <div className={cn(
+                  "w-10 h-10 rounded-full flex items-center justify-center",
+                  result.type === "customer" ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-blue-100 dark:bg-blue-900/30"
+                )}>
+                  {result.type === "customer" ? (
+                    <Users className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  ) : (
+                    <UserPlus className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-900 dark:text-white truncate">{result.name}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                    {result.phone || result.email || "No contact info"}
+                  </p>
+                </div>
+                <Badge variant="outline" className={cn(
+                  "text-xs",
+                  result.type === "customer" ? "border-emerald-300 text-emerald-700" : "border-blue-300 text-blue-700"
+                )}>
+                  {result.type}
+                </Badge>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
