@@ -260,7 +260,7 @@ export default function MortgageePaymentsPage() {
                 >
                   <Icon className="h-4 w-4" />
                   {tab.label}
-                  {tab.count !== undefined && (
+                  {'count' in tab && tab.count !== undefined && (
                     <span className="ml-1 px-2 py-0.5 text-xs bg-gray-100 rounded-full">
                       {tab.count}
                     </span>
