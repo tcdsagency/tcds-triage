@@ -5,7 +5,7 @@ import {
   mortgageePaymentChecks,
   mortgageePaymentActivityLog,
 } from "@/db/schema";
-import { eq, and, sql, desc, gte } from "drizzle-orm";
+import { eq, and, or, sql, desc, gte, lt, isNull } from "drizzle-orm";
 
 /**
  * GET /api/mortgagee-payments/stats
@@ -104,7 +104,10 @@ export async function GET(request: NextRequest) {
         and(
           eq(mortgagees.tenantId, tenantId),
           eq(mortgagees.isActive, true),
-          sql`(${mortgagees.lastPaymentCheckAt} IS NULL OR ${mortgagees.lastPaymentCheckAt} < ${recheckCutoff})`
+          or(
+            isNull(mortgagees.lastPaymentCheckAt),
+            lt(mortgagees.lastPaymentCheckAt, recheckCutoff)
+          )
         )
       );
 
