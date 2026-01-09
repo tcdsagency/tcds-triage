@@ -58,6 +58,26 @@ export interface HawkSoftClient {
   };
   dateOfBirth?: string;
   type?: 'individual' | 'business';
+  // Agent assignment (Producer/CSR)
+  producer?: {
+    id: number;
+    name: string;
+    email?: string;
+  };
+  csr?: {
+    id: number;
+    name: string;
+    email?: string;
+  };
+  // HawkSoft field names (mapped to producer/csr)
+  producerId?: number;
+  producerName?: string;
+  producerEmail?: string;
+  csrId?: number;
+  csrName?: string;
+  csrEmail?: string;
+  serviceRepId?: number;
+  serviceRepName?: string;
   // Nested data (when included)
   policies?: HawkSoftPolicy[];
   claims?: HawkSoftClaim[];
@@ -270,6 +290,47 @@ export class HawkSoftAPI {
   // --------------------------------------------------------------------------
 
   /**
+   * Normalize HawkSoft client data to ensure producer/CSR fields are mapped
+   * HawkSoft may return these fields in various formats
+   */
+  private normalizeClient(client: any): HawkSoftClient {
+    // Map various HawkSoft field names to our normalized structure
+    const normalized = { ...client } as HawkSoftClient;
+
+    // Normalize producer (may be in different field names)
+    if (!normalized.producer) {
+      const producerId = client.producerId || client.ProducerId || client.agentId || client.AgentId;
+      const producerName = client.producerName || client.ProducerName || client.agentName || client.AgentName;
+      const producerEmail = client.producerEmail || client.ProducerEmail || client.agentEmail || client.AgentEmail;
+
+      if (producerId || producerName) {
+        normalized.producer = {
+          id: producerId || 0,
+          name: producerName || 'Unknown Producer',
+          email: producerEmail,
+        };
+      }
+    }
+
+    // Normalize CSR (may be in different field names)
+    if (!normalized.csr) {
+      const csrId = client.csrId || client.CsrId || client.serviceRepId || client.ServiceRepId;
+      const csrName = client.csrName || client.CsrName || client.serviceRepName || client.ServiceRepName;
+      const csrEmail = client.csrEmail || client.CsrEmail || client.serviceRepEmail || client.ServiceRepEmail;
+
+      if (csrId || csrName) {
+        normalized.csr = {
+          id: csrId || 0,
+          name: csrName || 'Unknown CSR',
+          email: csrEmail,
+        };
+      }
+    }
+
+    return normalized;
+  }
+
+  /**
    * Get clients changed since a date
    * GET /vendor/agency/{agencyId}/clients?asOf={timestamp}
    * 
@@ -305,19 +366,20 @@ export class HawkSoftAPI {
   async getClient(clientId: number, include?: ClientInclude[], expand?: ClientExpand[]): Promise<HawkSoftClient> {
     let endpoint = `/vendor/agency/${this.config.agencyId}/client/${clientId}`;
     const params: string[] = [];
-    
+
     if (include?.length) {
       params.push(`include=${include.join(',')}`);
     }
     if (expand?.length) {
       params.push(`expand=${expand.join(',')}`);
     }
-    
+
     if (params.length > 0) {
       endpoint += `?${params.join('&')}`;
     }
-    
-    return this.request<HawkSoftClient>(endpoint);
+
+    const client = await this.request<HawkSoftClient>(endpoint);
+    return this.normalizeClient(client);
   }
 
   /**
@@ -339,22 +401,24 @@ export class HawkSoftAPI {
   async getClients(clientNumbers: number[], include?: ClientInclude[], expand?: ClientExpand[]): Promise<HawkSoftClient[]> {
     let endpoint = `/vendor/agency/${this.config.agencyId}/clients`;
     const params: string[] = [];
-    
+
     if (include?.length) {
       params.push(`include=${include.join(',')}`);
     }
     if (expand?.length) {
       params.push(`expand=${expand.join(',')}`);
     }
-    
+
     if (params.length > 0) {
       endpoint += `?${params.join('&')}`;
     }
-    
-    return this.request<HawkSoftClient[]>(endpoint, {
+
+    const clients = await this.request<HawkSoftClient[]>(endpoint, {
       method: 'POST',
       body: JSON.stringify({ clientNumbers }),
     });
+
+    return clients.map(c => this.normalizeClient(c));
   }
 
   /**
