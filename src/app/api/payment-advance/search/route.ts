@@ -52,6 +52,22 @@ export async function GET(request: NextRequest) {
       ne(customers.firstName, 'Unknown')
     );
 
+    // Build search conditions - only add phone search if query contains digits
+    const phoneDigits = query.replace(/\D/g, '');
+    const searchConditions = [
+      ilike(customers.firstName, searchTerm),
+      ilike(customers.lastName, searchTerm),
+      ilike(customers.email, searchTerm),
+      sql`${customers.firstName} || ' ' || ${customers.lastName} ILIKE ${searchTerm}`,
+    ];
+
+    // Only search by phone if query has at least 3 digits
+    if (phoneDigits.length >= 3) {
+      searchConditions.push(
+        sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ${'%' + phoneDigits + '%'}`
+      );
+    }
+
     const localResults = await db
       .select({
         id: customers.id,
@@ -67,13 +83,7 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           baseFilters,
-          or(
-            ilike(customers.firstName, searchTerm),
-            ilike(customers.lastName, searchTerm),
-            ilike(customers.email, searchTerm),
-            sql`${customers.firstName} || ' ' || ${customers.lastName} ILIKE ${searchTerm}`,
-            sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ${'%' + query.replace(/\D/g, '')}`,
-          )
+          or(...searchConditions)
         )
       )
       .orderBy(desc(customers.updatedAt))

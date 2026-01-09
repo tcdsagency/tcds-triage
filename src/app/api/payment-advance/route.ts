@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { paymentAdvances } from "@/db/schema";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { outlookClient } from "@/lib/outlook";
 import { desc, eq } from "drizzle-orm";
 
 // POST - Submit a new payment advance
@@ -251,6 +252,12 @@ async function sendEmailNotification(data: any, advanceId: string): Promise<bool
     return false;
   }
 
+  // Check if Outlook is configured
+  if (!outlookClient.isConfigured()) {
+    console.warn("[Payment Advance] Outlook not configured for email sending");
+    return false;
+  }
+
   // Build email content
   const subject = `Payment Advance: ${data.firstName} ${data.lastName} - $${parseFloat(data.totalAmount).toFixed(2)}`;
 
@@ -278,39 +285,20 @@ Submitted by: ${data.submitterEmail || "Unknown"}
 This is an automated message from TCDS Triage.
   `.trim();
 
-  // Try Outlook first, then fall back to AgentMail
   try {
-    // Check if we have Outlook configured
-    const outlookEndpoint = process.env.OUTLOOK_SEND_ENDPOINT;
-    if (outlookEndpoint) {
-      const response = await fetch(outlookEndpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: emailRecipients.split(",").map((e) => e.trim()),
-          subject,
-          body,
-        }),
-      });
-
-      if (response.ok) {
-        return true;
-      }
-    }
-
-    // Fall back to internal email
-    const agentMailEndpoint = process.env.AGENTMAIL_ENDPOINT || "/api/email/send";
-    const response = await fetch(new URL(agentMailEndpoint, process.env.NEXTAUTH_URL || "http://localhost:3000").href, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: emailRecipients.split(",").map((e) => e.trim()),
-        subject,
-        text: body,
-      }),
+    const result = await outlookClient.sendEmail({
+      to: emailRecipients.split(",").map((e) => e.trim()),
+      subject,
+      body,
     });
 
-    return response.ok;
+    if (result.success) {
+      console.log("[Payment Advance] Email sent successfully");
+      return true;
+    } else {
+      console.error("[Payment Advance] Email send failed:", result.error);
+      return false;
+    }
   } catch (error) {
     console.error("[Payment Advance] Email send error:", error);
     return false;
