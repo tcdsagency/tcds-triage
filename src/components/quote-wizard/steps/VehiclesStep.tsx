@@ -29,6 +29,15 @@ const USE_OPTIONS = [
   { value: 'rideshare', label: 'Rideshare (Uber/Lyft)' },
 ];
 
+const GARAGE_OPTIONS = [
+  { value: 'same', label: 'Same as Mailing Address' },
+  { value: 'different', label: 'Different Address' },
+  { value: 'street', label: 'Street Parking' },
+  { value: 'carport', label: 'Carport' },
+  { value: 'attached', label: 'Attached Garage' },
+  { value: 'detached', label: 'Detached Garage' },
+];
+
 export function VehiclesStep() {
   const { formData, addVehicle, removeVehicle, updateVehicle, errors } = useQuoteWizard();
   const [decodingVin, setDecodingVin] = useState<string | null>(null);
@@ -321,23 +330,44 @@ function VehicleCard({
           </div>
         </div>
 
-        {/* Annual mileage */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Annual Mileage
-          </label>
-          <input
-            type="number"
-            value={vehicle.annualMileage}
-            onChange={(e) => onUpdate('annualMileage', e.target.value)}
-            placeholder="12000"
-            className={cn(
-              'w-full px-3 py-2 rounded-lg border transition-colors',
-              'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
-              'border-gray-300 dark:border-gray-600',
-              'focus:outline-none focus:ring-2 focus:ring-emerald-500'
-            )}
-          />
+        {/* Annual mileage and Garage Location */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Annual Mileage
+            </label>
+            <input
+              type="number"
+              value={vehicle.annualMileage}
+              onChange={(e) => onUpdate('annualMileage', e.target.value)}
+              placeholder="12000"
+              className={cn(
+                'w-full px-3 py-2 rounded-lg border transition-colors',
+                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'border-gray-300 dark:border-gray-600',
+                'focus:outline-none focus:ring-2 focus:ring-emerald-500'
+              )}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Garage Location
+            </label>
+            <select
+              value={vehicle.garageLocation}
+              onChange={(e) => onUpdate('garageLocation', e.target.value)}
+              className={cn(
+                'w-full px-3 py-2 rounded-lg border transition-colors',
+                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'border-gray-300 dark:border-gray-600',
+                'focus:outline-none focus:ring-2 focus:ring-emerald-500'
+              )}
+            >
+              {GARAGE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
     </div>

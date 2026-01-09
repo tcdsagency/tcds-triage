@@ -32,6 +32,15 @@ interface Counts {
   lost: number;
 }
 
+const STATUS_OPTIONS = [
+  { value: 'new', label: 'New', color: 'bg-blue-100 text-blue-800' },
+  { value: 'contacted', label: 'Contacted', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'qualified', label: 'Qualified', color: 'bg-purple-100 text-purple-800' },
+  { value: 'quoted', label: 'Quoted', color: 'bg-orange-100 text-orange-800' },
+  { value: 'won', label: 'Won', color: 'bg-green-100 text-green-800' },
+  { value: 'lost', label: 'Lost', color: 'bg-gray-100 text-gray-600' },
+];
+
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [counts, setCounts] = useState<Counts | null>(null);
@@ -39,6 +48,7 @@ export default function LeadsPage() {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   const loadLeads = async () => {
     setLoading(true);
@@ -109,6 +119,51 @@ export default function LeadsPage() {
 
   const openInAgencyZoom = (agencyzoomId: string) => {
     window.open(`https://app.agencyzoom.com/lead/index?id=${agencyzoomId}`, '_blank');
+  };
+
+  const updateLeadStatus = async (leadId: string, newStatus: string) => {
+    // Skip for API-only leads (not in our DB)
+    if (leadId.startsWith('az-lead-')) {
+      toast.info('Update this lead in AgencyZoom', {
+        description: 'This lead is only in AgencyZoom and cannot be updated here.',
+      });
+      return;
+    }
+
+    setUpdatingStatus(true);
+    try {
+      const res = await fetch(`/api/customers/${leadId}/lead-status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Update local state
+        setLeads(leads.map(l =>
+          l.id === leadId ? { ...l, leadStatus: newStatus } : l
+        ));
+        if (selectedLead?.id === leadId) {
+          setSelectedLead({ ...selectedLead, leadStatus: newStatus });
+        }
+        toast.success('Status updated', {
+          description: `Lead moved to ${newStatus}`,
+        });
+        // Refresh counts
+        loadLeads();
+      } else {
+        toast.error('Failed to update status', {
+          description: data.error || 'Please try again',
+        });
+      }
+    } catch (err) {
+      console.error('Status update failed:', err);
+      toast.error('Failed to update status', {
+        description: 'Please check your connection',
+      });
+    } finally {
+      setUpdatingStatus(false);
+    }
   };
 
   return (
@@ -296,6 +351,27 @@ export default function LeadsPage() {
                       </a>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Status Update */}
+              <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <h3 className="font-semibold text-gray-700 mb-3">Update Status</h3>
+                <div className="flex flex-wrap gap-2">
+                  {STATUS_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => updateLeadStatus(selectedLead.id, opt.value)}
+                      disabled={updatingStatus || selectedLead.leadStatus === opt.value || (!selectedLead.leadStatus && opt.value === 'new')}
+                      className={`px-3 py-1.5 text-sm rounded-full transition-all ${
+                        (selectedLead.leadStatus === opt.value || (!selectedLead.leadStatus && opt.value === 'new'))
+                          ? `${opt.color} ring-2 ring-offset-1 ring-blue-500 cursor-default`
+                          : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
+                      } ${updatingStatus ? 'opacity-50 cursor-wait' : ''}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
