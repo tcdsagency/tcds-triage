@@ -580,8 +580,45 @@ function transformAgencyZoomNotes(azNotes: any[]): Note[] {
 }
 
 // =============================================================================
-// HELPER: Look up user avatarUrl by email
+// HELPER: Look up user by HawkSoft agent code
 // =============================================================================
+
+interface UserLookup {
+  id: string;
+  name: string;
+  email: string | null;
+  avatarUrl: string | null;
+}
+
+async function getUserByAgentCode(agentCode: string | undefined): Promise<UserLookup | undefined> {
+  if (!agentCode) return undefined;
+  const tenantId = process.env.DEFAULT_TENANT_ID;
+  if (!tenantId) return undefined;
+  try {
+    const [user] = await db
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        avatarUrl: users.avatarUrl,
+      })
+      .from(users)
+      .where(and(eq(users.tenantId, tenantId), eq(users.agentCode, agentCode)))
+      .limit(1);
+
+    if (!user) return undefined;
+
+    return {
+      id: user.id,
+      name: `${user.firstName} ${user.lastName}`.trim(),
+      email: user.email,
+      avatarUrl: user.avatarUrl,
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 async function getUserAvatarByEmail(email: string | undefined): Promise<string | undefined> {
   if (!email) return undefined;
@@ -710,10 +747,10 @@ export async function GET(
                           azContact?.preferredName ||
                           null;
 
-    // Look up agent avatars from our users table
-    const [producerAvatarUrl, csrAvatarUrl] = await Promise.all([
-      getUserAvatarByEmail(hsClient?.producer?.email),
-      getUserAvatarByEmail(hsClient?.csr?.email),
+    // Look up producer/CSR from our users table by HawkSoft agent code
+    const [producerUser, csrUser] = await Promise.all([
+      getUserByAgentCode(hsClient?.producer?.name), // producer.name contains the HawkSoft code (e.g., "TJC")
+      getUserByAgentCode(hsClient?.csr?.name),       // csr.name contains the HawkSoft code (e.g., "LWT")
     ]);
 
     // Build merged profile
@@ -771,18 +808,18 @@ export async function GET(
         ? `hawksoft://client/${hsClient.clientNumber}`
         : undefined,
       
-      // Agent assignment
+      // Agent assignment - use user lookup for full name/avatar, fallback to HawkSoft code
       producer: hsClient?.producer ? {
-        id: String(hsClient.producer.id),
-        name: hsClient.producer.name,
-        email: hsClient.producer.email,
-        avatarUrl: producerAvatarUrl,
+        id: producerUser?.id || String(hsClient.producer.id || 0),
+        name: producerUser?.name || hsClient.producer.name,
+        email: producerUser?.email || hsClient.producer.email,
+        avatarUrl: producerUser?.avatarUrl,
       } : undefined,
       csr: hsClient?.csr ? {
-        id: String(hsClient.csr.id),
-        name: hsClient.csr.name,
-        email: hsClient.csr.email,
-        avatarUrl: csrAvatarUrl,
+        id: csrUser?.id || String(hsClient.csr.id || 0),
+        name: csrUser?.name || hsClient.csr.name,
+        email: csrUser?.email || hsClient.csr.email,
+        avatarUrl: csrUser?.avatarUrl,
       } : undefined,
       
       // Dates
