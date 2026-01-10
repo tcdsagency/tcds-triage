@@ -592,9 +592,8 @@ interface UserLookup {
 
 async function getUserByAgentCode(agentCode: string | undefined): Promise<UserLookup | undefined> {
   if (!agentCode) return undefined;
-  const tenantId = process.env.DEFAULT_TENANT_ID;
-  if (!tenantId) return undefined;
   try {
+    // Look up user by agent code - tenantId may be null for some setups
     const [user] = await db
       .select({
         id: users.id,
@@ -604,7 +603,7 @@ async function getUserByAgentCode(agentCode: string | undefined): Promise<UserLo
         avatarUrl: users.avatarUrl,
       })
       .from(users)
-      .where(and(eq(users.tenantId, tenantId), eq(users.agentCode, agentCode)))
+      .where(eq(users.agentCode, agentCode))
       .limit(1);
 
     if (!user) return undefined;
@@ -615,7 +614,8 @@ async function getUserByAgentCode(agentCode: string | undefined): Promise<UserLo
       email: user.email,
       avatarUrl: user.avatarUrl,
     };
-  } catch {
+  } catch (err) {
+    console.error(`[getUserByAgentCode] Failed to lookup agent code ${agentCode}:`, err);
     return undefined;
   }
 }
