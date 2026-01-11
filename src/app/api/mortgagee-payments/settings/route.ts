@@ -63,10 +63,10 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * PUT /api/mortgagee-payments/settings
+ * PUT/POST /api/mortgagee-payments/settings
  * Update scheduler settings
  */
-export async function PUT(request: NextRequest) {
+async function updateSettings(request: NextRequest) {
   try {
     const tenantId = process.env.DEFAULT_TENANT_ID;
     if (!tenantId) {
@@ -144,10 +144,14 @@ export async function PUT(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("[Mortgagee Payments] Settings PUT error:", error);
+    console.error("[Mortgagee Payments] Settings update error:", error);
     return NextResponse.json(
       { error: "Failed to update settings", details: error.message },
       { status: 500 }
     );
   }
 }
+
+// Export both PUT and POST
+export const PUT = updateSettings;
+export const POST = updateSettings;

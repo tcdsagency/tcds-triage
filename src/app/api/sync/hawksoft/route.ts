@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { customers, policies } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { customers, policies, mortgagees } from '@/db/schema';
+import { eq, and, sql } from 'drizzle-orm';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
 
 export const maxDuration = 300; // Pro plan: 5 minutes
@@ -102,16 +102,17 @@ export async function POST(request: Request) {
     let policiesSynced = 0;
     let policyErrors = 0;
     let apiErrors = 0;
+    let mortgageesSynced = 0;
 
     for (let i = 0; i < hsClientNumbers.length; i += apiBatchSize) {
       const apiBatch = hsClientNumbers.slice(i, i + apiBatchSize);
       
       try {
-        // Include expands to get LOB data (loBs, autos, locations)
+        // Include expands to get LOB data (loBs, autos, locations, additionalInterests for mortgagees)
         const hsClients = await hsClient.getClients(
           apiBatch,
           ['details', 'policies', 'people'],
-          ['policies.autos', 'policies.locations', 'policies.drivers']
+          ['policies.autos', 'policies.locations', 'policies.drivers', 'policies.additionalInterests']
         );
         log(`API batch ${Math.floor(i / apiBatchSize) + 1}: ${hsClients.length} clients`);
 
@@ -165,14 +166,82 @@ export async function POST(request: Request) {
                   status: mapPolicyStatus(policy.status),
                 };
 
+                let savedPolicyId: string;
                 if (existingPolicy.length > 0) {
                   await db.update(policies)
                     .set(policyData)
                     .where(eq(policies.id, existingPolicy[0].id));
+                  savedPolicyId = existingPolicy[0].id;
                 } else {
-                  await db.insert(policies).values(policyData);
+                  const [newPolicy] = await db.insert(policies).values(policyData).returning({ id: policies.id });
+                  savedPolicyId = newPolicy.id;
                 }
                 policiesSynced++;
+
+                // Sync additionalInterests (mortgagees, lienholders, loss payees) for this policy
+                const additionalInterests = (policy as any).additionalInterests as any[] || [];
+
+                // Debug: Log additional interests for first few home policies
+                if (policiesSynced < 10 && extractedLOB.toLowerCase().includes('home') && debugLogger) {
+                  debugLogger(`AdditionalInterests for ${policy.policyNumber}: ${JSON.stringify(additionalInterests.map((ai: any) => ({ name: ai.name, type: ai.type, loanNumber: ai.loanNumber })))}`);
+                }
+
+                for (const ai of additionalInterests) {
+                  try {
+                    const name = ai.name || ai.Name;
+                    if (!name) continue;
+
+                    const loanNumber = ai.loanNumber || ai.LoanNumber || null;
+
+                    // Check if mortgagee already exists for this policy
+                    const [existingMortgagee] = await db
+                      .select({ id: mortgagees.id })
+                      .from(mortgagees)
+                      .where(
+                        and(
+                          eq(mortgagees.policyId, savedPolicyId),
+                          eq(mortgagees.name, name),
+                          loanNumber
+                            ? eq(mortgagees.loanNumber, loanNumber)
+                            : sql`${mortgagees.loanNumber} IS NULL`
+                        )
+                      )
+                      .limit(1);
+
+                    // Extract address from nested Address object
+                    const addr = ai.address || ai.Address || {};
+
+                    const mortgageeData = {
+                      name,
+                      loanNumber,
+                      addressLine1: addr.address1 || addr.Address1 || addr.street || addr.line1 || null,
+                      addressLine2: addr.address2 || addr.Address2 || addr.line2 || null,
+                      city: addr.city || addr.City || null,
+                      state: addr.state || addr.State || null,
+                      zipCode: addr.zip || addr.Zip || addr.zipCode || addr.postalCode || null,
+                      type: normalizeLienholderType(ai.type || ai.Type),
+                      position: ai.rank || ai.Rank || 1,
+                      isActive: true,
+                      updatedAt: new Date(),
+                    };
+
+                    if (existingMortgagee) {
+                      await db.update(mortgagees)
+                        .set(mortgageeData)
+                        .where(eq(mortgagees.id, existingMortgagee.id));
+                    } else {
+                      await db.insert(mortgagees).values({
+                        tenantId,
+                        policyId: savedPolicyId,
+                        customerId,
+                        ...mortgageeData,
+                      });
+                    }
+                    mortgageesSynced++;
+                  } catch (mortgageeErr) {
+                    // Continue on mortgagee errors
+                  }
+                }
               } catch (policyErr) {
                 policyErrors++;
               }
@@ -189,7 +258,7 @@ export async function POST(request: Request) {
     const nextOffset = offset + limit;
     const hasMore = nextOffset < totalWithHs;
     
-    log(`Done! ${customersUpdated} updated, ${policiesSynced} policies in ${duration}s`);
+    log(`Done! ${customersUpdated} updated, ${policiesSynced} policies, ${mortgageesSynced} mortgagees in ${duration}s`);
 
     return NextResponse.json({
       success: true,
@@ -199,6 +268,7 @@ export async function POST(request: Request) {
       processed: batch.length,
       customersUpdated,
       policiesSynced,
+      mortgageesSynced,
       policyErrors,
       apiErrors,
       hasMore,
@@ -281,4 +351,18 @@ function extractLineOfBusiness(policy: any, debugLog?: (msg: string) => void): s
   }
 
   return 'Unknown';
+}
+
+/**
+ * Normalize lienholder type to standard values
+ */
+function normalizeLienholderType(type?: string): string {
+  if (!type) return 'mortgagee';
+
+  const lower = type.toLowerCase();
+  if (lower.includes('loss') || lower.includes('payee')) return 'loss_payee';
+  if (lower.includes('lien')) return 'lienholder';
+  if (lower.includes('additional') || lower.includes('interest')) return 'additional_interest';
+  if (lower.includes('second') || lower === '2nd' || lower === '2') return 'mortgagee'; // 2nd mortgagee
+  return 'mortgagee';
 }

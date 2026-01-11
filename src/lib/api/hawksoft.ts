@@ -170,13 +170,14 @@ export interface HawkSoftContact {
 export type ClientInclude = 'details' | 'people' | 'contacts' | 'claims' | 'policies' | 'invoices';
 
 // Expand options for nested data - these go INSIDE the included data
-export type ClientExpand = 
-  | 'policies.drivers' 
-  | 'policies.autos' 
+export type ClientExpand =
+  | 'policies.drivers'
+  | 'policies.autos'
   | 'policies.coverages'
   | 'policies.locations'
   | 'policies.lienholders'
-  | 'people.phones' 
+  | 'policies.additionalInterests'
+  | 'people.phones'
   | 'people.emails'
   | 'claims.adjusters'
   | 'claims.contacts'
@@ -187,10 +188,11 @@ export type ClientExpand =
 export const FULL_CLIENT_INCLUDES: ClientInclude[] = ['details', 'policies', 'people', 'contacts', 'claims'];
 export const FULL_CLIENT_EXPANDS: ClientExpand[] = [
   'policies.drivers',
-  'policies.autos', 
+  'policies.autos',
   'policies.coverages',
   'policies.locations',
   'policies.lienholders',
+  'policies.additionalInterests',
   'people.phones',
   'people.emails',
   'claims.adjusters',

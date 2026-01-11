@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn, normalizeName } from '@/lib/utils';
 
 export interface DonnaCallContext {
   talkingPoints: string[];
@@ -153,7 +153,7 @@ export default function PolicyNoticeCard({ notice, isSelected, onSelect, onActio
       <h3 className="font-semibold text-gray-900 mb-1">{notice.title}</h3>
 
       <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-        <span className="font-medium">{notice.insuredName || 'Unknown'}</span>
+        <span className="font-medium">{normalizeName(notice.insuredName) || 'Unknown'}</span>
         {notice.policyNumber && (<><span className="text-gray-400">•</span><span>{notice.policyNumber}</span></>)}
       </div>
 

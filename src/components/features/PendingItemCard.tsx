@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { cn } from '@/lib/utils';
+import { cn, formatPhoneNumber } from '@/lib/utils';
 import { AgencyZoomLink, getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
 
 // =============================================================================
@@ -157,6 +157,12 @@ export default function PendingItemCard({
   const sentimentConfig = item.sentiment ? SENTIMENT_CONFIG[item.sentiment] : null;
   const requestIcon = REQUEST_TYPE_ICONS[item.requestType?.toLowerCase() || ''] || '📝';
 
+  // For after-hours messages, prefer phone number over email-like contact names
+  const isEmailLikeName = item.contactName && item.contactName.includes('@');
+  const displayName = (item.matchStatus === 'after_hours' && isEmailLikeName && item.contactPhone)
+    ? formatPhoneNumber(item.contactPhone)
+    : (item.contactName || item.contactPhone || 'Unknown');
+
   // Format age display
   const formatAge = (minutes: number) => {
     if (minutes < 60) return `${minutes}m ago`;
@@ -215,7 +221,7 @@ export default function PendingItemCard({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-semibold text-gray-900 dark:text-white">
-                {item.contactName || item.contactPhone || 'Unknown'}
+                {displayName}
               </span>
               {item.contactType && (
                 <span className={cn(
