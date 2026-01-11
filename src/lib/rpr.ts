@@ -377,7 +377,7 @@ class RPRClient {
   }
 
   /**
-   * Look up complete property data by address
+   * Look up complete property data by address using browser scraping via token service
    */
   async lookupProperty(address: string): Promise<RPRPropertyData | null> {
     if (!this.isConfigured()) {
@@ -386,128 +386,103 @@ class RPRClient {
     }
 
     try {
-      // Step 1: Search for property
-      const location = await this.searchLocation(address);
-      if (!location) {
-        console.log("[RPR] Location not found, returning null (no mock data)");
+      console.log(`[RPR] Looking up property via scraping: ${address}`);
+
+      // Use the token service's browser-based lookup endpoint
+      const encodedAddress = encodeURIComponent(address);
+      const response = await fetch(
+        `${TOKEN_SERVICE_URL}/lookup/rpr?address=${encodedAddress}`,
+        {
+          headers: {
+            Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
+          },
+          signal: AbortSignal.timeout(180000), // 3 minute timeout for browser scraping
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`[RPR] Lookup service error: ${response.status} - ${error}`);
         return null;
       }
 
-      // Step 2: Get common data
-      const common = await this.getPropertyCommon(location.propertyId);
-      if (!common) {
-        console.log("[RPR] Common data not found, returning null (no mock data)");
+      const result = await response.json();
+
+      if (!result.success) {
+        console.log(`[RPR] Lookup failed: ${result.error}`);
         return null;
       }
 
-      // Step 3: Get details
-      const details = await this.getPropertyDetails(location.propertyId);
+      const data = result.data;
+      console.log(`[RPR] Lookup succeeded, captured ${data._apiCount || 0} API responses`);
 
-      // Determine status
-      let currentStatus: "off_market" | "active" | "pending" | "sold" | "unknown" = "off_market";
-      let listingData: RPRPropertyData["listing"] | undefined;
+      // Determine status from scraped data
+      let currentStatus: "off_market" | "active" | "pending" | "sold" | "unknown" =
+        data.currentStatus || "off_market";
 
-      // Check if there's an active listing (would need listing ID from common data)
-      // For now, infer from lastSaleDate if recent
-      const lastSaleDate = common.searchResult.lastSaleDate;
-      if (lastSaleDate) {
-        const saleDate = new Date(lastSaleDate);
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        if (saleDate > thirtyDaysAgo) {
-          currentStatus = "sold";
+      // Parse address from location suggestions if available
+      let parsedAddress = this.parseAddress(address);
+      if (data._locationSuggestions?.sections) {
+        for (const section of data._locationSuggestions.sections) {
+          for (const loc of section.locations || []) {
+            if (loc.description) {
+              const parts = loc.description.split(", ");
+              if (parts.length >= 3) {
+                parsedAddress = {
+                  street: parts[0],
+                  city: parts[1],
+                  state: parts[2]?.split(" ")[0] || "",
+                  zip: parts[2]?.split(" ")[1] || "",
+                };
+              }
+            }
+          }
         }
       }
 
+      // Build minimal property data from scraped results
       return {
-        propertyId: location.propertyId,
+        propertyId: String(data._propertyId || "scraped"),
         address: {
-          street: location.address,
-          city: location.city,
-          state: location.state,
-          zip: location.zip,
-          county: common.address?.county,
+          street: parsedAddress.street,
+          city: parsedAddress.city,
+          state: parsedAddress.state,
+          zip: parsedAddress.zip,
         },
-        // Basic property details
-        beds: common.searchResult.bedrooms || 0,
-        baths:
-          common.searchResult.totalBaths ||
-          (common.searchResult.bathsFull || 0) + (common.searchResult.bathsHalf || 0) * 0.5,
-        sqft: common.searchResult.livingAreaInSqFt || 0,
-        buildingSqft: common.searchResult.buildingAreaSqFt,
-        stories: common.searchResult.stories || 1,
-        yearBuilt: common.searchResult.yearBuilt || 0,
-        propertyType: common.searchResult.propertyType,
-        propertySubtype: common.searchResult.propertySubtype,
-        style: common.searchResult.style,
-        // Lot information
-        lotSqft: common.searchResult.lotSizeSqFt || 0,
-        lotAcres: common.searchResult.lotSizeAcres || 0,
-        zoning: common.searchResult.zoning,
-        // Construction details (insurance key)
-        roofType: details?.property?.roofType || "Unknown",
-        roofMaterial: details?.property?.roofMaterial,
-        foundation: details?.property?.foundation || "Unknown",
-        foundationType: details?.property?.foundationType,
-        exteriorWalls: details?.property?.exteriorWalls || "Unknown",
-        constructionType: details?.property?.constructionType,
-        hvac: `${details?.property?.heatingType || "Unknown"} / ${details?.property?.coolingType || "Unknown"}`,
-        heatingType: details?.property?.heatingType,
-        coolingType: details?.property?.coolingType,
-        hasCooling: details?.property?.hasCooling,
-        // Features (liability concerns)
-        hasPool: details?.features?.hasPool || Boolean(details?.features?.pool),
-        pool: details?.features?.pool,
-        poolType: details?.features?.poolType,
-        garageSpaces: details?.features?.garageSpaces,
-        garageType: details?.features?.garageType,
-        parkingSpaces: details?.features?.parkingSpaces,
-        fireplaces: details?.features?.fireplaces,
-        hasFireplace: details?.features?.hasFireplace || (details?.features?.fireplaces || 0) > 0,
-        basement: details?.features?.basement,
-        basementType: details?.features?.basementType,
-        basementSqft: details?.features?.basementSqft,
-        // Owner information
-        ownerName: common.owner?.name || "Property Owner",
-        ownerOccupied: common.owner?.occupied ?? true,
-        mailingAddress: common.owner?.mailingAddress || "",
-        // Valuation & Tax
-        assessedValue: common.tax?.assessedValue || 0,
-        estimatedValue: common.valuation?.estimatedValue || 0,
-        valuationRangeLow: common.valuation?.valuationRangeLow,
-        valuationRangeHigh: common.valuation?.valuationRangeHigh,
-        taxAmount: common.tax?.taxAmount || 0,
-        taxYear: common.tax?.assessedYear,
-        lastSaleDate: common.searchResult.lastSaleDate || "",
-        lastSalePrice: common.searchResult.lastSalePrice || 0,
-        // Risk factors
-        floodZone: details?.flood?.floodZone,
-        floodRisk: details?.flood?.floodRisk,
-        // HOA
-        hasHoa: details?.hoa?.hasHoa,
-        hoaFee: details?.hoa?.hoaFee,
-        hoaFrequency: details?.hoa?.hoaFrequency,
-        // Schools
+        // Basic property details from page scraping
+        beds: data.bedrooms || 0,
+        baths: data.bathrooms || 0,
+        sqft: data.sqft || 0,
+        yearBuilt: data.yearBuilt || 0,
+        stories: data.stories || 1,
+        // Minimal data - RPR scraping gives us status which is what we need for risk monitor
+        lotSqft: 0,
+        lotAcres: 0,
+        roofType: "Unknown",
+        foundation: "Unknown",
+        exteriorWalls: "Unknown",
+        hvac: "Unknown",
+        ownerName: "Property Owner",
+        ownerOccupied: true,
+        mailingAddress: "",
+        assessedValue: 0,
+        estimatedValue: 0,
+        taxAmount: 0,
+        lastSaleDate: "",
+        lastSalePrice: 0,
         schools: {
-          district: details?.schools?.schoolDistrict || "Unknown",
-          elementary: details?.schools?.elementarySchool || "Unknown",
-          middle: details?.schools?.middleSchool || "Unknown",
-          high: details?.schools?.highSchool || "Unknown",
+          district: "Unknown",
+          elementary: "Unknown",
+          middle: "Unknown",
+          high: "Unknown",
         },
-        // Location
-        coordinates: common.centroid
-          ? {
-              latitude: common.centroid.latitude,
-              longitude: common.centroid.longitude,
-            }
-          : undefined,
-        // Listing
-        listing: listingData,
+        // The important part - listing status
         currentStatus,
       };
-    } catch (error) {
-      console.error("[RPR] Lookup error:", error);
-      return this.getMockData(address);
+    } catch (error: any) {
+      console.error("[RPR] Lookup error:", error.message);
+      console.log("[RPR] Returning null (no mock data)");
+      return null;
     }
   }
 
@@ -519,12 +494,13 @@ class RPRClient {
     listingPrice?: number;
     daysOnMarket?: number;
     listingAgent?: string;
-    source: "api" | "mock";
+    source: "api" | "scrape" | null;
   }> {
     const result = await this.lookupProperty(address);
 
     if (!result) {
-      return { status: "unknown", source: "mock" };
+      // Return null source to indicate no data (not mock)
+      return { status: "unknown", source: null };
     }
 
     return {
@@ -532,7 +508,7 @@ class RPRClient {
       listingPrice: result.listing?.price,
       daysOnMarket: result.listing?.daysOnMarket,
       listingAgent: result.listing?.agent,
-      source: this.isConfigured() ? "api" : "mock",
+      source: "scrape", // Browser-based scraping
     };
   }
 

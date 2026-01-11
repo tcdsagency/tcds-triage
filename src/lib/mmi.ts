@@ -339,17 +339,82 @@ class MMIClient {
   }
 
   /**
+   * Look up property using browser-based scraping via token service
+   */
+  async lookupViaScraping(fullAddress: string): Promise<MMISearchResult> {
+    try {
+      console.log(`[MMI] Looking up property via scraping: ${fullAddress}`);
+
+      const encodedAddress = encodeURIComponent(fullAddress);
+      const response = await fetch(`${TOKEN_SERVICE_URL}/lookup/mmi?address=${encodedAddress}`, {
+        headers: {
+          Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
+        },
+        signal: AbortSignal.timeout(180000), // 3 minute timeout for browser scraping
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error(`[MMI] Lookup service error: ${response.status} - ${error}`);
+        return { success: false, data: null, source: "api", error: `Service error: ${response.status}` };
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        console.log(`[MMI] Lookup failed: ${result.error}`);
+        return { success: false, data: null, source: "api", error: result.error };
+      }
+
+      const data = result.data;
+      console.log(`[MMI] Scraping succeeded, captured ${data._apiCount || 0} API responses`);
+
+      // Parse address
+      const parsed = this.parseAddress(fullAddress);
+
+      // Extract status from scraped data
+      const currentStatus = data.currentStatus || "off_market";
+
+      // Build listing history from scraped data if available
+      const listingHistory: MMIListingHistory[] = (data.listingHistory || []).map((h: any) => ({
+        LISTING_DATE: h.date || "",
+        STATUS: h.status || "",
+        LIST_PRICE: 0,
+        CLOSE_PRICE: 0,
+        LISTING_AGENT: "",
+        LISTING_BROKER: "",
+      }));
+
+      return {
+        success: true,
+        data: {
+          propertyId: data._propertyId || "scraped",
+          address: {
+            street: parsed.street,
+            city: parsed.city,
+            state: parsed.state,
+            zip: parsed.zip,
+          },
+          listingHistory,
+          deedHistory: [],
+          currentStatus,
+          lastUpdated: new Date().toISOString(),
+        },
+        source: "api",
+      };
+    } catch (error: any) {
+      console.error("[MMI] Scraping error:", error.message);
+      return { success: false, data: null, source: "api", error: error.message };
+    }
+  }
+
+  /**
    * Look up property by full address string
    */
   async lookupByAddress(fullAddress: string): Promise<MMISearchResult> {
     if (!this.isConfigured()) {
-      console.log("[MMI] API not configured, returning null (no mock data)");
-      return {
-        success: false,
-        data: null,
-        source: "api",
-        error: "MMI API not configured",
-      };
+      console.log("[MMI] API not configured, trying scraping instead");
+      return this.lookupViaScraping(fullAddress);
     }
 
     try {
@@ -365,13 +430,8 @@ class MMIClient {
       );
 
       if (!searchResult) {
-        console.log("[MMI] Property not found, returning null (no mock data)");
-        return {
-          success: false,
-          data: null,
-          source: "api",
-          error: "Property not found in MMI",
-        };
+        console.log("[MMI] Property not found in API, trying scraping");
+        return this.lookupViaScraping(fullAddress);
       }
 
       // Step 2: Get property history
@@ -460,13 +520,9 @@ class MMIClient {
         source: "api",
       };
     } catch (error: any) {
-      console.error("[MMI] Lookup error:", error);
-      return {
-        success: false,
-        data: null,
-        source: "api",
-        error: error?.message || "MMI lookup failed",
-      };
+      console.error("[MMI] API lookup error:", error.message);
+      console.log("[MMI] Falling back to scraping");
+      return this.lookupViaScraping(fullAddress);
     }
   }
 
