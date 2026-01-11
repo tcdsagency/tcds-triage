@@ -123,7 +123,7 @@ export async function POST(request: Request) {
           // Extract preferred name
           const primaryPerson = hsData.people?.[0] as any;
           const preferredName = primaryPerson?.preferredName || null;
-          
+
           const updateData: Record<string, any> = {
             lastSyncedFromHs: new Date(),
           };
@@ -132,10 +132,20 @@ export async function POST(request: Request) {
             updateData.firstName = preferredName;
           }
 
+          // Sync address if available
+          if (hsData.address) {
+            updateData.address = {
+              street: hsData.address.line1 || '',
+              city: hsData.address.city || '',
+              state: hsData.address.state || '',
+              zip: hsData.address.zip || '',
+            };
+          }
+
           await db.update(customers)
             .set(updateData)
             .where(eq(customers.id, customerId));
-          
+
           customersUpdated++;
 
           // Sync policies
