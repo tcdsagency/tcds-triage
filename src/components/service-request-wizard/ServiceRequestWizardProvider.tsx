@@ -49,6 +49,7 @@ export function ServiceRequestWizardProvider({ children, prefillPolicyNumber, pr
   const [formData, setFormData] = useState<ServiceRequestFormData>(initialFormData);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingPolicyDetails, setLoadingPolicyDetails] = useState(false);
 
   // Auto-save to localStorage
   useEffect(() => {
@@ -107,10 +108,31 @@ export function ServiceRequestWizardProvider({ children, prefillPolicyNumber, pr
     });
   }, []);
 
-  // Select policy
-  const selectPolicy = useCallback((policy: PolicySearchResult) => {
-    setFormData(prev => ({ ...prev, policy }));
+  // Select policy and fetch details (vehicles, drivers)
+  const selectPolicy = useCallback(async (policy: PolicySearchResult) => {
+    setFormData(prev => ({ ...prev, policy, policyDetails: null }));
     setCurrentStep(1);
+
+    // Fetch policy details in background
+    setLoadingPolicyDetails(true);
+    try {
+      const res = await fetch(`/api/policy/${policy.id}/details`);
+      const data = await res.json();
+
+      if (data.success) {
+        setFormData(prev => ({
+          ...prev,
+          policyDetails: {
+            vehicles: data.vehicles || [],
+            drivers: data.drivers || [],
+          },
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to fetch policy details:', e);
+    } finally {
+      setLoadingPolicyDetails(false);
+    }
   }, []);
 
   // Select change type
@@ -200,24 +222,47 @@ export function ServiceRequestWizardProvider({ children, prefillPolicyNumber, pr
 
       switch (formData.changeType) {
         case 'add_vehicle':
+          data = {
+            ...data,
+            ...formData.vehicle,
+            isReplacing: formData.isReplacing,
+            replacingVehicleId: formData.replacingVehicleId,
+            replacingVehicle: formData.isReplacing
+              ? formData.policyDetails?.vehicles.find(v => v.id === formData.replacingVehicleId)?.displayName
+              : undefined,
+          };
+          break;
         case 'replace_vehicle':
           data = { ...data, ...formData.vehicle };
           break;
         case 'remove_vehicle':
+          // Get vehicle display name from selected ID
+          const selectedVehicle = formData.policyDetails?.vehicles.find(
+            v => v.id === formData.selectedVehicleId
+          );
           data = {
             ...data,
-            vehicleToRemove: formData.vehicleToRemove,
+            vehicleToRemove: selectedVehicle?.displayName || formData.vehicleToRemove,
+            selectedVehicleId: formData.selectedVehicleId,
             removalReason: formData.removalReason,
             newOwnerInfo: formData.newOwnerInfo,
+            isReplacing: formData.isReplacing,
+            stillInPossession: formData.stillInPossession,
+            outOfPossessionDate: formData.outOfPossessionDate,
           };
           break;
         case 'add_driver':
           data = { ...data, ...formData.driver };
           break;
         case 'remove_driver':
+          // Get driver display name from selected ID
+          const selectedDriver = formData.policyDetails?.drivers.find(
+            d => d.id === formData.selectedDriverId
+          );
           data = {
             ...data,
-            driverToRemove: formData.driverToRemove,
+            driverToRemove: selectedDriver?.displayName || formData.driverToRemove,
+            selectedDriverId: formData.selectedDriverId,
             removalReason: formData.driverRemovalReason,
           };
           break;
@@ -279,6 +324,7 @@ export function ServiceRequestWizardProvider({ children, prefillPolicyNumber, pr
     updateNestedField,
     selectPolicy,
     selectChangeType,
+    loadingPolicyDetails,
     errors,
     validateCurrentStep,
     submitRequest,

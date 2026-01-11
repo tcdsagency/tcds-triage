@@ -2323,6 +2323,74 @@ export const paymentAdvancesRelations = relations(paymentAdvances, ({ one }) => 
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SAME DAY PAYMENTS - Client payment processing (admin-only history)
+// No fees, no reminders - for same-day processing only
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const sameDayPaymentStatusEnum = pgEnum('same_day_payment_status', [
+  'pending',
+  'processed',
+  'failed',
+]);
+
+export const sameDayPayments = pgTable('same_day_payments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // Customer info
+  firstName: text('first_name').notNull(),
+  lastName: text('last_name').notNull(),
+
+  // Policy
+  policyNumber: text('policy_number').notNull(),
+
+  // Payment amount (no fees for same-day)
+  amount: real('amount').notNull(),
+
+  // Payment method
+  paymentType: paymentAdvanceTypeEnum('payment_type').notNull(),
+  paymentInfo: text('payment_info').notNull(), // Encrypted card/ACH details
+
+  // Dates
+  submittedDate: text('submitted_date').notNull(), // Date form was submitted
+
+  // Status
+  status: sameDayPaymentStatusEnum('status').default('pending'),
+  processedAt: timestamp('processed_at'),
+
+  // Notes
+  notes: text('notes'),
+
+  // AgencyZoom linkage
+  agencyzoomId: text('agencyzoom_id'),
+  agencyzoomType: text('agencyzoom_type'), // 'customer' | 'lead'
+
+  // Submitter
+  submitterEmail: text('submitter_email'),
+  submitterUserId: uuid('submitter_user_id').references(() => users.id),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('same_day_payments_tenant_idx').on(table.tenantId),
+  policyIdx: index('same_day_payments_policy_idx').on(table.policyNumber),
+  statusIdx: index('same_day_payments_status_idx').on(table.status),
+  createdAtIdx: index('same_day_payments_created_at_idx').on(table.createdAt),
+}));
+
+export const sameDayPaymentsRelations = relations(sameDayPayments, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [sameDayPayments.tenantId],
+    references: [tenants.id],
+  }),
+  submitter: one(users, {
+    fields: [sameDayPayments.submitterUserId],
+    references: [users.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
 // AGENT ASSIST TELEMETRY - Track AI suggestion usage and feedback
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -3413,6 +3481,12 @@ export const policyNotices = pgTable('policy_notices', {
   // Raw Data
   rawPayload: jsonb('raw_payload'), // Original payload from Adapt API
 
+  // Priority & AI Enhancement
+  priorityScore: integer('priority_score').default(50), // 0-100 score for call queue prioritization
+  donnaContext: jsonb('donna_context'), // AI-generated call context (talking points, objection handlers)
+  customerValue: decimal('customer_value', { precision: 12, scale: 2 }), // Total premium value of customer
+  matchConfidence: varchar('match_confidence', { length: 20 }), // high, medium, low, none
+
   // Dates
   noticeDate: timestamp('notice_date'), // When the notice was generated
   fetchedAt: timestamp('fetched_at').defaultNow(), // When we fetched it
@@ -3428,6 +3502,7 @@ export const policyNotices = pgTable('policy_notices', {
   index('policy_notices_customer_idx').on(table.customerId),
   index('policy_notices_policy_idx').on(table.policyId),
   index('policy_notices_due_date_idx').on(table.tenantId, table.dueDate),
+  index('policy_notices_priority_idx').on(table.tenantId, table.priorityScore, table.reviewStatus),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════

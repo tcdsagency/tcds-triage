@@ -812,14 +812,14 @@ export async function GET(
       producer: hsClient?.producer ? {
         id: producerUser?.id || String(hsClient.producer.id || 0),
         name: producerUser?.name || hsClient.producer.name,
-        email: producerUser?.email || hsClient.producer.email,
-        avatarUrl: producerUser?.avatarUrl,
+        email: producerUser?.email || hsClient.producer.email || undefined,
+        avatarUrl: producerUser?.avatarUrl || undefined,
       } : undefined,
       csr: hsClient?.csr ? {
         id: csrUser?.id || String(hsClient.csr.id || 0),
         name: csrUser?.name || hsClient.csr.name,
-        email: csrUser?.email || hsClient.csr.email,
-        avatarUrl: csrUser?.avatarUrl,
+        email: csrUser?.email || hsClient.csr.email || undefined,
+        avatarUrl: csrUser?.avatarUrl || undefined,
       } : undefined,
       
       // Dates

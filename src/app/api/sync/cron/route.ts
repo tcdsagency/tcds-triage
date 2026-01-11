@@ -95,7 +95,10 @@ export async function GET(request: NextRequest) {
     try {
       const donnaRes = await fetch(`${getBaseUrl(request)}/api/sync/donna`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-call': 'true',
+        },
         body: JSON.stringify({
           batchSize: 25,
           staleThresholdHours: 24,

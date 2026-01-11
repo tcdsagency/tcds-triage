@@ -47,6 +47,8 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError 
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [currentDate, setCurrentDate] = useState(surveyDate);
+  const tileErrorCountRef = useRef(0);
+  const tileLoadCountRef = useRef(0);
 
   // Overlay visibility state
   const [showOverlays, setShowOverlays] = useState({
@@ -57,8 +59,8 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError 
     building: false,
   });
 
-  // Get Nearmap API key
-  const nearmapKey = process.env.NEXT_PUBLIC_NEARMAP_API_KEY || process.env.NEARMAP_API_KEY || '';
+  // Get Nearmap API key (strip any trailing \n that may be in env vars)
+  const nearmapKey = (process.env.NEXT_PUBLIC_NEARMAP_API_KEY || process.env.NEARMAP_API_KEY || '').replace(/\\n$/, '').trim();
 
   // Build tile URL with optional date parameter
   const getTileUrl = (date?: string) => {
@@ -94,17 +96,30 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError 
 
     // Add base tile layer
     if (nearmapKey) {
+      console.log('[NearmapMap] Using Nearmap tiles with key:', nearmapKey.substring(0, 10) + '...');
       const nearmapLayer = L.tileLayer(getTileUrl(surveyDate), {
         maxZoom: 21,
         minZoom: 10,
         attribution: '&copy; <a href="https://nearmap.com">Nearmap</a>',
+        errorTileUrl: '', // Don't show broken image for missing tiles
       });
 
       tileLayerRef.current = nearmapLayer;
       nearmapLayer.addTo(map);
+
+      // Track individual tile loads/errors - only show error if most tiles fail
       nearmapLayer.on('tileerror', () => {
-        setHasError(true);
-        onError?.();
+        tileErrorCountRef.current += 1;
+        // Only show error state if we get many consecutive errors with no successes
+        if (tileErrorCountRef.current > 10 && tileLoadCountRef.current === 0) {
+          setHasError(true);
+          onError?.();
+        }
+      });
+      nearmapLayer.on('tileload', () => {
+        tileLoadCountRef.current += 1;
+        setIsLoaded(true);
+        setHasError(false); // Clear error if tiles are loading
       });
       nearmapLayer.on('load', () => {
         setIsLoaded(true);

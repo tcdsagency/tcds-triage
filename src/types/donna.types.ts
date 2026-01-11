@@ -152,21 +152,90 @@ export interface DonnaAPIActivity {
 
 /**
  * Donna data stored in customers.donnaData JSONB column
+ * Includes ALL enrichment data from DONNA API
  */
 export interface DonnaCustomerData {
   // Core Sentiment & VIP Status
   sentimentScore: number; // 0-100
+  sentimentDate?: string;
+  summarySlab10?: string;
+  summarySlab20?: string;
   isPersonalVIP: boolean;
   isCommercialVIP: boolean;
 
   // Predictions (0-1 probabilities)
   retentionProbability: number;
   crossSellProbability: number;
+  renewalProbability?: number;
+  roundoutScoreGroup?: string; // G1-G5
+  retentionScoreDate?: string;
+  retentionScoreValidityDate?: string;
 
   // Financial
   estimatedWalletSize: number;
   currentAnnualPremium: number;
   potentialGap: number; // wallet - current
+  totalPremiumDueOnRenewal?: number;
+  agencyShareSpend?: number;
+  upliftPremiumValue?: number;
+
+  // Demographics / Enrichments
+  demographics?: {
+    gender?: string;
+    dateOfBirth?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    homeEmail?: string;
+    workEmail?: string;
+    homePhone?: string;
+    organizationName?: string;
+    organizationType?: string;
+  };
+
+  // Policy Summary
+  policyInfo?: {
+    status?: string; // Active, Inactive, Prospect
+    distinctLobCount?: number;
+    lobCodes?: string[];
+    coverageCodes?: string[];
+    activePolicies?: number;
+    inactivePolicies?: number;
+    isMonoline?: boolean;
+    isProspect?: boolean;
+    isDeadfile?: boolean;
+  };
+
+  // Events & Influencers
+  events?: {
+    lastEvent?: string; // RENEWED, CANCELLED, etc.
+    lastChangeDirection?: string; // Increase, Decrease
+    minimumValue?: number;
+    positiveInfluencers?: string[];
+    negativeInfluencers?: string[];
+  };
+
+  // Claims
+  claims?: {
+    claimsData?: string;
+    claimDetails?: string;
+  };
+
+  // Producer/CSR Assignment
+  assignment?: {
+    producerId?: string;
+    producerName?: string;
+    csrId?: string;
+    csrName?: string;
+  };
+
+  // Lifestyle Enrichments
+  lifestyle?: {
+    ownsHorse?: boolean;
+    ownsATV?: boolean;
+    collectiblesPlates?: boolean;
+  };
 
   // Recommendations
   recommendations: DonnaRecommendation[];

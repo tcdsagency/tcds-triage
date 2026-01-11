@@ -2,6 +2,15 @@
 
 import { cn } from '@/lib/utils';
 
+export interface DonnaCallContext {
+  talkingPoints: string[];
+  objectionHandlers: Array<{ objection: string; response: string }>;
+  customerSentiment?: string;
+  churnRisk?: 'low' | 'medium' | 'high';
+  recommendedAction: string;
+  generatedAt: string;
+}
+
 export interface PolicyNotice {
   id: string;
   adaptNoticeId?: string | null;
@@ -32,6 +41,11 @@ export interface PolicyNotice {
   createdAt: string;
   assignedTo?: { id: string; name: string } | null;
   customer?: { id: string; name: string; agencyZoomId?: number | null } | null;
+  // Enhanced fields
+  priorityScore?: number | null;
+  donnaContext?: DonnaCallContext | null;
+  customerValue?: string | null;
+  matchConfidence?: 'high' | 'medium' | 'low' | 'none' | null;
 }
 
 interface PolicyNoticeCardProps {
@@ -62,6 +76,13 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; i
   dismissed: { label: 'Dismissed', bg: 'bg-gray-100', text: 'text-gray-500', icon: '✕' },
 };
 
+function getPriorityConfig(score: number): { bg: string; text: string; label: string } {
+  if (score >= 80) return { bg: 'bg-red-600', text: 'text-white', label: 'Critical' };
+  if (score >= 65) return { bg: 'bg-orange-500', text: 'text-white', label: 'High' };
+  if (score >= 50) return { bg: 'bg-yellow-400', text: 'text-yellow-900', label: 'Medium' };
+  return { bg: 'bg-gray-300', text: 'text-gray-700', label: 'Low' };
+}
+
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -85,6 +106,7 @@ export default function PolicyNoticeCard({ notice, isSelected, onSelect, onActio
   const urgencyConfig = URGENCY_CONFIG[notice.urgency || 'medium'] || URGENCY_CONFIG.medium;
   const statusConfig = STATUS_CONFIG[notice.reviewStatus || 'pending'] || STATUS_CONFIG.pending;
   const daysUntilDue = getDaysUntilDue(notice.dueDate);
+  const priorityConfig = notice.priorityScore ? getPriorityConfig(notice.priorityScore) : null;
 
   return (
     <div
@@ -99,6 +121,12 @@ export default function PolicyNoticeCard({ notice, isSelected, onSelect, onActio
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2">
           <span className={cn('text-lg', typeConfig.color)}>{typeConfig.icon}</span>
+          {/* Priority Score Badge */}
+          {priorityConfig && notice.priorityScore && (
+            <span className={cn('px-2 py-0.5 text-xs font-bold rounded', priorityConfig.bg, priorityConfig.text)}>
+              {notice.priorityScore}
+            </span>
+          )}
           <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full border', urgencyConfig.bg, urgencyConfig.text, urgencyConfig.border)}>
             {urgencyConfig.label}
           </span>

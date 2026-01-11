@@ -13,14 +13,15 @@ import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 
 interface CompleteRequest {
   itemType: 'wrapup' | 'message' | 'lead';
-  action: 'note' | 'ticket' | 'lead' | 'skip' | 'acknowledge' | 'void';
+  action: 'note' | 'ticket' | 'lead' | 'skip' | 'acknowledge' | 'void' | 'ncm';
   customerId?: string;
   isLead?: boolean; // true if matched to a lead (not a customer)
   noteContent?: string;
   ticketDetails?: {
-    subject: string;
+    subject?: string;
     description?: string;
     priority?: 'low' | 'medium' | 'high';
+    assigneeAgentId?: number; // AgencyZoom CSR ID - USER SELECTED
   };
   leadDetails?: {
     firstName: string;
@@ -30,6 +31,10 @@ interface CompleteRequest {
     source?: string;
   };
 }
+
+// NCM (No Customer Match) customer ID in AgencyZoom
+// This is a placeholder customer used for service requests from unknown callers
+const NCM_CUSTOMER_ID = process.env.NCM_CUSTOMER_ID || '0'; // Default to 0 if not set
 
 // =============================================================================
 // HELPERS
@@ -205,51 +210,47 @@ export async function POST(
         }
       }
 
-      if (body.action === 'ticket' && contactId && azClient) {
-        // Tickets are only supported for customers, not leads
-        if (isLead) {
-          return NextResponse.json({ error: "Cannot create tickets for leads - use note or convert to customer first" }, { status: 400 });
-        }
+      if (body.action === 'ticket' && contactId) {
+        // Create service request via Zapier webhook
+        const aiExtract = wrapup.aiExtraction as {
+          serviceRequestTypeId?: number;
+          serviceRequestTypeName?: string;
+          priorityId?: number;
+          policyNumbers?: string[];
+          agencyZoomEmail?: string;
+        } | null;
 
-        // First create note
-        const noteText = formatNoteText('wrapup', body.noteContent || wrapup.aiCleanedSummary || wrapup.summary || '', {
-          phone: wrapup.customerPhone || undefined,
-          requestType: wrapup.requestType || undefined,
-        });
+        // Get customer email from extraction or wrapup
+        const customerEmail = aiExtract?.agencyZoomEmail || wrapup.customerEmail || null;
 
-        let noteId: number | undefined;
-        const noteResult = await azClient.addNote(contactId, noteText);
-        if (noteResult.success) {
-          noteId = noteResult.id;
-        }
-
-        // Then create ticket
-        const ticketPayload = {
-          subject: body.ticketDetails?.subject || `Follow-up: ${wrapup.requestType || 'Call'} - ${wrapup.customerName || 'Customer'}`,
-          description: body.ticketDetails?.description || body.noteContent || wrapup.aiCleanedSummary || wrapup.summary || '',
-          customerId: contactId,
-          pipelineId: 1,
-          stageId: 1,
-          priorityId: body.ticketDetails?.priority === 'high' ? 1 : body.ticketDetails?.priority === 'low' ? 3 : 2,
+        const serviceRequestPayload = {
+          customerId: contactId.toString(),
+          customerName: wrapup.customerName || 'Unknown',
+          customerEmail: customerEmail,
+          customerPhone: wrapup.customerPhone || null,
+          customerType: isLead ? 'lead' : 'customer',
+          summary: body.noteContent || wrapup.aiCleanedSummary || wrapup.summary || '',
+          serviceRequestTypeId: aiExtract?.serviceRequestTypeId,
+          serviceRequestTypeName: aiExtract?.serviceRequestTypeName || wrapup.requestType,
+          priorityId: aiExtract?.priorityId,
+          policyNumbers: aiExtract?.policyNumbers || [],
+          assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007, // Default to Lee if not specified
+          wrapupId: itemId,
         };
 
-        const ticketResult = await azClient.createServiceTicket(ticketPayload);
-        if (ticketResult.success) {
-          await db
-            .update(wrapupDrafts)
-            .set({
-              status: "completed",
-              reviewerDecision: "approved",
-              outcome: "ticket_created",
-              agencyzoomNoteId: noteId?.toString(),
-              agencyzoomTicketId: ticketResult.serviceTicketId?.toString(),
-              completedAt: new Date(),
-            })
-            .where(eq(wrapupDrafts.id, itemId));
+        // Call the service-request API which handles Zapier webhook
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+        const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(serviceRequestPayload),
+        });
 
-          result = { success: true, action: "ticket", noteId, ticketId: ticketResult.serviceTicketId };
+        const serviceResult = await serviceResponse.json();
+        if (serviceResult.success) {
+          result = { success: true, action: "ticket", ticketId: serviceResult.ticketId, noteId: serviceResult.noteId };
         } else {
-          return NextResponse.json({ error: "Failed to create ticket" }, { status: 500 });
+          return NextResponse.json({ error: serviceResult.error || "Failed to create service request" }, { status: 500 });
         }
       }
 
@@ -281,6 +282,74 @@ export async function POST(
           result = { success: true, action: "lead", leadId: leadResult.leadId };
         } else {
           return NextResponse.json({ error: "Failed to create lead" }, { status: 500 });
+        }
+      }
+
+      // NCM - Post to No Customer Match service request via Zapier
+      if (body.action === 'ncm') {
+        const ncmCustomerId = NCM_CUSTOMER_ID;
+        if (!ncmCustomerId || ncmCustomerId === '0') {
+          return NextResponse.json({ error: "NCM customer not configured. Please set NCM_CUSTOMER_ID environment variable." }, { status: 500 });
+        }
+
+        // Build the caller info for the note
+        const callerName = wrapup.customerName || 'Unknown Caller';
+        const callerPhone = wrapup.customerPhone || 'No phone';
+        const transcript = wrapup.aiCleanedSummary || wrapup.summary || 'No transcript available';
+        const requestType = wrapup.requestType || 'General Inquiry';
+
+        // Format the description with all caller details
+        const description = [
+          transcript,
+          '',
+          '--- Caller Information ---',
+          `Name: ${callerName}`,
+          `Phone: ${callerPhone}`,
+          wrapup.customerEmail ? `Email: ${wrapup.customerEmail}` : 'Email: N/A',
+          '',
+          '--- Call Details ---',
+          `Request Type: ${requestType}`,
+          `Handled By: ${wrapup.agentName || 'Unknown'}`,
+          `Date/Time: ${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}`,
+        ].filter(Boolean).join('\n');
+
+        // Create service request via Zapier webhook (uses No Customer Match email)
+        const serviceRequestPayload = {
+          customerId: ncmCustomerId,
+          customerName: callerName,
+          customerEmail: null, // Forces No Match email to be used
+          customerPhone: callerPhone,
+          customerType: 'customer' as const,
+          summary: description,
+          serviceRequestTypeName: `NCM: ${requestType}`,
+          assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007, // Default to Lee if not specified
+          wrapupId: itemId,
+        };
+
+        // Call the service-request API which handles Zapier webhook
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+        const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(serviceRequestPayload),
+        });
+
+        const serviceResult = await serviceResponse.json();
+        if (serviceResult.success) {
+          await db
+            .update(wrapupDrafts)
+            .set({
+              status: "completed",
+              reviewerDecision: "approved",
+              outcome: "ncm_posted",
+              agencyzoomTicketId: serviceResult.ticketId?.toString(),
+              completedAt: new Date(),
+            })
+            .where(eq(wrapupDrafts.id, itemId));
+
+          result = { success: true, action: "ncm", ticketId: serviceResult.ticketId };
+        } else {
+          return NextResponse.json({ error: serviceResult.error || "Failed to create NCM service request" }, { status: 500 });
         }
       }
     }
@@ -342,6 +411,62 @@ export async function POST(
           result = { success: true, action: "note", noteId: noteResult.id };
         } else {
           return NextResponse.json({ error: "Failed to post note" }, { status: 500 });
+        }
+      }
+
+      // NCM - Post message to No Customer Match service request via Zapier
+      if (body.action === 'ncm') {
+        const ncmCustomerId = NCM_CUSTOMER_ID;
+        if (!ncmCustomerId || ncmCustomerId === '0') {
+          return NextResponse.json({ error: "NCM customer not configured. Please set NCM_CUSTOMER_ID environment variable." }, { status: 500 });
+        }
+
+        // Build the sender info for the description
+        const senderPhone = message.fromNumber || 'Unknown';
+        const senderName = message.contactName || 'Unknown Sender';
+        const messageBody = message.body || 'No message content';
+
+        // Format the description with all sender details
+        const description = [
+          messageBody,
+          '',
+          '--- Sender Information ---',
+          `Name: ${senderName}`,
+          `Phone: ${senderPhone}`,
+          '',
+          `Received: ${new Date(message.createdAt || Date.now()).toLocaleString('en-US', { timeZone: 'America/Chicago' })}`,
+        ].join('\n');
+
+        // Create service request via Zapier webhook (uses No Customer Match email)
+        const serviceRequestPayload = {
+          customerId: ncmCustomerId,
+          customerName: senderName,
+          customerEmail: null, // Forces No Match email to be used
+          customerPhone: senderPhone,
+          customerType: 'customer' as const,
+          summary: description,
+          serviceRequestTypeName: 'NCM: SMS Message',
+          assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007, // Default to Lee if not specified
+        };
+
+        // Call the service-request API which handles Zapier webhook
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+        const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(serviceRequestPayload),
+        });
+
+        const serviceResult = await serviceResponse.json();
+        if (serviceResult.success) {
+          await db
+            .update(messages)
+            .set({ isAcknowledged: true })
+            .where(eq(messages.id, itemId));
+
+          result = { success: true, action: "ncm", ticketId: serviceResult.ticketId };
+        } else {
+          return NextResponse.json({ error: serviceResult.error || "Failed to create NCM service request" }, { status: 500 });
         }
       }
     }

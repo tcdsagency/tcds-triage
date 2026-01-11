@@ -120,11 +120,18 @@ export default function PendingReviewPage() {
 
   const handleQuickAction = async (
     item: PendingItem,
-    action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'void'
+    action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'void' | 'ncm'
   ) => {
     // Confirm void action
     if (action === 'void') {
       if (!confirm('Are you sure you want to void this item? It will be removed from the queue without any action.')) {
+        return;
+      }
+    }
+
+    // Confirm NCM action
+    if (action === 'ncm') {
+      if (!confirm('This will create a service request in the "No Customer Match" queue in AgencyZoom. The caller info, phone number, and transcript will be included. Continue?')) {
         return;
       }
     }
@@ -160,6 +167,7 @@ export default function PendingReviewPage() {
           acknowledge: 'Message acknowledged',
           skip: 'Item skipped',
           void: 'Item voided',
+          ncm: 'Posted to No Customer Match queue',
         };
         toast.success(actionMessages[action] || 'Action completed');
         // Update counts

@@ -158,8 +158,44 @@ export async function GET(request: NextRequest) {
       // Inbound: customer called us, so fromNumber is customer's phone
       // Outbound: we called customer, so toNumber is customer's phone
       const direction = call.direction || call.directionLive || "inbound";
-      const customerPhone = direction === "inbound" ? call.fromNumber : call.toNumber;
-      const agentPhone = direction === "inbound" ? call.toNumber : call.fromNumber;
+
+      // Helper to determine if a number is an extension (short number, typically 3-4 digits)
+      const isExtension = (num: string | null) => {
+        if (!num) return false;
+        const digits = num.replace(/\D/g, '');
+        return digits.length <= 4;
+      };
+
+      // Helper to determine if a number is external (10+ digits)
+      const isExternalNumber = (num: string | null) => {
+        if (!num) return false;
+        const digits = num.replace(/\D/g, '');
+        return digits.length >= 10;
+      };
+
+      // Smart determination of customer vs agent phone
+      // Priority: Use the external (10+ digit) number as customer, short number as agent
+      let customerPhone: string | null;
+      let agentPhone: string | null;
+
+      if (isExternalNumber(call.fromNumber) && isExtension(call.toNumber)) {
+        // fromNumber is external (customer), toNumber is extension (agent)
+        customerPhone = call.fromNumber;
+        agentPhone = call.toNumber;
+      } else if (isExternalNumber(call.toNumber) && isExtension(call.fromNumber)) {
+        // toNumber is external (customer), fromNumber is extension (agent)
+        customerPhone = call.toNumber;
+        agentPhone = call.fromNumber;
+      } else if (isExternalNumber(call.fromNumber) && isExternalNumber(call.toNumber)) {
+        // Both are external - use direction to determine
+        customerPhone = direction === "inbound" ? call.fromNumber : call.toNumber;
+        agentPhone = direction === "inbound" ? call.toNumber : call.fromNumber;
+      } else {
+        // Fallback to direction-based logic
+        customerPhone = direction === "inbound" ? call.fromNumber : call.toNumber;
+        agentPhone = direction === "inbound" ? call.toNumber : call.fromNumber;
+      }
+
       const normalizedPhone = customerPhone?.replace(/\D/g, '').slice(-10) || '';
       const matchedCustomer = !call.customerId ? phoneCustomerMap.get(normalizedPhone) : null;
 

@@ -50,6 +50,33 @@ export interface PolicySearchResult {
   expirationDate: string;
 }
 
+export interface PolicyVehicle {
+  id: string;
+  vin: string;
+  year: string;
+  make: string;
+  model: string;
+  use: string;
+  annualMiles: string;
+  displayName: string;
+}
+
+export interface PolicyDriver {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  licenseNumber: string;
+  licenseState: string;
+  relationship: string;
+  displayName: string;
+}
+
+export interface PolicyDetails {
+  vehicles: PolicyVehicle[];
+  drivers: PolicyDriver[];
+}
+
 // =============================================================================
 // FORM DATA STRUCTURES
 // =============================================================================
@@ -117,6 +144,9 @@ export interface ServiceRequestFormData {
   // Selected policy
   policy: PolicySearchResult | null;
 
+  // Policy details (fetched after policy selection)
+  policyDetails: PolicyDetails | null;
+
   // Change type
   changeType: ChangeType | null;
 
@@ -126,12 +156,20 @@ export interface ServiceRequestFormData {
   // Vehicle changes
   vehicle: VehicleData;
   vehicleToRemove: string;
+  selectedVehicleId: string; // ID from policy vehicles dropdown
   removalReason: string;
   newOwnerInfo: string;
+
+  // Replacement logic (for add/remove vehicle)
+  isReplacing: boolean;
+  replacingVehicleId: string; // Which vehicle is being replaced
+  stillInPossession: boolean;
+  outOfPossessionDate: string;
 
   // Driver changes
   driver: DriverData;
   driverToRemove: string;
+  selectedDriverId: string; // ID from policy drivers dropdown
   driverRemovalReason: string;
 
   // Address change
@@ -182,6 +220,9 @@ export interface ServiceRequestWizardContextType {
   // Policy selection
   selectPolicy: (policy: PolicySearchResult) => void;
   selectChangeType: (type: ChangeType) => void;
+
+  // Policy details (vehicles, drivers)
+  loadingPolicyDetails: boolean;
 
   // Validation
   errors: Record<string, string>;
@@ -257,14 +298,21 @@ export const initialCancelPolicyData: CancelPolicyData = {
 
 export const initialFormData: ServiceRequestFormData = {
   policy: null,
+  policyDetails: null,
   changeType: null,
   effectiveDate: new Date().toISOString().split('T')[0],
   vehicle: initialVehicleData,
   vehicleToRemove: '',
+  selectedVehicleId: '',
   removalReason: 'sold',
   newOwnerInfo: '',
+  isReplacing: false,
+  replacingVehicleId: '',
+  stillInPossession: true,
+  outOfPossessionDate: '',
   driver: initialDriverData,
   driverToRemove: '',
+  selectedDriverId: '',
   driverRemovalReason: 'moved_out',
   address: initialAddressData,
   mortgagee: initialMortgageeData,

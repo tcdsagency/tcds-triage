@@ -127,7 +127,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Send MMS with the ID card
-    const message = `Hi ${body.insuredName.split(" ")[0]}! Here's your insurance ID card for policy ${body.policyNumber}. Keep this in your vehicle. - TCDS Agency`;
+    const message = `Hi ${body.insuredName.split(" ")[0]}! Here's your insurance ID card for policy ${body.policyNumber}. Keep this in your vehicle.
+
+You can also download our app for 24/7 access to your policy, ID cards, billing and more! https://x5b7.app.link/insurance-agent-app
+
+- TCDS Agency`;
 
     const mmsResult = await twilioClient.sendMMS({
       to: body.phone,

@@ -66,7 +66,7 @@ export interface PendingItemCardProps {
   isChecked?: boolean;
   onSelect?: () => void;
   onCheck?: (checked: boolean) => void;
-  onQuickAction?: (action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'void') => void;
+  onQuickAction?: (action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'void' | 'ncm') => void;
   onReviewClick?: () => void;
   onFindMatch?: () => void;
 }
@@ -362,6 +362,19 @@ export default function PendingItemCard({
               className="px-3 py-1.5 text-xs rounded-lg font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors"
             >
               🔍 Find Match
+            </button>
+          )}
+
+          {/* Post to NCM (No Customer Match) - for unmatched items without AZ link */}
+          {(item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review') &&
+            !item.agencyzoomCustomerId &&
+            !item.agencyzoomLeadId && (
+            <button
+              onClick={() => onQuickAction('ncm')}
+              className="px-3 py-1.5 text-xs rounded-lg font-medium bg-orange-600 text-white hover:bg-orange-700 transition-colors"
+              title="Post to No Customer Match service request in AgencyZoom"
+            >
+              📋 Post to NCM
             </button>
           )}
 

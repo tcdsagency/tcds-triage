@@ -58,9 +58,9 @@ export interface MMIPropertyData {
 
 export interface MMISearchResult {
   success: boolean;
-  data?: MMIPropertyData;
+  data?: MMIPropertyData | null;
   error?: string;
-  source: "api" | "mock";
+  source: "api";
 }
 
 interface TokenData {
@@ -343,11 +343,12 @@ class MMIClient {
    */
   async lookupByAddress(fullAddress: string): Promise<MMISearchResult> {
     if (!this.isConfigured()) {
-      console.log("[MMI] API not configured, returning mock data");
+      console.log("[MMI] API not configured, returning null (no mock data)");
       return {
-        success: true,
-        data: this.getMockData(fullAddress),
-        source: "mock",
+        success: false,
+        data: null,
+        source: "api",
+        error: "MMI API not configured",
       };
     }
 
@@ -364,11 +365,12 @@ class MMIClient {
       );
 
       if (!searchResult) {
-        console.log("[MMI] Property not found, returning mock data");
+        console.log("[MMI] Property not found, returning null (no mock data)");
         return {
-          success: true,
-          data: this.getMockData(fullAddress),
-          source: "mock",
+          success: false,
+          data: null,
+          source: "api",
+          error: "Property not found in MMI",
         };
       }
 
@@ -376,10 +378,12 @@ class MMIClient {
       const history = await this.getPropertyHistory(searchResult.DIMPROPERTYADDRESSID);
 
       if (!history) {
+        console.log("[MMI] Property history not found, returning null (no mock data)");
         return {
-          success: true,
-          data: this.getMockData(fullAddress),
-          source: "mock",
+          success: false,
+          data: null,
+          source: "api",
+          error: "Property history not found",
         };
       }
 
@@ -455,12 +459,13 @@ class MMIClient {
         },
         source: "api",
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error("[MMI] Lookup error:", error);
       return {
-        success: true,
-        data: this.getMockData(fullAddress),
-        source: "mock",
+        success: false,
+        data: null,
+        source: "api",
+        error: error?.message || "MMI lookup failed",
       };
     }
   }
@@ -473,12 +478,12 @@ class MMIClient {
     listingPrice?: number;
     salePrice?: number;
     lastSaleDate?: string;
-    source: "api" | "mock";
+    source: "api" | "error";
   }> {
     const result = await this.lookupByAddress(fullAddress);
 
     if (!result.success || !result.data) {
-      return { status: "unknown", source: "mock" };
+      return { status: "unknown", source: "error" };
     }
 
     const latestListing = result.data.listingHistory[0];

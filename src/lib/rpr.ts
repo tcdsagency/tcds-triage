@@ -381,22 +381,23 @@ class RPRClient {
    */
   async lookupProperty(address: string): Promise<RPRPropertyData | null> {
     if (!this.isConfigured()) {
-      console.log("[RPR] Credentials not configured, returning mock data");
-      return this.getMockData(address);
+      console.log("[RPR] Credentials not configured, returning null (no mock data)");
+      return null;
     }
 
     try {
       // Step 1: Search for property
       const location = await this.searchLocation(address);
       if (!location) {
-        console.log("[RPR] Location not found, returning mock data");
-        return this.getMockData(address);
+        console.log("[RPR] Location not found, returning null (no mock data)");
+        return null;
       }
 
       // Step 2: Get common data
       const common = await this.getPropertyCommon(location.propertyId);
       if (!common) {
-        return this.getMockData(address);
+        console.log("[RPR] Common data not found, returning null (no mock data)");
+        return null;
       }
 
       // Step 3: Get details
@@ -560,13 +561,15 @@ class RPRClient {
     const garageTypes = ["Attached", "Detached", "Carport", "None"];
     const poolTypes = ["In-Ground", "Above Ground", "None"];
     const basementTypes = ["Full", "Partial", "Finished", "Unfinished", "None"];
+    // Mock data should NOT generate "sold" status - that should only come from real MMI data
+    // Otherwise we get false alerts for properties that were never actually sold
     const statuses: Array<"off_market" | "active" | "pending" | "sold"> = [
+      "off_market",
       "off_market",
       "off_market",
       "off_market",
       "active",
       "pending",
-      "sold",
     ];
 
     const currentStatus = statuses[hash % statuses.length];

@@ -410,6 +410,7 @@ export function getDonnaCustomerId(
 
 /**
  * Transform raw Donna API data to our storage format
+ * Captures ALL enrichment data from DONNA
  */
 export function transformDonnaData(
   details: DonnaAPICustomerDetails,
@@ -426,6 +427,7 @@ export function transformDonnaData(
   // Parse probabilities (already numbers)
   const retentionProbability = details.GbProbabilityRetention ?? 0.5;
   const crossSellProbability = details.GbProbabilityRoundout ?? 0;
+  const renewalProbability = details.GbProbabilityRenewal;
 
   // Parse financial metrics
   const estimatedWalletSize = details.DvPLExpectedSpend ?? 0;
@@ -454,17 +456,117 @@ export function transformDonnaData(
     priority: act.priority,
   }));
 
+  // Parse LOB codes (comma-separated string to array)
+  const lobCodes = details.DvLobCodes
+    ? details.DvLobCodes.split(',').map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
+  // Parse coverage codes
+  const coverageCodes = details.DvCoverageCodes
+    ? details.DvCoverageCodes.split(',').map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
+  // Collect positive influencers
+  const positiveInfluencers = [
+    details.csPositiveInf1,
+    details.csPositiveInf2,
+    details.csPositiveInf3,
+  ].filter(Boolean) as string[];
+
+  // Collect negative influencers
+  const negativeInfluencers = [
+    details.csNegativeInf1,
+    details.csNegativeInf2,
+  ].filter(Boolean) as string[];
+
   return {
+    // Core Sentiment
     sentimentScore,
+    sentimentDate: details['KPI SENTIMETER Date'],
+    summarySlab10: details['Summary Slab 10'],
+    summarySlab20: details['Summary Slab 20'],
     isPersonalVIP,
     isCommercialVIP,
+
+    // Predictions
     retentionProbability,
     crossSellProbability,
+    renewalProbability,
+    roundoutScoreGroup: details.GbScoreGroupRoundout,
+    retentionScoreDate: details.GbScoreDateRetention,
+    retentionScoreValidityDate: details.GbScoreValidityDateRetention,
+
+    // Financial
     estimatedWalletSize,
     currentAnnualPremium,
     potentialGap,
+    totalPremiumDueOnRenewal: details.DvTotalPremiumDueOnNextRenewalDate,
+    agencyShareSpend: details.DvPLSpendAgencyShare,
+    upliftPremiumValue: details.DvViewedUpliftPremiumValue,
+
+    // Demographics / Enrichments
+    demographics: {
+      gender: details.DvCustomerGender,
+      dateOfBirth: details.DvCustomerDOB,
+      address: details.DvCustomerAddress,
+      city: details.DvCustomerCity,
+      state: details.DvCustomerState,
+      zip: details.DvCustomerZip,
+      homeEmail: details.DvCustomerHomeEmail,
+      workEmail: details.DvCustomerWorkEmail,
+      homePhone: details.DvCustomerHomePhone,
+      organizationName: details.DvOrganizationName,
+      organizationType: details.DvOrganizationType,
+    },
+
+    // Policy Summary
+    policyInfo: {
+      status: details.DvCustomerStatus,
+      distinctLobCount: details.DvCustomerDistinctLobCount,
+      lobCodes,
+      coverageCodes,
+      activePolicies: details.DvCustomerActivePolicies,
+      inactivePolicies: details.DvCustomerInactivePolicies,
+      isMonoline: details.DvCustomerIsMonoline === 'Y',
+      isProspect: details.DvCustomerProspect === 'Y',
+      isDeadfile: details.DvCustomerDeadfile === 'Y',
+    },
+
+    // Events & Influencers
+    events: {
+      lastEvent: details.csLastEvent,
+      lastChangeDirection: details.csLastChangeDirection,
+      minimumValue: details.csMinimumValue,
+      positiveInfluencers: positiveInfluencers.length > 0 ? positiveInfluencers : undefined,
+      negativeInfluencers: negativeInfluencers.length > 0 ? negativeInfluencers : undefined,
+    },
+
+    // Claims
+    claims: {
+      claimsData: details.DvClaims,
+      claimDetails: details.DvClaimDetails,
+    },
+
+    // Producer/CSR Assignment
+    assignment: {
+      producerId: details.DvProducer,
+      producerName: details.DvProducerName,
+      csrId: details.DvCsr,
+      csrName: details.DvCsrName,
+    },
+
+    // Lifestyle Enrichments
+    lifestyle: {
+      ownsHorse: details.DvCustomerOwnsHorse === 'Y',
+      ownsATV: details.DvCustomerOwnsATV === 'Y',
+      collectiblesPlates: details.DvCustomerCollectiblesPlates === 'Y',
+    },
+
+    // Recommendations & Activities
     recommendations,
     activities: activityItems,
+
+    // Metadata
     lastSyncedAt: new Date().toISOString(),
     donnaCustomerId: donnaId,
   };
