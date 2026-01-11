@@ -29,9 +29,13 @@ export async function POST(request: Request) {
 
   try {
     const url = new URL(request.url);
-    const offset = parseInt(url.searchParams.get('offset') || '0');
-    const limit = parseInt(url.searchParams.get('limit') || '500'); // Pro plan can handle more
-    
+    const rawOffset = parseInt(url.searchParams.get('offset') || '0');
+    const rawLimit = parseInt(url.searchParams.get('limit') || '500');
+
+    // Validate and bound offset/limit to prevent abuse
+    const offset = isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset;
+    const limit = isNaN(rawLimit) || rawLimit < 1 ? 500 : Math.min(rawLimit, 1000); // Cap at 1000
+
     const tenantId = process.env.DEFAULT_TENANT_ID;
     if (!tenantId) {
       return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });

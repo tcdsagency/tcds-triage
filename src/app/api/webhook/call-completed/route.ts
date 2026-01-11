@@ -665,14 +665,14 @@ export async function POST(request: NextRequest) {
       // Determine match status - check customers first, then leads
       let matchedLeadId: string | null = null;
 
-      if (azMatches.length === 1) {
+      if (azMatches.length === 1 && azMatches[0]) {
         customerMatchStatus = "matched";
         matchedAzCustomerId = azMatches[0].id.toString();
         console.log(`[Call-Completed] Single customer match: AZ customer ${matchedAzCustomerId}`);
       } else if (azMatches.length > 1) {
         customerMatchStatus = "multiple_matches";
         console.log(`[Call-Completed] Multiple customer matches: ${azMatches.length} customers`);
-      } else if (azLeadMatches.length === 1) {
+      } else if (azLeadMatches.length === 1 && azLeadMatches[0]) {
         // Single lead match
         customerMatchStatus = "matched";
         matchedLeadId = azLeadMatches[0].id.toString();
@@ -723,7 +723,7 @@ export async function POST(request: NextRequest) {
           summary: analysis.summary,
           customerName: analysis.extractedData?.customerName || trestlePersonName,
           customerPhone: phoneForLookup,
-          customerEmail: analysis.extractedData?.email || trestleEmails?.[0],
+          customerEmail: analysis.extractedData?.email || (trestleEmails && trestleEmails.length > 0 ? trestleEmails[0] : undefined),
           requestType: analysis.callType,
           status: "pending_review",
           matchStatus: customerMatchStatus,

@@ -141,12 +141,23 @@ export async function findAndSyncByPhone(
 ): Promise<string | null> {
   // First check our database
   const normalizedPhone = phone.replace(/\D/g, '');
-  
-  const existing = await db.query.customers.findFirst({
-    where: and(
-      eq(customers.tenantId, tenantId),
-      // This is a simplified check - in production use a proper phone comparison
-    ),
+
+  if (normalizedPhone.length < 10) {
+    return null;
+  }
+
+  // Search for customer with matching phone (last 10 digits)
+  const phonePattern = `%${normalizedPhone.slice(-10)}`;
+  const allCustomers = await db.query.customers.findMany({
+    where: eq(customers.tenantId, tenantId),
+  });
+
+  // Find customer with matching phone
+  const existing = allCustomers.find(c => {
+    const custPhone = (c.phone || '').replace(/\D/g, '');
+    const custPhoneAlt = (c.phoneAlt || '').replace(/\D/g, '');
+    return custPhone.endsWith(normalizedPhone.slice(-10)) ||
+           custPhoneAlt.endsWith(normalizedPhone.slice(-10));
   });
 
   if (existing) {

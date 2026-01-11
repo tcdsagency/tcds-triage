@@ -3,7 +3,11 @@ import postgres from 'postgres';
 import * as schema from './schema';
 
 // For server-side use only
-const connectionString = process.env.DATABASE_URL!;
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error('DATABASE_URL environment variable is not set. Please configure your database connection.');
+}
 
 // Disable prefetch as Supabase has its own connection pooler
 const client = postgres(connectionString, { prepare: false });

@@ -1687,34 +1687,16 @@ export default function QuoteIntakePage() {
   const [autoSaving, setAutoSaving] = useState(false);
   const [timeSinceLastSave, setTimeSinceLastSave] = useState<string>("");
 
-  // Load saved draft on mount
-  // Note: All quote types now use the wizard at /quote/new/[type]
-  // If there's a saved draft with a selectedType, redirect to the wizard
+  // Clear any old draft data on mount to ensure fresh quote type selection
+  // Users should always be able to select their quote type
   useEffect(() => {
     try {
-      const savedDraft = localStorage.getItem("quote-draft");
-      if (savedDraft) {
-        const parsed = JSON.parse(savedDraft);
-        // If there's a saved quote type, redirect to the wizard instead of showing old form
-        if (parsed.selectedType) {
-          router.push(`/quote/new/${parsed.selectedType}`);
-          return;
-        }
-        // Only restore form data if no redirect (shouldn't happen normally)
-        if (parsed.autoFormData) setAutoFormData(parsed.autoFormData);
-        if (parsed.homeownersFormData) setHomeownersFormData(parsed.homeownersFormData);
-        if (parsed.rentersFormData) setRentersFormData(parsed.rentersFormData);
-        if (parsed.umbrellaFormData) setUmbrellaFormData(parsed.umbrellaFormData);
-        if (parsed.bopFormData) setBopFormData(parsed.bopFormData);
-        if (parsed.glFormData) setGlFormData(parsed.glFormData);
-        if (parsed.wcFormData) setWcFormData(parsed.wcFormData);
-        if (parsed.recreationalFormData) setRecreationalFormData(parsed.recreationalFormData);
-        if (parsed.lastSaved) setLastSaved(new Date(parsed.lastSaved));
-      }
+      // Clear the old quote-draft to prevent any stale redirects
+      localStorage.removeItem("quote-draft");
     } catch (e) {
-      console.error("Failed to load draft:", e);
+      console.error("Failed to clear draft:", e);
     }
-  }, [router]);
+  }, []);
 
   // Auto-save to localStorage on changes (debounced)
   useEffect(() => {
