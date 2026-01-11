@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { customers, users } from '@/db/schema';
 import { eq, and, isNotNull } from 'drizzle-orm';
 import type { DonnaCustomerData } from '@/types/donna.types';
+import { formatFullName } from '@/lib/utils';
 
 /**
  * GET /api/donna/alerts
@@ -75,15 +76,16 @@ export async function GET(request: Request) {
       const donna = customer.donnaData as DonnaCustomerData | null;
       if (!donna) continue;
 
-      const name =
-        `${customer.firstName || ''} ${customer.lastName || ''}`.trim() ||
-        'Unknown';
+      const name = formatFullName(customer.firstName, customer.lastName);
 
       // High churn risk (retention < 50%)
+      // Only alert if retention is a real value (not the 0.7 default)
+      // Real concerning values are typically < 0.5 and != 0.7
       if (
         (alertType === 'all' || alertType === 'churn_risk') &&
         donna.retentionProbability !== undefined &&
-        donna.retentionProbability < 0.5
+        donna.retentionProbability < 0.5 &&
+        donna.retentionProbability !== 0.7 // Exclude default value
       ) {
         const churnRisk = Math.round((1 - donna.retentionProbability) * 100);
         alerts.push({

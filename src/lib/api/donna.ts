@@ -425,7 +425,11 @@ export function transformDonnaData(
   const isCommercialVIP = details.DvCustomerCommercialVIP === 'Y';
 
   // Parse probabilities (already numbers)
-  const retentionProbability = details.GbProbabilityRetention ?? 0.5;
+  // Default to 0.7 (30% churn) if no data, since 0 means "no prediction" not "100% churn"
+  // Only treat as valid if > 0, otherwise use reasonable default
+  const retentionProbability = (details.GbProbabilityRetention && details.GbProbabilityRetention > 0)
+    ? details.GbProbabilityRetention
+    : 0.7;
   const crossSellProbability = details.GbProbabilityRoundout ?? 0;
   const renewalProbability = details.GbProbabilityRenewal;
 

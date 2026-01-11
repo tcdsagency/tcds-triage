@@ -91,3 +91,63 @@ export function debounce<T extends (...args: any[]) => any>(
     }, wait);
   };
 }
+
+/**
+ * Normalize name to Title Case
+ * Handles ALL CAPS, lowercase, and mixed case names
+ * Special handling for: McDonald, O'Brien, Van Der, etc.
+ */
+export function normalizeName(name: string | null | undefined): string {
+  if (!name) return '';
+
+  // If already mixed case (not all caps or all lowercase), return as-is
+  const isAllCaps = name === name.toUpperCase() && /[A-Z]/.test(name);
+  const isAllLower = name === name.toLowerCase();
+
+  if (!isAllCaps && !isAllLower) {
+    return name;
+  }
+
+  return name
+    .toLowerCase()
+    .split(' ')
+    .map(word => {
+      if (!word) return '';
+
+      // Handle hyphenated names (Mary-Jane)
+      if (word.includes('-')) {
+        return word.split('-').map(part =>
+          part.charAt(0).toUpperCase() + part.slice(1)
+        ).join('-');
+      }
+
+      // Handle apostrophes (O'Brien, D'Angelo)
+      if (word.includes("'")) {
+        const parts = word.split("'");
+        return parts.map(part =>
+          part.charAt(0).toUpperCase() + part.slice(1)
+        ).join("'");
+      }
+
+      // Handle Mc/Mac names (McDonald, MacArthur)
+      if (word.startsWith('mc') && word.length > 2) {
+        return 'Mc' + word.charAt(2).toUpperCase() + word.slice(3);
+      }
+      if (word.startsWith('mac') && word.length > 3) {
+        return 'Mac' + word.charAt(3).toUpperCase() + word.slice(4);
+      }
+
+      // Standard title case
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+}
+
+/**
+ * Format full name from first/last, normalizing case
+ */
+export function formatFullName(firstName?: string | null, lastName?: string | null): string {
+  const first = normalizeName(firstName);
+  const last = normalizeName(lastName);
+  return [first, last].filter(Boolean).join(' ') || 'Unknown';
+}

@@ -1,0 +1,27 @@
+# MCI Payment Checker Microservice
+# Python 3.11+
+
+# Web framework
+flask==3.0.0
+gunicorn==21.2.0
+
+# Browser automation
+playwright==1.40.0
+
+# CAPTCHA solving
+2captcha-python==1.2.0
+
+# HTTP client
+httpx==0.25.2
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Rate limiting
+flask-limiter==3.5.0
+
+# Retry logic
+tenacity==8.2.3
+
+# Logging
+structlog==23.2.0
