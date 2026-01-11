@@ -4,11 +4,27 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { PendingItem } from './PendingItemCard';
 
+// Agent options for service request assignment
+const AGENT_OPTIONS = [
+  { id: 94007, name: 'Lee Tidwell' },
+  { id: 94004, name: 'Todd Conn' },
+  { id: 159477, name: 'Stephanie Goodman' },
+  { id: 94008, name: 'Angie Sousa' },
+  { id: 94006, name: 'Blair Lee' },
+  { id: 94005, name: 'Montrice Lemaster' },
+  { id: 132766, name: 'Paulo Gacula' },
+];
+
+export interface TicketDetails {
+  subject?: string;
+  assigneeAgentId?: number;
+}
+
 interface ReviewModalProps {
   item: PendingItem;
   isOpen: boolean;
   onClose: () => void;
-  onAction: (action: 'note' | 'ticket' | 'void', noteContent?: string) => void;
+  onAction: (action: 'note' | 'ticket' | 'void', noteContent?: string, ticketDetails?: TicketDetails) => void;
   isLoading?: boolean;
 }
 
@@ -23,6 +39,7 @@ export default function ReviewModal({
   const [ticketSubject, setTicketSubject] = useState(
     `Follow-up: ${item.requestType || 'Call'} - ${item.contactName || 'Customer'}`
   );
+  const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('');
   const [activeTab, setActiveTab] = useState<'note' | 'ticket'>('note');
 
   if (!isOpen) return null;
@@ -32,7 +49,14 @@ export default function ReviewModal({
   };
 
   const handleCreateTicket = () => {
-    onAction('ticket', noteContent);
+    if (!selectedAgentId) {
+      alert('Please select an agent to assign the service request to.');
+      return;
+    }
+    onAction('ticket', noteContent, {
+      subject: ticketSubject,
+      assigneeAgentId: selectedAgentId as number,
+    });
   };
 
   const handleVoid = () => {
@@ -133,23 +157,49 @@ export default function ReviewModal({
 
           {/* Ticket-specific fields */}
           {activeTab === 'ticket' && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Service Request Subject
-              </label>
-              <input
-                type="text"
-                value={ticketSubject}
-                onChange={(e) => setTicketSubject(e.target.value)}
-                className={cn(
-                  'w-full px-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
-                  'border-gray-300 dark:border-gray-600',
-                  'focus:outline-none focus:ring-2 focus:ring-blue-500'
-                )}
-                placeholder="Subject line for the service request..."
-              />
-            </div>
+            <>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Service Request Subject
+                </label>
+                <input
+                  type="text"
+                  value={ticketSubject}
+                  onChange={(e) => setTicketSubject(e.target.value)}
+                  className={cn(
+                    'w-full px-3 py-2 rounded-lg border transition-colors',
+                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                    'border-gray-300 dark:border-gray-600',
+                    'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                  )}
+                  placeholder="Subject line for the service request..."
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Assign To <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedAgentId}
+                  onChange={(e) => setSelectedAgentId(e.target.value ? Number(e.target.value) : '')}
+                  className={cn(
+                    'w-full px-3 py-2 rounded-lg border transition-colors',
+                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                    'border-gray-300 dark:border-gray-600',
+                    'focus:outline-none focus:ring-2 focus:ring-blue-500',
+                    !selectedAgentId && 'text-gray-400'
+                  )}
+                >
+                  <option value="">Select an agent...</option>
+                  {AGENT_OPTIONS.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
           )}
 
           {/* Action Items Preview */}

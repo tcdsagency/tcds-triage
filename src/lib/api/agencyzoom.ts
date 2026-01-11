@@ -117,6 +117,7 @@ export class AgencyZoomClient {
   private sidecarUrl: string;
   private jwtToken: string | null = null;
   private tokenExpiry: Date | null = null;
+  private tokenRefreshPromise: Promise<string> | null = null; // Prevent concurrent token refreshes
 
   constructor(config: AgencyZoomConfig) {
     this.config = config;
@@ -130,6 +131,7 @@ export class AgencyZoomClient {
 
   /**
    * Get JWT token, refreshing if needed
+   * Uses a promise lock to prevent race conditions when multiple requests hit token expiry
    */
   private async getToken(): Promise<string> {
     // Return cached token if still valid
@@ -137,6 +139,26 @@ export class AgencyZoomClient {
       return this.jwtToken;
     }
 
+    // If another request is already refreshing the token, wait for it
+    if (this.tokenRefreshPromise) {
+      return this.tokenRefreshPromise;
+    }
+
+    // Start token refresh and store the promise
+    this.tokenRefreshPromise = this.refreshToken();
+
+    try {
+      const token = await this.tokenRefreshPromise;
+      return token;
+    } finally {
+      this.tokenRefreshPromise = null;
+    }
+  }
+
+  /**
+   * Actually refresh the token (called by getToken with race condition protection)
+   */
+  private async refreshToken(): Promise<string> {
     // Get new token via /v1/api/auth/login
     const response = await fetch(`${this.baseUrl}/v1/api/auth/login`, {
       method: 'POST',

@@ -70,6 +70,10 @@ class TwilioClient {
       const fromNumber = from || this.phoneNumber;
       const url = `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Messages.json`;
 
+      // Add timeout to prevent hanging requests
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -81,7 +85,10 @@ class TwilioClient {
           From: fromNumber,
           Body: message,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       const data: TwilioMessageResponse = await response.json();
 
@@ -126,6 +133,10 @@ class TwilioClient {
         MediaUrl: mediaUrl,
       });
 
+      // Add timeout to prevent hanging requests
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -133,7 +144,10 @@ class TwilioClient {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: params,
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       const data: TwilioMessageResponse = await response.json();
 

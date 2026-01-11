@@ -185,7 +185,8 @@ export default function PendingReviewPage() {
 
   const handleReviewModalAction = async (
     action: 'note' | 'ticket' | 'void',
-    noteContent?: string
+    noteContent?: string,
+    ticketDetails?: { subject?: string; assigneeAgentId?: number }
   ) => {
     if (!reviewModalItem) return;
 
@@ -203,6 +204,7 @@ export default function PendingReviewPage() {
           customerId: reviewModalItem.agencyzoomCustomerId || reviewModalItem.agencyzoomLeadId,
           isLead,
           noteContent,
+          ticketDetails,
         }),
       });
 

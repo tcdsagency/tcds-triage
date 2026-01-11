@@ -133,6 +133,17 @@ Important:
       }),
     });
 
+    if (!openaiResponse.ok) {
+      console.error("OpenAI API error:", openaiResponse.status);
+      const mockSummary: CallSummary = generateMockSummary(transcriptText, body);
+      return NextResponse.json({
+        success: true,
+        summary: mockSummary,
+        mock: true,
+        reason: `OpenAI API error: ${openaiResponse.status}`,
+      });
+    }
+
     const completion = await openaiResponse.json();
     const responseText = completion.choices?.[0]?.message?.content || "";
 

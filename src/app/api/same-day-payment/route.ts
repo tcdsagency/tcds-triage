@@ -105,12 +105,15 @@ export async function POST(request: NextRequest) {
       try {
         const azClient = getAgencyZoomClient();
         const noteContent = buildAzNote(body, payment.id);
+        const customerId = parseInt(body.customerId);
 
-        if (body.customerType === "customer") {
-          await azClient.addNote(parseInt(body.customerId), noteContent);
+        if (isNaN(customerId)) {
+          console.error("[Same Day Payment] Invalid customerId:", body.customerId);
+        } else if (body.customerType === "customer") {
+          await azClient.addNote(customerId, noteContent);
           azNoteCreated = true;
         } else if (body.customerType === "lead") {
-          await azClient.addLeadNote(parseInt(body.customerId), noteContent);
+          await azClient.addLeadNote(customerId, noteContent);
           azNoteCreated = true;
         }
       } catch (azError) {

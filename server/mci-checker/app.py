@@ -167,7 +167,7 @@ async def check_mci_payment(
         if servicer:
             url = f"{MCI_BASE_URL}/{servicer}"
 
-        print(f"DEBUG: Navigating to MCI Agent Portal: {url}", flush=True)
+        logger.info("Navigating to MCI Agent Portal", url=url)
         await page.goto(url, timeout=45000)
 
         # Wait for Angular app to bootstrap - look for any input field
@@ -177,10 +177,9 @@ async def check_mci_payment(
         # Give Angular extra time to render
         await page.wait_for_timeout(3000)
 
-        # Debug: capture page structure and find all inputs
+        # Capture page structure and find all inputs
         inputs = await page.query_selector_all('input:not([type="hidden"])')
-        print(f"DEBUG: Found {len(inputs)} visible input fields on page", flush=True)
-        logger.warning(f"Found {len(inputs)} visible input fields on page")
+        logger.info("Found input fields", count=len(inputs))
 
         for i, inp in enumerate(inputs[:6]):  # Log first 6 inputs
             try:
@@ -196,40 +195,37 @@ async def check_mci_payment(
         # MCI Agent Portal has 3 fields: Loan Number, ZIP Code, Last Name
         # Fill by position since selectors may vary
         if len(inputs) >= 3:
-            print(f"DEBUG: Filling Agent Portal form ({len(inputs)} inputs found)", flush=True)
+            logger.info("Filling Agent Portal form", input_count=len(inputs))
 
             # First input: Loan Number
             try:
-                print(f"DEBUG: Clicking input[0] for loan number...", flush=True)
                 await inputs[0].click()
                 await page.wait_for_timeout(100)
                 await inputs[0].type(loan_number, delay=30)
-                print(f"DEBUG: Typed loan number: {loan_number}", flush=True)
+                logger.info("Filled loan number field")
             except Exception as e:
-                print(f"DEBUG: Failed to fill loan number: {e}", flush=True)
+                logger.warning("Failed to fill loan number", error=str(e))
 
             # Second input: ZIP Code
             try:
-                print(f"DEBUG: Clicking input[1] for ZIP...", flush=True)
                 await inputs[1].click()
                 await page.wait_for_timeout(100)
                 await inputs[1].type(zip_code, delay=30)
-                print(f"DEBUG: Typed ZIP code: {zip_code}", flush=True)
+                logger.info("Filled ZIP code field")
             except Exception as e:
-                print(f"DEBUG: Failed to fill ZIP code: {e}", flush=True)
+                logger.warning("Failed to fill ZIP code", error=str(e))
 
             # Third input: Last Name
             if last_name:
                 try:
-                    print(f"DEBUG: Clicking input[2] for last name...", flush=True)
                     await inputs[2].click()
                     await page.wait_for_timeout(100)
                     await inputs[2].type(last_name, delay=30)
-                    print(f"DEBUG: Typed last name: {last_name}", flush=True)
+                    logger.info("Filled last name field")
                 except Exception as e:
-                    print(f"DEBUG: Failed to fill last name: {e}", flush=True)
+                    logger.warning("Failed to fill last name", error=str(e))
             else:
-                print("DEBUG: No last name provided - may fail validation", flush=True)
+                logger.warning("No last name provided - may fail validation")
 
             # Wait a moment for Angular to process
             await page.wait_for_timeout(500)
@@ -292,7 +288,7 @@ async def check_mci_payment(
                     logger.info("CAPTCHA response injected")
 
         # Submit the form - try multiple approaches
-        print("DEBUG: Looking for submit button...", flush=True)
+        logger.info("Looking for submit button")
         submit_selectors = [
             'button:has-text("Search")',
             'button[type="submit"]',
@@ -306,28 +302,26 @@ async def check_mci_payment(
             try:
                 submit_btn = await page.query_selector(selector)
                 if submit_btn:
-                    print(f"DEBUG: Found submit with: {selector}", flush=True)
+                    logger.info("Found submit button", selector=selector)
                     await submit_btn.click()
-                    print(f"DEBUG: Clicked submit!", flush=True)
+                    logger.info("Clicked submit button")
                     submit_clicked = True
                     break
-            except Exception as e:
-                print(f"DEBUG: Selector {selector} failed: {e}", flush=True)
+            except Exception:
                 continue
 
         if not submit_clicked:
-            print("DEBUG: No submit button, pressing Enter...", flush=True)
+            logger.info("No submit button found, pressing Enter")
             await page.keyboard.press('Enter')
-            print("DEBUG: Pressed Enter", flush=True)
 
         # Wait for page response and check for CAPTCHA
-        print("DEBUG: Waiting for response...", flush=True)
+        logger.info("Waiting for response")
         await page.wait_for_timeout(3000)  # Wait for CAPTCHA or results to appear
 
         # Check for reCAPTCHA that appears after submit
         recaptcha_frame = await page.query_selector('iframe[src*="recaptcha"]')
         if recaptcha_frame:
-            print("DEBUG: reCAPTCHA detected after submit, solving...", flush=True)
+            logger.info("reCAPTCHA detected after submit, solving")
 
             # Extract site key from iframe src or page elements
             site_key = None
@@ -338,7 +332,7 @@ async def check_mci_payment(
                 match = re.search(r'k=([^&]+)', frame_src)
                 if match:
                     site_key = match.group(1)
-                    print(f"DEBUG: Got site key from iframe: {site_key[:20]}...", flush=True)
+                    logger.info("Got site key from iframe", site_key_prefix=site_key[:20])
 
             # Fallback: try data-sitekey attribute
             if not site_key:
@@ -346,22 +340,22 @@ async def check_mci_payment(
                 if recaptcha_div:
                     site_key = await recaptcha_div.get_attribute('data-sitekey')
                     if site_key:
-                        print(f"DEBUG: Got site key from div: {site_key[:20]}...", flush=True)
+                        logger.info("Got site key from div", site_key_prefix=site_key[:20])
 
-            print(f"DEBUG: Site key: {site_key}, 2Captcha configured: {bool(TWOCAPTCHA_API_KEY)}", flush=True)
+            logger.info("CAPTCHA configuration", has_site_key=bool(site_key), has_2captcha=bool(TWOCAPTCHA_API_KEY))
 
             if site_key and TWOCAPTCHA_API_KEY:
                 captcha_response = await solve_captcha(page, site_key)
                 if captcha_response:
-                    print("DEBUG: Got CAPTCHA solution, injecting...", flush=True)
+                    logger.info("Got CAPTCHA solution, injecting")
 
                     # Save debug screenshot before injection
                     try:
                         debug_screenshot = SCREENSHOTS_DIR / f"debug-pre-inject-{uuid.uuid4()}.png"
                         await page.screenshot(path=str(debug_screenshot), full_page=True)
-                        print(f"DEBUG: Pre-inject screenshot: {debug_screenshot}", flush=True)
+                        logger.info("Pre-inject screenshot saved", path=str(debug_screenshot))
                     except Exception as e:
-                        print(f"DEBUG: Failed to save pre-inject screenshot: {e}", flush=True)
+                        logger.warning("Failed to save pre-inject screenshot", error=str(e))
 
                     # Inject the CAPTCHA response - set value and make visible
                     # Properly escape for JavaScript to prevent injection
@@ -380,11 +374,11 @@ async def check_mci_payment(
                             altResponse.value = captchaVal;
                         }}
                     ''')
-                    print("DEBUG: CAPTCHA response injected into textarea", flush=True)
+                    logger.info("CAPTCHA response injected into textarea")
                     await page.wait_for_timeout(500)
 
                     # Try to trigger the callback function
-                    print("DEBUG: Attempting to trigger CAPTCHA callback...", flush=True)
+                    logger.info("Attempting to trigger CAPTCHA callback")
                     callback_triggered = await page.evaluate(f'''
                         (function() {{
                             var triggered = false;
@@ -434,7 +428,7 @@ async def check_mci_payment(
                             return triggered;
                         }})()
                     ''')
-                    print(f"DEBUG: Callback triggered: {callback_triggered}", flush=True)
+                    logger.info("Callback trigger result", triggered=callback_triggered)
 
                     await page.wait_for_timeout(2000)
 
@@ -442,12 +436,12 @@ async def check_mci_payment(
                     try:
                         debug_screenshot2 = SCREENSHOTS_DIR / f"debug-post-inject-{uuid.uuid4()}.png"
                         await page.screenshot(path=str(debug_screenshot2), full_page=True)
-                        print(f"DEBUG: Post-inject screenshot: {debug_screenshot2}", flush=True)
+                        logger.info("Post-inject screenshot saved", path=str(debug_screenshot2))
                     except Exception as e:
-                        print(f"DEBUG: Failed to save post-inject screenshot: {e}", flush=True)
+                        logger.warning("Failed to save post-inject screenshot", error=str(e))
 
                     # Try clicking submit again after CAPTCHA is solved
-                    print("DEBUG: Looking for submit button after CAPTCHA...", flush=True)
+                    logger.info("Looking for submit button after CAPTCHA")
 
                     # Try multiple selectors for submit button
                     post_captcha_selectors = [
@@ -465,32 +459,31 @@ async def check_mci_payment(
                             if submit_btn:
                                 is_visible = await submit_btn.is_visible()
                                 is_enabled = await submit_btn.is_enabled()
-                                print(f"DEBUG: Found {selector} - visible: {is_visible}, enabled: {is_enabled}", flush=True)
+                                logger.info("Found submit button", selector=selector, visible=is_visible, enabled=is_enabled)
                                 if is_visible and is_enabled:
                                     await submit_btn.click()
-                                    print(f"DEBUG: Clicked submit after CAPTCHA using: {selector}", flush=True)
+                                    logger.info("Clicked submit after CAPTCHA", selector=selector)
                                     submit_found = True
                                     break
-                        except Exception as e:
-                            print(f"DEBUG: Selector {selector} error: {e}", flush=True)
+                        except Exception:
                             continue
 
                     if not submit_found:
                         # Try pressing Enter as fallback
-                        print("DEBUG: No submit found, trying Enter key...", flush=True)
+                        logger.info("No submit found, trying Enter key")
                         await page.keyboard.press('Enter')
 
                     await page.wait_for_timeout(3000)
             else:
-                print("DEBUG: No site key or 2Captcha not configured", flush=True)
+                logger.info("No site key or 2Captcha not configured")
         else:
-            print("DEBUG: No reCAPTCHA detected", flush=True)
+            logger.info("No reCAPTCHA detected")
 
         # Wait for final results
-        print("DEBUG: Waiting for results page to load...", flush=True)
+        logger.info("Waiting for results page to load")
         await page.wait_for_load_state("networkidle", timeout=60000)
         await page.wait_for_timeout(3000)  # Extra wait for Angular
-        print("DEBUG: Results page loaded, taking screenshot...", flush=True)
+        logger.info("Results page loaded, extracting data")
 
         # Check for errors
         error_selectors = [
