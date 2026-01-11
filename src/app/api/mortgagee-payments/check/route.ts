@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
           mciExpirationDate: result.expiration_date,
           mciCancellationDate: result.cancellation_date,
           mciReason: result.cancellation_reason,
-          screenshotUrl: null, // Would need to upload screenshot to S3
+          screenshotUrl: result.screenshot_url || null,
           rawResponse: result,
           errorMessage: result.error_message,
           errorCode: result.error_code,
