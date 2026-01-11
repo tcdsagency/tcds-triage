@@ -174,9 +174,24 @@ export async function GET(request: NextRequest) {
         : null,
     }));
 
+    // Deduplicate notices with same policy + title on same day
+    const seenKeys = new Set<string>();
+    const deduplicatedNotices = formattedNotices.filter((notice) => {
+      const dateStr = notice.noticeDate
+        ? new Date(notice.noticeDate).toISOString().split('T')[0]
+        : notice.createdAt.toISOString().split('T')[0];
+      const dedupKey = `${notice.policyNumber || ''}-${notice.title}-${dateStr}`;
+
+      if (seenKeys.has(dedupKey)) {
+        return false;
+      }
+      seenKeys.add(dedupKey);
+      return true;
+    });
+
     return NextResponse.json({
       success: true,
-      notices: formattedNotices,
+      notices: deduplicatedNotices,
       pagination: {
         page,
         limit,

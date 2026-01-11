@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
     const errorDetails: { policyId: string; error: string }[] = [];
 
     // Get all active home/property policies from DB
+    // HawkSoft LOB codes: HOME (homeowners), DFIRE (dwelling fire), FLOOD, CONDO, RENT, etc.
     const homePolicies = await db
       .select({
         id: policies.id,
@@ -73,8 +74,8 @@ export async function POST(request: NextRequest) {
         and(
           eq(policies.tenantId, tenantId),
           eq(policies.status, "active"),
-          // Filter to property policies (home, dwelling, etc.)
-          sql`${policies.lineOfBusiness} IN ('homeowners', 'dwelling', 'home', 'ho3', 'ho4', 'ho6', 'dp1', 'dp3', 'condo', 'renters', 'landlord', 'Homeowners', 'Dwelling', 'Home')`
+          // Filter to property policies (HawkSoft codes + readable names)
+          sql`UPPER(${policies.lineOfBusiness}) IN ('HOME', 'DFIRE', 'FLOOD', 'CONDO', 'RENT', 'DP1', 'DP3', 'HO3', 'HO4', 'HO6', 'HOMEOWNERS', 'DWELLING', 'RENTERS', 'LANDLORD')`
         )
       )
       .limit(limit);
@@ -261,7 +262,7 @@ export async function GET() {
       );
     }
 
-    // Count home policies
+    // Count home policies (HawkSoft LOB codes)
     const [{ count: homePolicyCount }] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(policies)
@@ -269,7 +270,7 @@ export async function GET() {
         and(
           eq(policies.tenantId, tenantId),
           eq(policies.status, "active"),
-          sql`${policies.lineOfBusiness} IN ('homeowners', 'dwelling', 'home', 'ho3', 'ho4', 'ho6', 'dp1', 'dp3', 'condo', 'renters', 'landlord', 'Homeowners', 'Dwelling', 'Home')`
+          sql`UPPER(${policies.lineOfBusiness}) IN ('HOME', 'DFIRE', 'FLOOD', 'CONDO', 'RENT', 'DP1', 'DP3', 'HO3', 'HO4', 'HO6', 'HOMEOWNERS', 'DWELLING', 'RENTERS', 'LANDLORD')`
         )
       );
 

@@ -265,24 +265,47 @@ export async function GET(request: NextRequest) {
     // Leads are managed separately in /leads page
 
     // =======================================================================
+    // Deduplicate items (same phone + similar time = duplicate)
+    // =======================================================================
+    const deduplicatedItems: PendingItem[] = [];
+    const seenKeys = new Set<string>();
+
+    for (const item of items) {
+      // Create a dedup key: phone + type + 5-minute window
+      const timeWindow = Math.floor(new Date(item.timestamp).getTime() / (5 * 60 * 1000));
+      const dedupKey = `${item.contactPhone}-${item.type}-${timeWindow}`;
+
+      // For messages with same body, also dedupe by content
+      const bodyHash = item.summary ? item.summary.slice(0, 50) : '';
+      const contentKey = `${item.contactPhone}-${bodyHash}`;
+
+      if (!seenKeys.has(dedupKey) && !seenKeys.has(contentKey)) {
+        seenKeys.add(dedupKey);
+        if (bodyHash) seenKeys.add(contentKey);
+        deduplicatedItems.push(item);
+      }
+    }
+
+    // =======================================================================
     // Sort by timestamp (newest first) and apply limit
     // =======================================================================
-    items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    const limitedItems = items.slice(0, limit);
+    deduplicatedItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const limitedItems = deduplicatedItems.slice(0, limit);
 
     // =======================================================================
     // Calculate Counts (Leads excluded - they're in sales workflow)
+    // Use deduplicated items for accurate counts
     // =======================================================================
     const counts: PendingCounts = {
-      wrapups: items.filter(i => i.type === 'wrapup').length,
-      messages: items.filter(i => i.type === 'message').length,
+      wrapups: deduplicatedItems.filter(i => i.type === 'wrapup').length,
+      messages: deduplicatedItems.filter(i => i.type === 'message').length,
       leads: 0, // Leads not included in pending review
-      total: items.length,
+      total: deduplicatedItems.length,
       byStatus: {
-        matched: items.filter(i => i.matchStatus === 'matched').length,
-        needsReview: items.filter(i => i.matchStatus === 'needs_review').length,
-        unmatched: items.filter(i => i.matchStatus === 'unmatched').length,
-        afterHours: items.filter(i => i.matchStatus === 'after_hours').length,
+        matched: deduplicatedItems.filter(i => i.matchStatus === 'matched').length,
+        needsReview: deduplicatedItems.filter(i => i.matchStatus === 'needs_review').length,
+        unmatched: deduplicatedItems.filter(i => i.matchStatus === 'unmatched').length,
+        afterHours: deduplicatedItems.filter(i => i.matchStatus === 'after_hours').length,
       },
     };
 
