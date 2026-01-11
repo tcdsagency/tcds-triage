@@ -6,6 +6,7 @@ import {
   mortgageePaymentSettings,
   policies,
   properties,
+  customers,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 
@@ -62,14 +63,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get property for ZIP code
+    // Get property for ZIP code (fallback to customer address)
     const [property] = await db
       .select()
       .from(properties)
       .where(eq(properties.policyId, mortgagee.policyId))
       .limit(1);
 
-    const zipCode = property?.address?.zip || "";
+    let zipCode = property?.address?.zip || "";
+
+    // Fallback to customer address if no property
+    if (!zipCode && mortgagee.customerId) {
+      const [customer] = await db
+        .select({ address: customers.address })
+        .from(customers)
+        .where(eq(customers.id, mortgagee.customerId))
+        .limit(1);
+      zipCode = customer?.address?.zip || "";
+    }
+
+    if (!zipCode) {
+      return NextResponse.json(
+        { error: "No ZIP code available for this property/customer" },
+        { status: 400 }
+      );
+    }
 
     // Get microservice settings
     const [settings] = await db

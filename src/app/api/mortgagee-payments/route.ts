@@ -44,6 +44,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Search filter - searches mortgagee name, loan number, customer name, policy number
+    if (search && search.trim()) {
+      const searchTerm = `%${search.trim().toLowerCase()}%`;
+      whereConditions = and(
+        whereConditions,
+        sql`(
+          LOWER(${mortgagees.name}) LIKE ${searchTerm}
+          OR ${mortgagees.loanNumber} LIKE ${searchTerm}
+        )`
+      );
+    }
+
     // Get mortgagees with policy and customer info
     const results = await db
       .select({
