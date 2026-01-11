@@ -185,15 +185,14 @@ export default function ReviewModal({
                   onChange={(e) => setSelectedAgentId(e.target.value ? Number(e.target.value) : '')}
                   className={cn(
                     'w-full px-3 py-2 rounded-lg border transition-colors',
-                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                    'text-gray-900 bg-white',
                     'border-gray-300 dark:border-gray-600',
-                    'focus:outline-none focus:ring-2 focus:ring-blue-500',
-                    !selectedAgentId && 'text-gray-400'
+                    'focus:outline-none focus:ring-2 focus:ring-blue-500'
                   )}
                 >
-                  <option value="">Select an agent...</option>
+                  <option value="" className="text-gray-500">Select an agent...</option>
                   {AGENT_OPTIONS.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
+                    <option key={agent.id} value={agent.id} className="text-gray-900">
                       {agent.name}
                     </option>
                   ))}
