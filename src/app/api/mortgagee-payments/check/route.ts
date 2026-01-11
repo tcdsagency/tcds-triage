@@ -71,15 +71,23 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     let zipCode = property?.address?.zip || "";
+    let lastName = "";
 
-    // Fallback to customer address if no property
-    if (!zipCode && mortgagee.customerId) {
+    // Get customer info (address fallback and last name for MCI lookup)
+    if (mortgagee.customerId) {
       const [customer] = await db
-        .select({ address: customers.address })
+        .select({
+          address: customers.address,
+          lastName: customers.lastName,
+        })
         .from(customers)
         .where(eq(customers.id, mortgagee.customerId))
         .limit(1);
-      zipCode = customer?.address?.zip || "";
+
+      if (!zipCode) {
+        zipCode = customer?.address?.zip || "";
+      }
+      lastName = customer?.lastName || "";
     }
 
     if (!zipCode) {
@@ -127,7 +135,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           loan_number: mortgagee.loanNumber || policy.policyNumber,
           zip_code: zipCode,
-          last_name: null, // Could be enhanced to include customer last name
+          last_name: lastName || null,
         }),
       });
 
