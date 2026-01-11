@@ -2,18 +2,26 @@
  * API Route: /api/policy-notices/sync
  * ====================================
  * Polls Adapt Insurance API for new notices and stores them.
- * Called by Vercel Cron every 15 minutes.
+ * Called by Vercel Cron every 4 hours.
+ *
+ * Enhanced with:
+ * - Priority scoring (0-100) for call queue prioritization
+ * - Donna AI context generation (talking points, objection handlers)
+ * - Customer value calculation (total active premiums)
+ * - Match confidence levels (high/medium/none)
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { policyNotices, customers, policies } from "@/db/schema";
-import { eq, and, ilike, or } from "drizzle-orm";
+import { eq, and, ilike, or, sum } from "drizzle-orm";
 import {
   getAdaptInsuranceClient,
   getMockNotices,
   NormalizedNotice,
 } from "@/lib/api/adapt-insurance";
+import { calculatePriorityScore } from "@/lib/utils/priority-scoring";
+import { generateDonnaContext } from "@/lib/api/donna-context";
 
 // =============================================================================
 // POST - Sync Notices from Adapt API
@@ -73,6 +81,7 @@ export async function POST(request: NextRequest) {
       matched: 0,
       errors: 0,
     };
+    const errorDetails: { id: string; error: string }[] = [];
 
     for (const notice of normalizedNotices) {
       try {
@@ -148,6 +157,95 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Enhanced matching: Try phone if still no customer match
+        if (!customerId) {
+          const phone = (notice.rawPayload as Record<string, unknown>)?.phone as string;
+          if (phone) {
+            const normalizedPhone = phone.replace(/\D/g, '');
+            const [byPhone] = await db
+              .select({ id: customers.id })
+              .from(customers)
+              .where(
+                and(
+                  eq(customers.tenantId, tenantId),
+                  eq(customers.phone, normalizedPhone)
+                )
+              )
+              .limit(1);
+            if (byPhone) {
+              customerId = byPhone.id;
+              results.matched++;
+            }
+          }
+        }
+
+        // Enhanced matching: Try email if still no customer match
+        if (!customerId) {
+          const email = (notice.rawPayload as Record<string, unknown>)?.email as string;
+          if (email) {
+            const [byEmail] = await db
+              .select({ id: customers.id })
+              .from(customers)
+              .where(
+                and(
+                  eq(customers.tenantId, tenantId),
+                  ilike(customers.email, email)
+                )
+              )
+              .limit(1);
+            if (byEmail) {
+              customerId = byEmail.id;
+              results.matched++;
+            }
+          }
+        }
+
+        // Determine match confidence
+        const matchConfidence = customerId && policyId ? 'high'
+          : (customerId || policyId) ? 'medium'
+          : 'none';
+
+        // Calculate customer value (total active premiums)
+        let customerValue: number | null = null;
+        if (customerId) {
+          const premiumResult = await db
+            .select({ total: sum(policies.premium) })
+            .from(policies)
+            .where(
+              and(
+                eq(policies.customerId, customerId),
+                eq(policies.status, 'active')
+              )
+            );
+          customerValue = premiumResult[0]?.total ? Number(premiumResult[0].total) : null;
+        }
+
+        // Calculate days until due
+        const daysUntilDue = notice.dueDate
+          ? Math.floor((new Date(notice.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+          : null;
+
+        // Calculate priority score
+        const priorityScore = calculatePriorityScore({
+          noticeType: notice.noticeType,
+          urgency: notice.urgency,
+          daysUntilDue,
+          amountDue: notice.amountDue ? parseFloat(notice.amountDue) : null,
+          customerValue,
+          claimStatus: notice.claimStatus,
+        });
+
+        // Generate Donna AI context for high-priority notices
+        const donnaContext = priorityScore >= 70
+          ? generateDonnaContext(
+              notice.noticeType,
+              notice.amountDue,
+              notice.dueDate,
+              notice.claimStatus,
+              notice.insuredName
+            )
+          : null;
+
         // Insert the notice
         await db.insert(policyNotices).values({
           tenantId,
@@ -171,14 +269,21 @@ export async function POST(request: NextRequest) {
           rawPayload: notice.rawPayload,
           noticeDate: notice.noticeDate,
           fetchedAt: new Date(),
+          // Enhanced fields
+          priorityScore,
+          donnaContext,
+          customerValue: customerValue?.toString() ?? null,
+          matchConfidence,
         });
 
         results.created++;
       } catch (noticeError) {
+        const errorMsg = noticeError instanceof Error ? noticeError.message : String(noticeError);
         console.error(
           `[PolicyNotices Sync] Error processing notice ${notice.adaptNoticeId}:`,
-          noticeError
+          errorMsg
         );
+        errorDetails.push({ id: notice.adaptNoticeId, error: errorMsg });
         results.errors++;
       }
     }
@@ -195,6 +300,7 @@ export async function POST(request: NextRequest) {
       results,
       duration,
       timestamp: new Date().toISOString(),
+      ...(errorDetails.length > 0 && { errorDetails: errorDetails.slice(0, 10) }), // First 10 errors
     });
   } catch (error) {
     console.error("[PolicyNotices Sync] Error:", error);

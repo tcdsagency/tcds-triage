@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useServiceRequestWizard, usePrefill } from '../ServiceRequestWizardProvider';
+import { getPolicyTypeIcon, type PolicyType } from '@/types/customer-profile';
 
 interface PolicySearchResult {
   id: string;
@@ -162,7 +163,7 @@ export function PolicySearchStep() {
                             {policy.policyNumber}
                           </span>
                           <Badge variant="secondary" className="text-xs">
-                            {policy.type}
+                            {getPolicyTypeIcon(policy.type as PolicyType)} {policy.type}
                           </Badge>
                           {!policy.isActive && (
                             <Badge variant="outline" className="text-xs text-red-600 border-red-300">

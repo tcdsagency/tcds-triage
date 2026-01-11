@@ -19,6 +19,7 @@ import {
   UserPlus,
   Sparkles,
   CreditCard,
+  Zap,
   FileSearch,
   ShieldAlert,
   IdCard,
@@ -59,6 +60,7 @@ const customerNav = [
   { name: 'Policy Notices', href: '/policy-notices', icon: Bell },
   { name: 'Policy Change', href: '/policy-change', icon: FilePen },
   { name: 'Payment Advance', href: '/payment-advance', icon: CreditCard },
+  { name: 'Same-Day Payment', href: '/same-day-payment', icon: Zap },
   { name: 'ID Cards', href: '/id-cards', icon: IdCard },
 ];
 

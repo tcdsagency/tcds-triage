@@ -338,6 +338,14 @@ export function CallProvider({ children }: CallProviderProps) {
     };
   }, [activeCall?.sessionId, activeCall?.status]);
 
+  // Helper to check if a number is an internal extension (3 digits)
+  const isInternalExtension = (number: string | undefined): boolean => {
+    if (!number) return false;
+    // Strip any formatting and check if it's exactly 3 digits
+    const cleaned = number.replace(/\D/g, '');
+    return cleaned.length === 3 && /^\d{3}$/.test(cleaned);
+  };
+
   const handleCallEvent = useCallback(async (data: any) => {
     console.log("[CallProvider] Event:", data.type, data);
 
@@ -354,6 +362,13 @@ export function CallProvider({ children }: CallProviderProps) {
 
         if (!isMyCall) {
           console.log(`[CallProvider] Ignoring call for extension ${callExtension} (my extension: ${currentExt})`);
+          return;
+        }
+
+        // Skip internal calls (extension to extension - both are 3 digits)
+        const phoneNumber = data.phoneNumber || data.callerNumber || "";
+        if (isInternalExtension(phoneNumber)) {
+          console.log(`[CallProvider] Ignoring internal call from extension ${phoneNumber}`);
           return;
         }
 

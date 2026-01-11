@@ -259,7 +259,17 @@ export default function IdCardsPage() {
   const handleSelectPolicy = (policy: Policy) => {
     setSelectedPolicy(policy);
     setEditableVehicles([...policy.vehicles]);
-    setSpouseName("");
+
+    // Auto-populate second insured from drivers list
+    // Find a driver that isn't the primary insured (by name comparison)
+    const primaryName = (hawkSoftData?.insuredName || '').toLowerCase();
+    const additionalDriver = policy.drivers?.find(d => {
+      const driverName = d.name.toLowerCase();
+      // Skip if same as primary insured
+      return driverName && driverName !== primaryName && !primaryName.includes(driverName) && !driverName.includes(primaryName.split(' ')[0]);
+    });
+
+    setSpouseName(additionalDriver?.name || "");
     setPdfBase64(null);
     setDeliverySuccess(null);
     setDeliveryError(null);
@@ -689,13 +699,28 @@ export default function IdCardsPage() {
                           </div>
                         </div>
                       </div>
-                      {policy.vehicles.length > 0 && (
+                      {(policy.vehicles.length > 0 || policy.drivers.length > 0) && (
                         <div className="mt-2 pt-2 border-t text-xs text-gray-500">
-                          {policy.vehicles.map((v, i) => (
-                            <div key={i}>
-                              {v.year} {v.make} {v.model}
+                          {policy.vehicles.length > 0 && (
+                            <div className="mb-1">
+                              <span className="font-medium">Vehicles:</span>
+                              {policy.vehicles.map((v, i) => (
+                                <div key={i} className="ml-2">
+                                  {v.year} {v.make} {v.model}
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          )}
+                          {policy.drivers.length > 0 && (
+                            <div>
+                              <span className="font-medium">Drivers:</span>
+                              {policy.drivers.map((d, i) => (
+                                <div key={i} className="ml-2">
+                                  {d.name}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                     </button>
@@ -716,6 +741,9 @@ export default function IdCardsPage() {
               <div className="mb-4 p-3 bg-gray-50 rounded-lg">
                 <div className="text-sm text-gray-600">
                   <strong>{hawkSoftData?.insuredName}</strong>
+                  {spouseName && (
+                    <span className="text-gray-500"> & {spouseName}</span>
+                  )}
                 </div>
                 <div className="text-sm text-gray-600">
                   {selectedPolicy.carrier} - {selectedPolicy.policyNumber}
@@ -723,6 +751,11 @@ export default function IdCardsPage() {
                 <div className="text-xs text-gray-500 mt-1">
                   {editableVehicles.length} vehicle(s) | Expires {selectedPolicy.expirationDate}
                 </div>
+                {selectedPolicy.drivers.length > 0 && !spouseName && (
+                  <div className="text-xs text-amber-600 mt-1">
+                    Note: {selectedPolicy.drivers.length} driver(s) on policy - click "Edit" to add to ID card
+                  </div>
+                )}
               </div>
 
               {/* Generate Button */}
@@ -750,18 +783,45 @@ export default function IdCardsPage() {
               {/* Collapsible Editor Section */}
               {showEditor && (
                 <div className="mt-4 pt-4 border-t">
-                  {/* Spouse Name */}
+                  {/* Second Insured / Driver Selection */}
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Spouse/Co-Insured Name (optional)
+                      Second Named Insured / Driver
                     </label>
-                    <input
-                      type="text"
-                      value={spouseName}
-                      onChange={(e) => setSpouseName(e.target.value)}
-                      placeholder="Enter spouse name if applicable"
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
+                    {selectedPolicy?.drivers && selectedPolicy.drivers.length > 0 ? (
+                      <div className="space-y-2">
+                        <select
+                          value={spouseName}
+                          onChange={(e) => setSpouseName(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">-- None --</option>
+                          {selectedPolicy.drivers.map((driver, idx) => (
+                            <option key={idx} value={driver.name}>
+                              {driver.name} {driver.info ? `(${driver.info})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-500">
+                          Select from policy drivers or enter manually below
+                        </p>
+                        <input
+                          type="text"
+                          value={spouseName}
+                          onChange={(e) => setSpouseName(e.target.value)}
+                          placeholder="Or enter name manually"
+                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        value={spouseName}
+                        onChange={(e) => setSpouseName(e.target.value)}
+                        placeholder="Enter second insured name if applicable"
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    )}
                   </div>
 
                   {/* Vehicles */}

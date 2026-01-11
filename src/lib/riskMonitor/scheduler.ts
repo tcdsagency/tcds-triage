@@ -210,7 +210,17 @@ export class RiskMonitorScheduler {
         result.mmiData = mmiData;
         await this.logEvent("mmi_lookup", policy.id, "MMI check complete", {
           status: mmiData?.currentStatus,
+          success: mmiResult.success,
+          error: mmiResult.error,
         });
+      }
+
+      // IMPORTANT: If we have no real data from either source, skip this property
+      // Do NOT create alerts based on no data - that leads to false positives
+      if (!rprData && !mmiData) {
+        await this.logEvent("no_data", policy.id, "No data from RPR or MMI - skipping to prevent false alerts");
+        result.newStatus = policy.currentStatus ?? "unknown";
+        return result;
       }
 
       // Determine new status based on both sources
@@ -257,6 +267,9 @@ export class RiskMonitorScheduler {
       if (mmiListingStatus === "ACTIVE") return "active";
       if (mmiListingStatus === "PENDING" || mmiListingStatus === "UNDER CONTRACT") return "pending";
       if (mmiListingStatus === "SOLD" || mmiListingStatus === "CLOSED") return "sold";
+      // WITHDRAWN/EXPIRED/CANCELLED listings should be treated as off_market
+      // Don't fall through to RPR mock data which might return incorrect status
+      if (mmiListingStatus === "WITHDRAWN" || mmiListingStatus === "EXPIRED" || mmiListingStatus === "CANCELLED") return "off_market";
     }
 
     // Check RPR listing status
@@ -270,14 +283,19 @@ export class RiskMonitorScheduler {
       if (rprStatus === "sold" || rprStatus === "closed") return "sold";
     }
 
-    // Check RPR current status
-    if (rprData?.currentStatus && rprData.currentStatus !== "unknown") {
-      return rprData.currentStatus;
+    // Check MMI current status FIRST - real data takes priority over RPR mock data
+    if (mmiData?.currentStatus && mmiData.currentStatus !== "unknown") {
+      // Map MMI status values to our status values
+      const mmiStatus = mmiData.currentStatus.toLowerCase();
+      if (mmiStatus === "sold" || mmiStatus === "off_market" || mmiStatus === "off-market") {
+        return "off_market"; // Properties marked as sold or off_market in MMI should stay off_market
+      }
+      return mmiData.currentStatus;
     }
 
-    // Check MMI current status as fallback
-    if (mmiData?.currentStatus && mmiData.currentStatus !== "unknown") {
-      return mmiData.currentStatus;
+    // Check RPR current status as fallback (may be mock data)
+    if (rprData?.currentStatus && rprData.currentStatus !== "unknown") {
+      return rprData.currentStatus;
     }
 
     // Default to off_market

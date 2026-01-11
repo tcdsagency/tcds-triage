@@ -90,10 +90,13 @@ export async function GET(request: NextRequest) {
       const expirationDate = p.expirationDate ? new Date(p.expirationDate) : null;
 
       // Determine if policy is active
+      // Statuses that indicate inactive: replaced, rewrite, cancelled, expired, etc.
       let isActive = true;
-      if (status.includes('replaced') || status === 'cancelled' || status === 'canceled' ||
+      if (status.includes('replaced') || status.includes('rewrite') ||
+          status === 'cancelled' || status === 'canceled' ||
           status === 'expired' || status === 'non_renewed' || status.includes('deadfiled') ||
-          status.includes('prospect') || status.includes('void')) {
+          status.includes('prospect') || status.includes('void') ||
+          status.includes('dead') || status.includes('flat')) {
         isActive = false;
       } else if (expirationDate && expirationDate < now) {
         isActive = false;
@@ -102,8 +105,9 @@ export async function GET(request: NextRequest) {
       // Get display status
       let displayStatus = 'Active';
       if (!isActive) {
-        if (status.includes('replaced')) displayStatus = 'Replaced';
+        if (status.includes('replaced') || status.includes('rewrite')) displayStatus = 'Replaced/Rewrite';
         else if (status === 'cancelled' || status === 'canceled') displayStatus = 'Cancelled';
+        else if (status.includes('flat')) displayStatus = 'Flat Cancelled';
         else if (expirationDate && expirationDate < now) displayStatus = 'Expired';
         else displayStatus = status || 'Inactive';
       }
