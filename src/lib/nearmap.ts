@@ -131,10 +131,11 @@ class NearmapClient {
   private imageApiKey: string;
 
   constructor() {
-    this.apiKey = process.env.NEARMAP_API_KEY || '';
-    this.aiApiKey = process.env.NEARMAP_AI_API_KEY || '';
-    this.d3ApiKey = process.env.NEARMAP_D3_API_KEY || '';
-    this.imageApiKey = process.env.NEARMAP_IMAGE_API_KEY || '';
+    // Strip any trailing \n that may be in env vars from Vercel
+    this.apiKey = (process.env.NEARMAP_API_KEY || '').replace(/\\n$/, '').trim();
+    this.aiApiKey = (process.env.NEARMAP_AI_API_KEY || '').replace(/\\n$/, '').trim();
+    this.d3ApiKey = (process.env.NEARMAP_D3_API_KEY || '').replace(/\\n$/, '').trim();
+    this.imageApiKey = (process.env.NEARMAP_IMAGE_API_KEY || '').replace(/\\n$/, '').trim();
   }
 
   /**
@@ -484,7 +485,7 @@ class NearmapClient {
    */
   getStaticImageUrl(lat: number, lng: number, width: number = 800, height: number = 600): string {
     // Use Google Static Maps for reliable satellite imagery
-    const googleKey = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '').trim();
+    const googleKey = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '').replace(/\\n$/, '').trim();
     if (googleKey) {
       return `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=19&size=${width}x${height}&maptype=satellite&key=${googleKey}`;
     }
