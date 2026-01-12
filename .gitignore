@@ -31,3 +31,4 @@ yarn-error.log*
 .claude/
 .env.vercel
 .env.vercel-check
+.env.vercel.production

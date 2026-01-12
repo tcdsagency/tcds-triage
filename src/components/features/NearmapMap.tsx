@@ -26,8 +26,6 @@ interface NearmapMapProps {
   zoom?: number;
   surveyDate?: string;
   overlays?: Overlays;
-  onError?: () => void;
-  tileUrl?: string; // Server-provided tile URL with proper API key
 }
 
 // Overlay colors
@@ -39,17 +37,13 @@ const OVERLAY_COLORS = {
   building: { color: '#8B5CF6', fillColor: '#8B5CF6', name: 'Building' },
 };
 
-export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError, tileUrl }: NearmapMapProps) {
+export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays }: NearmapMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const overlayLayersRef = useRef<Record<string, L.GeoJSON | null>>({});
 
   const [isLoaded, setIsLoaded] = useState(false);
-  const [hasError, setHasError] = useState(false);
-  const [currentDate, setCurrentDate] = useState(surveyDate);
-  const tileErrorCountRef = useRef(0);
-  const tileLoadCountRef = useRef(0);
 
   // Overlay visibility state
   const [showOverlays, setShowOverlays] = useState({
@@ -59,33 +53,6 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError,
     solar: false,
     building: false,
   });
-
-  // Get Nearmap API key (strip any trailing \n that may be in env vars)
-  const nearmapKey = (process.env.NEXT_PUBLIC_NEARMAP_API_KEY || '').trim();
-
-  // Build tile URL with optional date parameter
-  // Prefer server-provided tileUrl (has proper API key for tiles)
-  const getTileUrl = (date?: string) => {
-    // Use server-provided tile URL if available
-    if (tileUrl) {
-      let url = tileUrl;
-      if (date) {
-        const formattedDate = date.replace(/-/g, '');
-        url += (url.includes('?') ? '&' : '?') + `until=${formattedDate}`;
-      }
-      return url;
-    }
-    // Fallback to constructing URL with client-side key
-    if (!nearmapKey) return '';
-    let url = `https://api.nearmap.com/tiles/v3/Vert/{z}/{x}/{y}.jpg?apikey=${nearmapKey}`;
-    if (date) {
-      const formattedDate = date.replace(/-/g, '');
-      url += `&until=${formattedDate}`;
-    }
-    return url;
-  };
-
-  const hasTileAccess = !!(tileUrl || nearmapKey);
 
   // Convert GeoJSON coordinates to Leaflet format (swap lat/lng)
   const convertCoords = (coords: number[][][]): L.LatLngExpression[][] => {
@@ -109,49 +76,24 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError,
 
     mapInstance.current = map;
 
-    // Add base tile layer
-    if (hasTileAccess) {
-      console.log('[NearmapMap] Using Nearmap tiles', tileUrl ? '(server-provided URL)' : 'with key: ' + nearmapKey.substring(0, 10) + '...');
-      const nearmapLayer = L.tileLayer(getTileUrl(surveyDate), {
-        maxZoom: 21,
-        minZoom: 10,
-        attribution: '&copy; <a href="https://nearmap.com">Nearmap</a>',
-        errorTileUrl: '', // Don't show broken image for missing tiles
-      });
-
-      tileLayerRef.current = nearmapLayer;
-      nearmapLayer.addTo(map);
-
-      // Track individual tile loads/errors - only show error if most tiles fail
-      nearmapLayer.on('tileerror', () => {
-        tileErrorCountRef.current += 1;
-        // Only show error state if we get many consecutive errors with no successes
-        if (tileErrorCountRef.current > 10 && tileLoadCountRef.current === 0) {
-          setHasError(true);
-          onError?.();
-        }
-      });
-      nearmapLayer.on('tileload', () => {
-        tileLoadCountRef.current += 1;
-        setIsLoaded(true);
-        setHasError(false); // Clear error if tiles are loading
-      });
-      nearmapLayer.on('load', () => {
-        setIsLoaded(true);
-      });
-    } else if (googleKey) {
+    // Add base tile layer - Use Google satellite (Nearmap tiles require separate subscription)
+    if (googleKey) {
+      console.log('[NearmapMap] Using Google satellite imagery');
       const googleLayer = L.tileLayer(
         `https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}`,
         { maxZoom: 21, minZoom: 10, attribution: '&copy; Google Maps' }
       );
+      tileLayerRef.current = googleLayer;
       googleLayer.addTo(map);
       setIsLoaded(true);
     } else {
-      const osmLayer = L.tileLayer(
+      console.log('[NearmapMap] Using ESRI World Imagery');
+      const esriLayer = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         { maxZoom: 19, attribution: '&copy; Esri' }
       );
-      osmLayer.addTo(map);
+      tileLayerRef.current = esriLayer;
+      esriLayer.addTo(map);
       setIsLoaded(true);
     }
 
@@ -173,26 +115,6 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError,
       overlayLayersRef.current = {};
     };
   }, [lat, lng, zoom, onError]);
-
-  // Update tile layer when surveyDate changes
-  useEffect(() => {
-    if (mapInstance.current && tileLayerRef.current && hasTileAccess && surveyDate !== currentDate) {
-      setIsLoaded(false);
-      setCurrentDate(surveyDate);
-
-      mapInstance.current.removeLayer(tileLayerRef.current);
-
-      const newLayer = L.tileLayer(getTileUrl(surveyDate), {
-        maxZoom: 21,
-        minZoom: 10,
-        attribution: '&copy; <a href="https://nearmap.com">Nearmap</a>',
-      });
-
-      tileLayerRef.current = newLayer;
-      newLayer.addTo(mapInstance.current);
-      newLayer.on('load', () => setIsLoaded(true));
-    }
-  }, [surveyDate, currentDate, hasTileAccess]);
 
   // Update map center when coordinates change
   useEffect(() => {
@@ -354,22 +276,11 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError,
       )}
 
       {/* Loading overlay */}
-      {!isLoaded && !hasError && (
+      {!isLoaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10">
           <div className="text-center">
             <div className="animate-spin text-3xl mb-2">🛰️</div>
             <p className="text-sm text-gray-600 font-medium">Loading aerial imagery...</p>
-          </div>
-        </div>
-      )}
-
-      {/* Error state */}
-      {hasError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-amber-50 z-10">
-          <div className="text-center p-4">
-            <div className="text-4xl mb-2">⚠️</div>
-            <p className="text-amber-800 font-medium">Nearmap imagery unavailable</p>
-            <p className="text-xs text-amber-700 mt-1">Using fallback satellite view</p>
           </div>
         </div>
       )}

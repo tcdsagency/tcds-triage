@@ -509,48 +509,52 @@ export default function CustomerProfilePage() {
                 size="sm"
                 onClick={() => fetchProfile(true)}
                 disabled={syncing}
+                className="border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <RefreshCw className={cn("w-4 h-4 mr-1", syncing && "animate-spin")} />
                 {syncing ? "Syncing..." : "Refresh"}
               </Button>
-              
+
               {profile.contact.phone && (
                 <Button
                   size="sm"
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
                   onClick={() => handleCall(profile.contact.phone!)}
                 >
                   <Phone className="w-4 h-4 mr-1" />
                   Call
                 </Button>
               )}
-              
+
               {profile.contact.phone && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => handleSMS(profile.contact.phone!)}
+                  className="border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   <MessageSquare className="w-4 h-4 mr-1" />
                   Text
                 </Button>
               )}
-              
+
               {profile.contact.email && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => handleEmail(profile.contact.email!)}
+                  className="border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                 >
                   <Mail className="w-4 h-4 mr-1" />
                   Email
                 </Button>
               )}
-              
+
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setShowNoteModal(true)}
+                className="border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <Plus className="w-4 h-4 mr-1" />
                 Add Note
@@ -563,12 +567,13 @@ export default function CustomerProfilePage() {
                   customerId={profile.id}
                   variant="outline"
                   size="sm"
+                  className="border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                 />
               )}
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" className="border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
                     <MoreVertical className="w-4 h-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -1056,7 +1061,7 @@ export default function CustomerProfilePage() {
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
                 placeholder="Enter your note..."
-                className="w-full h-32 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 resize-none"
+                className="w-full h-32 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-400 resize-none"
                 autoFocus
               />
             </div>
@@ -1065,6 +1070,7 @@ export default function CustomerProfilePage() {
                 variant="outline"
                 onClick={() => setShowNoteModal(false)}
                 disabled={savingNote}
+                className="border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 Cancel
               </Button>
