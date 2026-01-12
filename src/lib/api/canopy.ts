@@ -10,6 +10,7 @@ import crypto from 'crypto';
 export interface CanopyConfig {
   clientId: string;
   clientSecret: string;
+  teamId: string;
   environment?: 'sandbox' | 'production';
   webhookSecret?: string;
 }
@@ -150,56 +151,27 @@ export interface CanopyWebhookPayload {
 export class CanopyClient {
   private config: CanopyConfig;
   private baseUrl: string;
-  private accessToken: string | null = null;
-  private tokenExpiresAt: Date | null = null;
+  private teamId: string;
 
   constructor(config: CanopyConfig) {
     this.config = config;
-    this.baseUrl = config.environment === 'production'
-      ? 'https://api.usecanopy.com'
-      : 'https://api.sandbox.usecanopy.com';
+    // Correct base URL per Canopy Connect documentation
+    this.baseUrl = 'https://app.usecanopy.com/api/v1.0.0';
+    this.teamId = config.teamId || '';
   }
 
   // ---------------------------------------------------------------------------
-  // Authentication
+  // API Request Helper
   // ---------------------------------------------------------------------------
-
-  private async getAccessToken(): Promise<string> {
-    // Return cached token if still valid
-    if (this.accessToken && this.tokenExpiresAt && new Date() < this.tokenExpiresAt) {
-      return this.accessToken;
-    }
-
-    const response = await fetch(`${this.baseUrl}/oauth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: this.config.clientId,
-        client_secret: this.config.clientSecret,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Canopy auth failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    this.accessToken = data.access_token;
-    this.tokenExpiresAt = new Date(Date.now() + (data.expires_in - 60) * 1000);
-
-    return this.accessToken!;
-  }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const token = await this.getAccessToken();
+    const url = `${this.baseUrl}${endpoint}`;
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const response = await fetch(url, {
       ...options,
       headers: {
-        'Authorization': `Bearer ${token}`,
+        'x-canopy-client-id': this.config.clientId,
+        'x-canopy-client-secret': this.config.clientSecret,
         'Content-Type': 'application/json',
         ...options.headers,
       },
@@ -221,7 +193,7 @@ export class CanopyClient {
    * Get a specific pull by ID
    */
   async getPull(pullId: string): Promise<CanopyPull> {
-    return this.request<CanopyPull>(`/v1/pulls/${pullId}`);
+    return this.request<CanopyPull>(`/teams/${this.teamId}/pulls/${pullId}`);
   }
 
   /**
@@ -237,11 +209,13 @@ export class CanopyClient {
     if (options?.limit) params.set('limit', options.limit.toString());
     if (options?.offset) params.set('offset', options.offset.toString());
 
-    return this.request(`/v1/pulls?${params}`);
+    return this.request(`/teams/${this.teamId}/pulls?${params}`);
   }
 
   /**
-   * Create a new pull request (send link to customer)
+   * Create a new pull request (generate link for customer)
+   * Note: Canopy uses SDK/Components for link generation, not direct API.
+   * This returns the pull data with the link URL.
    */
   async createPull(data: {
     phone?: string;
@@ -251,10 +225,37 @@ export class CanopyClient {
     redirect_url?: string;
     metadata?: Record<string, string>;
   }): Promise<{ pull_id: string; link_url: string }> {
-    return this.request('/v1/pulls', {
+    // POST to create a new pull request
+    const result = await this.request<any>(`/teams/${this.teamId}/pulls`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
+
+    return {
+      pull_id: result.pull_id || result.id,
+      link_url: result.link_url || result.link || `https://app.usecanopy.com/c/${this.teamId}?pullId=${result.pull_id || result.id}`,
+    };
+  }
+
+  /**
+   * Get a document PDF from a pull
+   */
+  async getDocument(pullId: string, documentId: string): Promise<ArrayBuffer> {
+    const response = await fetch(
+      `${this.baseUrl}/teams/${this.teamId}/pulls/${pullId}/documents/${documentId}/pdf`,
+      {
+        headers: {
+          'x-canopy-client-id': this.config.clientId,
+          'x-canopy-client-secret': this.config.clientSecret,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch document: ${response.status}`);
+    }
+
+    return response.arrayBuffer();
   }
 
   // ---------------------------------------------------------------------------
@@ -504,14 +505,20 @@ export function getCanopyClient(): CanopyClient {
   if (!canopyClient) {
     const clientId = process.env.CANOPY_CLIENT_ID;
     const clientSecret = process.env.CANOPY_CLIENT_SECRET;
+    const teamId = process.env.CANOPY_TEAM_ID;
 
     if (!clientId || !clientSecret) {
       throw new Error('Canopy Connect credentials not configured');
     }
 
+    if (!teamId) {
+      throw new Error('Canopy Connect team ID not configured');
+    }
+
     canopyClient = new CanopyClient({
       clientId,
       clientSecret,
+      teamId,
       environment: (process.env.CANOPY_ENVIRONMENT as 'sandbox' | 'production') || 'production',
       webhookSecret: process.env.CANOPY_WEBHOOK_SECRET,
     });

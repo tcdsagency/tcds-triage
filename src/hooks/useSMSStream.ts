@@ -65,12 +65,10 @@ export function useSMSStream(enabled: boolean = true) {
     }
 
     try {
-      console.log("[useSMSStream] Connecting to SSE stream...");
       const es = new EventSource("/api/messages/stream");
       eventSourceRef.current = es;
 
       es.onopen = () => {
-        console.log("[useSMSStream] SSE connected");
         setIsConnected(true);
         setError(null);
         reconnectAttemptsRef.current = 0;
@@ -82,7 +80,7 @@ export function useSMSStream(enabled: boolean = true) {
 
           switch (data.type) {
             case "connected":
-              console.log(`[useSMSStream] Client ID: ${data.clientId}`);
+              // Connected successfully
               break;
 
             case "messages_update":
@@ -116,41 +114,32 @@ export function useSMSStream(enabled: boolean = true) {
               break;
 
             default:
-              console.log(`[useSMSStream] Unknown event type: ${data.type}`);
+              // Unknown event type - ignore
           }
         } catch (error) {
           console.error("[useSMSStream] Error parsing SSE message:", error);
         }
       };
 
-      es.onerror = (event) => {
-        console.error("[useSMSStream] SSE error:", event);
+      es.onerror = () => {
+        // Silently handle SSE errors - these are expected on Vercel due to serverless timeouts
         setIsConnected(false);
-        setError("Connection lost");
 
         // Close current connection
         es.close();
         eventSourceRef.current = null;
 
-        // Attempt reconnection with exponential backoff
+        // Attempt reconnection with longer delays (Vercel serverless has ~10s timeout)
         if (reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          const delay = Math.min(
-            1000 * Math.pow(2, reconnectAttemptsRef.current),
-            30000
-          );
-
-          console.log(
-            `[useSMSStream] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current})`
-          );
+          // Use longer delays: 30s, 60s, 120s, 240s, 300s
+          const delay = Math.min(30000 * reconnectAttemptsRef.current, 300000);
 
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
           }, delay);
-        } else {
-          console.error("[useSMSStream] Max reconnection attempts reached");
-          setError("Unable to connect. Please refresh the page.");
         }
+        // Silently give up after max attempts - user can manually refresh
       };
     } catch (error) {
       console.error("[useSMSStream] Error creating EventSource:", error);
