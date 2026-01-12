@@ -361,8 +361,8 @@ export default function PendingItemCard({
           className="flex flex-wrap items-center gap-2 pt-3 border-t border-gray-200 dark:border-gray-700"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Find Match button - for unmatched or needs_review items */}
-          {(item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review') && onFindMatch && (
+          {/* Find Match button - for unmatched, needs_review, or after_hours items */}
+          {(item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review' || item.matchStatus === 'after_hours') && onFindMatch && (
             <button
               onClick={onFindMatch}
               className="px-3 py-1.5 text-xs rounded-lg font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors"
@@ -371,8 +371,8 @@ export default function PendingItemCard({
             </button>
           )}
 
-          {/* Post to NCM (No Customer Match) - for unmatched items without AZ link */}
-          {(item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review') &&
+          {/* Post to NCM (No Customer Match) - for unmatched/needs_review/after_hours items without AZ link */}
+          {(item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review' || item.matchStatus === 'after_hours') &&
             !item.agencyzoomCustomerId &&
             !item.agencyzoomLeadId && (
             <button
