@@ -54,13 +54,6 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays }: Nearma
     building: false,
   });
 
-  // Convert GeoJSON coordinates to Leaflet format (swap lat/lng)
-  const convertCoords = (coords: number[][][]): L.LatLngExpression[][] => {
-    return coords.map(ring =>
-      ring.map(point => [point[1], point[0]] as L.LatLngExpression)
-    );
-  };
-
   // Initialize map
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
@@ -114,7 +107,7 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays }: Nearma
       tileLayerRef.current = null;
       overlayLayersRef.current = {};
     };
-  }, [lat, lng, zoom, onError]);
+  }, [lat, lng, zoom]);
 
   // Update map center when coordinates change
   useEffect(() => {

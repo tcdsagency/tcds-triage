@@ -429,7 +429,6 @@ export default function PropertyIntelligencePage() {
                     zoom={19}
                     surveyDate={selectedHistoricalDate || lookup.nearmapData?.surveyDate}
                     overlays={lookup.nearmapData?.overlays}
-                    tileUrl={lookup.nearmapData?.tileUrl}
                   />
                 ) : (
                   <iframe
