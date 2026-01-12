@@ -416,8 +416,23 @@ export async function POST(
 
       // Ticket - Create service request for matched customer
       if (body.action === 'ticket' && customerId) {
+        // Fetch the matched customer's email from our database
+        const [matchedCustomer] = await db
+          .select({
+            email: customers.email,
+            firstName: customers.firstName,
+            lastName: customers.lastName,
+          })
+          .from(customers)
+          .where(eq(customers.agencyzoomId, customerId.toString()))
+          .limit(1);
+
+        const customerEmail = matchedCustomer?.email || null;
+        const customerName = matchedCustomer
+          ? `${matchedCustomer.firstName || ''} ${matchedCustomer.lastName || ''}`.trim() || message.contactName || 'Unknown'
+          : message.contactName || 'Unknown Sender';
+
         const senderPhone = message.fromNumber || 'Unknown';
-        const senderName = message.contactName || 'Unknown Sender';
         const messageBody = body.noteContent || message.body || 'No message content';
 
         // Format the description with sender details
@@ -425,7 +440,7 @@ export async function POST(
           messageBody,
           '',
           '--- Sender Information ---',
-          `Name: ${senderName}`,
+          `Name: ${customerName}`,
           `Phone: ${senderPhone}`,
           '',
           `Received: ${new Date(message.createdAt || Date.now()).toLocaleString('en-US', { timeZone: 'America/Chicago' })}`,
@@ -434,8 +449,8 @@ export async function POST(
         // Create service request via Zapier webhook
         const serviceRequestPayload = {
           customerId: customerId.toString(),
-          customerName: senderName,
-          customerEmail: null,
+          customerName: customerName,
+          customerEmail: customerEmail,  // Use fetched email so it routes to correct customer
           customerPhone: senderPhone,
           customerType: 'customer' as const,
           summary: description,
