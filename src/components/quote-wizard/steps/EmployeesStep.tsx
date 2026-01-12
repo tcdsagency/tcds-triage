@@ -37,7 +37,7 @@ export function EmployeesStep() {
               min="1"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors.employeeCount
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -59,7 +59,7 @@ export function EmployeesStep() {
               min="0"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -76,7 +76,7 @@ export function EmployeesStep() {
               min="0"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -93,7 +93,7 @@ export function EmployeesStep() {
               min="0"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -125,7 +125,7 @@ export function EmployeesStep() {
                 placeholder="500,000"
                 className={cn(
                   'w-full pl-7 pr-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   errors.annualRevenue
                     ? 'border-red-300 dark:border-red-500'
                     : 'border-gray-300 dark:border-gray-600',
@@ -149,7 +149,7 @@ export function EmployeesStep() {
                 placeholder="75,000"
                 className={cn(
                   'w-full pl-7 pr-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   'border-gray-300 dark:border-gray-600',
                   'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                 )}
@@ -184,7 +184,7 @@ export function EmployeesStep() {
                   placeholder="8810"
                   className={cn(
                     'w-full px-3 py-2 rounded-lg border transition-colors',
-                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                    'text-gray-900 bg-white',
                     'border-gray-300 dark:border-gray-600',
                     'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                   )}
@@ -199,7 +199,7 @@ export function EmployeesStep() {
                   placeholder="Clerical Office"
                   className={cn(
                     'w-full px-3 py-2 rounded-lg border transition-colors',
-                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                    'text-gray-900 bg-white',
                     'border-gray-300 dark:border-gray-600',
                     'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                   )}
@@ -216,7 +216,7 @@ export function EmployeesStep() {
                     placeholder="100,000"
                     className={cn(
                       'w-full pl-7 pr-3 py-2 rounded-lg border transition-colors',
-                      'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                      'text-gray-900 bg-white',
                       'border-gray-300 dark:border-gray-600',
                       'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                     )}
@@ -244,7 +244,7 @@ export function EmployeesStep() {
               placeholder="1.00"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -261,7 +261,7 @@ export function EmployeesStep() {
             <select
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}

@@ -195,7 +195,7 @@ function VehicleCard({
               placeholder="17-character VIN"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -226,7 +226,7 @@ function VehicleCard({
               onChange={(e) => onUpdate('year', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors[`${prefix}.year`]
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -253,7 +253,7 @@ function VehicleCard({
               placeholder="Toyota"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors[`${prefix}.make`]
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -275,7 +275,7 @@ function VehicleCard({
               placeholder="Camry"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors[`${prefix}.model`]
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -299,7 +299,7 @@ function VehicleCard({
               onChange={(e) => onUpdate('ownership', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -318,7 +318,7 @@ function VehicleCard({
               onChange={(e) => onUpdate('primaryUse', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -343,7 +343,7 @@ function VehicleCard({
               placeholder="12000"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -358,7 +358,7 @@ function VehicleCard({
               onChange={(e) => onUpdate('garageLocation', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}

@@ -219,7 +219,7 @@ function CoverageSelect({
         onChange={(e) => onChange(e.target.value)}
         className={cn(
           'w-full px-3 py-2 rounded-lg border transition-colors',
-          'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+          'text-gray-900 bg-white',
           error
             ? 'border-red-300 dark:border-red-500'
             : 'border-gray-300 dark:border-gray-600',

@@ -86,7 +86,7 @@ export function PropertyDetailsStep() {
               onChange={(e) => updateField('constructionType', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors.constructionType
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -112,7 +112,7 @@ export function PropertyDetailsStep() {
               onChange={(e) => updateField('foundationType', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -133,7 +133,7 @@ export function PropertyDetailsStep() {
               onChange={(e) => updateField('garageType', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -166,7 +166,7 @@ export function PropertyDetailsStep() {
               onChange={(e) => updateField('roofMaterial', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors.roofMaterial
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -196,7 +196,7 @@ export function PropertyDetailsStep() {
               max="100"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -224,7 +224,7 @@ export function PropertyDetailsStep() {
               onChange={(e) => updateField('heatingType', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -245,7 +245,7 @@ export function PropertyDetailsStep() {
               onChange={(e) => updateField('electricalUpdate', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -266,7 +266,7 @@ export function PropertyDetailsStep() {
               onChange={(e) => updateField('plumbingUpdate', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -400,7 +400,7 @@ export function PropertyDetailsStep() {
                   placeholder="Dog breed"
                   className={cn(
                     'w-full px-3 py-2 rounded-lg border transition-colors',
-                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                    'text-gray-900 bg-white',
                     'border-gray-300 dark:border-gray-600',
                     'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                   )}

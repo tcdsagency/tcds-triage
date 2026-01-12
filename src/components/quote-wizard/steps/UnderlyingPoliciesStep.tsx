@@ -75,7 +75,7 @@ export function UnderlyingPoliciesStep() {
                     placeholder="e.g., Progressive"
                     className={cn(
                       'w-full px-3 py-2 rounded-lg border transition-colors',
-                      'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                      'text-gray-900 bg-white',
                       'border-gray-300 dark:border-gray-600',
                       'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                     )}
@@ -90,7 +90,7 @@ export function UnderlyingPoliciesStep() {
                     onChange={(e) => updateField('coverage', { ...formData.coverage, bodilyInjury: e.target.value })}
                     className={cn(
                       'w-full px-3 py-2 rounded-lg border transition-colors',
-                      'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                      'text-gray-900 bg-white',
                       'border-gray-300 dark:border-gray-600',
                       'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                     )}
@@ -112,7 +112,7 @@ export function UnderlyingPoliciesStep() {
                     placeholder="2"
                     className={cn(
                       'w-full px-3 py-2 rounded-lg border transition-colors',
-                      'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                      'text-gray-900 bg-white',
                       'border-gray-300 dark:border-gray-600',
                       'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                     )}
@@ -137,7 +137,7 @@ export function UnderlyingPoliciesStep() {
                     placeholder="e.g., State Farm"
                     className={cn(
                       'w-full px-3 py-2 rounded-lg border transition-colors',
-                      'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                      'text-gray-900 bg-white',
                       'border-gray-300 dark:border-gray-600',
                       'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                     )}
@@ -152,7 +152,7 @@ export function UnderlyingPoliciesStep() {
                     onChange={(e) => updateField('coverage', { ...formData.coverage, liability: e.target.value })}
                     className={cn(
                       'w-full px-3 py-2 rounded-lg border transition-colors',
-                      'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                      'text-gray-900 bg-white',
                       'border-gray-300 dark:border-gray-600',
                       'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                     )}
@@ -170,7 +170,7 @@ export function UnderlyingPoliciesStep() {
                   <select
                     className={cn(
                       'w-full px-3 py-2 rounded-lg border transition-colors',
-                      'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                      'text-gray-900 bg-white',
                       'border-gray-300 dark:border-gray-600',
                       'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                     )}
