@@ -1,10 +1,11 @@
 // API Route: /api/webhooks/after-hours-email
-// Receives after-hours email notifications and merges with Twilio transcripts
-// Flow: Email arrives → Wait for Twilio transcript → AI merge → Create after-hours message
+// Receives after-hours email notifications from ReceptionHQ and merges with Twilio transcripts
+// Flow: Email arrives → Parse ReceptionHQ format → Lookup customer → AI merge → Create after-hours message
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { messages } from "@/db/schema";
+import { messages, customers } from "@/db/schema";
+import { eq, and, or, gte, desc, ilike } from "drizzle-orm";
 import OpenAI from "openai";
 
 // =============================================================================
@@ -33,6 +34,17 @@ interface AfterHoursEmailPayload {
   emailTranscript?: string;
 }
 
+// Parsed ReceptionHQ email data
+interface ReceptionHQExtraction {
+  name: string | null;
+  phone: string | null;           // Normalized 10-digit phone
+  callerId: string | null;        // E.164 format from Caller ID field
+  reason: string | null;          // Reason for call / message
+  calledNumber: string | null;    // Which TCDS number they called
+  isUrgent: boolean;
+  urgencyKeywords: string[];
+}
+
 interface TwilioTranscriptPayload {
   // Twilio recording/transcript data
   RecordingSid?: string;
@@ -52,6 +64,7 @@ interface PendingMerge {
   twilioData?: TwilioTranscriptPayload;
   createdAt: Date;
   phone: string;
+  parsedData?: ReceptionHQExtraction;
 }
 
 // Simple in-memory store for pending merges (waiting for transcript)
@@ -60,6 +73,195 @@ const pendingMerges = new Map<string, PendingMerge>();
 
 // Cleanup old entries every 5 minutes
 const MERGE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes to wait for transcript
+
+// =============================================================================
+// RECEPTIONHQ EMAIL PARSING
+// =============================================================================
+
+/**
+ * Detect if an email is from ReceptionHQ answering service
+ */
+function isReceptionServiceEmail(from: string, subject?: string): boolean {
+  const fromLower = (from || "").toLowerCase();
+  const subjectLower = (subject || "").toLowerCase();
+
+  return (
+    fromLower.includes("receptionhq") ||
+    fromLower.includes("reception") ||
+    fromLower.includes("answering") ||
+    fromLower.includes("virtualreceptionist") ||
+    subjectLower.includes("message taken") ||
+    subjectLower.includes("new message from") ||
+    subjectLower.includes("virtual receptionist")
+  );
+}
+
+/**
+ * Parse ReceptionHQ email format to extract structured fields
+ *
+ * Sample format:
+ * Name: John Smith
+ * Number: (205) 555-1234
+ * Reason for call: Caller had an accident...
+ * Caller ID: +12055551234
+ *
+ * Note: This message was taken by your Virtual Receptionist from a call to (205) 352-2250.
+ */
+function parseReceptionHQEmail(emailBody: string): ReceptionHQExtraction {
+  const result: ReceptionHQExtraction = {
+    name: null,
+    phone: null,
+    callerId: null,
+    reason: null,
+    calledNumber: null,
+    isUrgent: false,
+    urgencyKeywords: [],
+  };
+
+  if (!emailBody) return result;
+
+  // Extract caller name
+  // Pattern: "Name: John Smith" (may have whitespace)
+  const nameMatch = emailBody.match(/Name:\s*([^\n]+)/i);
+  if (nameMatch && nameMatch[1].trim().toLowerCase() !== "wrong dial") {
+    result.name = nameMatch[1].trim();
+  }
+
+  // Extract phone number from "Number:" field
+  // Pattern: "Number: (205) 555-1234" or "Number: (205) 368-7499 or (205) 503-1776"
+  const numberMatch = emailBody.match(/Number:\s*([^\n]+)/i);
+  if (numberMatch) {
+    const numberText = numberMatch[1].trim();
+    // Extract first phone number (in case of multiple)
+    const phoneDigits = numberText.replace(/\D/g, "").slice(-10);
+    if (phoneDigits.length === 10 && numberText.toLowerCase() !== "wrong dial") {
+      result.phone = phoneDigits;
+    }
+  }
+
+  // Extract Caller ID (E.164 format, more reliable)
+  // Pattern: "Caller ID: +12055551234"
+  const callerIdMatch = emailBody.match(/Caller ID:\s*(\+?\d{10,15})/i);
+  if (callerIdMatch) {
+    result.callerId = callerIdMatch[1].trim();
+    // Use Caller ID as primary phone if Number field wasn't valid
+    if (!result.phone) {
+      const digits = result.callerId.replace(/\D/g, "").slice(-10);
+      if (digits.length === 10) {
+        result.phone = digits;
+      }
+    }
+  }
+
+  // Extract reason for call (can span multiple lines until next field)
+  // Pattern: "Reason for call: ..." or "Message: ..."
+  const reasonMatch = emailBody.match(
+    /(?:Reason for call|Message):\s*([^\n]+(?:\n(?!Name:|Number:|Caller ID:|Note:|--)[^\n]+)*)/i
+  );
+  if (reasonMatch) {
+    result.reason = reasonMatch[1].trim();
+  }
+
+  // Extract which TCDS number was called
+  // Pattern: "from a call to (205) 352-2250" or "call to (205) 555-8888"
+  const calledMatch = emailBody.match(/(?:from a )?call to\s*\(?(\d{3})\)?[-.\s]?(\d{3})[-.\s]?(\d{4})/i);
+  if (calledMatch) {
+    result.calledNumber = `${calledMatch[1]}${calledMatch[2]}${calledMatch[3]}`;
+  }
+
+  // Detect urgency from keywords in reason/message
+  const urgentKeywords = [
+    "urgent", "emergency", "accident", "claim", "asap",
+    "immediately", "fire", "flood", "damage", "stolen",
+    "theft", "totaled", "hospital", "hit", "wreck",
+    "crash", "injury", "injured", "911", "police",
+    "ambulance", "tonight", "right away", "as soon as possible"
+  ];
+
+  const textToScan = (result.reason || "").toLowerCase() + " " + (emailBody || "").toLowerCase();
+  for (const keyword of urgentKeywords) {
+    if (textToScan.includes(keyword)) {
+      result.urgencyKeywords.push(keyword);
+    }
+  }
+  result.isUrgent = result.urgencyKeywords.length > 0;
+
+  return result;
+}
+
+/**
+ * Check for duplicate after-hours message (same phone within 1 hour)
+ */
+async function checkForDuplicate(
+  tenantId: string,
+  phone: string
+): Promise<{ isDuplicate: boolean; existingId?: string }> {
+  if (!phone) return { isDuplicate: false };
+
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+
+  const existing = await db
+    .select({ id: messages.id, createdAt: messages.createdAt })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.tenantId, tenantId),
+        eq(messages.isAfterHours, true),
+        gte(messages.createdAt, oneHourAgo),
+        or(
+          ilike(messages.fromNumber, `%${normalizedPhone}`),
+          ilike(messages.fromNumber, `+1${normalizedPhone}`)
+        )
+      )
+    )
+    .orderBy(desc(messages.createdAt))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return { isDuplicate: true, existingId: existing[0].id };
+  }
+
+  return { isDuplicate: false };
+}
+
+/**
+ * Lookup customer by phone number in local database
+ */
+async function lookupCustomerByPhone(
+  tenantId: string,
+  phone: string
+): Promise<{ id: string; name: string; agencyzoomId: string | null } | null> {
+  if (!phone) return null;
+
+  const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+
+  const customer = await db.query.customers.findFirst({
+    where: and(
+      eq(customers.tenantId, tenantId),
+      or(
+        ilike(customers.phone, `%${normalizedPhone}`),
+        ilike(customers.phoneAlt, `%${normalizedPhone}`)
+      )
+    ),
+    columns: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      agencyzoomId: true,
+    },
+  });
+
+  if (customer) {
+    return {
+      id: customer.id,
+      name: `${customer.firstName || ""} ${customer.lastName || ""}`.trim() || "Unknown",
+      agencyzoomId: customer.agencyzoomId,
+    };
+  }
+
+  return null;
+}
 
 // =============================================================================
 // MAIN HANDLER
@@ -109,7 +311,36 @@ async function handleAfterHoursEmail(
 ): Promise<NextResponse> {
   console.log("[After-Hours] Processing email notification");
 
-  const phone = normalizePhone(payload.phoneNumber || payload.callerNumber || payload.from);
+  // Check if this is a ReceptionHQ email and parse accordingly
+  const isReceptionHQ = isReceptionServiceEmail(payload.from, payload.subject);
+  let parsedData: ReceptionHQExtraction | null = null;
+  let phone: string | null = null;
+  let customerName: string | null = null;
+  let customerId: string | null = null;
+  let agencyzoomId: string | null = null;
+
+  if (isReceptionHQ && payload.body) {
+    console.log("[After-Hours] Detected ReceptionHQ email, parsing structured format");
+    parsedData = parseReceptionHQEmail(payload.body);
+
+    // Use parsed phone (from Caller ID or Number field)
+    phone = parsedData.phone ? `+1${parsedData.phone}` : null;
+    customerName = parsedData.name;
+
+    console.log("[After-Hours] Parsed ReceptionHQ data:", {
+      name: parsedData.name,
+      phone: parsedData.phone,
+      callerId: parsedData.callerId,
+      reason: parsedData.reason?.substring(0, 100),
+      calledNumber: parsedData.calledNumber,
+      isUrgent: parsedData.isUrgent,
+      urgencyKeywords: parsedData.urgencyKeywords,
+    });
+  } else {
+    // Fallback to original phone extraction
+    phone = normalizePhone(payload.phoneNumber || payload.callerNumber || "");
+    customerName = payload.fromName || null;
+  }
 
   if (!phone) {
     console.warn("[After-Hours] No phone number in email payload");
@@ -118,9 +349,36 @@ async function handleAfterHoursEmail(
       tenantId,
       payload,
       null,
-      phone || "Unknown"
+      "Unknown",
+      parsedData
     );
     return NextResponse.json({ success: true, triageItemId: triageItem.id, merged: false });
+  }
+
+  // Check for duplicate (same phone within 1 hour)
+  const { isDuplicate, existingId } = await checkForDuplicate(tenantId, phone);
+  if (isDuplicate) {
+    console.log(`[After-Hours] Duplicate detected for phone ${phone}, existing ID: ${existingId}`);
+    return NextResponse.json({
+      success: true,
+      duplicate: true,
+      existingId,
+      message: "Duplicate after-hours request (same phone within 1 hour)",
+    });
+  }
+
+  // Lookup customer by phone number
+  const customerMatch = await lookupCustomerByPhone(tenantId, phone);
+  if (customerMatch) {
+    customerId = customerMatch.id;
+    agencyzoomId = customerMatch.agencyzoomId;
+    // Use matched customer name if we don't have one from the email
+    if (!customerName || customerName === "Wrong Dial") {
+      customerName = customerMatch.name;
+    }
+    console.log(`[After-Hours] Matched customer: ${customerName} (ID: ${customerId}, AZ: ${agencyzoomId})`);
+  } else {
+    console.log(`[After-Hours] No customer match found for phone ${phone}`);
   }
 
   // Store pending merge and wait for Twilio transcript
@@ -130,6 +388,7 @@ async function handleAfterHoursEmail(
     emailData: payload,
     createdAt: new Date(),
     phone,
+    parsedData: parsedData || undefined,
   };
 
   pendingMerges.set(mergeId, pendingMerge);
@@ -139,7 +398,7 @@ async function handleAfterHoursEmail(
   const existingMerge = findMatchingPendingMerge(phone, true);
   if (existingMerge?.twilioData) {
     console.log(`[After-Hours] Found existing Twilio transcript, merging immediately`);
-    return await completeMerge(tenantId, existingMerge);
+    return await completeMerge(tenantId, existingMerge, customerName, customerId, agencyzoomId);
   }
 
   // Wait a short time for transcript, then proceed without it if needed
@@ -149,7 +408,7 @@ async function handleAfterHoursEmail(
   // Check again for transcript
   const updatedMerge = pendingMerges.get(mergeId);
   if (updatedMerge?.twilioData) {
-    return await completeMerge(tenantId, updatedMerge);
+    return await completeMerge(tenantId, updatedMerge, customerName, customerId, agencyzoomId);
   }
 
   // No transcript yet - create item with email only
@@ -159,7 +418,11 @@ async function handleAfterHoursEmail(
     tenantId,
     payload,
     null,
-    phone
+    phone,
+    parsedData,
+    customerName,
+    customerId,
+    agencyzoomId
   );
 
   // Keep the pending merge active for potential late transcript
@@ -173,6 +436,9 @@ async function handleAfterHoursEmail(
     triageItemId: triageItem.id,
     merged: false,
     waitingForTranscript: true,
+    customerId,
+    customerName,
+    isUrgent: parsedData?.isUrgent || false,
   });
 }
 
@@ -251,7 +517,10 @@ async function handleTwilioTranscript(
 
 async function completeMerge(
   tenantId: string,
-  merge: PendingMerge
+  merge: PendingMerge,
+  customerName?: string | null,
+  customerId?: string | null,
+  agencyzoomId?: string | null
 ): Promise<NextResponse> {
   console.log(`[After-Hours] Completing merge for ${merge.phone}`);
 
@@ -262,13 +531,20 @@ async function completeMerge(
     tenantId,
     merge.emailData,
     merge.twilioData || null,
-    merge.phone
+    merge.phone,
+    merge.parsedData,
+    customerName,
+    customerId,
+    agencyzoomId
   );
 
   return NextResponse.json({
     success: true,
     triageItemId: triageItem.id,
     merged: true,
+    customerId,
+    customerName,
+    isUrgent: merge.parsedData?.isUrgent || false,
   });
 }
 
@@ -276,10 +552,14 @@ async function createAfterHoursTriageItem(
   tenantId: string,
   emailData: AfterHoursEmailPayload,
   twilioData: TwilioTranscriptPayload | null,
-  phone: string
+  phone: string,
+  parsedData?: ReceptionHQExtraction | null,
+  customerName?: string | null,
+  customerId?: string | null,
+  agencyzoomId?: string | null
 ) {
-  // Merge content using AI
-  const mergedContent = await mergeContentWithAI(emailData, twilioData);
+  // Merge content using AI (pass parsed data for better context)
+  const mergedContent = await mergeContentWithAI(emailData, twilioData, parsedData);
 
   // Build a comprehensive body including all relevant info
   const bodyParts: string[] = [];
@@ -289,13 +569,24 @@ async function createAfterHoursTriageItem(
   if (twilioData?.TranscriptionText) {
     bodyParts.push(`\n\nVoicemail: ${twilioData.TranscriptionText}`);
   }
-  if (emailData.body && emailData.body !== twilioData?.TranscriptionText) {
+  // For ReceptionHQ emails, include the parsed content more cleanly
+  if (parsedData?.reason) {
+    bodyParts.push(`\n\nEmail: ${parsedData.reason}`);
+  } else if (emailData.body && emailData.body !== twilioData?.TranscriptionText) {
     bodyParts.push(`\n\nEmail: ${emailData.body}`);
   }
   if (mergedContent.actionItems.length > 0) {
     bodyParts.push(`\n\nAction Items:\n- ${mergedContent.actionItems.join('\n- ')}`);
   }
   const fullBody = bodyParts.join('') || 'After-hours message received. Callback required.';
+
+  // Determine the called number (which TCDS line was dialed)
+  const calledNumber = parsedData?.calledNumber
+    ? `+1${parsedData.calledNumber}`
+    : process.env.TWILIO_PHONE_NUMBER || "";
+
+  // Use parsed urgency or AI-determined urgency
+  const isUrgent = parsedData?.isUrgent || mergedContent.urgency === "high";
 
   // Create an after-hours message for the pending review queue
   const [message] = await db
@@ -304,19 +595,29 @@ async function createAfterHoursTriageItem(
       tenantId,
       type: "sms", // Using SMS type for voicemail/after-hours messages
       direction: "inbound",
-      fromNumber: phone,
-      toNumber: process.env.TWILIO_PHONE_NUMBER || "",
+      fromNumber: phone, // Now contains caller's actual phone, not email sender
+      toNumber: calledNumber,
       body: fullBody,
       externalId: twilioData?.CallSid || `after_hours_${Date.now()}`,
       status: "received",
       isAfterHours: true,
       isAcknowledged: false,
-      contactName: emailData.fromName || undefined,
+      // Use matched customer name or parsed name
+      contactName: customerName || parsedData?.name || emailData.fromName || undefined,
       contactType: "customer",
+      // Store customer match info if available
+      customerId: customerId || undefined,
     })
     .returning();
 
-  console.log(`[After-Hours] Created after-hours message ${message.id}`);
+  console.log(`[After-Hours] Created after-hours message ${message.id}`, {
+    phone,
+    customerName,
+    customerId,
+    agencyzoomId,
+    isUrgent,
+    urgencyKeywords: parsedData?.urgencyKeywords,
+  });
 
   return message;
 }
@@ -334,38 +635,55 @@ interface MergedContent {
 
 async function mergeContentWithAI(
   emailData: AfterHoursEmailPayload,
-  twilioData: TwilioTranscriptPayload | null
+  twilioData: TwilioTranscriptPayload | null,
+  parsedData?: ReceptionHQExtraction | null
 ): Promise<MergedContent> {
   const openaiKey = process.env.OPENAI_API_KEY;
+
+  // If we already detected urgency via keywords, use that
+  const preDetectedUrgency = parsedData?.isUrgent ? "high" : null;
 
   if (!openaiKey) {
     // No AI available, return basic summary
     return {
-      summary: buildBasicSummary(emailData, twilioData),
+      summary: buildBasicSummary(emailData, twilioData, parsedData),
       actionItems: ["Return call when office opens"],
       callbackRequired: true,
-      urgency: "medium",
+      urgency: preDetectedUrgency || "medium",
     };
   }
 
   try {
     const openai = new OpenAI({ apiKey: openaiKey });
 
-    const prompt = `Analyze this after-hours contact and provide a merged summary.
+    // Build prompt with parsed data if available
+    let callerInfo = "";
+    if (parsedData) {
+      callerInfo = `
+CALLER INFORMATION (parsed from ReceptionHQ):
+Name: ${parsedData.name || "Unknown"}
+Phone: ${parsedData.phone || "Unknown"}
+Reason for Call: ${parsedData.reason || "Not provided"}
+Called Number: ${parsedData.calledNumber || "Unknown"}
+${parsedData.isUrgent ? `\n⚠️ URGENCY DETECTED - Keywords found: ${parsedData.urgencyKeywords.join(", ")}` : ""}
+`;
+    }
 
+    const prompt = `Analyze this after-hours contact and provide a merged summary.
+${callerInfo}
 EMAIL NOTIFICATION:
 From: ${emailData.fromName || emailData.from || "Unknown"}
 Subject: ${emailData.subject || "No subject"}
-Body: ${emailData.body || emailData.emailTranscript || "No content"}
+Body: ${parsedData?.reason || emailData.body || emailData.emailTranscript || "No content"}
 
 ${twilioData?.TranscriptionText ? `VOICEMAIL TRANSCRIPT:
 ${twilioData.TranscriptionText}` : "No voicemail transcript available."}
 
 Provide a JSON response with:
-1. "summary": A brief 2-3 sentence summary combining all information
-2. "actionItems": Array of specific action items (e.g., "Return call about auto claim", "Check policy renewal date")
+1. "summary": A brief 2-3 sentence summary combining all information. Start with the caller's name if known.
+2. "actionItems": Array of specific action items (e.g., "Return call to [Name] about auto claim", "Check policy renewal date")
 3. "callbackRequired": true/false - whether this requires a callback
-4. "urgency": "low", "medium", or "high" based on content (claims/accidents are high, general inquiries are low)
+4. "urgency": "low", "medium", or "high" based on content (claims/accidents/emergencies are high, general inquiries are low)
 
 Focus on what the customer needs and any time-sensitive matters.`;
 
@@ -384,43 +702,59 @@ Focus on what the customer needs and any time-sensitive matters.`;
 
     const result = JSON.parse(response.choices[0]?.message?.content || "{}");
 
+    // Use pre-detected urgency if it was high, otherwise use AI result
+    const finalUrgency = preDetectedUrgency === "high" ? "high" : (result.urgency || "medium");
+
     return {
-      summary: result.summary || buildBasicSummary(emailData, twilioData),
+      summary: result.summary || buildBasicSummary(emailData, twilioData, parsedData),
       actionItems: result.actionItems || ["Return call when office opens"],
       callbackRequired: result.callbackRequired ?? true,
-      urgency: result.urgency || "medium",
+      urgency: finalUrgency,
     };
   } catch (error) {
     console.error("[After-Hours] AI merge failed:", error);
     return {
-      summary: buildBasicSummary(emailData, twilioData),
+      summary: buildBasicSummary(emailData, twilioData, parsedData),
       actionItems: ["Return call when office opens"],
       callbackRequired: true,
-      urgency: "medium",
+      urgency: preDetectedUrgency || "medium",
     };
   }
 }
 
 function buildBasicSummary(
   emailData: AfterHoursEmailPayload,
-  twilioData: TwilioTranscriptPayload | null
+  twilioData: TwilioTranscriptPayload | null,
+  parsedData?: ReceptionHQExtraction | null
 ): string {
   const parts: string[] = [];
 
-  if (emailData.fromName) {
+  // Use parsed name if available
+  if (parsedData?.name) {
+    parts.push(`Contact from ${parsedData.name}.`);
+  } else if (emailData.fromName) {
     parts.push(`Contact from ${emailData.fromName}.`);
   }
 
-  if (emailData.subject) {
-    parts.push(`Subject: ${emailData.subject}.`);
-  }
-
-  if (emailData.body) {
-    parts.push(emailData.body.substring(0, 200));
+  // Use parsed reason if available
+  if (parsedData?.reason) {
+    parts.push(parsedData.reason.substring(0, 300));
+  } else {
+    if (emailData.subject) {
+      parts.push(`Subject: ${emailData.subject}.`);
+    }
+    if (emailData.body) {
+      parts.push(emailData.body.substring(0, 200));
+    }
   }
 
   if (twilioData?.TranscriptionText) {
     parts.push(`Voicemail: "${twilioData.TranscriptionText.substring(0, 200)}..."`);
+  }
+
+  // Add urgency note if detected
+  if (parsedData?.isUrgent) {
+    parts.push(`[URGENT: ${parsedData.urgencyKeywords.join(", ")}]`);
   }
 
   return parts.join(" ") || "After-hours message received. Callback required.";
