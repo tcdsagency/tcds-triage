@@ -113,6 +113,17 @@ export default function SameDayPaymentPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [stats, setStats] = useState({ total: 0, pending: 0, processed: 0, failed: 0 });
 
+  // Bank validation state
+  const [bankInfo, setBankInfo] = useState<{
+    bankName: string;
+    brandName: string;
+    state: string;
+    supportsAch: boolean;
+  } | null>(null);
+  const [bankValidating, setBankValidating] = useState(false);
+  const [bankError, setBankError] = useState<string | null>(null);
+  const [bankConfirmed, setBankConfirmed] = useState(false);
+
   // Fetch current user on mount
   useEffect(() => {
     fetch('/api/auth/me')
@@ -132,6 +143,49 @@ export default function SameDayPaymentPage() {
         setUserLoaded(true);
       });
   }, []);
+
+  // Validate bank routing number when it reaches 9 digits
+  useEffect(() => {
+    if (formData.routingNumber.length !== 9) {
+      setBankInfo(null);
+      setBankError(null);
+      setBankConfirmed(false);
+      return;
+    }
+
+    const validateRouting = async () => {
+      setBankValidating(true);
+      setBankError(null);
+      setBankConfirmed(false);
+
+      try {
+        const res = await fetch(`/api/bank/validate-routing?routingNumber=${formData.routingNumber}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          setBankError(data.error || "Invalid routing number");
+          setBankInfo(null);
+        } else if (!data.supportsAch) {
+          setBankError("This routing number does not support ACH transfers");
+          setBankInfo(null);
+        } else {
+          setBankInfo({
+            bankName: data.bankName,
+            brandName: data.brandName,
+            state: data.state,
+            supportsAch: data.supportsAch,
+          });
+        }
+      } catch (error) {
+        setBankError("Failed to validate routing number");
+        setBankInfo(null);
+      } finally {
+        setBankValidating(false);
+      }
+    };
+
+    validateRouting();
+  }, [formData.routingNumber]);
 
   // ==========================================================================
   // COMPUTED VALUES
@@ -559,6 +613,14 @@ export default function SameDayPaymentPage() {
                           : `ACH ending in ${formData.accountNumber.slice(-4)}`}
                       </span>
                     </div>
+                    {formData.paymentType === "checking" && bankInfo && (
+                      <div className="flex justify-between border-b pb-2">
+                        <span className="text-gray-600">Bank:</span>
+                        <span className="font-medium text-green-700">
+                          {bankInfo.brandName || bankInfo.bankName} &#10003;
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between pt-2 text-lg">
                       <span className="font-semibold">Total Amount:</span>
                       <span className="font-bold text-emerald-600">${amount.toFixed(2)}</span>
@@ -797,15 +859,29 @@ export default function SameDayPaymentPage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Routing Number *
                       </label>
-                      <input
-                        type="text"
-                        value={formData.routingNumber}
-                        onChange={(e) => handleInputChange("routingNumber", e.target.value.replace(/\D/g, ""))}
-                        maxLength={9}
-                        required
-                        className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                        placeholder="123456789"
-                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={formData.routingNumber}
+                          onChange={(e) => handleInputChange("routingNumber", e.target.value.replace(/\D/g, ""))}
+                          maxLength={9}
+                          required
+                          className={cn(
+                            "w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500",
+                            bankError && "border-red-300 bg-red-50",
+                            bankInfo && bankConfirmed && "border-green-300 bg-green-50"
+                          )}
+                          placeholder="123456789"
+                        />
+                        {bankValidating && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <span className="animate-spin text-emerald-500">&#8987;</span>
+                          </div>
+                        )}
+                      </div>
+                      {bankError && (
+                        <p className="mt-1 text-sm text-red-600">{bankError}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -821,6 +897,54 @@ export default function SameDayPaymentPage() {
                       />
                     </div>
                   </div>
+
+                  {/* Bank Verification */}
+                  {bankInfo && !bankConfirmed && (
+                    <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <div className="flex items-start gap-3">
+                        <span className="text-amber-500 text-xl">&#127974;</span>
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">
+                            Please confirm this is the correct bank:
+                          </p>
+                          <p className="text-lg font-semibold text-emerald-700 mt-1">
+                            {bankInfo.brandName || bankInfo.bankName}
+                          </p>
+                          {bankInfo.state && (
+                            <p className="text-sm text-gray-500">State: {bankInfo.state}</p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setBankConfirmed(true)}
+                            className="mt-2 px-4 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
+                          >
+                            &#10003; Yes, this is correct
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bank Confirmed */}
+                  {bankInfo && bankConfirmed && (
+                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <span className="text-green-600 text-xl">&#10003;</span>
+                        <div>
+                          <p className="font-medium text-green-700">
+                            Bank verified: {bankInfo.brandName || bankInfo.bankName}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setBankConfirmed(false)}
+                          className="ml-auto text-sm text-gray-500 hover:text-gray-700"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -866,16 +990,21 @@ export default function SameDayPaymentPage() {
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={submitting || amount <= 0}
+                disabled={submitting || amount <= 0 || (formData.paymentType === "checking" && (!bankInfo || !bankConfirmed))}
                 className={cn(
                   "w-full py-3 rounded-lg font-medium text-white transition-colors",
-                  submitting || amount <= 0
+                  submitting || amount <= 0 || (formData.paymentType === "checking" && (!bankInfo || !bankConfirmed))
                     ? "bg-gray-400 cursor-not-allowed"
                     : "bg-emerald-600 hover:bg-emerald-700"
                 )}
               >
                 {submitting ? "Submitting..." : "Submit Payment"}
               </button>
+              {formData.paymentType === "checking" && formData.routingNumber.length === 9 && !bankConfirmed && !bankError && (
+                <p className="mt-2 text-sm text-amber-600 text-center">
+                  Please confirm the bank name above before submitting
+                </p>
+              )}
             </form>
           </div>
         ) : (
