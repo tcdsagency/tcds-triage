@@ -883,7 +883,13 @@ export const calls = pgTable('calls', {
   
   // External Reference
   externalCallId: varchar('external_call_id', { length: 100 }), // Twilio/3CX ID
-  
+  extension: varchar('extension', { length: 10 }), // Agent extension for call correlation
+
+  // Transcription Status
+  transcriptionStatus: varchar('transcription_status', { length: 20 }).$type<'pending' | 'starting' | 'active' | 'failed' | 'completed'>(),
+  transcriptionError: text('transcription_error'), // Error message if transcription failed
+  transcriptionSegmentCount: integer('transcription_segment_count').default(0), // Live segment count
+
   // Timing
   startedAt: timestamp('started_at').defaultNow(),
   answeredAt: timestamp('answered_at'),
@@ -934,6 +940,7 @@ export const calls = pgTable('calls', {
   index('calls_agent_idx').on(table.agentId),
   index('calls_from_idx').on(table.tenantId, table.fromNumber),
   index('calls_started_idx').on(table.tenantId, table.startedAt),
+  index('calls_extension_idx').on(table.tenantId, table.extension),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1510,9 +1517,14 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   needsPhoneUpdate: boolean('needs_phone_update').default(false),
   phoneUpdateAcknowledgedAt: timestamp('phone_update_acknowledged_at'),
   phoneUpdateNote: text('phone_update_note'),
-  
+
+  // Auto-void tracking (hangups, short calls)
+  isAutoVoided: boolean('is_auto_voided').default(false),
+  autoVoidReason: text('auto_void_reason'), // 'short_call', 'hangup', etc.
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   completedAt: timestamp('completed_at'),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
   uniqueIndex('wrapup_drafts_call_unique').on(table.callId),
   index('wrapup_drafts_status_idx').on(table.tenantId, table.status),

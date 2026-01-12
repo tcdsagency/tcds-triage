@@ -65,13 +65,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update call record with answering agent and status
+    // Update call record with answering agent, status, and extension
     await db
       .update(calls)
       .set({
         status: "in_progress",
         agentId: agentId || existingCall.agentId,
         answeredAt: new Date(),
+        extension: extension || existingCall.extension, // Ensure extension is stored
+        transcriptionStatus: "starting", // About to start transcription
+        updatedAt: new Date(),
       })
       .where(eq(calls.id, existingCall.id));
 
@@ -82,9 +85,13 @@ export async function POST(request: NextRequest) {
     console.log(`[Call-Answered] Extension from request: ${extension || "NOT PROVIDED"}`);
     console.log(`[Call-Answered] Session ID: ${existingCall.id}`);
 
+    let transcriptionStarted = false;
+    let transcriptionError: string | null = null;
+
     if (!extension) {
       console.error(`[Call-Answered] Cannot start transcription: No extension provided in request!`);
       console.error(`[Call-Answered] Request body:`, JSON.stringify(body, null, 2));
+      transcriptionError = "No extension provided";
     } else {
       try {
         const vmBridge = await getVMBridgeClient();
@@ -97,21 +104,35 @@ export async function POST(request: NextRequest) {
 
           if (session) {
             console.log(`[Call-Answered] Transcription started successfully:`, JSON.stringify(session, null, 2));
+            transcriptionStarted = true;
           } else {
             console.warn(`[Call-Answered] Transcription start returned null`);
+            transcriptionError = "VM Bridge returned null";
           }
         } else {
           console.warn(`[Call-Answered] VM Bridge not configured - transcription skipped`);
           console.warn(`[Call-Answered] VMBRIDGE_URL:`, process.env.VMBRIDGE_URL ? "SET" : "NOT SET");
           console.warn(`[Call-Answered] DEEPGRAM_API_KEY:`, process.env.DEEPGRAM_API_KEY ? "SET" : "NOT SET");
+          transcriptionError = "VM Bridge not configured";
         }
-      } catch (transcriptionError) {
-        console.error(`[Call-Answered] Failed to start transcription:`, transcriptionError);
-        console.error(`[Call-Answered] Error details:`, transcriptionError instanceof Error ? transcriptionError.message : String(transcriptionError));
-        // Don't fail the webhook - transcription is optional
+      } catch (err) {
+        console.error(`[Call-Answered] Failed to start transcription:`, err);
+        console.error(`[Call-Answered] Error details:`, err instanceof Error ? err.message : String(err));
+        transcriptionError = err instanceof Error ? err.message : String(err);
       }
     }
-    console.log(`[Call-Answered] ========== TRANSCRIPTION START COMPLETE ==========`);
+
+    // Update transcription status based on result
+    await db
+      .update(calls)
+      .set({
+        transcriptionStatus: transcriptionStarted ? "active" : "failed",
+        transcriptionError: transcriptionError,
+        updatedAt: new Date(),
+      })
+      .where(eq(calls.id, existingCall.id));
+
+    console.log(`[Call-Answered] ========== TRANSCRIPTION START COMPLETE (success: ${transcriptionStarted}) ==========`);
 
     // Broadcast to realtime server
     await notifyRealtimeServer({
@@ -130,6 +151,8 @@ export async function POST(request: NextRequest) {
       agentId,
       agentName,
       status: "in_progress",
+      transcriptionStarted,
+      transcriptionError,
     });
   } catch (error) {
     console.error("[Call-Answered] Error:", error);

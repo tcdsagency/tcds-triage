@@ -602,13 +602,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 3.5 Auto-void short calls and hangups
+    // 3.5 Detect short calls and hangups (but don't skip wrapup creation)
     const isShortCall = (body.duration || 0) < 15; // Less than 15 seconds
     const isHangup = analysis?.isHangup || isShortCall;
+    const hangupReason = isShortCall ? "short_call" : (analysis?.isHangup ? "hangup" : null);
 
     if (isHangup) {
-      const hangupReason = isShortCall ? "short_call" : "hangup";
-      console.log(`[Call-Completed] Auto-voiding call: ${hangupReason} (duration: ${body.duration}s)`);
+      console.log(`[Call-Completed] Detected hangup/short call: ${hangupReason} (duration: ${body.duration}s)`);
 
       await db
         .update(calls)
@@ -616,20 +616,32 @@ export async function POST(request: NextRequest) {
           disposition: "hangup",
           aiSummary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),
           predictedReason: hangupReason,
+          transcriptionStatus: "completed",
+          updatedAt: new Date(),
+        })
+        .where(eq(calls.id, call.id));
+    } else {
+      // Mark transcription as completed for normal calls
+      await db
+        .update(calls)
+        .set({
+          transcriptionStatus: "completed",
+          updatedAt: new Date(),
         })
         .where(eq(calls.id, call.id));
     }
 
-    // 4. Create wrap-up draft with customer matching (skip hangups)
+    // 4. Create wrap-up draft with customer matching (for ALL calls, including hangups for QA)
     let wrapupId: string | null = null;
     let customerMatchStatus: "matched" | "multiple_matches" | "unmatched" = "unmatched";
     let matchedAzCustomerId: string | null = null;
     let trestleData: Record<string, unknown> | null = null;
 
-    if (analysis && !isHangup) {
+    // Create wrapup for calls with analysis OR hangups (for QA review)
+    if (analysis || isHangup) {
       // Get customer phone from call direction
       const customerPhone = direction === "inbound" ? callerNumber : calledNumber;
-      const phoneForLookup = analysis.extractedData?.phone || customerPhone;
+      const phoneForLookup = analysis?.extractedData?.phone || customerPhone;
 
       // 4.1 AgencyZoom customer lookup (search both customers AND leads)
       let azMatches: AgencyZoomCustomer[] = [];
@@ -708,9 +720,13 @@ export async function POST(request: NextRequest) {
       }
 
       // 4.3 Create wrapup draft
-      const serviceRequestTypeId = getServiceRequestTypeId(analysis.serviceRequestType || analysis.callType);
+      const serviceRequestTypeId = analysis ? getServiceRequestTypeId(analysis.serviceRequestType || analysis.callType) : null;
       const trestlePersonName = (trestleData as { person?: { name?: string } } | null)?.person?.name;
       const trestleEmails = (trestleData as { emails?: string[] } | null)?.emails;
+
+      // For hangups without analysis, auto-void and mark as completed
+      const shouldAutoVoid = isHangup && !analysis;
+      const wrapupStatus = shouldAutoVoid ? "completed" : "pending_review";
 
       const [wrapup] = await db
         .insert(wrapupDrafts)
@@ -720,18 +736,18 @@ export async function POST(request: NextRequest) {
           direction: direction === "inbound" ? "Inbound" : "Outbound",
           agentExtension: extension,
           agentName: body.agentName,
-          summary: analysis.summary,
-          customerName: analysis.extractedData?.customerName || trestlePersonName,
+          summary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),
+          customerName: analysis?.extractedData?.customerName || trestlePersonName,
           customerPhone: phoneForLookup,
-          customerEmail: analysis.extractedData?.email || (trestleEmails && trestleEmails.length > 0 ? trestleEmails[0] : undefined),
-          requestType: analysis.callType,
-          status: "pending_review",
+          customerEmail: analysis?.extractedData?.email || (trestleEmails && trestleEmails.length > 0 ? trestleEmails[0] : undefined),
+          requestType: analysis?.callType || hangupReason,
+          status: wrapupStatus,
           matchStatus: customerMatchStatus,
           trestleData: trestleData,
-          aiCleanedSummary: analysis.summary,
-          aiProcessingStatus: "completed",
+          aiCleanedSummary: analysis?.summary,
+          aiProcessingStatus: analysis ? "completed" : "skipped",
           aiProcessedAt: new Date(),
-          aiExtraction: {
+          aiExtraction: analysis ? {
             actionItems: analysis.actionItems,
             extractedData: analysis.extractedData,
             sentiment: analysis.sentiment,
@@ -740,13 +756,15 @@ export async function POST(request: NextRequest) {
             agencyZoomCustomerId: matchedAzCustomerId,
             agencyZoomLeadId: matchedLeadId,
             matchType,
-          },
-          aiConfidence: "0.85",
+          } : null,
+          aiConfidence: analysis ? "0.85" : null,
+          isAutoVoided: shouldAutoVoid,
+          autoVoidReason: shouldAutoVoid ? hangupReason : null,
         })
         .returning();
 
       wrapupId = wrapup.id;
-      console.log(`[Call-Completed] Created wrap-up draft: ${wrapupId} (matchStatus: ${customerMatchStatus})`);
+      console.log(`[Call-Completed] Created wrap-up draft: ${wrapupId} (matchStatus: ${customerMatchStatus}${shouldAutoVoid ? ", auto-voided: " + hangupReason : ""})`);
 
       // 4.4 Store match suggestions for multiple matches (customers or leads)
       if (customerMatchStatus === "multiple_matches") {
