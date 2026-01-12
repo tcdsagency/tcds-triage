@@ -308,10 +308,10 @@ export function Header({ user }: HeaderProps) {
 
             {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 z-50 mt-2 w-80 origin-top-right rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5">
-                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <div className="absolute right-0 z-50 mt-2 w-80 origin-top-right rounded-lg bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-gray-700">
+                <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-gray-900">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                       Messages {unreadCount > 0 && `(${unreadCount})`}
                     </h3>
                     {isConnected ? (
@@ -337,15 +337,15 @@ export function Header({ user }: HeaderProps) {
                 <div className="max-h-80 overflow-y-auto">
                   {unreadMessages.length === 0 ? (
                     <div className="px-4 py-8 text-center">
-                      <MessageSquare className="mx-auto h-8 w-8 text-gray-300" />
-                      <p className="mt-2 text-sm text-gray-500">No unread messages</p>
+                      <MessageSquare className="mx-auto h-8 w-8 text-gray-300 dark:text-gray-600" />
+                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">No unread messages</p>
                     </div>
                   ) : (
-                    <ul className="divide-y divide-gray-100">
+                    <ul className="divide-y divide-gray-100 dark:divide-gray-700">
                       {unreadMessages.map((message) => (
                         <li
                           key={message.id}
-                          className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer"
+                          className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                           onClick={() => router.push('/messages')}
                         >
                           <div className="flex-shrink-0 mt-1">
@@ -354,19 +354,19 @@ export function Header({ user }: HeaderProps) {
                             </div>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
+                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                               {message.contactName || formatPhone(message.fromNumber)}
                             </p>
-                            <p className="text-sm text-gray-500 line-clamp-2">
+                            <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
                               {message.body}
                             </p>
-                            <p className="mt-1 text-xs text-gray-400">
+                            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                               {formatTime(message.createdAt)}
                             </p>
                           </div>
                           <button
                             onClick={(e) => handleAcknowledge(message.id, e)}
-                            className="flex-shrink-0 p-1 text-gray-400 hover:text-emerald-600 rounded"
+                            className="flex-shrink-0 p-1 text-gray-400 dark:text-gray-500 hover:text-emerald-600 dark:hover:text-emerald-400 rounded"
                             title="Mark as read"
                           >
                             <Check className="h-4 w-4" />
@@ -377,7 +377,7 @@ export function Header({ user }: HeaderProps) {
                   )}
                 </div>
 
-                <div className="border-t border-gray-200 px-4 py-3">
+                <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-3">
                   <button
                     onClick={() => {
                       router.push('/messages');
@@ -397,7 +397,7 @@ export function Header({ user }: HeaderProps) {
           <NotificationBell />
 
           {/* Separator */}
-          <div className="hidden lg:block lg:h-6 lg:w-px lg:bg-gray-200" />
+          <div className="hidden lg:block lg:h-6 lg:w-px lg:bg-gray-200 dark:lg:bg-gray-700" />
 
           {/* User menu */}
           <div className="relative">
@@ -425,17 +425,17 @@ export function Header({ user }: HeaderProps) {
                   </span>
                 </div>
                 {/* Status indicator */}
-                <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white ${
+                <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-gray-800 ${
                   userProfile?.isAvailable ? 'bg-green-500' : 'bg-gray-400'
                 }`} />
               </div>
               <span className="hidden lg:flex lg:flex-col lg:items-start">
-                <span className="text-sm font-medium text-gray-900">
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                   {userProfile?.firstName && userProfile?.lastName
                     ? `${userProfile.firstName} ${userProfile.lastName}`
                     : user.email}
                 </span>
-                <span className="text-xs text-gray-500 flex items-center gap-1">
+                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                   {userProfile?.directDial || userProfile?.phone || userProfile?.extension ? (
                     <>
                       <Phone className="h-3 w-3" />
@@ -450,17 +450,17 @@ export function Header({ user }: HeaderProps) {
 
             {/* Dropdown */}
             {showUserMenu && (
-              <div className="absolute right-0 z-10 mt-2.5 w-48 origin-top-right rounded-md bg-white py-2 shadow-lg ring-1 ring-gray-900/5">
+              <div className="absolute right-0 z-10 mt-2.5 w-48 origin-top-right rounded-md bg-white dark:bg-gray-800 py-2 shadow-lg ring-1 ring-gray-900/5 dark:ring-gray-700">
                 <a
                   href="/settings/profile"
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                   <User className="h-4 w-4" />
                   Your profile
                 </a>
                 <button
                   onClick={handleSignOut}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                   <LogOut className="h-4 w-4" />
                   Sign out
