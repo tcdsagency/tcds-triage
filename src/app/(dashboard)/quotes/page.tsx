@@ -181,7 +181,7 @@ export default function QuotesPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <Input placeholder="Search quotes..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white text-gray-900">
           <option value="all">All Status</option>
           <option value="draft">Draft</option>
           <option value="submitted">Submitted</option>
@@ -191,7 +191,7 @@ export default function QuotesPage() {
           <option value="declined">Declined</option>
           <option value="expired">Expired</option>
         </select>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white text-gray-900">
           <option value="all">All Types</option>
           <option value="personal_auto">Auto</option>
           <option value="homeowners">Homeowners</option>

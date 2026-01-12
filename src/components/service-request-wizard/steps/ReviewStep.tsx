@@ -243,7 +243,7 @@ export function ReviewStep() {
           rows={3}
           className={cn(
             'w-full px-3 py-2 rounded-lg border transition-colors',
-            'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100',
+            'bg-white text-gray-900',
             'border-gray-300 dark:border-gray-600',
             'focus:outline-none focus:ring-2 focus:ring-emerald-500'
           )}

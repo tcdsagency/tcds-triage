@@ -1068,7 +1068,7 @@ export default function AgencySettingsPage() {
                 <select
                   value={afterHours.timezone}
                   onChange={(e) => setAfterHours({ ...afterHours, timezone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white text-gray-900"
                 >
                   <option value="America/New_York">Eastern Time (ET)</option>
                   <option value="America/Chicago">Central Time (CT)</option>
@@ -1156,7 +1156,7 @@ export default function AgencySettingsPage() {
                   value={afterHours.autoReplyMessage}
                   onChange={(e) => setAfterHours({ ...afterHours, autoReplyMessage: e.target.value })}
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white resize-none"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white text-gray-900 resize-none"
                   placeholder="Enter the message to send when someone contacts you after hours..."
                 />
                 <p className="text-xs text-gray-500 mt-1">{afterHours.autoReplyMessage.length}/320 characters</p>
@@ -1169,7 +1169,7 @@ export default function AgencySettingsPage() {
                   <select
                     value={afterHours.cooldownHours}
                     onChange={(e) => setAfterHours({ ...afterHours, cooldownHours: parseInt(e.target.value) })}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white text-gray-900"
                   >
                     <option value={1}>1 hour</option>
                     <option value={2}>2 hours</option>
@@ -1304,7 +1304,7 @@ export default function AgencySettingsPage() {
               {/* JSON Import Modal */}
               {showJsonImport && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                  <div className="bg-white dark:bg-gray-900 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
+                  <div className="bg-white text-gray-900 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold">Import Credentials from JSON</h3>
                       <button onClick={() => setShowJsonImport(false)}>
@@ -1479,7 +1479,7 @@ export default function AgencySettingsPage() {
                                 [field.key]: e.target.value,
                               })}
                               placeholder={field.placeholder || (editingIntegration.values[field.key]?.isSet ? editingIntegration.values[field.key].maskedValue : "")}
-                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                             />
                             {field.type === "password" && (
                               <button
@@ -1966,7 +1966,7 @@ export default function AgencySettingsPage() {
                 <select
                   value={aiUsagePeriod}
                   onChange={(e) => setAiUsagePeriod(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white text-gray-900 text-sm"
                 >
                   <option value="7d">Last 7 Days</option>
                   <option value="30d">Last 30 Days</option>
@@ -2136,7 +2136,7 @@ export default function AgencySettingsPage() {
                       <div className="font-medium text-gray-900 dark:text-white">Session timeout</div>
                       <div className="text-sm text-gray-500">Automatically log out inactive users</div>
                     </div>
-                    <select className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                    <select className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white text-gray-900">
                       <option>30 minutes</option>
                       <option>1 hour</option>
                       <option>4 hours</option>
@@ -2250,7 +2250,7 @@ export default function AgencySettingsPage() {
                       <select
                         value={userFormData.role}
                         onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
-                        className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                        className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white text-gray-900"
                       >
                         <option value="agent">Agent</option>
                         <option value="csr">CSR</option>
@@ -2466,7 +2466,7 @@ export default function AgencySettingsPage() {
                 <select
                   value={templateForm.category}
                   onChange={(e) => setTemplateForm({ ...templateForm, category: e.target.value })}
-                  className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                  className="w-full h-10 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white text-gray-900"
                 >
                   <option value="general">General</option>
                   <option value="billing">Billing</option>
@@ -2482,7 +2482,7 @@ export default function AgencySettingsPage() {
                   value={templateForm.content}
                   onChange={(e) => setTemplateForm({ ...templateForm, content: e.target.value })}
                   rows={4}
-                  className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900"
+                  className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white text-gray-900"
                   placeholder="Hi {{customerName}}, this is {{agentName}} from TCDS Insurance..."
                 />
                 <p className="text-xs text-gray-500 mt-1">Use {"{{variableName}}"} for dynamic values like {"{{customerName}}"}, {"{{agentName}}"}, {"{{policyNumber}}"}</p>

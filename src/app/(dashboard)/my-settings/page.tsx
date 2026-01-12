@@ -327,7 +327,7 @@ export default function MySettingsPage() {
                     <select
                       value={preferences.defaultView}
                       onChange={(e) => setPreferences({ ...preferences, defaultView: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white text-gray-900"
                     >
                       <option value="dashboard">Dashboard</option>
                       <option value="triage">Triage Queue</option>

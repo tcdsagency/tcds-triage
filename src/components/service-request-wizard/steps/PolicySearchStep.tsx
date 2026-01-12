@@ -103,7 +103,7 @@ export function PolicySearchStep() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by name, policy number, phone, or email..."
-            className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100"
+            className="bg-white border-gray-300 text-gray-900"
             onKeyDown={(e) => e.key === 'Enter' && searchPolicies()}
           />
           <Button
