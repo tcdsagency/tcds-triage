@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import CustomerSearchModal from '@/components/features/CustomerSearchModal';
 
 // =============================================================================
 // TYPES
@@ -90,6 +92,9 @@ export default function AfterHoursQueuePage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [callbackNote, setCallbackNote] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  // Find Match modal state
+  const [findMatchItem, setFindMatchItem] = useState<AfterHoursItem | null>(null);
+  const [matchedCustomer, setMatchedCustomer] = useState<{ id: string; name: string; isLead?: boolean } | null>(null);
 
   // Fetch current user on mount
   useEffect(() => {
@@ -223,14 +228,133 @@ export default function AfterHoursQueuePage() {
         }),
       });
       if (res.ok) {
+        toast.success('Item dismissed');
         loadItems();
         setSelectedItem(null);
       }
     } catch (err) {
       console.error('Dismiss failed:', err);
+      toast.error('Failed to dismiss item');
     } finally {
       setActionLoading(null);
     }
+  };
+
+  // Post note to AgencyZoom
+  const handlePostNote = async (itemId: string, customerId: string, isLead?: boolean) => {
+    if (!currentUserId) return;
+    setActionLoading(itemId);
+    try {
+      const res = await fetch(`/api/triage/${itemId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'note',
+          customerId,
+          isLead,
+          noteContent: callbackNote || selectedItem?.description || 'After-hours callback completed',
+          userId: currentUserId
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Note posted to AgencyZoom');
+        loadItems();
+        setSelectedItem(null);
+        setCallbackNote('');
+        setMatchedCustomer(null);
+      } else {
+        toast.error(data.error || 'Failed to post note');
+      }
+    } catch (err) {
+      console.error('Post note failed:', err);
+      toast.error('Failed to post note');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Create service request
+  const handleCreateTicket = async (itemId: string, customerId: string, isLead?: boolean) => {
+    if (!currentUserId) return;
+    setActionLoading(itemId);
+    try {
+      const res = await fetch(`/api/triage/${itemId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'ticket',
+          customerId,
+          isLead,
+          noteContent: callbackNote || selectedItem?.description || 'After-hours callback request',
+          userId: currentUserId
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Service request created');
+        loadItems();
+        setSelectedItem(null);
+        setCallbackNote('');
+        setMatchedCustomer(null);
+      } else {
+        toast.error(data.error || 'Failed to create service request');
+      }
+    } catch (err) {
+      console.error('Create ticket failed:', err);
+      toast.error('Failed to create service request');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // NCM - No Customer Match
+  const handleNCM = async (itemId: string) => {
+    if (!currentUserId) return;
+    if (!confirm('This will create a service request in the "No Customer Match" queue. Continue?')) return;
+
+    setActionLoading(itemId);
+    try {
+      const res = await fetch(`/api/triage/${itemId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'ncm',
+          noteContent: callbackNote || selectedItem?.description,
+          userId: currentUserId
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Posted to No Customer Match queue');
+        loadItems();
+        setSelectedItem(null);
+        setCallbackNote('');
+      } else {
+        toast.error(data.error || 'Failed to create NCM request');
+      }
+    } catch (err) {
+      console.error('NCM failed:', err);
+      toast.error('Failed to create NCM request');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Handle customer match from search modal
+  const handleCustomerMatch = (customer: {
+    id: string;
+    agencyzoomId: string | null;
+    displayName: string;
+    isLead: boolean;
+  }) => {
+    // Use agencyzoomId for API calls, fall back to id if not available
+    setMatchedCustomer({
+      id: customer.agencyzoomId || customer.id,
+      name: customer.displayName,
+      isLead: customer.isLead
+    });
+    setFindMatchItem(null);
   };
 
   // =========================================================================
@@ -434,7 +558,26 @@ export default function AfterHoursQueuePage() {
 
               {/* Customer Info */}
               <div className="bg-white rounded-lg border p-4 mb-4">
-                {selectedItem.customer ? (
+                {/* Show matched customer from search */}
+                {matchedCustomer ? (
+                  <>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-green-600">✓</span>
+                      <span className="text-xs text-green-600 font-medium uppercase">
+                        Matched {matchedCustomer.isLead ? 'Lead' : 'Customer'}
+                      </span>
+                    </div>
+                    <div className="font-semibold text-lg text-gray-900">
+                      {matchedCustomer.name}
+                    </div>
+                    <button
+                      onClick={() => setMatchedCustomer(null)}
+                      className="text-xs text-gray-500 hover:text-gray-700 mt-1"
+                    >
+                      Clear match
+                    </button>
+                  </>
+                ) : selectedItem.customer ? (
                   <>
                     <div className="font-semibold text-lg text-gray-900">
                       {selectedItem.customer.name}
@@ -462,9 +605,14 @@ export default function AfterHoursQueuePage() {
                     <div className="text-gray-600 mt-1">
                       {selectedItem.title}
                     </div>
-                    <button className="mt-3 px-3 py-1.5 text-sm bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100">
-                      + Create Lead
-                    </button>
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={() => setFindMatchItem(selectedItem)}
+                        className="px-3 py-1.5 text-sm bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100"
+                      >
+                        🔍 Find Match
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
@@ -541,6 +689,46 @@ export default function AfterHoursQueuePage() {
                   >
                     {actionLoading === selectedItem.id ? 'Claiming...' : '📞 Claim & Call Back'}
                   </button>
+
+                  {/* Show action buttons if we have a customer match */}
+                  {(matchedCustomer || selectedItem.customer) && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handlePostNote(
+                          selectedItem.id,
+                          matchedCustomer?.id || selectedItem.customerId || '',
+                          matchedCustomer?.isLead
+                        )}
+                        disabled={actionLoading === selectedItem.id}
+                        className="flex-1 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 text-sm font-medium"
+                      >
+                        📝 Post Note
+                      </button>
+                      <button
+                        onClick={() => handleCreateTicket(
+                          selectedItem.id,
+                          matchedCustomer?.id || selectedItem.customerId || '',
+                          matchedCustomer?.isLead
+                        )}
+                        disabled={actionLoading === selectedItem.id}
+                        className="flex-1 px-3 py-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 text-sm font-medium"
+                      >
+                        🎫 Service Request
+                      </button>
+                    </div>
+                  )}
+
+                  {/* NCM option for unmatched callers */}
+                  {!matchedCustomer && !selectedItem.customer && (
+                    <button
+                      onClick={() => handleNCM(selectedItem.id)}
+                      disabled={actionLoading === selectedItem.id}
+                      className="w-full px-4 py-2 bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 text-sm font-medium"
+                    >
+                      📋 NCM (No Customer Match)
+                    </button>
+                  )}
+
                   <button
                     onClick={() => handleDismiss(selectedItem.id)}
                     disabled={actionLoading === selectedItem.id}
@@ -553,6 +741,45 @@ export default function AfterHoursQueuePage() {
 
               {selectedItem.status === 'in_progress' && (
                 <>
+                  {/* Show action buttons if we have a customer match */}
+                  {(matchedCustomer || selectedItem.customer) && (
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        onClick={() => handlePostNote(
+                          selectedItem.id,
+                          matchedCustomer?.id || selectedItem.customerId || '',
+                          matchedCustomer?.isLead
+                        )}
+                        disabled={actionLoading === selectedItem.id}
+                        className="flex-1 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 text-sm font-medium"
+                      >
+                        📝 Post Note
+                      </button>
+                      <button
+                        onClick={() => handleCreateTicket(
+                          selectedItem.id,
+                          matchedCustomer?.id || selectedItem.customerId || '',
+                          matchedCustomer?.isLead
+                        )}
+                        disabled={actionLoading === selectedItem.id}
+                        className="flex-1 px-3 py-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 text-sm font-medium"
+                      >
+                        🎫 Service Request
+                      </button>
+                    </div>
+                  )}
+
+                  {/* NCM option for unmatched callers */}
+                  {!matchedCustomer && !selectedItem.customer && (
+                    <button
+                      onClick={() => handleNCM(selectedItem.id)}
+                      disabled={actionLoading === selectedItem.id}
+                      className="w-full px-4 py-2 mb-2 bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 text-sm font-medium"
+                    >
+                      📋 NCM (No Customer Match)
+                    </button>
+                  )}
+
                   <button
                     onClick={() => handleResolve(selectedItem.id, callbackNote || 'Callback completed')}
                     disabled={actionLoading === selectedItem.id}
@@ -562,13 +789,13 @@ export default function AfterHoursQueuePage() {
                   </button>
                   <div className="flex gap-2">
                     <a
-                      href={`tel:${selectedItem.customer?.phone}`}
+                      href={`tel:${selectedItem.customer?.phone || selectedItem.title}`}
                       className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-center text-sm"
                     >
                       📞 Call
                     </a>
                     <a
-                      href={`sms:${selectedItem.customer?.phone}`}
+                      href={`sms:${selectedItem.customer?.phone || selectedItem.title}`}
                       className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-center text-sm"
                     >
                       💬 Text
@@ -587,6 +814,17 @@ export default function AfterHoursQueuePage() {
           </div>
         )}
       </div>
+
+      {/* Customer Search Modal */}
+      {findMatchItem && (
+        <CustomerSearchModal
+          isOpen={!!findMatchItem}
+          onClose={() => setFindMatchItem(null)}
+          onSelect={handleCustomerMatch}
+          initialPhone={findMatchItem.title}
+          title={`Find Match: ${findMatchItem.title}`}
+        />
+      )}
     </div>
   );
 }

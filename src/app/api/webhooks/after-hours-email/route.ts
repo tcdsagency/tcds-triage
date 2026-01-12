@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { messages, customers } from "@/db/schema";
+import { messages, customers, triageItems } from "@/db/schema";
 import { eq, and, or, gte, desc, ilike } from "drizzle-orm";
 import OpenAI from "openai";
 
@@ -610,7 +610,29 @@ async function createAfterHoursTriageItem(
     })
     .returning();
 
-  console.log(`[After-Hours] Created after-hours message ${message.id}`, {
+  // Also create a triage item for the after-hours queue
+  const displayName = customerName || parsedData?.name || phone;
+  const [triageItem] = await db
+    .insert(triageItems)
+    .values({
+      tenantId,
+      type: "after_hours",
+      status: "pending",
+      priority: isUrgent ? "urgent" : "medium",
+      title: displayName,
+      description: parsedData?.reason || emailData.body || "After-hours call received",
+      aiSummary: mergedContent.summary,
+      aiPriorityReason: isUrgent
+        ? `Urgency keywords detected: ${parsedData?.urgencyKeywords?.join(", ")}`
+        : undefined,
+      customerId: customerId || undefined,
+      messageId: message.id,
+      // Set SLA - after-hours items should be addressed within 8 hours (next business day)
+      dueAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
+    })
+    .returning();
+
+  console.log(`[After-Hours] Created after-hours message ${message.id} and triage item ${triageItem.id}`, {
     phone,
     customerName,
     customerId,
