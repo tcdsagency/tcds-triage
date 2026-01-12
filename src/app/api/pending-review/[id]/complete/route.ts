@@ -414,6 +414,55 @@ export async function POST(
         }
       }
 
+      // Ticket - Create service request for matched customer
+      if (body.action === 'ticket' && customerId) {
+        const senderPhone = message.fromNumber || 'Unknown';
+        const senderName = message.contactName || 'Unknown Sender';
+        const messageBody = body.noteContent || message.body || 'No message content';
+
+        // Format the description with sender details
+        const description = [
+          messageBody,
+          '',
+          '--- Sender Information ---',
+          `Name: ${senderName}`,
+          `Phone: ${senderPhone}`,
+          '',
+          `Received: ${new Date(message.createdAt || Date.now()).toLocaleString('en-US', { timeZone: 'America/Chicago' })}`,
+        ].join('\n');
+
+        // Create service request via Zapier webhook
+        const serviceRequestPayload = {
+          customerId: customerId.toString(),
+          customerName: senderName,
+          customerEmail: null,
+          customerPhone: senderPhone,
+          customerType: 'customer' as const,
+          summary: description,
+          serviceRequestTypeName: body.ticketDetails?.subject || 'SMS Service Request',
+          assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007, // Default to Lee
+        };
+
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app');
+        const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(serviceRequestPayload),
+        });
+
+        const serviceResult = await serviceResponse.json();
+        if (serviceResult.success) {
+          await db
+            .update(messages)
+            .set({ isAcknowledged: true })
+            .where(eq(messages.id, itemId));
+
+          result = { success: true, action: "ticket", ticketId: serviceResult.ticketId, noteId: serviceResult.noteId };
+        } else {
+          return NextResponse.json({ error: serviceResult.error || "Failed to create service request" }, { status: 500 });
+        }
+      }
+
       // NCM - Post message to No Customer Match service request via Zapier
       if (body.action === 'ncm') {
         const ncmCustomerId = NCM_CUSTOMER_ID;
