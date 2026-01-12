@@ -393,6 +393,173 @@ export function ChangeFormStep() {
         );
 
       // =========================================================================
+      // REPLACE VEHICLE
+      // =========================================================================
+      case 'replace_vehicle':
+        const vehicleToReplace = policyVehicles.find(v => v.id === formData.selectedVehicleId);
+        return (
+          <div className="space-y-6">
+            {/* Vehicle Being Replaced */}
+            <FormSection icon={Car} title="Vehicle Being Replaced">
+              {loadingPolicyDetails ? (
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 py-4">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Loading policy vehicles...</span>
+                </div>
+              ) : policyVehicles.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormSelect
+                    label="Select Vehicle to Replace"
+                    value={formData.selectedVehicleId}
+                    onChange={(v) => {
+                      updateField('selectedVehicleId', v);
+                      const vehicle = policyVehicles.find(veh => veh.id === v);
+                      if (vehicle) {
+                        updateField('vehicleToRemove', vehicle.displayName);
+                      }
+                    }}
+                    options={[
+                      { value: '', label: 'Select a vehicle...' },
+                      ...policyVehicles.map((v) => ({
+                        value: v.id,
+                        label: v.displayName + (v.vin ? ` (${v.vin.slice(-6)})` : ''),
+                      })),
+                    ]}
+                    required
+                    className="sm:col-span-2"
+                  />
+                  {vehicleToReplace && (
+                    <div className="sm:col-span-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-sm">
+                      <p className="font-medium text-gray-900 dark:text-gray-100">{vehicleToReplace.displayName}</p>
+                      {vehicleToReplace.vin && (
+                        <p className="text-gray-500 dark:text-gray-400">VIN: {vehicleToReplace.vin}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    label="Vehicle Being Replaced"
+                    value={formData.vehicleToRemove}
+                    onChange={(v) => updateField('vehicleToRemove', v)}
+                    placeholder="2020 Toyota Camry"
+                    required
+                    className="sm:col-span-2"
+                  />
+                </div>
+              )}
+            </FormSection>
+
+            {/* New Vehicle Information */}
+            <FormSection icon={Car} title="New Vehicle Information">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    VIN <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={formData.vehicle.vin}
+                      onChange={(e) =>
+                        updateNestedField('vehicle', 'vin', e.target.value.toUpperCase())
+                      }
+                      placeholder="1HGCM82633A123456"
+                      maxLength={17}
+                      className="font-mono bg-white text-gray-900"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => decodeVin(formData.vehicle.vin)}
+                      disabled={formData.vehicle.vin.length !== 17 || vinDecoding}
+                    >
+                      {vinDecoding ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Search className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                <FormField
+                  label="Year"
+                  value={formData.vehicle.year}
+                  onChange={(v) => updateNestedField('vehicle', 'year', v)}
+                  placeholder="2024"
+                  required
+                  error={errors['vehicle.year']}
+                />
+                <FormField
+                  label="Make"
+                  value={formData.vehicle.make}
+                  onChange={(v) => updateNestedField('vehicle', 'make', v)}
+                  placeholder="Toyota"
+                  required
+                  error={errors['vehicle.make']}
+                />
+                <FormField
+                  label="Model"
+                  value={formData.vehicle.model}
+                  onChange={(v) => updateNestedField('vehicle', 'model', v)}
+                  placeholder="Camry"
+                  required
+                  error={errors['vehicle.model']}
+                />
+                <FormSelect
+                  label="Ownership"
+                  value={formData.vehicle.ownership}
+                  onChange={(v) => updateNestedField('vehicle', 'ownership', v)}
+                  options={OWNERSHIP_OPTIONS}
+                />
+                <FormSelect
+                  label="Primary Use"
+                  value={formData.vehicle.primaryUse}
+                  onChange={(v) => updateNestedField('vehicle', 'primaryUse', v)}
+                  options={VEHICLE_USE_OPTIONS}
+                />
+                <FormField
+                  label="Annual Mileage"
+                  value={formData.vehicle.annualMileage}
+                  onChange={(v) => updateNestedField('vehicle', 'annualMileage', v)}
+                  placeholder="12000"
+                />
+              </div>
+
+              {(formData.vehicle.ownership === 'financed' ||
+                formData.vehicle.ownership === 'leased') && (
+                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
+                    Lienholder Information
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField
+                      label="Lienholder Name"
+                      value={formData.vehicle.lienholderName}
+                      onChange={(v) => updateNestedField('vehicle', 'lienholderName', v)}
+                      placeholder="Chase Auto Finance"
+                      required
+                    />
+                    <FormField
+                      label="Lienholder Address (if available)"
+                      value={formData.vehicle.lienholderAddress}
+                      onChange={(v) => updateNestedField('vehicle', 'lienholderAddress', v)}
+                      placeholder="P.O. Box 12345, City, ST 12345"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <EffectiveDateField />
+              </div>
+            </FormSection>
+            <AgentAssistPanel tips={tips} showTips={showTips} setShowTips={setShowTips} />
+          </div>
+        );
+
+      // =========================================================================
       // ADD DRIVER
       // =========================================================================
       case 'add_driver':
