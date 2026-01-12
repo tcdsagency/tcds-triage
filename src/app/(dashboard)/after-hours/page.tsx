@@ -577,7 +577,7 @@ export default function AfterHoursQueuePage() {
                       Clear match
                     </button>
                   </>
-                ) : selectedItem.customer ? (
+                ) : selectedItem.customerId && selectedItem.customer ? (
                   <>
                     <div className="font-semibold text-lg text-gray-900">
                       {selectedItem.customer.name}
@@ -600,10 +600,10 @@ export default function AfterHoursQueuePage() {
                 ) : (
                   <>
                     <div className="font-semibold text-lg text-gray-900">
-                      Unknown Caller
+                      {selectedItem.customer?.name || selectedItem.title || 'Unknown Caller'}
                     </div>
                     <div className="text-gray-600 mt-1">
-                      {selectedItem.title}
+                      {selectedItem.customer?.phone || selectedItem.title}
                     </div>
                     <div className="flex gap-2 mt-3">
                       <button
@@ -690,8 +690,8 @@ export default function AfterHoursQueuePage() {
                     {actionLoading === selectedItem.id ? 'Claiming...' : '📞 Claim & Call Back'}
                   </button>
 
-                  {/* Show action buttons if we have a customer match */}
-                  {(matchedCustomer || selectedItem.customer) && (
+                  {/* Show action buttons if we have a real customer match (matched or has customerId) */}
+                  {(matchedCustomer || selectedItem.customerId) && (
                     <div className="flex gap-2">
                       <button
                         onClick={() => handlePostNote(
@@ -718,8 +718,8 @@ export default function AfterHoursQueuePage() {
                     </div>
                   )}
 
-                  {/* NCM option for unmatched callers */}
-                  {!matchedCustomer && !selectedItem.customer && (
+                  {/* NCM option for unmatched callers (no real customerId) */}
+                  {!matchedCustomer && !selectedItem.customerId && (
                     <button
                       onClick={() => handleNCM(selectedItem.id)}
                       disabled={actionLoading === selectedItem.id}
@@ -741,8 +741,8 @@ export default function AfterHoursQueuePage() {
 
               {selectedItem.status === 'in_progress' && (
                 <>
-                  {/* Show action buttons if we have a customer match */}
-                  {(matchedCustomer || selectedItem.customer) && (
+                  {/* Show action buttons if we have a real customer match */}
+                  {(matchedCustomer || selectedItem.customerId) && (
                     <div className="flex gap-2 mb-2">
                       <button
                         onClick={() => handlePostNote(
@@ -769,8 +769,8 @@ export default function AfterHoursQueuePage() {
                     </div>
                   )}
 
-                  {/* NCM option for unmatched callers */}
-                  {!matchedCustomer && !selectedItem.customer && (
+                  {/* NCM option for unmatched callers (no real customerId) */}
+                  {!matchedCustomer && !selectedItem.customerId && (
                     <button
                       onClick={() => handleNCM(selectedItem.id)}
                       disabled={actionLoading === selectedItem.id}
