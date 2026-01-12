@@ -126,63 +126,42 @@ export async function POST(
   try {
     const { id: contactId } = await params;
     const body: AddNoteRequest = await request.json();
-    
+
     if (!body.content || body.content.trim().length === 0) {
       return NextResponse.json({
         success: false,
         error: "Note content is required"
       }, { status: 400 });
     }
-    
-    const auth = getAgencyZoomAuth();
-    
-    // Create activity in AgencyZoom
-    const activityPayload = {
-      type: body.type || "Note",
-      subject: body.subject || "Note from TCDS",
-      notes: body.content.trim(),
-      activityDate: new Date().toISOString()
-    };
-    
-    const response = await fetch(
-      `https://app.agencyzoom.com/openapi/contacts/${contactId}/activities`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${auth}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(activityPayload)
-      }
-    );
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`AgencyZoom note creation failed: ${response.status}`, errorText);
+
+    // Use v1 API via AgencyZoom client (JWT auth)
+    const client = getAgencyZoomClient();
+    const result = await client.addNote(parseInt(contactId), body.content.trim());
+
+    if (!result.success) {
+      console.error(`AgencyZoom note creation failed for contact ${contactId}`);
       return NextResponse.json({
         success: false,
-        error: `Failed to create note: ${response.status}`
-      }, { status: response.status });
+        error: "Failed to create note in AgencyZoom"
+      }, { status: 500 });
     }
-    
-    const data = await response.json();
-    
+
     // Return the created note
     const note: Note = {
-      id: String(data.id || data.activityId || Date.now()),
+      id: String(result.id || Date.now()),
       content: body.content.trim(),
       subject: body.subject,
       createdAt: new Date().toISOString(),
       source: "agencyzoom"
     };
-    
-    const result: AddNoteResponse = {
+
+    const response: AddNoteResponse = {
       success: true,
       note
     };
-    
-    return NextResponse.json(result);
-    
+
+    return NextResponse.json(response);
+
   } catch (error) {
     console.error("Note creation error:", error);
     return NextResponse.json({
