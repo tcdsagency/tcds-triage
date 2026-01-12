@@ -153,10 +153,12 @@ export default function CustomerSearchModal({
               autoFocus
               className={cn(
                 'w-full px-4 py-3 pl-10 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
-                'border-gray-300 dark:border-gray-600',
+                'text-gray-900 bg-white',
+                'border-gray-300',
+                'placeholder:text-gray-400',
                 'focus:outline-none focus:ring-2 focus:ring-blue-500'
               )}
+              style={{ color: '#111827' }}
             />
             <svg
               className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
