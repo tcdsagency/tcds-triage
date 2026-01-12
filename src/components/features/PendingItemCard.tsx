@@ -69,6 +69,7 @@ export interface PendingItemCardProps {
   onQuickAction?: (action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'void' | 'ncm') => void;
   onReviewClick?: () => void;
   onFindMatch?: () => void;
+  onReportIssue?: () => void;
 }
 
 // =============================================================================
@@ -150,6 +151,7 @@ export default function PendingItemCard({
   onQuickAction,
   onReviewClick,
   onFindMatch,
+  onReportIssue,
 }: PendingItemCardProps) {
   const [showTranscript, setShowTranscript] = useState(false);
   const matchConfig = MATCH_STATUS_CONFIG[item.matchStatus] || MATCH_STATUS_CONFIG.unmatched;
@@ -447,6 +449,17 @@ export default function PendingItemCard({
           >
             Skip
           </button>
+
+          {/* Report Issue button */}
+          {onReportIssue && (
+            <button
+              onClick={onReportIssue}
+              className="px-3 py-1.5 text-xs rounded-lg font-medium text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+              title="Report an issue with this item for debugging"
+            >
+              Report Issue
+            </button>
+          )}
         </div>
       )}
     </div>

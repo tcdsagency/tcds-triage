@@ -168,8 +168,8 @@ export class VMBridgeClient {
         callId: threecxCallId || sessionId, // 3CX call ID for audio capture
         threecxCallId: threecxCallId || sessionId, // Alternative field name
         // Webhook URL where VM Bridge will POST transcript segments
-        webhookUrl: process.env.WEBHOOK_CALLBACK_URL ||
-          `https://tcds-triage.vercel.app/api/calls/${sessionId}/transcript/segment`,
+        // WEBHOOK_BASE_URL can be used to override the domain for testing
+        webhookUrl: `${process.env.WEBHOOK_BASE_URL || "https://tcds-triage.vercel.app"}/api/calls/${sessionId}/transcript/segment`,
         // Deepgram config
         deepgramApiKey: this.config.deepgramApiKey,
         options: {

@@ -8,6 +8,7 @@ import PendingCountsBar, { type PendingCounts } from '@/components/features/Pend
 import BulkActionBar from '@/components/features/BulkActionBar';
 import ReviewModal from '@/components/features/ReviewModal';
 import CustomerSearchModal from '@/components/features/CustomerSearchModal';
+import ReportIssueModal from '@/components/features/ReportIssueModal';
 
 // =============================================================================
 // TYPES
@@ -56,6 +57,8 @@ export default function PendingReviewPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [reviewModalItem, setReviewModalItem] = useState<PendingItem | null>(null);
   const [findMatchItem, setFindMatchItem] = useState<PendingItem | null>(null);
+  const [reportIssueItem, setReportIssueItem] = useState<PendingItem | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   // ==========================================================================
   // DATA FETCHING
@@ -170,14 +173,19 @@ export default function PendingReviewPage() {
           ncm: 'Posted to No Customer Match queue',
         };
         toast.success(actionMessages[action] || 'Action completed');
+        setLastError(null);
         // Update counts
         fetchItems();
       } else {
-        toast.error(data.error || 'Action failed');
+        const errorMsg = data.error || 'Action failed';
+        toast.error(errorMsg);
+        setLastError(errorMsg);
       }
     } catch (error) {
       console.error('Action error:', error);
-      toast.error('Failed to complete action');
+      const errorMsg = error instanceof Error ? error.message : 'Failed to complete action';
+      toast.error(errorMsg);
+      setLastError(errorMsg);
     } finally {
       setActionLoading(false);
     }
@@ -277,17 +285,23 @@ export default function PendingReviewPage() {
         );
         // Close modal
         setFindMatchItem(null);
+        setLastError(null);
         // Show success with reminder about phone number
         toast.success('Customer matched successfully', {
           description: data.reminder || 'Please verify the customer\'s phone number is correct in AgencyZoom.',
           duration: 8000,
         });
       } else {
-        toast.error(data.error || 'Match failed');
+        const errorMsg = data.error || 'Match failed';
+        toast.error(errorMsg);
+        setLastError(errorMsg);
+        // Keep modal open so user can report issue
       }
     } catch (error) {
       console.error('Match error:', error);
-      toast.error('Failed to match customer');
+      const errorMsg = error instanceof Error ? error.message : 'Failed to match customer';
+      toast.error(errorMsg);
+      setLastError(errorMsg);
     } finally {
       setActionLoading(false);
     }
@@ -465,6 +479,7 @@ export default function PendingReviewPage() {
               onQuickAction={(action) => handleQuickAction(item, action)}
               onReviewClick={() => setReviewModalItem(item)}
               onFindMatch={() => setFindMatchItem(item)}
+              onReportIssue={() => setReportIssueItem(item)}
             />
           ))}
         </div>
@@ -499,6 +514,19 @@ export default function PendingReviewPage() {
           onSelect={handleCustomerMatch}
           initialPhone={findMatchItem.contactPhone}
           title={`Find Match for ${findMatchItem.contactName || findMatchItem.contactPhone || 'Unknown'}`}
+        />
+      )}
+
+      {/* Report Issue Modal */}
+      {reportIssueItem && (
+        <ReportIssueModal
+          isOpen={!!reportIssueItem}
+          onClose={() => {
+            setReportIssueItem(null);
+            setLastError(null);
+          }}
+          item={reportIssueItem}
+          lastError={lastError || undefined}
         />
       )}
     </div>
