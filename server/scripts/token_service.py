@@ -20,6 +20,7 @@ Endpoints:
     GET /tokens/mmi - Get MMI Bearer token
     GET /tokens/rpr - Get RPR Bearer token
     POST /tokens/refresh - Force refresh all tokens
+    POST /tokens/mmi/2fa - Submit 2FA code for pending MMI session
 """
 
 import asyncio
@@ -28,9 +29,10 @@ import os
 import sys
 import time
 import threading
+import uuid
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import unquote
+from urllib.parse import unquote, parse_qs
 import traceback
 
 # Token storage
@@ -38,6 +40,9 @@ tokens = {
     "mmi": {"token": None, "expiresAt": 0, "lastError": None, "lastRefresh": None},
     "rpr": {"token": None, "expiresAt": 0, "lastError": None, "lastRefresh": None},
 }
+
+# Pending 2FA sessions - stores browser context waiting for 2FA
+pending_2fa_sessions = {}
 
 # Lock for thread safety
 token_lock = threading.Lock()
@@ -54,10 +59,67 @@ except ImportError:
     print("[TokenService] WARNING: Playwright not installed", file=sys.stderr)
 
 
-async def extract_mmi_token():
-    """Extract Bearer token from MMI login by capturing API request headers."""
+async def detect_2fa_challenge(page):
+    """Check if page shows 2FA/verification code input"""
+    # Common 2FA input selectors
+    twofa_selectors = [
+        'input[name="code"]',
+        'input[name="otp"]',
+        'input[name="2fa"]',
+        'input[name="verificationCode"]',
+        'input[placeholder*="code" i]',
+        'input[placeholder*="verification" i]',
+        'input[aria-label*="code" i]',
+        'input[aria-label*="verification" i]',
+        'input[type="tel"][maxlength="6"]',
+        'input[autocomplete="one-time-code"]',
+    ]
+
+    for selector in twofa_selectors:
+        try:
+            el = await page.query_selector(selector)
+            if el and await el.is_visible():
+                return True
+        except:
+            continue
+
+    # Also check for 2FA-related text on page
+    page_text = await page.inner_text("body")
+    page_lower = page_text.lower()
+    twofa_keywords = [
+        "verification code",
+        "two-factor",
+        "2fa",
+        "two factor",
+        "enter code",
+        "security code",
+        "authentication code",
+        "one-time password",
+        "one-time code",
+    ]
+
+    for keyword in twofa_keywords:
+        if keyword in page_lower:
+            return True
+
+    return False
+
+
+async def extract_mmi_token(session_id=None, twofa_code=None):
+    """
+    Extract Bearer token from MMI login by capturing API request headers.
+
+    If session_id and twofa_code provided, resume a pending 2FA session.
+    Otherwise, start fresh login.
+    """
+    global pending_2fa_sessions
+
     if not PLAYWRIGHT_AVAILABLE:
         return {"error": "Playwright not installed"}
+
+    # If resuming 2FA session
+    if session_id and twofa_code:
+        return await complete_2fa_session(session_id, twofa_code)
 
     email = os.environ.get("MMI_EMAIL", "")
     password = os.environ.get("MMI_PASSWORD", "")
@@ -66,9 +128,14 @@ async def extract_mmi_token():
         return {"error": "MMI_EMAIL and MMI_PASSWORD required"}
 
     captured_token = None
+    playwright_instance = None
+    browser = None
+    context = None
+    page = None
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
+    try:
+        playwright_instance = await async_playwright().start()
+        browser = await playwright_instance.chromium.launch(
             headless=True,
             args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
         )
@@ -93,115 +160,329 @@ async def extract_mmi_token():
 
         page.on("request", handle_request)
 
-        try:
-            print("[MMI] Navigating to login...", file=sys.stderr)
-            await page.goto("https://new.mmi.run/login", wait_until="networkidle", timeout=30000)
+        print("[MMI] Navigating to login...", file=sys.stderr)
+        await page.goto("https://new.mmi.run/login", wait_until="networkidle", timeout=30000)
 
-            await page.wait_for_selector('input[type="email"], input[name="email"]', timeout=10000)
+        await page.wait_for_selector('input[type="email"], input[name="email"]', timeout=10000)
 
-            print("[MMI] Entering credentials...", file=sys.stderr)
-            await page.fill('input[type="email"], input[name="email"]', email)
-            await page.fill('input[type="password"], input[name="password"]', password)
+        print("[MMI] Entering credentials...", file=sys.stderr)
+        await page.fill('input[type="email"], input[name="email"]', email)
+        await page.fill('input[type="password"], input[name="password"]', password)
 
-            # Try multiple submit button selectors
-            submit_selectors = [
-                'button[type="submit"]',
-                'button:has-text("Sign In")',
-                'button:has-text("Log In")',
-                'button:has-text("Login")',
-                'input[type="submit"]',
-                'button.login-button',
-                'button.submit-btn',
-                'form button',
-            ]
+        # Try multiple submit button selectors
+        submit_selectors = [
+            'button[type="submit"]',
+            'button:has-text("Sign In")',
+            'button:has-text("Log In")',
+            'button:has-text("Login")',
+            'input[type="submit"]',
+            'button.login-button',
+            'button.submit-btn',
+            'form button',
+        ]
 
-            clicked = False
-            for selector in submit_selectors:
-                try:
-                    btn = await page.query_selector(selector)
-                    if btn:
-                        await btn.click()
-                        clicked = True
-                        print(f"[MMI] Clicked button with selector: {selector}", file=sys.stderr)
-                        break
-                except:
-                    continue
+        clicked = False
+        for selector in submit_selectors:
+            try:
+                btn = await page.query_selector(selector)
+                if btn:
+                    await btn.click()
+                    clicked = True
+                    print(f"[MMI] Clicked button with selector: {selector}", file=sys.stderr)
+                    break
+            except:
+                continue
 
-            if not clicked:
-                # Try pressing Enter in password field
-                await page.press('input[type="password"]', 'Enter')
-                print("[MMI] Pressed Enter to submit", file=sys.stderr)
+        if not clicked:
+            # Try pressing Enter in password field
+            await page.press('input[type="password"]', 'Enter')
+            print("[MMI] Pressed Enter to submit", file=sys.stderr)
 
-            await page.wait_for_load_state("networkidle", timeout=15000)
-            await asyncio.sleep(3)
+        await page.wait_for_load_state("networkidle", timeout=15000)
+        await asyncio.sleep(3)
 
-            print(f"[MMI] After login URL: {page.url}", file=sys.stderr)
+        print(f"[MMI] After login URL: {page.url}", file=sys.stderr)
 
-            # If token not captured yet, navigate to dashboard to trigger API calls
-            if not captured_token:
-                print("[MMI] Token not captured from login, navigating to dashboard...", file=sys.stderr)
-                try:
-                    await page.goto("https://new.mmi.run/dashboard", wait_until="networkidle", timeout=20000)
-                    await asyncio.sleep(3)
-                except Exception as e:
-                    print(f"[MMI] Dashboard navigation failed: {e}", file=sys.stderr)
+        # Check for 2FA challenge
+        if await detect_2fa_challenge(page):
+            print("[MMI] 2FA challenge detected - storing session", file=sys.stderr)
 
-            # If still not captured, try property search page
-            if not captured_token:
-                print("[MMI] Trying property search page...", file=sys.stderr)
-                try:
-                    await page.goto("https://new.mmi.run/property-search", wait_until="networkidle", timeout=20000)
-                    await asyncio.sleep(3)
-                except Exception as e:
-                    print(f"[MMI] Property search navigation failed: {e}", file=sys.stderr)
+            # Generate session ID
+            new_session_id = str(uuid.uuid4())
 
-            # Check localStorage/sessionStorage for token
-            if not captured_token:
-                print("[MMI] Checking storage for token...", file=sys.stderr)
-                token_from_storage = await page.evaluate("""
-                    () => {
-                        const keys = ['token', 'accessToken', 'access_token', 'jwt', 'bearerToken', 'authToken', 'api_key'];
-                        for (const key of keys) {
-                            let t = localStorage.getItem(key) || sessionStorage.getItem(key);
-                            if (t && t.length > 20) return t;
-                        }
-                        // Check all localStorage for JWT-like tokens
-                        for (let i = 0; i < localStorage.length; i++) {
-                            const key = localStorage.key(i);
-                            const val = localStorage.getItem(key);
-                            if (val && val.startsWith('eyJ') && val.length > 50) return val;
-                        }
-                        return null;
+            # Store the browser context for later
+            pending_2fa_sessions[new_session_id] = {
+                "playwright": playwright_instance,
+                "browser": browser,
+                "context": context,
+                "page": page,
+                "created_at": datetime.now(),
+                "captured_token": None,
+            }
+
+            # Set up request handler for this session
+            async def session_request_handler(request):
+                auth = request.headers.get("authorization", "")
+                if auth.startswith("Bearer ") and "mmi.run" in request.url:
+                    token = auth.replace("Bearer ", "")
+                    if len(token) > 20:
+                        pending_2fa_sessions[new_session_id]["captured_token"] = token
+                        print(f"[MMI-2FA] Captured token from {request.url}", file=sys.stderr)
+
+            page.on("request", session_request_handler)
+
+            return {
+                "requires_2fa": True,
+                "session_id": new_session_id,
+                "message": "2FA verification required. Submit code via /tokens/mmi/2fa",
+            }
+
+        # If token not captured yet, navigate to dashboard to trigger API calls
+        if not captured_token:
+            print("[MMI] Token not captured from login, navigating to dashboard...", file=sys.stderr)
+            try:
+                await page.goto("https://new.mmi.run/dashboard", wait_until="networkidle", timeout=20000)
+                await asyncio.sleep(3)
+            except Exception as e:
+                print(f"[MMI] Dashboard navigation failed: {e}", file=sys.stderr)
+
+        # If still not captured, try property search page
+        if not captured_token:
+            print("[MMI] Trying property search page...", file=sys.stderr)
+            try:
+                await page.goto("https://new.mmi.run/property-search", wait_until="networkidle", timeout=20000)
+                await asyncio.sleep(3)
+            except Exception as e:
+                print(f"[MMI] Property search navigation failed: {e}", file=sys.stderr)
+
+        # Check localStorage/sessionStorage for token
+        if not captured_token:
+            print("[MMI] Checking storage for token...", file=sys.stderr)
+            token_from_storage = await page.evaluate("""
+                () => {
+                    const keys = ['token', 'accessToken', 'access_token', 'jwt', 'bearerToken', 'authToken', 'api_key'];
+                    for (const key of keys) {
+                        let t = localStorage.getItem(key) || sessionStorage.getItem(key);
+                        if (t && t.length > 20) return t;
                     }
-                """)
-                if token_from_storage:
-                    captured_token = token_from_storage
-                    print("[MMI] Found token in storage", file=sys.stderr)
+                    // Check all localStorage for JWT-like tokens
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        const val = localStorage.getItem(key);
+                        if (val && val.startsWith('eyJ') && val.length > 50) return val;
+                    }
+                    return null;
+                }
+            """)
+            if token_from_storage:
+                captured_token = token_from_storage
+                print("[MMI] Found token in storage", file=sys.stderr)
 
-            # Fall back to api_key cookie if no Bearer token captured
-            if not captured_token:
-                print("[MMI] Checking cookies for api_key...", file=sys.stderr)
-                cookies = await context.cookies()
-                api_key_cookie = next((c for c in cookies if c["name"] == "api_key"), None)
-                if api_key_cookie:
-                    captured_token = unquote(api_key_cookie["value"])
-                    print("[MMI] Found api_key cookie", file=sys.stderr)
+        # Fall back to api_key cookie if no Bearer token captured
+        if not captured_token:
+            print("[MMI] Checking cookies for api_key...", file=sys.stderr)
+            cookies = await context.cookies()
+            api_key_cookie = next((c for c in cookies if c["name"] == "api_key"), None)
+            if api_key_cookie:
+                captured_token = unquote(api_key_cookie["value"])
+                print("[MMI] Found api_key cookie", file=sys.stderr)
 
-            if not captured_token:
-                print(f"[MMI] Could not capture token. Final URL: {page.url}", file=sys.stderr)
-                return {"error": f"Could not capture token. URL: {page.url}"}
-
-            # Default 1 hour expiry
-            expires_at = int((datetime.now() + timedelta(hours=1, minutes=-5)).timestamp() * 1000)
-
-            print("[MMI] Token extracted successfully", file=sys.stderr)
-            return {"success": True, "token": captured_token, "expiresAt": expires_at}
-
-        except Exception as e:
-            traceback.print_exc()
-            return {"error": f"MMI extraction failed: {str(e)}"}
-        finally:
+        if not captured_token:
+            print(f"[MMI] Could not capture token. Final URL: {page.url}", file=sys.stderr)
             await browser.close()
+            await playwright_instance.stop()
+            return {"error": f"Could not capture token. URL: {page.url}"}
+
+        # Default 1 hour expiry
+        expires_at = int((datetime.now() + timedelta(hours=1, minutes=-5)).timestamp() * 1000)
+
+        print("[MMI] Token extracted successfully", file=sys.stderr)
+        await browser.close()
+        await playwright_instance.stop()
+        return {"success": True, "token": captured_token, "expiresAt": expires_at}
+
+    except Exception as e:
+        traceback.print_exc()
+        if browser:
+            try:
+                await browser.close()
+            except:
+                pass
+        if playwright_instance:
+            try:
+                await playwright_instance.stop()
+            except:
+                pass
+        return {"error": f"MMI extraction failed: {str(e)}"}
+
+
+async def complete_2fa_session(session_id: str, twofa_code: str):
+    """Complete a pending 2FA session by submitting the verification code"""
+    global pending_2fa_sessions
+
+    if session_id not in pending_2fa_sessions:
+        return {"error": "2FA session not found or expired"}
+
+    session = pending_2fa_sessions[session_id]
+    page = session["page"]
+    browser = session["browser"]
+    playwright_instance = session["playwright"]
+
+    try:
+        print(f"[MMI-2FA] Submitting 2FA code for session {session_id}", file=sys.stderr)
+
+        # Find and fill 2FA input
+        twofa_selectors = [
+            'input[name="code"]',
+            'input[name="otp"]',
+            'input[name="2fa"]',
+            'input[name="verificationCode"]',
+            'input[placeholder*="code" i]',
+            'input[placeholder*="verification" i]',
+            'input[aria-label*="code" i]',
+            'input[type="tel"][maxlength="6"]',
+            'input[autocomplete="one-time-code"]',
+        ]
+
+        filled = False
+        for selector in twofa_selectors:
+            try:
+                el = await page.query_selector(selector)
+                if el and await el.is_visible():
+                    await el.fill(twofa_code)
+                    print(f"[MMI-2FA] Filled code with selector: {selector}", file=sys.stderr)
+                    filled = True
+                    break
+            except:
+                continue
+
+        if not filled:
+            return {"error": "Could not find 2FA input field"}
+
+        # Submit the form
+        submit_selectors = [
+            'button[type="submit"]',
+            'button:has-text("Verify")',
+            'button:has-text("Submit")',
+            'button:has-text("Continue")',
+            'button:has-text("Confirm")',
+            'input[type="submit"]',
+        ]
+
+        submitted = False
+        for selector in submit_selectors:
+            try:
+                btn = await page.query_selector(selector)
+                if btn and await btn.is_visible():
+                    await btn.click()
+                    print(f"[MMI-2FA] Clicked submit: {selector}", file=sys.stderr)
+                    submitted = True
+                    break
+            except:
+                continue
+
+        if not submitted:
+            # Try pressing Enter
+            await page.keyboard.press("Enter")
+            print("[MMI-2FA] Pressed Enter to submit", file=sys.stderr)
+
+        # Wait for response
+        await page.wait_for_load_state("networkidle", timeout=30000)
+        await asyncio.sleep(3)
+
+        print(f"[MMI-2FA] After submit URL: {page.url}", file=sys.stderr)
+
+        # Check for error messages
+        error_selectors = ['.error', '.alert-error', '.text-red', '[role="alert"]']
+        for selector in error_selectors:
+            try:
+                err = await page.query_selector(selector)
+                if err and await err.is_visible():
+                    err_text = await err.inner_text()
+                    if "invalid" in err_text.lower() or "incorrect" in err_text.lower():
+                        return {"error": f"2FA code rejected: {err_text}"}
+            except:
+                continue
+
+        # Check if still on 2FA page
+        if await detect_2fa_challenge(page):
+            return {"error": "2FA code was not accepted - still on verification page"}
+
+        # Check for captured token
+        captured_token = session.get("captured_token")
+
+        # If not captured yet, navigate to trigger API calls
+        if not captured_token:
+            print("[MMI-2FA] Navigating to dashboard to capture token...", file=sys.stderr)
+            try:
+                await page.goto("https://new.mmi.run/dashboard", wait_until="networkidle", timeout=20000)
+                await asyncio.sleep(3)
+                captured_token = session.get("captured_token")
+            except Exception as e:
+                print(f"[MMI-2FA] Dashboard navigation failed: {e}", file=sys.stderr)
+
+        if not captured_token:
+            print("[MMI-2FA] Trying property search page...", file=sys.stderr)
+            try:
+                await page.goto("https://new.mmi.run/property-search", wait_until="networkidle", timeout=20000)
+                await asyncio.sleep(3)
+                captured_token = session.get("captured_token")
+            except Exception as e:
+                print(f"[MMI-2FA] Property search failed: {e}", file=sys.stderr)
+
+        # Check storage
+        if not captured_token:
+            print("[MMI-2FA] Checking storage for token...", file=sys.stderr)
+            token_from_storage = await page.evaluate("""
+                () => {
+                    const keys = ['token', 'accessToken', 'access_token', 'jwt', 'bearerToken', 'authToken', 'api_key'];
+                    for (const key of keys) {
+                        let t = localStorage.getItem(key) || sessionStorage.getItem(key);
+                        if (t && t.length > 20) return t;
+                    }
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        const val = localStorage.getItem(key);
+                        if (val && val.startsWith('eyJ') && val.length > 50) return val;
+                    }
+                    return null;
+                }
+            """)
+            if token_from_storage:
+                captured_token = token_from_storage
+                print("[MMI-2FA] Found token in storage", file=sys.stderr)
+
+        # Check cookies
+        if not captured_token:
+            cookies = await session["context"].cookies()
+            api_key_cookie = next((c for c in cookies if c["name"] == "api_key"), None)
+            if api_key_cookie:
+                captured_token = unquote(api_key_cookie["value"])
+                print("[MMI-2FA] Found api_key cookie", file=sys.stderr)
+
+        # Cleanup session
+        del pending_2fa_sessions[session_id]
+        await browser.close()
+        await playwright_instance.stop()
+
+        if not captured_token:
+            return {"error": "2FA completed but could not capture token"}
+
+        expires_at = int((datetime.now() + timedelta(hours=1, minutes=-5)).timestamp() * 1000)
+        print("[MMI-2FA] Token extracted successfully after 2FA", file=sys.stderr)
+
+        return {"success": True, "token": captured_token, "expiresAt": expires_at}
+
+    except Exception as e:
+        traceback.print_exc()
+        # Cleanup on error
+        try:
+            del pending_2fa_sessions[session_id]
+            await browser.close()
+            await playwright_instance.stop()
+        except:
+            pass
+        return {"error": f"2FA completion failed: {str(e)}"}
 
 
 async def extract_rpr_token():
@@ -547,6 +828,45 @@ class TokenHandler(BaseHTTPRequestHandler):
             self.send_json({
                 "mmi": mmi_result,
                 "rpr": rpr_result,
+            })
+        elif self.path == "/tokens/mmi/2fa":
+            # Handle 2FA code submission
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+
+            try:
+                data = json.loads(body)
+                session_id = data.get("session_id")
+                code = data.get("code")
+
+                if not session_id or not code:
+                    self.send_json({"error": "session_id and code required"}, 400)
+                    return
+
+                result = asyncio.run(extract_mmi_token(session_id=session_id, twofa_code=code))
+
+                if result.get("success"):
+                    # Update stored token
+                    with token_lock:
+                        tokens["mmi"] = {
+                            "token": result["token"],
+                            "expiresAt": result["expiresAt"],
+                            "lastError": None,
+                            "lastRefresh": datetime.now().isoformat(),
+                        }
+                    self.send_json(result)
+                else:
+                    self.send_json(result, 400 if "error" in result else 200)
+            except json.JSONDecodeError:
+                self.send_json({"error": "Invalid JSON"}, 400)
+            except Exception as e:
+                self.send_json({"error": str(e)}, 500)
+        elif self.path == "/tokens/mmi/2fa/status":
+            # Check pending 2FA sessions
+            pending = list(pending_2fa_sessions.keys())
+            self.send_json({
+                "pending_sessions": len(pending),
+                "session_ids": pending,
             })
         else:
             self.send_json({"error": "Not found"}, 404)

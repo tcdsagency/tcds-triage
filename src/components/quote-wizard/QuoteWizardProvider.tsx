@@ -370,6 +370,20 @@ export function QuoteWizardProvider({
   ]);
 
   // =============================================================================
+  // RESET FORM
+  // =============================================================================
+
+  const resetForm = useCallback(() => {
+    // Clear form data to initial state
+    setFormData(initialFormData);
+    setCurrentStep(0);
+    setErrors({});
+    setLastSaved(null);
+    // Clear localStorage
+    localStorage.removeItem(storageKey);
+  }, [storageKey]);
+
+  // =============================================================================
   // CONTEXT VALUE
   // =============================================================================
 
@@ -399,6 +413,7 @@ export function QuoteWizardProvider({
     eligibility: eligibility.result,
     saveAsDraft,
     submitQuote,
+    resetForm,
     isSaving,
     isSubmitting,
     lastSaved,

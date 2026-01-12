@@ -79,21 +79,33 @@ export async function GET(request: Request) {
       const name = formatFullName(customer.firstName, customer.lastName);
 
       // High churn risk (retention < 50%)
-      // Only alert if retention is a real value (not the 0.7 default)
-      // Real concerning values are typically < 0.5 and != 0.7
+      // Only alert if retention is a valid numeric value (not empty string, null, undefined, or 0.7 default)
+      // Note: DB may have empty strings despite the type definition
+      const rawRetention = donna.retentionProbability as unknown;
+      const retentionValue = typeof rawRetention === 'number'
+        ? rawRetention
+        : parseFloat(String(rawRetention || ''));
+
+      // Skip if retention is empty string, null, NaN, or the 0.7 default
+      const hasValidRetention =
+        rawRetention !== '' &&
+        rawRetention !== null &&
+        rawRetention !== undefined &&
+        !isNaN(retentionValue) &&
+        retentionValue !== 0.7;
+
       if (
         (alertType === 'all' || alertType === 'churn_risk') &&
-        donna.retentionProbability !== undefined &&
-        donna.retentionProbability < 0.5 &&
-        donna.retentionProbability !== 0.7 // Exclude default value
+        hasValidRetention &&
+        retentionValue < 0.5
       ) {
-        const churnRisk = Math.round((1 - donna.retentionProbability) * 100);
+        const churnRisk = Math.round((1 - retentionValue) * 100);
         alerts.push({
           customerId: customer.id,
           customerName: name,
           alertType: 'churn_risk',
-          value: donna.retentionProbability,
-          severity: donna.retentionProbability < 0.3 ? 'high' : 'medium',
+          value: retentionValue,
+          severity: retentionValue < 0.3 ? 'high' : 'medium',
           message: `${churnRisk}% churn risk`,
         });
       }
