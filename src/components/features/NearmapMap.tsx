@@ -27,6 +27,7 @@ interface NearmapMapProps {
   surveyDate?: string;
   overlays?: Overlays;
   onError?: () => void;
+  tileUrl?: string; // Server-provided tile URL with proper API key
 }
 
 // Overlay colors
@@ -38,7 +39,7 @@ const OVERLAY_COLORS = {
   building: { color: '#8B5CF6', fillColor: '#8B5CF6', name: 'Building' },
 };
 
-export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError }: NearmapMapProps) {
+export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError, tileUrl }: NearmapMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -60,10 +61,22 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError 
   });
 
   // Get Nearmap API key (strip any trailing \n that may be in env vars)
-  const nearmapKey = (process.env.NEXT_PUBLIC_NEARMAP_API_KEY || process.env.NEARMAP_API_KEY || '').replace(/\\n$/, '').trim();
+  const nearmapKey = (process.env.NEXT_PUBLIC_NEARMAP_API_KEY || '').trim();
 
   // Build tile URL with optional date parameter
+  // Prefer server-provided tileUrl (has proper API key for tiles)
   const getTileUrl = (date?: string) => {
+    // Use server-provided tile URL if available
+    if (tileUrl) {
+      let url = tileUrl;
+      if (date) {
+        const formattedDate = date.replace(/-/g, '');
+        url += (url.includes('?') ? '&' : '?') + `until=${formattedDate}`;
+      }
+      return url;
+    }
+    // Fallback to constructing URL with client-side key
+    if (!nearmapKey) return '';
     let url = `https://api.nearmap.com/tiles/v3/Vert/{z}/{x}/{y}.jpg?apikey=${nearmapKey}`;
     if (date) {
       const formattedDate = date.replace(/-/g, '');
@@ -71,6 +84,8 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError 
     }
     return url;
   };
+
+  const hasTileAccess = !!(tileUrl || nearmapKey);
 
   // Convert GeoJSON coordinates to Leaflet format (swap lat/lng)
   const convertCoords = (coords: number[][][]): L.LatLngExpression[][] => {
@@ -95,8 +110,8 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError 
     mapInstance.current = map;
 
     // Add base tile layer
-    if (nearmapKey) {
-      console.log('[NearmapMap] Using Nearmap tiles with key:', nearmapKey.substring(0, 10) + '...');
+    if (hasTileAccess) {
+      console.log('[NearmapMap] Using Nearmap tiles', tileUrl ? '(server-provided URL)' : 'with key: ' + nearmapKey.substring(0, 10) + '...');
       const nearmapLayer = L.tileLayer(getTileUrl(surveyDate), {
         maxZoom: 21,
         minZoom: 10,
@@ -161,7 +176,7 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError 
 
   // Update tile layer when surveyDate changes
   useEffect(() => {
-    if (mapInstance.current && tileLayerRef.current && nearmapKey && surveyDate !== currentDate) {
+    if (mapInstance.current && tileLayerRef.current && hasTileAccess && surveyDate !== currentDate) {
       setIsLoaded(false);
       setCurrentDate(surveyDate);
 
@@ -177,7 +192,7 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays, onError 
       newLayer.addTo(mapInstance.current);
       newLayer.on('load', () => setIsLoaded(true));
     }
-  }, [surveyDate, currentDate, nearmapKey]);
+  }, [surveyDate, currentDate, hasTileAccess]);
 
   // Update map center when coordinates change
   useEffect(() => {

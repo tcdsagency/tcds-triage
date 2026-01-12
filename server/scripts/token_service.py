@@ -61,31 +61,79 @@ except ImportError:
 
 async def detect_2fa_challenge(page):
     """Check if page shows 2FA/verification code input"""
+    # Log page state for debugging
+    page_text = ""
+    try:
+        page_text = await page.inner_text("body")
+        page_lower = page_text.lower()
+        print(f"[2FA-Detect] Page text length: {len(page_text)}", file=sys.stderr)
+        print(f"[2FA-Detect] First 500 chars: {page_text[:500]}", file=sys.stderr)
+    except Exception as e:
+        print(f"[2FA-Detect] Could not get page text: {e}", file=sys.stderr)
+        page_lower = ""
+
     # Common 2FA input selectors
     twofa_selectors = [
         'input[name="code"]',
         'input[name="otp"]',
+        'input[name="totp"]',
         'input[name="2fa"]',
+        'input[name="mfaCode"]',
+        'input[name="mfa_code"]',
         'input[name="verificationCode"]',
+        'input[name="verification_code"]',
+        'input[name="twoFactorCode"]',
         'input[placeholder*="code" i]',
         'input[placeholder*="verification" i]',
+        'input[placeholder*="digit" i]',
         'input[aria-label*="code" i]',
         'input[aria-label*="verification" i]',
+        'input[aria-label*="digit" i]',
         'input[type="tel"][maxlength="6"]',
+        'input[type="tel"][maxlength="1"]',  # Individual digit boxes
+        'input[type="number"][maxlength="1"]',
         'input[autocomplete="one-time-code"]',
+        'input[inputmode="numeric"][maxlength="6"]',
+        'input[inputmode="numeric"][maxlength="1"]',
+        # Common CSS class patterns
+        'input.otp-input',
+        'input.code-input',
+        'input.verification-input',
+        'input.digit-input',
+        '[data-testid*="otp"]',
+        '[data-testid*="code"]',
+        '[data-testid*="2fa"]',
     ]
 
     for selector in twofa_selectors:
         try:
             el = await page.query_selector(selector)
             if el and await el.is_visible():
-                return True
+                # Make sure it's not an email or password field
+                input_type = await el.get_attribute("type")
+                input_name = await el.get_attribute("name") or ""
+                if input_type not in ["email", "password"] and "email" not in input_name.lower() and "password" not in input_name.lower():
+                    print(f"[2FA-Detect] Found 2FA input: {selector}", file=sys.stderr)
+                    return True
         except:
             continue
 
-    # Also check for 2FA-related text on page
-    page_text = await page.inner_text("body")
-    page_lower = page_text.lower()
+    # Check for multiple digit input boxes (common 2FA pattern)
+    try:
+        digit_inputs = await page.query_selector_all('input[maxlength="1"]')
+        visible_digit_inputs = 0
+        for inp in digit_inputs:
+            if await inp.is_visible():
+                inp_type = await inp.get_attribute("type")
+                if inp_type not in ["email", "password"]:
+                    visible_digit_inputs += 1
+        if visible_digit_inputs >= 4:  # At least 4 single-digit inputs suggests OTP
+            print(f"[2FA-Detect] Found {visible_digit_inputs} digit input boxes", file=sys.stderr)
+            return True
+    except:
+        pass
+
+    # Check for 2FA-related text on page
     twofa_keywords = [
         "verification code",
         "two-factor",
@@ -96,12 +144,26 @@ async def detect_2fa_challenge(page):
         "authentication code",
         "one-time password",
         "one-time code",
+        "mfa",
+        "multi-factor",
+        "sent to your email",
+        "sent to your phone",
+        "sent a code",
+        "6-digit",
+        "6 digit",
+        "enter the code",
+        "verify your identity",
+        "additional verification",
+        "confirm it's you",
+        "we need to verify",
     ]
 
     for keyword in twofa_keywords:
         if keyword in page_lower:
+            print(f"[2FA-Detect] Found keyword: '{keyword}'", file=sys.stderr)
             return True
 
+    print("[2FA-Detect] No 2FA challenge detected", file=sys.stderr)
     return False
 
 
@@ -203,9 +265,63 @@ async def extract_mmi_token(session_id=None, twofa_code=None):
 
         print(f"[MMI] After login URL: {page.url}", file=sys.stderr)
 
+        # Check for error messages on the login page
+        if "/login" in page.url:
+            print("[MMI] Still on login page - checking for errors...", file=sys.stderr)
+            error_selectors = ['.error', '.alert-error', '.text-red', '[role="alert"]', '.error-message', '.login-error']
+            for selector in error_selectors:
+                try:
+                    err = await page.query_selector(selector)
+                    if err and await err.is_visible():
+                        err_text = await err.inner_text()
+                        print(f"[MMI] Error found: {err_text}", file=sys.stderr)
+                except:
+                    continue
+
+            # Take a screenshot for debugging
+            try:
+                screenshot_path = "/tmp/mmi_login_debug.png"
+                await page.screenshot(path=screenshot_path)
+                print(f"[MMI] Debug screenshot saved to {screenshot_path}", file=sys.stderr)
+            except Exception as e:
+                print(f"[MMI] Could not save screenshot: {e}", file=sys.stderr)
+
         # Check for 2FA challenge
         if await detect_2fa_challenge(page):
-            print("[MMI] 2FA challenge detected - storing session", file=sys.stderr)
+            print("[MMI] 2FA challenge detected", file=sys.stderr)
+
+            # Check if we need to click "Send Verification Code" button first
+            send_code_selectors = [
+                'button:has-text("Send Verification Code")',
+                'button:has-text("Send Code")',
+                'button:has-text("Send OTP")',
+                'button:has-text("Get Code")',
+                'a:has-text("Send Verification Code")',
+            ]
+
+            for selector in send_code_selectors:
+                try:
+                    btn = await page.query_selector(selector)
+                    if btn and await btn.is_visible():
+                        print(f"[MMI] Clicking send code button: {selector}", file=sys.stderr)
+                        await btn.click()
+                        await page.wait_for_load_state("networkidle", timeout=10000)
+                        await asyncio.sleep(2)
+                        print("[MMI] Verification code sent, waiting for code entry...", file=sys.stderr)
+                        break
+                except Exception as e:
+                    print(f"[MMI] Send button {selector} failed: {e}", file=sys.stderr)
+                    continue
+
+            # Check if we captured a token from the send_2fa API call
+            if captured_token:
+                print(f"[MMI] Token was captured during 2FA send! Using it directly.", file=sys.stderr)
+                expires_at = int((datetime.now() + timedelta(hours=1, minutes=-5)).timestamp() * 1000)
+                await browser.close()
+                await playwright_instance.stop()
+                return {"success": True, "token": captured_token, "expiresAt": expires_at}
+
+            print("[MMI] Storing session for 2FA code entry", file=sys.stderr)
 
             # Generate session ID
             new_session_id = str(uuid.uuid4())
@@ -331,17 +447,56 @@ async def complete_2fa_session(session_id: str, twofa_code: str):
     try:
         print(f"[MMI-2FA] Submitting 2FA code for session {session_id}", file=sys.stderr)
 
+        # Debug: Log current page state
+        print(f"[MMI-2FA] Current URL: {page.url}", file=sys.stderr)
+        try:
+            await page.screenshot(path="/tmp/mmi_2fa_submit_start.png")
+            print("[MMI-2FA] Screenshot saved to /tmp/mmi_2fa_submit_start.png", file=sys.stderr)
+        except Exception as e:
+            print(f"[MMI-2FA] Screenshot failed: {e}", file=sys.stderr)
+
+        # Get page text for debugging
+        try:
+            page_text = await page.inner_text("body")
+            print(f"[MMI-2FA] Page text preview: {page_text[:300]}", file=sys.stderr)
+        except Exception as e:
+            print(f"[MMI-2FA] Could not get page text: {e}", file=sys.stderr)
+
+        # List all input elements on the page
+        try:
+            inputs = await page.query_selector_all("input")
+            print(f"[MMI-2FA] Found {len(inputs)} input elements", file=sys.stderr)
+            for i, inp in enumerate(inputs[:10]):  # Log first 10
+                inp_type = await inp.get_attribute("type")
+                inp_name = await inp.get_attribute("name")
+                inp_placeholder = await inp.get_attribute("placeholder")
+                inp_visible = await inp.is_visible()
+                print(f"[MMI-2FA]   Input {i}: type={inp_type}, name={inp_name}, placeholder={inp_placeholder}, visible={inp_visible}", file=sys.stderr)
+        except Exception as e:
+            print(f"[MMI-2FA] Could not list inputs: {e}", file=sys.stderr)
+
         # Find and fill 2FA input
         twofa_selectors = [
             'input[name="code"]',
             'input[name="otp"]',
+            'input[name="totp"]',
             'input[name="2fa"]',
+            'input[name="mfaCode"]',
+            'input[name="mfa_code"]',
             'input[name="verificationCode"]',
+            'input[name="verification_code"]',
+            'input[name="twoFactorCode"]',
             'input[placeholder*="code" i]',
             'input[placeholder*="verification" i]',
+            'input[placeholder*="digit" i]',
             'input[aria-label*="code" i]',
+            'input[aria-label*="verification" i]',
             'input[type="tel"][maxlength="6"]',
+            'input[type="tel"][maxlength="1"]',
             'input[autocomplete="one-time-code"]',
+            'input[inputmode="numeric"][maxlength="6"]',
+            'input.otp-input',
+            'input.code-input',
         ]
 
         filled = False
@@ -349,12 +504,35 @@ async def complete_2fa_session(session_id: str, twofa_code: str):
             try:
                 el = await page.query_selector(selector)
                 if el and await el.is_visible():
+                    # Skip email/password fields
+                    input_type = await el.get_attribute("type")
+                    input_name = await el.get_attribute("name") or ""
+                    if input_type in ["email", "password"] or "email" in input_name.lower() or "password" in input_name.lower():
+                        continue
                     await el.fill(twofa_code)
                     print(f"[MMI-2FA] Filled code with selector: {selector}", file=sys.stderr)
                     filled = True
                     break
             except:
                 continue
+
+        # Try filling individual digit boxes if single input not found
+        if not filled:
+            try:
+                digit_inputs = await page.query_selector_all('input[maxlength="1"]')
+                visible_inputs = []
+                for inp in digit_inputs:
+                    if await inp.is_visible():
+                        inp_type = await inp.get_attribute("type")
+                        if inp_type not in ["email", "password"]:
+                            visible_inputs.append(inp)
+                if len(visible_inputs) >= 4 and len(twofa_code) >= len(visible_inputs):
+                    for i, inp in enumerate(visible_inputs):
+                        await inp.fill(twofa_code[i])
+                    print(f"[MMI-2FA] Filled {len(visible_inputs)} digit boxes", file=sys.stderr)
+                    filled = True
+            except Exception as e:
+                print(f"[MMI-2FA] Digit box fill failed: {e}", file=sys.stderr)
 
         if not filled:
             return {"error": "Could not find 2FA input field"}

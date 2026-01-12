@@ -27,61 +27,37 @@ export async function GET(
     const { id: contactId } = await params;
     const searchParams = request.nextUrl.searchParams;
     const limit = parseInt(searchParams.get("limit") || "50");
-    
+
     let notes: Note[] = [];
-    
-    // Try v1 API first (JWT auth - more reliable)
+
+    // Notes are embedded in the customer object
     try {
       const client = getAgencyZoomClient();
       const v1Notes = await client.getCustomerNotes(parseInt(contactId));
-      
+
       if (v1Notes && v1Notes.length > 0) {
+        // Notes come from embedded customer.notes array
+        // Format: { note (body), createdBy (string), createdAt (createDate), type, title }
         notes = v1Notes.map((note: any) => ({
-          id: String(note.id || note.noteId),
-          content: note.note || note.notes || note.content || "",
-          subject: note.subject || note.title,
-          createdAt: note.createdAt || note.createdDate,
-          createdBy: note.createdBy ? {
-            id: String(note.createdBy),
-            name: note.createdByName || "Unknown"
-          } : undefined,
+          id: String(note.id || note.noteId || Date.now()),
+          content: note.note || note.notes || note.content || note.body || "",
+          subject: note.subject || note.title || note.type,
+          createdAt: note.createdAt || note.createDate || note.createdDate,
+          createdBy: typeof note.createdBy === 'string'
+            ? { id: 'unknown', name: note.createdBy }
+            : note.createdBy ? {
+                id: String(note.createdBy.id || note.createdBy),
+                name: note.createdBy.name || note.createdByName || "Unknown"
+              } : undefined,
           source: "agencyzoom" as const
         }));
       }
-      
-      // Also try activities
-      const activities = await client.getCustomerActivities(parseInt(contactId));
-      if (activities && activities.length > 0) {
-        const activityNotes = activities
-          .filter((a: any) => a.type?.toLowerCase().includes('note') || a.notes)
-          .map((activity: any) => ({
-            id: String(activity.id || activity.activityId),
-            content: activity.notes || activity.content || activity.description || "",
-            subject: activity.subject || activity.title || activity.type,
-            createdAt: activity.activityDate || activity.createdDate || activity.createdAt,
-            createdBy: activity.createdBy ? {
-              id: String(activity.createdBy.id || activity.createdBy),
-              name: activity.createdBy.name || activity.createdByName || "Unknown"
-            } : undefined,
-            source: "agencyzoom" as const
-          }));
-        
-        // Merge, avoiding duplicates
-        const existingIds = new Set(notes.map(n => n.id));
-        for (const an of activityNotes) {
-          if (!existingIds.has(an.id) && an.content) {
-            notes.push(an);
-          }
-        }
-      }
     } catch (v1Error) {
       console.warn("V1 API notes fetch failed:", v1Error);
-    }
-    
-    // Fallback: Try openapi endpoint with Basic auth
-    if (notes.length === 0) {
+
+      // Fallback: Try openapi endpoint with Basic auth (likely won't work but try anyway)
       const auth = getAgencyZoomAuth();
-      
+
       const response = await fetch(
         `https://app.agencyzoom.com/openapi/contacts/${contactId}/activities?type=Note&limit=${limit}`,
         {
@@ -92,11 +68,11 @@ export async function GET(
           cache: "no-store",
         }
       );
-      
+
       if (response.ok) {
         const data = await response.json();
         const activities = data.activities || data || [];
-        
+
         notes = activities.map((activity: any) => ({
           id: String(activity.id || activity.activityId),
           content: activity.notes || activity.content || activity.description || "",

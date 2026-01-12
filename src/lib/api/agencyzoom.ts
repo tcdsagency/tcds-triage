@@ -358,24 +358,27 @@ export class AgencyZoomClient {
 
   /**
    * Get notes for a customer
-   * GET /v1/api/customers/{customerId}/notes
+   * Notes are embedded in the customer object, not a separate endpoint
    */
   async getCustomerNotes(customerId: number): Promise<AgencyZoomNote[]> {
     try {
-      const result = await this.request<AgencyZoomNote[] | { notes: AgencyZoomNote[] }>(
-        `/v1/api/customers/${customerId}/notes`
-      );
-      // Handle both array and { notes: [...] } responses
-      if (Array.isArray(result)) {
-        return result.map(n => ({
-          ...n,
-          note: n.note || (n as any).content || (n as any).notes || ""
+      // Notes are embedded in the customer object - fetch the full customer
+      const customer = await this.getCustomer(customerId);
+      const embeddedNotes = (customer as any)?.notes || [];
+
+      // Transform embedded notes to our format
+      // AgencyZoom note format: { type, createDate, createdBy, title, body, attr }
+      return embeddedNotes
+        .filter((n: any) => n.body && n.body.trim().length > 0)
+        .map((n: any) => ({
+          id: 0, // Embedded notes don't have individual IDs
+          contactId: customerId,
+          note: n.body || '',
+          createdBy: n.createdBy || 'Unknown',
+          createdAt: n.createDate || '',
+          type: n.type || null,
+          title: n.title || null
         }));
-      }
-      return (result?.notes || []).map(n => ({
-        ...n,
-        note: n.note || (n as any).content || (n as any).notes || ""
-      }));
     } catch (error) {
       console.warn(`Failed to fetch notes for customer ${customerId}:`, error);
       return [];
@@ -384,23 +387,26 @@ export class AgencyZoomClient {
 
   /**
    * Get notes for a lead
-   * GET /v1/api/leads/{leadId}/notes
+   * Notes are embedded in the lead object, not a separate endpoint
    */
   async getLeadNotes(leadId: number): Promise<AgencyZoomNote[]> {
     try {
-      const result = await this.request<AgencyZoomNote[] | { notes: AgencyZoomNote[] }>(
-        `/v1/api/leads/${leadId}/notes`
-      );
-      if (Array.isArray(result)) {
-        return result.map(n => ({
-          ...n,
-          note: n.note || (n as any).content || (n as any).notes || ""
+      // Notes are embedded in the lead object - fetch the full lead
+      const lead = await this.getLead(leadId);
+      const embeddedNotes = (lead as any)?.notes || [];
+
+      // Transform embedded notes to our format
+      return embeddedNotes
+        .filter((n: any) => n.body && n.body.trim().length > 0)
+        .map((n: any) => ({
+          id: 0,
+          contactId: leadId,
+          note: n.body || '',
+          createdBy: n.createdBy || 'Unknown',
+          createdAt: n.createDate || '',
+          type: n.type || null,
+          title: n.title || null
         }));
-      }
-      return (result?.notes || []).map(n => ({
-        ...n,
-        note: n.note || (n as any).content || (n as any).notes || ""
-      }));
     } catch (error) {
       console.warn(`Failed to fetch notes for lead ${leadId}:`, error);
       return [];

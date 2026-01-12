@@ -169,86 +169,28 @@ async function fetchAgencyZoomContact(contactId: string): Promise<any | null> {
   return contact;
 }
 
-async function fetchAgencyZoomNotes(contactId: string): Promise<any[]> {
-  const allNotes: any[] = [];
-  const seenIds = new Set<string>();
-
-  // Helper to add notes without duplicates
-  const addNotes = (notes: any[]) => {
-    for (const note of notes) {
-      const id = String(note.id || note.activityId || note.noteId);
-      if (id && !seenIds.has(id)) {
-        seenIds.add(id);
-        allNotes.push(note);
-      }
-    }
-  };
-
-  // 1. Try V1 API with JWT authentication
-  try {
-    const client = getAgencyZoomClient();
-    const v1Notes = await client.getCustomerNotes(parseInt(contactId));
-    if (v1Notes && v1Notes.length > 0) {
-      console.log(`[Notes] V1 API returned ${v1Notes.length} notes for customer ${contactId}`);
-      addNotes(v1Notes);
-    }
-  } catch (v1Error) {
-    console.warn(`[Notes] V1 API notes failed for ${contactId}:`, v1Error);
+/**
+ * Extract notes from AgencyZoom customer object
+ * Notes are embedded in the customer object as an array with format:
+ * { type, createDate, createdBy, title, body, attr }
+ */
+function extractAgencyZoomNotes(azContact: any): any[] {
+  if (!azContact?.notes || !Array.isArray(azContact.notes)) {
+    return [];
   }
 
-  // 2. Try V1 API activities (notes might be stored as activities)
-  try {
-    const client = getAgencyZoomClient();
-    const activities = await client.getCustomerActivities(parseInt(contactId));
-    if (activities && activities.length > 0) {
-      // Filter to note-type activities
-      const noteActivities = activities.filter((a: any) => {
-        const type = (a.type || a.activityType || '').toLowerCase();
-        return type.includes('note') || type.includes('call') || a.notes;
-      });
-      if (noteActivities.length > 0) {
-        console.log(`[Notes] V1 activities returned ${noteActivities.length} notes for customer ${contactId}`);
-        addNotes(noteActivities);
-      }
-    }
-  } catch (activityError) {
-    console.warn(`[Notes] V1 activities failed for ${contactId}:`, activityError);
-  }
+  // Filter to human-readable notes (exclude system/JSON notes)
+  const humanNotes = azContact.notes.filter((n: any) => {
+    // Skip notes that are just JSON data
+    if (!n.body) return false;
+    const body = n.body.trim();
+    if (body.startsWith('{') && body.endsWith('}')) return false; // JSON object
+    if (body.length === 0) return false;
+    return true;
+  });
 
-  // 3. Fallback: Try OpenAPI endpoint with Basic auth (this endpoint stores different notes)
-  try {
-    const username = process.env.AGENCYZOOM_API_USERNAME || process.env.AGENCYZOOM_USERNAME;
-    const password = process.env.AGENCYZOOM_API_PASSWORD || process.env.AGENCYZOOM_PASSWORD;
-
-    if (username && password) {
-      const auth = Buffer.from(`${username}:${password}`).toString("base64");
-
-      const response = await fetch(
-        `https://app.agencyzoom.com/openapi/contacts/${contactId}/activities?type=Note&limit=50`,
-        {
-          headers: {
-            Authorization: `Basic ${auth}`,
-            "Content-Type": "application/json",
-          },
-          cache: "no-store",
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        const openApiNotes = data.activities || data || [];
-        if (openApiNotes.length > 0) {
-          console.log(`[Notes] OpenAPI returned ${openApiNotes.length} notes for customer ${contactId}`);
-          addNotes(openApiNotes);
-        }
-      }
-    }
-  } catch (openApiError) {
-    console.warn(`[Notes] OpenAPI fallback failed for ${contactId}:`, openApiError);
-  }
-
-  console.log(`[Notes] Total notes found for ${contactId}: ${allNotes.length}`);
-  return allNotes;
+  console.log(`[Notes] Found ${humanNotes.length} human-readable notes from ${azContact.notes.length} total`);
+  return humanNotes;
 }
 
 // =============================================================================
@@ -563,20 +505,34 @@ function transformHawkSoftHousehold(people: any[]): HouseholdMember[] {
 }
 
 function transformAgencyZoomNotes(azNotes: any[]): Note[] {
-  return (azNotes || []).map((note) => ({
-    id: String(note.id || note.activityId || note.noteId),
-    content: note.notes || note.note || note.content || note.description || note.body || "",
-    subject: note.subject || note.title || note.type,
-    createdAt: note.activityDate || note.createdDate || note.createdAt || note.date,
-    createdBy: note.createdBy ? {
-      id: String(note.createdBy.id || note.createdBy.userId || note.createdBy),
-      name: note.createdBy.name || note.createdBy.fullName || note.createdByName || note.userName || "Unknown"
-    } : (note.createdByName || note.userName ? {
-      id: "unknown",
-      name: note.createdByName || note.userName
-    } : undefined),
-    source: "agencyzoom" as const
-  })).filter(note => note.content && note.content.trim().length > 0);
+  return (azNotes || []).map((note) => {
+    // Handle embedded notes format: { type, createDate, createdBy (string), title, body, attr }
+    // Also handle older format with activityDate, createdDate, etc.
+    const content = note.body || note.notes || note.note || note.content || note.description || "";
+    const createdAt = note.createDate || note.activityDate || note.createdDate || note.createdAt || note.date;
+
+    // Handle createdBy - can be a string or an object
+    let createdBy: { id: string; name: string } | undefined;
+    if (typeof note.createdBy === 'string') {
+      createdBy = { id: 'unknown', name: note.createdBy };
+    } else if (note.createdBy && typeof note.createdBy === 'object') {
+      createdBy = {
+        id: String(note.createdBy.id || note.createdBy.userId || 'unknown'),
+        name: note.createdBy.name || note.createdBy.fullName || note.createdByName || note.userName || 'Unknown'
+      };
+    } else if (note.createdByName || note.userName) {
+      createdBy = { id: 'unknown', name: note.createdByName || note.userName };
+    }
+
+    return {
+      id: String(note.id || note.activityId || note.noteId || Date.now()),
+      content,
+      subject: note.subject || note.title || note.type,
+      createdAt,
+      createdBy,
+      source: "agencyzoom" as const
+    };
+  }).filter(note => note.content && note.content.trim().length > 0);
 }
 
 // =============================================================================
@@ -660,24 +616,56 @@ export async function GET(
     // If external IDs not provided, try to look them up from database
     if (!hawksoftId && !agencyzoomId) {
       try {
-        const [customerRecord] = await db
-          .select({
-            hawksoftClientCode: customers.hawksoftClientCode,
-            agencyzoomId: customers.agencyzoomId,
-          })
-          .from(customers)
-          .where(eq(customers.id, customerId))
-          .limit(1);
+        // Check if customerId looks like a UUID (contains hyphens) or a HawkSoft client number (numeric)
+        const isUUID = customerId.includes('-');
+
+        let customerRecord;
+        if (isUUID) {
+          // Look up by internal UUID
+          [customerRecord] = await db
+            .select({
+              hawksoftClientCode: customers.hawksoftClientCode,
+              agencyzoomId: customers.agencyzoomId,
+            })
+            .from(customers)
+            .where(eq(customers.id, customerId))
+            .limit(1);
+          debugInfo.lookupMethod = "uuid";
+        } else {
+          // Look up by HawkSoft client code (the URL might be using the HawkSoft ID directly)
+          [customerRecord] = await db
+            .select({
+              hawksoftClientCode: customers.hawksoftClientCode,
+              agencyzoomId: customers.agencyzoomId,
+            })
+            .from(customers)
+            .where(eq(customers.hawksoftClientCode, customerId))
+            .limit(1);
+          debugInfo.lookupMethod = "hawksoft_client_code";
+
+          // If found by HawkSoft code, use that ID directly
+          if (!customerRecord) {
+            // Not found in DB, but the customerId might BE the HawkSoft client number
+            // Try using it directly as hawksoftId
+            hawksoftId = customerId;
+            debugInfo.dbLookup = "not in db, using customerId as hawksoftId directly";
+          }
+        }
 
         if (customerRecord) {
           hawksoftId = customerRecord.hawksoftClientCode || null;
           agencyzoomId = customerRecord.agencyzoomId || null;
           debugInfo.dbLookup = "success";
-        } else {
+        } else if (!hawksoftId) {
           debugInfo.dbLookup = "customer not found in database";
         }
       } catch (dbError: any) {
         debugInfo.dbLookup = `error: ${dbError.message}`;
+        // If DB lookup fails but customerId looks numeric, try it as HawkSoft ID directly
+        if (/^\d+$/.test(customerId)) {
+          hawksoftId = customerId;
+          debugInfo.fallbackToHawksoftId = true;
+        }
       }
     }
 
@@ -721,9 +709,9 @@ export async function GET(
     // Policies from HawkSoft (already fetched with client if we used getClientFull)
     // But we can still fetch separately for cleaner code
     const hsPolicies = hawksoftId ? await fetchHawkSoftPolicies(hawksoftId) : [];
-    
-    // Notes from AgencyZoom using proper GET endpoint
-    const azNotes = agencyzoomId ? await fetchAgencyZoomNotes(agencyzoomId) : [];
+
+    // Notes from AgencyZoom - embedded in the customer object we already fetched
+    const azNotes = extractAgencyZoomNotes(azContact);
     debugInfo.notesCount = azNotes.length;
     debugInfo.notesRaw = azNotes.length > 0 ? azNotes.slice(0, 2) : "none"; // Sample for debugging
     

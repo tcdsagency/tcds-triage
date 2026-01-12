@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     const dryRun = body.dryRun === true;
-    const onlyWithPolicies = body.onlyWithPolicies === true; // Default false - import all customers with addresses
+    const onlyWithPolicies = body.onlyWithPolicies !== false; // Default TRUE - only import customers with active home policies
     const excludeLeads = body.excludeLeads !== false; // Default true - exclude leads
 
     // Get all customers with addresses

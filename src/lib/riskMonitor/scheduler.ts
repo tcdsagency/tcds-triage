@@ -457,6 +457,28 @@ export class RiskMonitorScheduler {
 
     const alertType = alertTypeMap[result.newStatus] || "status_change";
 
+    // DEDUPLICATION: Check if an active alert already exists for this policy and type
+    const [existingAlert] = await db
+      .select({ id: riskMonitorAlerts.id })
+      .from(riskMonitorAlerts)
+      .where(
+        and(
+          eq(riskMonitorAlerts.tenantId, this.tenantId),
+          eq(riskMonitorAlerts.policyId, policy.id),
+          eq(riskMonitorAlerts.alertType, alertType as any),
+          or(
+            eq(riskMonitorAlerts.status, "new"),
+            eq(riskMonitorAlerts.status, "acknowledged")
+          )
+        )
+      )
+      .limit(1);
+
+    if (existingAlert) {
+      await this.logEvent("alert_skipped", policy.id, `Skipped duplicate ${alertType} alert - active alert already exists`);
+      return;
+    }
+
     // Determine priority based on status
     const priorityMap: Record<string, string> = {
       sold: "1", // Critical
@@ -505,8 +527,8 @@ export class RiskMonitorScheduler {
       priority,
     });
 
-    // Send email notification if enabled
-    if (this.settings?.emailAlertsEnabled && priority <= "2") {
+    // Send email notification if enabled (for all alert types: sold, pending, active)
+    if (this.settings?.emailAlertsEnabled) {
       await this.sendEmailAlert(policy, alertType, result);
     }
   }
