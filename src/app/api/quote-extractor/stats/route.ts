@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       })
       .from(quoteDocuments)
       .where(
-        sql`${quoteDocuments.tenantId} = ${tenantId} AND ${quoteDocuments.createdAt} >= ${sevenDaysAgo}`
+        sql`${quoteDocuments.tenantId} = ${tenantId} AND ${quoteDocuments.createdAt} >= ${sevenDaysAgo.toISOString()}`
       );
 
     // Get top carriers

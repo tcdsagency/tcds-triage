@@ -1,7 +1,9 @@
 /**
  * Send Canopy Connect Link via SMS
  * ==================================
- * Creates a pull request and sends the link to the customer via SMS.
+ * Sends the pre-configured Canopy Connect link to the customer via SMS.
+ * Canopy Connect doesn't have a POST /pulls API - links are created in
+ * the Canopy dashboard and pulls are created when customers use them.
  *
  * POST /api/canopy-connect/send-link
  */
@@ -9,8 +11,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { canopyConnectPulls, messages } from "@/db/schema";
-import { getCanopyClient } from "@/lib/api/canopy";
 import { twilioClient } from "@/lib/twilio";
+import { randomUUID } from "crypto";
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { phone, email, firstName, lastName, customerId, smsMethod = "twilio" } = body;
+    const { phone, email, firstName, lastName, customerId } = body;
 
     if (!phone) {
       return NextResponse.json(
@@ -29,50 +31,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get Canopy client
-    let client;
-    try {
-      client = getCanopyClient();
-    } catch (error) {
+    // Get the Canopy Connect link URL
+    // This should be set in the Canopy dashboard and configured as an env var
+    // Format: https://app.usecanopy.com/c/{publicAlias}
+    const canopyLinkUrl = process.env.CANOPY_LINK_URL;
+    const teamId = process.env.CANOPY_TEAM_ID;
+
+    if (!canopyLinkUrl && !teamId) {
       return NextResponse.json(
-        { error: "Canopy Connect not configured" },
+        { error: "Canopy Connect link not configured. Set CANOPY_LINK_URL or CANOPY_TEAM_ID." },
         { status: 500 }
       );
     }
 
-    // Build metadata
-    const metadata: Record<string, string> = {
-      source: "tcds-triage",
-      tenant_id: tenantId,
-      sms_sent: "true",
-    };
-    if (customerId) {
-      metadata.customer_id = customerId;
-    }
+    // Use the configured link URL or construct from team ID
+    const linkUrl = canopyLinkUrl || `https://app.usecanopy.com/c/${teamId}`;
 
-    // Create pull request via Canopy API
-    let result;
-    try {
-      result = await client.createPull({
-        phone,
-        email,
-        first_name: firstName,
-        last_name: lastName,
-        redirect_url: process.env.CANOPY_REDIRECT_URL,
-        metadata,
-      });
-      console.log(`[Canopy SMS] Created pull ${result.pull_id}, link: ${result.link_url}`);
-    } catch (pullError) {
-      console.error("[Canopy SMS] Failed to create pull:", pullError);
-      return NextResponse.json(
-        { error: `Failed to create Canopy pull: ${pullError instanceof Error ? pullError.message : "Unknown error"}` },
-        { status: 500 }
-      );
-    }
+    // Generate a tracking ID for this send (to match webhook responses)
+    const trackingId = randomUUID();
 
     // Compose SMS message
     const customerName = firstName ? `Hi ${firstName}! ` : "";
-    const smsMessage = `${customerName}TCDS Agency needs to verify your current insurance coverage. Please click the secure link below to connect your insurance account:\n\n${result.link_url}\n\nThis takes about 2 minutes and helps us find you better rates. Reply HELP for assistance.`;
+    const smsMessage = `${customerName}TCDS Agency needs to verify your current insurance coverage. Please click the secure link below to connect your insurance account:\n\n${linkUrl}\n\nThis takes about 2 minutes and helps us find you better rates. Reply HELP for assistance.`;
 
     // Send SMS
     const smsResult = await twilioClient.sendSMS({
@@ -81,38 +61,41 @@ export async function POST(request: NextRequest) {
     });
 
     if (!smsResult.success) {
-      // Still store the pull even if SMS failed
       console.error(`[Canopy SMS] SMS send failed: ${smsResult.error}`);
-    } else {
-      console.log(`[Canopy SMS] SMS sent, messageId: ${smsResult.messageId}`);
+      return NextResponse.json(
+        { error: `Failed to send SMS: ${smsResult.error}` },
+        { status: 500 }
+      );
     }
 
-    // Store the pull request in database
+    console.log(`[Canopy SMS] SMS sent to ${phone}, messageId: ${smsResult.messageId}`);
+
+    // Store a pending pull record in database (will be updated when webhook arrives)
     let storedPull;
     try {
       [storedPull] = await db
         .insert(canopyConnectPulls)
         .values({
           tenantId,
-          pullId: result.pull_id,
+          pullId: trackingId, // Use tracking ID until we get real pull ID from webhook
           pullStatus: "PENDING",
           firstName,
           lastName,
           email,
           phone,
-          canopyLinkUsed: result.link_url,
+          canopyLinkUsed: linkUrl,
           matchStatus: customerId ? "matched" : "pending",
           matchedCustomerId: customerId || null,
         })
         .returning();
     } catch (dbError) {
       console.error("[Canopy SMS] Database insert failed:", dbError);
-      // Continue anyway - the pull was created in Canopy, just not stored locally
-      storedPull = { pullId: result.pull_id };
+      // Continue anyway - SMS was sent
+      storedPull = { id: trackingId };
     }
 
     // Store the outgoing SMS in messages table
-    if (smsResult.success) {
+    try {
       await db.insert(messages).values({
         tenantId,
         type: "sms",
@@ -128,14 +111,16 @@ export async function POST(request: NextRequest) {
         isAcknowledged: true,
         sentAt: new Date(),
       });
+    } catch (msgError) {
+      console.error("[Canopy SMS] Failed to store message:", msgError);
     }
 
     return NextResponse.json({
       success: true,
-      pullId: result.pull_id,
-      linkUrl: result.link_url,
-      smsSent: smsResult.success,
-      smsError: smsResult.error,
+      trackingId,
+      linkUrl,
+      smsSent: true,
+      smsMessageId: smsResult.messageId,
       stored: storedPull,
     });
   } catch (error) {

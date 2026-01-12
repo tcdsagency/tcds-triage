@@ -141,23 +141,15 @@ export default function QuotesPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Quotes</h1>
           <p className="text-gray-500 dark:text-gray-400">Manage and track insurance quotes</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchQuotes(true)}
-            disabled={refreshing}
-          >
-            <RefreshCw className={cn("w-4 h-4 mr-2", refreshing && "animate-spin")} />
-            Refresh
-          </Button>
-          <Link href="/quote/new">
-            <Button className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700">
-              <Sparkles className="w-4 h-4 mr-2" />
-              New AI Quote
-            </Button>
-          </Link>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => fetchQuotes(true)}
+          disabled={refreshing}
+        >
+          <RefreshCw className={cn("w-4 h-4 mr-2", refreshing && "animate-spin")} />
+          Refresh
+        </Button>
       </div>
 
       {/* Stats */}

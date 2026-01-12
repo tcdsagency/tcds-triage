@@ -9,9 +9,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { canopyConnectPulls, customers } from "@/db/schema";
+import { canopyConnectPulls } from "@/db/schema";
 import { eq, desc, and, or, ilike, sql } from "drizzle-orm";
-import { getCanopyClient } from "@/lib/api/canopy";
 
 // =============================================================================
 // GET - List Pulls
@@ -113,6 +112,9 @@ export async function GET(request: NextRequest) {
 // =============================================================================
 // POST - Create Pull Request
 // =============================================================================
+// Note: Canopy Connect doesn't have a POST /pulls API. Links are created
+// in the Canopy dashboard. This endpoint stores a pending record and returns
+// the pre-configured link URL for the customer to use.
 
 export async function POST(request: NextRequest) {
   try {
@@ -122,7 +124,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { phone, email, firstName, lastName, customerId, redirectUrl } = body;
+    const { phone, email, firstName, lastName, customerId } = body;
 
     if (!phone && !email) {
       return NextResponse.json(
@@ -131,58 +133,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get Canopy client
-    let client;
-    try {
-      client = getCanopyClient();
-    } catch (error) {
+    // Get Canopy Connect link URL
+    const canopyLinkUrl = process.env.CANOPY_LINK_URL;
+    const teamId = process.env.CANOPY_TEAM_ID;
+
+    if (!canopyLinkUrl && !teamId) {
       return NextResponse.json(
-        { error: "Canopy Connect not configured" },
+        { error: "Canopy Connect not configured. Set CANOPY_LINK_URL or CANOPY_TEAM_ID." },
         { status: 500 }
       );
     }
 
-    // Build metadata
-    const metadata: Record<string, string> = {
-      source: "tcds-triage",
-      tenant_id: tenantId,
-    };
-    if (customerId) {
-      metadata.customer_id = customerId;
-    }
+    const linkUrl = canopyLinkUrl || `https://app.usecanopy.com/c/${teamId}`;
 
-    // Create pull request via Canopy API
-    const result = await client.createPull({
-      phone,
-      email,
-      first_name: firstName,
-      last_name: lastName,
-      redirect_url: redirectUrl || process.env.CANOPY_REDIRECT_URL,
-      metadata,
-    });
+    // Generate a tracking ID
+    const trackingId = crypto.randomUUID();
 
-    // Store the pull request in our database
+    // Store the pending pull request in our database
     const [stored] = await db
       .insert(canopyConnectPulls)
       .values({
         tenantId,
-        pullId: result.pull_id,
+        pullId: trackingId,
         pullStatus: "PENDING",
         firstName,
         lastName,
         email,
         phone,
+        canopyLinkUsed: linkUrl,
         matchStatus: customerId ? "matched" : "pending",
         matchedCustomerId: customerId || null,
       })
       .returning();
 
-    console.log(`[Canopy API] Created pull ${result.pull_id}, link: ${result.link_url}`);
+    console.log(`[Canopy API] Created pending pull ${trackingId}, link: ${linkUrl}`);
 
     return NextResponse.json({
       success: true,
-      pullId: result.pull_id,
-      linkUrl: result.link_url,
+      trackingId,
+      linkUrl,
       stored,
     });
   } catch (error) {
