@@ -332,7 +332,7 @@ export default function CanopyConnectPage() {
               placeholder="Name, phone, email..."
               value={filters.search}
               onChange={(e) => setFilters(f => ({ ...f, search: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white text-gray-900"
             />
           </div>
 
@@ -562,7 +562,7 @@ export default function CanopyConnectPage() {
                   placeholder="(555) 555-5555"
                   value={sendForm.phone}
                   onChange={(e) => setSendForm(f => ({ ...f, phone: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white text-gray-900"
                 />
               </div>
 
@@ -573,7 +573,7 @@ export default function CanopyConnectPage() {
                   placeholder="customer@example.com"
                   value={sendForm.email}
                   onChange={(e) => setSendForm(f => ({ ...f, email: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white text-gray-900"
                 />
               </div>
 
@@ -585,7 +585,7 @@ export default function CanopyConnectPage() {
                     placeholder="John"
                     value={sendForm.firstName}
                     onChange={(e) => setSendForm(f => ({ ...f, firstName: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white text-gray-900"
                   />
                 </div>
                 <div>
@@ -595,7 +595,7 @@ export default function CanopyConnectPage() {
                     placeholder="Doe"
                     value={sendForm.lastName}
                     onChange={(e) => setSendForm(f => ({ ...f, lastName: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white text-gray-900"
                   />
                 </div>
               </div>
@@ -640,7 +640,7 @@ export default function CanopyConnectPage() {
                   setCustomerSearch(e.target.value);
                   searchCustomers(e.target.value);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white text-gray-900"
               />
             </div>
 

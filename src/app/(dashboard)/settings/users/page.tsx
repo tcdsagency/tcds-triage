@@ -477,7 +477,7 @@ export default function UsersPage() {
                       role: e.target.value as "admin" | "supervisor" | "agent",
                     })
                   }
-                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white text-gray-900 px-3 py-2 text-sm"
                 >
                   <option value="agent">Agent</option>
                   <option value="supervisor">Supervisor</option>

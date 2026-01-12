@@ -75,7 +75,7 @@ export function ChangeFormStep() {
         value={formData.effectiveDate}
         onChange={(e) => updateField('effectiveDate', e.target.value)}
         className={cn(
-          'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100',
+          'bg-white text-gray-900',
           errors.effectiveDate
             ? 'border-red-300 dark:border-red-500'
             : 'border-gray-300 dark:border-gray-600'
@@ -110,7 +110,7 @@ export function ChangeFormStep() {
                       }
                       placeholder="1HGCM82633A123456"
                       maxLength={17}
-                      className="font-mono bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      className="font-mono bg-white text-gray-900"
                     />
                     <Button
                       variant="outline"
@@ -920,7 +920,7 @@ function FormField({
           placeholder={placeholder}
           className={cn(
             'w-full px-3 py-2 rounded-lg border transition-colors min-h-[80px]',
-            'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100',
+            'bg-white text-gray-900',
             error
               ? 'border-red-300 dark:border-red-500'
               : 'border-gray-300 dark:border-gray-600',
@@ -934,7 +934,7 @@ function FormField({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           className={cn(
-            'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100',
+            'bg-white text-gray-900',
             error
               ? 'border-red-300 dark:border-red-500'
               : 'border-gray-300 dark:border-gray-600'
@@ -973,7 +973,7 @@ function FormSelect({
         onChange={(e) => onChange(e.target.value)}
         className={cn(
           'w-full px-3 py-2 rounded-lg border transition-colors',
-          'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100',
+          'bg-white text-gray-900',
           error
             ? 'border-red-300 dark:border-red-500'
             : 'border-gray-300 dark:border-gray-600',

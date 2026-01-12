@@ -257,7 +257,7 @@ export default function PolicyNoticesPage() {
               placeholder="Name, policy..."
               value={filters.search}
               onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white text-gray-900"
             />
           </div>
 
@@ -269,7 +269,7 @@ export default function PolicyNoticesPage() {
             <select
               value={filters.type}
               onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white text-gray-900"
             >
               <option value="">All Types</option>
               <option value="billing">Billing</option>
@@ -286,7 +286,7 @@ export default function PolicyNoticesPage() {
             <select
               value={filters.urgency}
               onChange={(e) => setFilters((f) => ({ ...f, urgency: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white text-gray-900"
             >
               <option value="">All Urgencies</option>
               <option value="urgent">Urgent</option>
