@@ -482,7 +482,7 @@ export default function SameDayPaymentPage() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search by customer name..."
-                    className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="w-full px-4 py-3 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   />
                   {searchLoading && (
                     <div className="absolute right-4 top-1/2 -translate-y-1/2">
@@ -549,7 +549,7 @@ export default function SameDayPaymentPage() {
                     value={formData.firstName}
                     onChange={(e) => handleInputChange("firstName", e.target.value)}
                     required
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   />
                 </div>
                 <div>
@@ -561,7 +561,7 @@ export default function SameDayPaymentPage() {
                     value={formData.lastName}
                     onChange={(e) => handleInputChange("lastName", e.target.value)}
                     required
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -581,7 +581,7 @@ export default function SameDayPaymentPage() {
                     value={selectedPolicy}
                     onChange={(e) => handlePolicyChange(e.target.value)}
                     required
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   >
                     <option value="">Select a policy...</option>
                     {policies.map((p) => (
@@ -599,7 +599,7 @@ export default function SameDayPaymentPage() {
                       onChange={(e) => handleInputChange("policyNumber", e.target.value)}
                       placeholder="Enter policy number"
                       required
-                      className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      className="flex-1 px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                     />
                     {policies.length > 0 && (
                       <button
@@ -628,7 +628,7 @@ export default function SameDayPaymentPage() {
                     min="0.01"
                     step="0.01"
                     required
-                    className="w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="w-full pl-8 pr-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                     placeholder="0.00"
                   />
                 </div>
@@ -679,7 +679,7 @@ export default function SameDayPaymentPage() {
                         onChange={(e) => handleInputChange("cardNumber", e.target.value.replace(/\D/g, ""))}
                         maxLength={16}
                         required
-                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         placeholder="1234 5678 9012 3456"
                       />
                     </div>
@@ -694,7 +694,7 @@ export default function SameDayPaymentPage() {
                         placeholder="MM/YY"
                         maxLength={5}
                         required
-                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -708,7 +708,7 @@ export default function SameDayPaymentPage() {
                           onChange={(e) => handleInputChange("cardCvv", e.target.value.replace(/\D/g, ""))}
                           maxLength={4}
                           required
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                          className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                           placeholder="123"
                         />
                       </div>
@@ -722,7 +722,7 @@ export default function SameDayPaymentPage() {
                           onChange={(e) => handleInputChange("cardZip", e.target.value.replace(/\D/g, ""))}
                           maxLength={5}
                           required
-                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                          className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                           placeholder="12345"
                         />
                       </div>
@@ -745,7 +745,7 @@ export default function SameDayPaymentPage() {
                         onChange={(e) => handleInputChange("routingNumber", e.target.value.replace(/\D/g, ""))}
                         maxLength={9}
                         required
-                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         placeholder="123456789"
                       />
                     </div>
@@ -758,7 +758,7 @@ export default function SameDayPaymentPage() {
                         value={formData.accountNumber}
                         onChange={(e) => handleInputChange("accountNumber", e.target.value.replace(/\D/g, ""))}
                         required
-                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         placeholder="Account number"
                       />
                     </div>
@@ -776,7 +776,7 @@ export default function SameDayPaymentPage() {
                   onChange={(e) => handleInputChange("notes", e.target.value)}
                   placeholder="Any additional notes..."
                   rows={2}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
               </div>
 
@@ -800,7 +800,7 @@ export default function SameDayPaymentPage() {
                   type="email"
                   value={formData.submitterEmail}
                   onChange={(e) => handleInputChange("submitterEmail", e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="w-full px-3 py-2 border rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   placeholder="agent@tcds.com"
                 />
               </div>
