@@ -162,6 +162,68 @@ export function QuoteWizardProvider({
   // DRIVER MANAGEMENT
   // =============================================================================
 
+  // Auto-populate drivers from primary applicant and spouse when entering drivers step
+  useEffect(() => {
+    // Only for personal_auto quotes
+    if (quoteType !== 'personal_auto') return;
+
+    // Find the drivers step index
+    const driversStepIndex = steps.findIndex(s => s.id === 'drivers');
+    if (driversStepIndex === -1 || currentStep !== driversStepIndex) return;
+
+    // Check if drivers are still in initial state (1 driver with empty firstName)
+    const hasInitialDriverState =
+      formData.drivers.length === 1 &&
+      !formData.drivers[0].firstName?.trim();
+
+    if (!hasInitialDriverState) return;
+
+    // Only auto-populate if we have primary applicant info
+    if (!formData.firstName?.trim() || !formData.lastName?.trim()) return;
+
+    const newDrivers: typeof formData.drivers = [];
+
+    // Driver 1: Primary applicant
+    newDrivers.push({
+      id: crypto.randomUUID(),
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      dob: formData.dob || '',
+      gender: formData.gender || '',
+      relationship: 'self',
+      licenseNumber: formData.licenseNumber || '',
+      licenseState: formData.licenseState || '',
+      yearsLicensed: '',
+      hasAccidents: false,
+      hasViolations: false,
+    });
+
+    // Driver 2: Spouse (if married and spouse info exists)
+    if (formData.maritalStatus === 'married' && formData.spouseFirstName?.trim()) {
+      newDrivers.push({
+        id: crypto.randomUUID(),
+        firstName: formData.spouseFirstName,
+        lastName: formData.spouseLastName || formData.lastName,
+        dob: formData.spouseDob || '',
+        gender: '',
+        relationship: 'spouse',
+        licenseNumber: formData.spouseLicenseNumber || '',
+        licenseState: formData.spouseLicenseState || '',
+        yearsLicensed: '',
+        hasAccidents: false,
+        hasViolations: false,
+      });
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      drivers: newDrivers,
+    }));
+    // Note: formData intentionally excluded from deps to prevent infinite loops
+    // The hasInitialDriverState check ensures this only runs once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, quoteType, steps]);
+
   const addDriver = useCallback(() => {
     setFormData((prev) => ({
       ...prev,
