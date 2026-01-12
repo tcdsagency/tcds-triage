@@ -200,17 +200,17 @@ export function Header({ user }: HeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
       {/* Mobile menu button */}
       <button
         type="button"
-        className="lg:hidden -m-2.5 p-2.5 text-gray-700"
+        className="lg:hidden -m-2.5 p-2.5 text-gray-700 dark:text-gray-300"
       >
         <Menu className="h-6 w-6" />
       </button>
 
       {/* Separator */}
-      <div className="h-6 w-px bg-gray-200 lg:hidden" />
+      <div className="h-6 w-px bg-gray-200 dark:bg-gray-700 lg:hidden" />
 
       <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
         {/* Search */}
@@ -218,11 +218,11 @@ export function Header({ user }: HeaderProps) {
           <label htmlFor="search-field" className="sr-only">
             Search
           </label>
-          <Search className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-gray-400" />
+          <Search className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-gray-400 dark:text-gray-500" />
           <input
             ref={searchInputRef}
             id="search-field"
-            className="block h-full w-full border-0 py-0 pl-8 pr-16 text-gray-900 placeholder:text-gray-400 focus:ring-0 sm:text-sm"
+            className="block h-full w-full border-0 py-0 pl-8 pr-16 text-gray-900 dark:text-gray-100 bg-transparent placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-0 sm:text-sm"
             placeholder="Search customers, policies, calls..."
             type="search"
             value={searchQuery}
@@ -234,7 +234,7 @@ export function Header({ user }: HeaderProps) {
             {searchLoading ? (
               <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
             ) : (
-              <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-400 bg-gray-100 rounded border border-gray-200">
+              <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
                 <span className="text-xs">⌘</span>K
               </kbd>
             )}
@@ -242,14 +242,14 @@ export function Header({ user }: HeaderProps) {
 
           {/* Search Results Dropdown */}
           {showSearchResults && searchResults.length > 0 && (
-            <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white rounded-lg shadow-lg ring-1 ring-black ring-opacity-5 max-h-80 overflow-y-auto">
+            <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-gray-700 max-h-80 overflow-y-auto">
               {searchResults.map((result) => {
                 const Icon = getResultIcon(result.type);
                 return (
                   <button
                     key={`${result.type}-${result.id}`}
                     onClick={() => handleSelectResult(result)}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-100 last:border-b-0"
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 text-left border-b border-gray-100 dark:border-gray-700 last:border-b-0"
                   >
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
                       result.type === 'lead' ? 'bg-amber-100' : 'bg-blue-100'
@@ -259,8 +259,8 @@ export function Header({ user }: HeaderProps) {
                       }`} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{result.title}</p>
-                      <p className="text-xs text-gray-500 truncate">{result.subtitle}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{result.title}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{result.subtitle}</p>
                     </div>
                     <span className={`text-xs px-2 py-0.5 rounded ${
                       result.type === 'lead'
@@ -277,8 +277,8 @@ export function Header({ user }: HeaderProps) {
 
           {/* No results message */}
           {showSearchResults && searchQuery.length >= 2 && !searchLoading && searchResults.length === 0 && (
-            <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white rounded-lg shadow-lg ring-1 ring-black ring-opacity-5 p-4 text-center">
-              <p className="text-sm text-gray-500">No results found for "{searchQuery}"</p>
+            <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-gray-700 p-4 text-center">
+              <p className="text-sm text-gray-500 dark:text-gray-400">No results found for "{searchQuery}"</p>
             </div>
           )}
         </div>
