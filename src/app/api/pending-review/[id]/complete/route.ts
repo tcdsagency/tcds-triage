@@ -239,7 +239,7 @@ export async function POST(
         };
 
         // Call the service-request API which handles Zapier webhook
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app';
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app');
         const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -327,7 +327,7 @@ export async function POST(
         };
 
         // Call the service-request API which handles Zapier webhook
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app';
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app');
         const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -450,7 +450,7 @@ export async function POST(
         };
 
         // Call the service-request API which handles Zapier webhook
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app';
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app');
         const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
