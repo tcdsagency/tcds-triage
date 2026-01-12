@@ -77,6 +77,24 @@ export function ContactStep() {
               { value: 'separated', label: 'Separated' },
             ]}
           />
+          <FormField
+            label="Driver's License Number"
+            value={formData.licenseNumber}
+            onChange={(v) => updateField('licenseNumber', v)}
+            error={errors.licenseNumber}
+            placeholder="DL12345678"
+          />
+          <FormField
+            label="License State"
+            type="select"
+            value={formData.licenseState}
+            onChange={(v) => updateField('licenseState', v)}
+            error={errors.licenseState}
+            options={[
+              { value: '', label: 'Select State' },
+              ...US_STATES.map((s) => ({ value: s, label: s })),
+            ]}
+          />
         </div>
       </section>
 
@@ -160,7 +178,7 @@ export function ContactStep() {
           <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
             Spouse Information
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
               label="Spouse First Name"
               value={formData.spouseFirstName}
@@ -176,6 +194,23 @@ export function ContactStep() {
               type="date"
               value={formData.spouseDob}
               onChange={(v) => updateField('spouseDob', v)}
+            />
+            <div /> {/* Spacer for alignment */}
+            <FormField
+              label="Spouse Driver's License Number"
+              value={formData.spouseLicenseNumber}
+              onChange={(v) => updateField('spouseLicenseNumber', v)}
+              placeholder="DL12345678"
+            />
+            <FormField
+              label="Spouse License State"
+              type="select"
+              value={formData.spouseLicenseState}
+              onChange={(v) => updateField('spouseLicenseState', v)}
+              options={[
+                { value: '', label: 'Select State' },
+                ...US_STATES.map((s) => ({ value: s, label: s })),
+              ]}
             />
           </div>
         </section>

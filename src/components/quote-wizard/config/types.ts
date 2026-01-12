@@ -65,11 +65,17 @@ export interface QuoteFormData {
   gender: string;
   maritalStatus: string;
 
+  // Driver's License (main applicant)
+  licenseNumber: string;
+  licenseState: string;
+
   // Spouse/Co-Insured
   hasSpouse: boolean;
   spouseFirstName: string;
   spouseLastName: string;
   spouseDob: string;
+  spouseLicenseNumber: string;
+  spouseLicenseState: string;
 
   // Address
   address: string;
@@ -325,11 +331,17 @@ export const initialFormData: QuoteFormData = {
   gender: '',
   maritalStatus: '',
 
+  // Driver's License (main applicant)
+  licenseNumber: '',
+  licenseState: '',
+
   // Spouse
   hasSpouse: false,
   spouseFirstName: '',
   spouseLastName: '',
   spouseDob: '',
+  spouseLicenseNumber: '',
+  spouseLicenseState: '',
 
   // Address
   address: '',
