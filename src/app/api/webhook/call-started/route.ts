@@ -12,7 +12,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, customers, users } from "@/db/schema";
 import { eq, or, ilike, and } from "drizzle-orm";
-import { getVMBridgeClient } from "@/lib/api/vm-bridge";
 
 // =============================================================================
 // REALTIME SERVER PUSH
@@ -202,6 +201,7 @@ export async function POST(request: NextRequest) {
       .values({
         tenantId,
         externalCallId: body.callId || body.sessionId,
+        extension: extension || null, // Store extension for call correlation
         direction: direction as "inbound" | "outbound",
         directionLive: direction as "inbound" | "outbound",
         status: "ringing",
@@ -210,6 +210,7 @@ export async function POST(request: NextRequest) {
         customerId: customer?.id,
         agentId: agent?.id,
         startedAt: timestamp,
+        transcriptionStatus: "pending", // Will be updated when call is answered
       })
       .returning();
 
@@ -227,24 +228,10 @@ export async function POST(request: NextRequest) {
       status: "ringing",
     });
 
-    // 5. Trigger VM Bridge to start transcription
-    let transcriptionStarted = false;
-    let transcriptionError: string | null = null;
-    const threecxCallId = body.callId || body.sessionId; // The 3CX call ID from the bridge
-    try {
-      const vmBridge = await getVMBridgeClient();
-      if (vmBridge) {
-        console.log(`[Call-Started] Triggering VM Bridge for session ${call.id}, extension ${extension}, 3CX callId: ${threecxCallId}`);
-        const result = await vmBridge.startTranscription(call.id, extension, threecxCallId);
-        transcriptionStarted = !!result;
-        console.log(`[Call-Started] VM Bridge response:`, result);
-      } else {
-        console.log(`[Call-Started] VM Bridge not configured`);
-      }
-    } catch (err) {
-      transcriptionError = err instanceof Error ? err.message : String(err);
-      console.error(`[Call-Started] VM Bridge error:`, transcriptionError);
-    }
+    // NOTE: Transcription is started in call-answered webhook (when call is actually connected)
+    // Starting here caused duplicate transcription attempts and race conditions
+    const transcriptionStarted = false;
+    const transcriptionError: string | null = null;
 
     const processingTime = Date.now() - startTime;
     console.log(`[Call-Started] Processed in ${processingTime}ms`);

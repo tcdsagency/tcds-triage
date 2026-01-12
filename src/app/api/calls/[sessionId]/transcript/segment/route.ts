@@ -177,6 +177,16 @@ export async function POST(
 
     console.log(`[Transcript] Segment ${sequenceNumber} stored for call ${callId}: "${body.text.substring(0, 50)}..."`);
 
+    // Update segment count on the call record for tracking
+    await db
+      .update(calls)
+      .set({
+        transcriptionSegmentCount: sequenceNumber,
+        transcriptionStatus: "active", // Confirm transcription is active
+        updatedAt: new Date(),
+      })
+      .where(eq(calls.id, callId));
+
     // Push to realtime WebSocket server for live UI updates
     pushToRealtimeServer({
       type: "transcript_segment",

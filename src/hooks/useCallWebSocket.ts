@@ -24,8 +24,8 @@ interface WebSocketMessage {
   [key: string]: any;
 }
 
-// Mock mode for development
-const MOCK_MODE = process.env.NODE_ENV === "development";
+// Mock mode for testing - disabled by default, enable with NEXT_PUBLIC_MOCK_TRANSCRIPT=true
+const MOCK_MODE = process.env.NEXT_PUBLIC_MOCK_TRANSCRIPT === "true";
 
 // Mock data
 const MOCK_TRANSCRIPT: TranscriptSegment[] = [
@@ -113,8 +113,8 @@ export function useCallWebSocket(sessionId: string, enabled: boolean = true) {
       try {
         // Connect to the real-time server on Google VM (SSL via nginx)
         const wsUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL || 'wss://realtime.tcdsagency.com/ws/calls';
-        
-        console.log(`[useCallWebSocket] Connecting to ${wsUrl}`);
+
+        console.log(`[useCallWebSocket] Connecting to ${wsUrl} for session ${sessionId}`);
         
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
