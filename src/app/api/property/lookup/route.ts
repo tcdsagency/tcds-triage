@@ -189,18 +189,40 @@ async function fetchNearmapData(lat: number, lng: number) {
       return null;
     }
 
-    // Try real API
-    const data = await nearmapClient.getFeatures(lat, lng);
-    return data; // Returns null if no data available
+    // 20 second timeout for Nearmap AI features
+    const data = await withTimeout(
+      nearmapClient.getFeatures(lat, lng),
+      20000,
+      "Nearmap"
+    );
+    return data; // Returns null if no data available or timeout
   } catch (error) {
     console.error("Nearmap fetch error:", error);
     return null; // Return null instead of mock data
   }
 }
 
+// Helper to add timeout to any promise
+function withTimeout<T>(promise: Promise<T>, ms: number, name: string): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => {
+      setTimeout(() => {
+        console.log(`[${name}] Timeout after ${ms}ms`);
+        resolve(null);
+      }, ms);
+    }),
+  ]);
+}
+
 async function fetchRPRData(address: string) {
   try {
-    const data = await rprClient.lookupProperty(address);
+    // 30 second timeout for RPR (browser scraping can be slow)
+    const data = await withTimeout(
+      rprClient.lookupProperty(address),
+      30000,
+      "RPR"
+    );
     return data;
   } catch (error) {
     console.error("RPR fetch error:", error);
@@ -210,8 +232,13 @@ async function fetchRPRData(address: string) {
 
 async function fetchMMIData(address: string) {
   try {
-    const result = await mmiClient.lookupByAddress(address);
-    if (result.success && result.data) {
+    // 15 second timeout for MMI
+    const result = await withTimeout(
+      mmiClient.lookupByAddress(address),
+      15000,
+      "MMI"
+    );
+    if (result && result.success && result.data) {
       return result.data;
     }
     return null;
