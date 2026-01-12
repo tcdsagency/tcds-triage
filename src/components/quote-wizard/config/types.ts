@@ -283,9 +283,10 @@ export interface QuoteWizardContextType {
   // Eligibility
   eligibility: EligibilityResult | null;
 
-  // Save/Submit
+  // Save/Submit/Reset
   saveAsDraft: () => Promise<void>;
   submitQuote: () => Promise<void>;
+  resetForm: () => void;
   isSaving: boolean;
   isSubmitting: boolean;
   lastSaved: Date | null;

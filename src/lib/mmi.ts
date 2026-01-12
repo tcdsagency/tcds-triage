@@ -6,6 +6,25 @@
 const TOKEN_SERVICE_URL = process.env.TOKEN_SERVICE_URL || "http://34.145.14.37:8899";
 const TOKEN_SERVICE_SECRET = process.env.TOKEN_SERVICE_SECRET || "tcds_token_service_2025";
 
+// 2FA callback - set by the app to handle 2FA prompts
+let twoFACallback: ((sessionId: string) => Promise<string | null>) | null = null;
+
+/**
+ * Set the callback function for handling 2FA prompts
+ * The callback should display a UI to get the 2FA code from the user
+ * and return the code, or null if cancelled
+ */
+export function setTwoFACallback(callback: (sessionId: string) => Promise<string | null>) {
+  twoFACallback = callback;
+}
+
+/**
+ * Clear the 2FA callback
+ */
+export function clearTwoFACallback() {
+  twoFACallback = null;
+}
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -96,6 +115,7 @@ class MMIClient {
 
   /**
    * Fetch token from token service on GCP VM
+   * Handles 2FA challenges if needed
    */
   private async extractToken(): Promise<TokenData | null> {
     try {
@@ -116,6 +136,52 @@ class MMIClient {
       }
 
       const result = await response.json();
+
+      // Check if 2FA is required
+      if (result.requires_2fa && result.session_id) {
+        console.log("[MMI] 2FA required, session:", result.session_id);
+
+        // If we have a callback, use it to get the 2FA code
+        if (twoFACallback) {
+          const code = await twoFACallback(result.session_id);
+
+          if (code) {
+            // Submit the 2FA code
+            const twoFAResponse = await fetch(`${TOKEN_SERVICE_URL}/tokens/mmi/2fa`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                session_id: result.session_id,
+                code: code,
+              }),
+              signal: AbortSignal.timeout(60000),
+            });
+
+            const twoFAResult = await twoFAResponse.json();
+
+            if (twoFAResult.success && twoFAResult.token) {
+              console.log("[MMI] 2FA successful, token received");
+              return {
+                token: twoFAResult.token,
+                expiresAt: twoFAResult.expiresAt,
+              };
+            } else {
+              console.error("[MMI] 2FA failed:", twoFAResult.error);
+              return null;
+            }
+          } else {
+            console.log("[MMI] 2FA cancelled by user");
+            return null;
+          }
+        } else {
+          console.log("[MMI] 2FA required but no callback registered");
+          // Store the session ID for later - could be retrieved via API
+          return null;
+        }
+      }
 
       if (result.success && result.token) {
         console.log("[MMI] Token received from service (cached:", result.cached, ")");

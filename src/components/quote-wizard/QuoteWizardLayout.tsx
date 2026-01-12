@@ -9,9 +9,10 @@
 import { useQuoteWizard } from './QuoteWizardProvider';
 import { WizardProgress } from './WizardProgress';
 import { WizardNavigation } from './WizardNavigation';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { useState } from 'react';
 
 interface QuoteWizardLayoutProps {
   children: React.ReactNode;
@@ -25,9 +26,12 @@ export function QuoteWizardLayout({ children, title }: QuoteWizardLayoutProps) {
     isSaving,
     lastSaved,
     saveAsDraft,
+    resetForm,
     getStepProgress,
     eligibility,
   } = useQuoteWizard();
+
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const currentStepConfig = steps[currentStep];
   const progress = getStepProgress();
@@ -61,13 +65,24 @@ export function QuoteWizardLayout({ children, title }: QuoteWizardLayoutProps) {
               {title}
             </h1>
 
-            {/* Save Draft */}
-            <div className="flex items-center gap-3">
+            {/* Save Draft & Start Over */}
+            <div className="flex items-center gap-2">
               {lastSaved && (
                 <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
                   {formatLastSaved()}
                 </span>
               )}
+              <button
+                onClick={() => setShowResetConfirm(true)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors',
+                  'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700',
+                  'border border-gray-300 dark:border-gray-600'
+                )}
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span className="hidden sm:inline">Start Over</span>
+              </button>
               <button
                 onClick={() => saveAsDraft()}
                 disabled={isSaving}
@@ -132,6 +147,41 @@ export function QuoteWizardLayout({ children, title }: QuoteWizardLayoutProps) {
         {/* Navigation */}
         <WizardNavigation />
       </main>
+
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Start Over?
+              </h3>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-gray-600 dark:text-gray-400">
+                This will clear all entered data and start a new quote from the beginning. This action cannot be undone.
+              </p>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700/50 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  resetForm();
+                  setShowResetConfirm(false);
+                }}
+                className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Start Over
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

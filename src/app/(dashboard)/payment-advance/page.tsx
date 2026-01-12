@@ -311,6 +311,39 @@ export default function PaymentAdvancePage() {
     }));
   };
 
+  // Clear entire form and start fresh
+  const handleClearForm = () => {
+    setSelectedCustomer(null);
+    setSearchQuery("");
+    setSearchResults([]);
+    setPolicies([]);
+    setSelectedPolicy("");
+    setManualPolicyEntry(false);
+    setFormData({
+      firstName: "",
+      lastName: "",
+      policyNumber: "",
+      amount: "",
+      paymentType: "card",
+      cardNumber: "",
+      cardExp: "",
+      cardCvv: "",
+      cardZip: "",
+      routingNumber: "",
+      accountNumber: "",
+      draftDate: "",
+      submitterEmail: "",
+      reason: "",
+      reasonDetails: "",
+    });
+    setWaiveConvenienceFee(false);
+    setBankInfo(null);
+    setBankError(null);
+    setBankConfirmed(false);
+    setSubmitError(null);
+    setSubmitSuccess(false);
+  };
+
   // ==========================================================================
   // POLICY SELECTION
   // ==========================================================================
@@ -695,9 +728,18 @@ export default function PaymentAdvancePage() {
 
             {/* Payment Form */}
             <form onSubmit={handleShowConfirmation} className="bg-white rounded-lg border shadow-sm p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <span>💵</span> Payment Advance Form
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <span>💵</span> Payment Advance Form
+                </h2>
+                <button
+                  type="button"
+                  onClick={handleClearForm}
+                  className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg border border-gray-300 transition-colors"
+                >
+                  Clear Form
+                </button>
+              </div>
 
               <div className="text-sm text-gray-500 mb-6">
                 Today&apos;s Date: <span className="font-medium text-gray-900">{todaysDate}</span>
