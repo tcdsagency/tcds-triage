@@ -1244,12 +1244,12 @@ function AgentAssistPanel({
                 <div className="px-3 pb-3 pt-0 space-y-2 border-t border-purple-100 dark:border-purple-800">
                   <p className="text-sm text-gray-600 dark:text-gray-400 pt-2">{tip.tip}</p>
                   {tip.script && (
-                    <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-3 mt-2">
-                      <p className="text-xs text-purple-600 dark:text-purple-400 font-medium mb-1">
+                    <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3 mt-2 border border-amber-200 dark:border-amber-700">
+                      <p className="text-xs text-amber-700 dark:text-amber-300 font-medium mb-1">
                         Suggested Script:
                       </p>
-                      <p className="text-sm text-purple-900 dark:text-purple-100 italic">
-                        {tip.script}
+                      <p className="text-sm text-gray-900 dark:text-gray-100 italic">
+                        &quot;{tip.script}&quot;
                       </p>
                     </div>
                   )}

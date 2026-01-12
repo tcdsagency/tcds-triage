@@ -125,6 +125,7 @@ export default function PaymentAdvancePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // History state
   const [advances, setAdvances] = useState<PaymentAdvance[]>([]);
@@ -280,8 +281,14 @@ export default function PaymentAdvancePage() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Show confirmation modal before submitting
+  const handleShowConfirmation = (e: React.FormEvent) => {
     e.preventDefault();
+    setShowConfirmModal(true);
+  };
+
+  const handleSubmit = async () => {
+    setShowConfirmModal(false);
     setSubmitting(true);
     setSubmitError(null);
 
@@ -562,8 +569,70 @@ export default function PaymentAdvancePage() {
               )}
             </div>
 
+            {/* Confirmation Modal */}
+            {showConfirmModal && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+                  <div className="bg-blue-600 px-6 py-4">
+                    <h3 className="text-lg font-semibold text-white">Confirm Payment Advance</h3>
+                  </div>
+                  <div className="px-6 py-4 space-y-3">
+                    <div className="flex justify-between border-b pb-2">
+                      <span className="text-gray-600">Customer:</span>
+                      <span className="font-medium">{formData.firstName} {formData.lastName}</span>
+                    </div>
+                    <div className="flex justify-between border-b pb-2">
+                      <span className="text-gray-600">Policy:</span>
+                      <span className="font-medium">{formData.policyNumber}</span>
+                    </div>
+                    <div className="flex justify-between border-b pb-2">
+                      <span className="text-gray-600">Payment Amount:</span>
+                      <span className="font-medium">${parseFloat(formData.amount).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between border-b pb-2">
+                      <span className="text-gray-600">Payment Method:</span>
+                      <span className="font-medium">
+                        {formData.paymentType === "card"
+                          ? `Card ending in ${formData.cardNumber.slice(-4)}`
+                          : `ACH ending in ${formData.accountNumber.slice(-4)}`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-b pb-2">
+                      <span className="text-gray-600">Draft Date:</span>
+                      <span className="font-medium">{formData.draftDate}</span>
+                    </div>
+                    {waiveConvenienceFee && (
+                      <div className="flex justify-between border-b pb-2">
+                        <span className="text-gray-600">Convenience Fee:</span>
+                        <span className="font-medium text-green-600">WAIVED</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between pt-2 text-lg">
+                      <span className="font-semibold">Total Amount:</span>
+                      <span className="font-bold text-blue-600">${totalAmount.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="px-6 py-4 bg-gray-50 flex gap-3 justify-end">
+                    <button
+                      onClick={() => setShowConfirmModal(false)}
+                      className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSubmit}
+                      disabled={submitting}
+                      className="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+                    >
+                      {submitting ? "Processing..." : "Confirm & Submit"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Payment Form */}
-            <form onSubmit={handleSubmit} className="bg-white rounded-lg border shadow-sm p-6">
+            <form onSubmit={handleShowConfirmation} className="bg-white rounded-lg border shadow-sm p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <span>💵</span> Payment Advance Form
               </h2>

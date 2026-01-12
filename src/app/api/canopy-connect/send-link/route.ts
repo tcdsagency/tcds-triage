@@ -51,16 +51,24 @@ export async function POST(request: NextRequest) {
     }
 
     // Create pull request via Canopy API
-    const result = await client.createPull({
-      phone,
-      email,
-      first_name: firstName,
-      last_name: lastName,
-      redirect_url: process.env.CANOPY_REDIRECT_URL,
-      metadata,
-    });
-
-    console.log(`[Canopy SMS] Created pull ${result.pull_id}, link: ${result.link_url}`);
+    let result;
+    try {
+      result = await client.createPull({
+        phone,
+        email,
+        first_name: firstName,
+        last_name: lastName,
+        redirect_url: process.env.CANOPY_REDIRECT_URL,
+        metadata,
+      });
+      console.log(`[Canopy SMS] Created pull ${result.pull_id}, link: ${result.link_url}`);
+    } catch (pullError) {
+      console.error("[Canopy SMS] Failed to create pull:", pullError);
+      return NextResponse.json(
+        { error: `Failed to create Canopy pull: ${pullError instanceof Error ? pullError.message : "Unknown error"}` },
+        { status: 500 }
+      );
+    }
 
     // Compose SMS message
     const customerName = firstName ? `Hi ${firstName}! ` : "";
@@ -80,21 +88,28 @@ export async function POST(request: NextRequest) {
     }
 
     // Store the pull request in database
-    const [storedPull] = await db
-      .insert(canopyConnectPulls)
-      .values({
-        tenantId,
-        pullId: result.pull_id,
-        pullStatus: "PENDING",
-        firstName,
-        lastName,
-        email,
-        phone,
-        canopyLinkUsed: result.link_url,
-        matchStatus: customerId ? "matched" : "pending",
-        matchedCustomerId: customerId || null,
-      })
-      .returning();
+    let storedPull;
+    try {
+      [storedPull] = await db
+        .insert(canopyConnectPulls)
+        .values({
+          tenantId,
+          pullId: result.pull_id,
+          pullStatus: "PENDING",
+          firstName,
+          lastName,
+          email,
+          phone,
+          canopyLinkUsed: result.link_url,
+          matchStatus: customerId ? "matched" : "pending",
+          matchedCustomerId: customerId || null,
+        })
+        .returning();
+    } catch (dbError) {
+      console.error("[Canopy SMS] Database insert failed:", dbError);
+      // Continue anyway - the pull was created in Canopy, just not stored locally
+      storedPull = { pullId: result.pull_id };
+    }
 
     // Store the outgoing SMS in messages table
     if (smsResult.success) {

@@ -30,6 +30,7 @@ import {
   VISUAL_VEHICLE_USAGE,
 } from "@/components/features/VisualOptionSelector";
 import { AddressLookup } from "@/components/features/AddressLookup";
+import { AddressAutocomplete } from "@/components/ui/AddressAutocomplete";
 
 // =============================================================================
 // TYPES
@@ -1296,7 +1297,52 @@ interface FieldProps {
   tooltip?: string;
 }
 
+// Helper to convert YYYY-MM-DD to MM/DD/YYYY for display
+function isoToDisplay(isoDate: string): string {
+  if (!isoDate) return "";
+  const match = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    return `${match[2]}/${match[3]}/${match[1]}`;
+  }
+  return isoDate; // Return as-is if not ISO format
+}
+
+// Helper to convert MM/DD/YYYY to YYYY-MM-DD for storage
+function displayToIso(displayDate: string): string {
+  if (!displayDate) return "";
+  const match = displayDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) {
+    return `${match[3]}-${match[1]}-${match[2]}`;
+  }
+  return displayDate; // Return as-is if not in display format
+}
+
+// Format date input as user types (auto-add slashes)
+function formatDateInput(input: string): string {
+  // Remove non-digits
+  const digits = input.replace(/\D/g, "");
+  // Format as MM/DD/YYYY
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
+}
+
 function FormField({ label, value, onChange, type = "text", placeholder, options, required, className, error, tooltip }: FieldProps) {
+  // For date fields, convert between ISO (storage) and display format
+  const isDate = type === "date";
+  const displayValue = isDate ? isoToDisplay(value) : value;
+
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatDateInput(e.target.value);
+    // If complete date, convert to ISO for storage
+    if (formatted.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+      onChange(displayToIso(formatted));
+    } else {
+      // Store partial input as-is for editing
+      onChange(formatted);
+    }
+  };
+
   return (
     <div className={className}>
       <label className="flex items-center gap-1.5 text-sm font-medium text-gray-300 mb-1">
@@ -1314,6 +1360,15 @@ function FormField({ label, value, onChange, type = "text", placeholder, options
         <select value={value} onChange={(e) => onChange(e.target.value)} className={cn("w-full px-3 py-2 bg-gray-900 border rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50", error ? "border-red-500" : "border-gray-700")}>
           {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+      ) : isDate ? (
+        <Input
+          type="text"
+          value={displayValue}
+          onChange={handleDateChange}
+          placeholder="MM/DD/YYYY"
+          maxLength={10}
+          className={cn("bg-gray-900 border-gray-700 text-white", error && "border-red-500")}
+        />
       ) : (
         <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={cn("bg-gray-900 border-gray-700 text-white", error && "border-red-500")} />
       )}
@@ -2701,11 +2756,24 @@ export default function QuoteIntakePage() {
                 <Field label="Last Name" value={autoFormData.lastName} onChange={(v: string) => updateAutoField("lastName", v)} required placeholder="Doe" error={errors.lastName} />
                 <Field label="Phone" value={autoFormData.phone} onChange={(v: string) => updateAutoField("phone", v)} type="tel" required placeholder="(555) 555-5555" error={errors.phone} />
                 <Field label="Email" value={autoFormData.email} onChange={(v: string) => updateAutoField("email", v)} type="email" placeholder="john@example.com" />
-                <Field label="Date of Birth" value={autoFormData.dob} onChange={(v: string) => updateAutoField("dob", v)} type="date" required error={errors.dob} />
-                <Field label="Gender" value={autoFormData.gender} onChange={(v: string) => updateAutoField("gender", v)} options={[{ value: "", label: "Select..." }, { value: "male", label: "Male" }, { value: "female", label: "Female" }]} />
-                <Field label="Marital Status" value={autoFormData.maritalStatus} onChange={(v: string) => updateAutoField("maritalStatus", v)} options={[{ value: "", label: "Select status..." }, { value: "single", label: "Single" }, { value: "married", label: "Married" }, { value: "divorced", label: "Divorced" }, { value: "widowed", label: "Widowed" }]} />
+                <Field label="Date of Birth" value={autoFormData.dob} onChange={(v: string) => updateAutoField("dob", v)} type="date" required error={errors.dob} tooltip="Used to verify identity and calculate rates" />
+                <Field label="Gender" value={autoFormData.gender} onChange={(v: string) => updateAutoField("gender", v)} options={[{ value: "", label: "Select..." }, { value: "male", label: "Male" }, { value: "female", label: "Female" }]} tooltip="Optional - may affect rates in some states" />
+                <Field label="Marital Status" value={autoFormData.maritalStatus} onChange={(v: string) => updateAutoField("maritalStatus", v)} options={[{ value: "", label: "Select status..." }, { value: "single", label: "Single" }, { value: "married", label: "Married" }, { value: "divorced", label: "Divorced" }, { value: "widowed", label: "Widowed" }]} tooltip="Married drivers often get lower rates" />
                 <div />
-                <Field label="Street Address" value={autoFormData.address} onChange={(v: string) => updateAutoField("address", v)} required placeholder="123 Main St" className="col-span-2" />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Street Address <span className="text-red-400">*</span></label>
+                  <AddressAutocomplete
+                    value={autoFormData.address}
+                    onChange={(v) => updateAutoField("address", v)}
+                    onAddressSelect={(addr) => {
+                      updateAutoField("city", addr.city);
+                      updateAutoField("state", addr.state);
+                      updateAutoField("zip", addr.zip);
+                    }}
+                    placeholder="Start typing address..."
+                    error={errors.address}
+                  />
+                </div>
                 <Field label="City" value={autoFormData.city} onChange={(v: string) => updateAutoField("city", v)} required placeholder="Birmingham" />
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="State" value={autoFormData.state} onChange={(v: string) => updateAutoField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
@@ -3061,9 +3129,9 @@ export default function QuoteIntakePage() {
             {/* Coverage */}
             <Section id="coverage" icon={Shield} title="Coverage Preferences">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Dwelling Coverage (A)" value={homeownersFormData.dwellingCoverage} onChange={(v: string) => updateHomeownersField("dwellingCoverage", v)} required placeholder="$350,000" error={errors.dwellingCoverage} />
-                <Field label="Other Structures (B)" value={homeownersFormData.otherStructures} onChange={(v: string) => updateHomeownersField("otherStructures", v)} placeholder="10% of dwelling" />
-                <Field label="Personal Property (C)" value={homeownersFormData.personalProperty} onChange={(v: string) => updateHomeownersField("personalProperty", v)} placeholder="50-70% of dwelling" />
+                <Field label="Dwelling Coverage (A)" value={homeownersFormData.dwellingCoverage} onChange={(v: string) => updateHomeownersField("dwellingCoverage", v)} required placeholder="$350,000" error={errors.dwellingCoverage} tooltip="Rebuild cost of your home's structure" />
+                <Field label="Other Structures (B)" value={homeownersFormData.otherStructures} onChange={(v: string) => updateHomeownersField("otherStructures", v)} placeholder="10% of dwelling" tooltip="Fences, sheds, detached garages" />
+                <Field label="Personal Property (C)" value={homeownersFormData.personalProperty} onChange={(v: string) => updateHomeownersField("personalProperty", v)} placeholder="50-70% of dwelling" tooltip="Furniture, clothes, electronics" />
                 <div />
                 <Field label="Personal Liability" value={homeownersFormData.liability} onChange={(v: string) => updateHomeownersField("liability", v)} options={LIABILITY_OPTIONS} tooltip="Covers injuries on your property" />
                 <Field label="Medical Payments" value={homeownersFormData.medicalPayments} onChange={(v: string) => updateHomeownersField("medicalPayments", v)} options={MED_PAY_OPTIONS} tooltip="Guest medical expenses, no fault required" />
@@ -3154,7 +3222,20 @@ export default function QuoteIntakePage() {
             {/* Rental Property */}
             <Section id="rental" icon={Home} title="Rental Property">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Street Address" value={rentersFormData.rentalAddress} onChange={(v: string) => updateRentersField("rentalAddress", v)} required placeholder="123 Main St, Apt 4B" className="col-span-2" error={errors.rentalAddress} />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Street Address <span className="text-red-400">*</span></label>
+                  <AddressAutocomplete
+                    value={rentersFormData.rentalAddress}
+                    onChange={(v) => updateRentersField("rentalAddress", v)}
+                    onAddressSelect={(addr) => {
+                      updateRentersField("rentalCity", addr.city);
+                      updateRentersField("rentalState", addr.state);
+                      updateRentersField("rentalZip", addr.zip);
+                    }}
+                    placeholder="Start typing address..."
+                    error={errors.rentalAddress}
+                  />
+                </div>
                 <Field label="City" value={rentersFormData.rentalCity} onChange={(v: string) => updateRentersField("rentalCity", v)} required placeholder="Birmingham" />
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="State" value={rentersFormData.rentalState} onChange={(v: string) => updateRentersField("rentalState", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
@@ -3168,10 +3249,10 @@ export default function QuoteIntakePage() {
             {/* Coverage */}
             <Section id="coverage" icon={Shield} title="Coverage Options">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Personal Property" value={rentersFormData.personalProperty} onChange={(v: string) => updateRentersField("personalProperty", v)} options={RENTERS_PP_OPTIONS} />
-                <Field label="Personal Liability" value={rentersFormData.liability} onChange={(v: string) => updateRentersField("liability", v)} options={LIABILITY_OPTIONS} />
-                <Field label="Medical Payments" value={rentersFormData.medicalPayments} onChange={(v: string) => updateRentersField("medicalPayments", v)} options={MED_PAY_OPTIONS} />
-                <Field label="Deductible" value={rentersFormData.deductible} onChange={(v: string) => updateRentersField("deductible", v)} options={RENTERS_DEDUCTIBLE_OPTIONS} />
+                <Field label="Personal Property" value={rentersFormData.personalProperty} onChange={(v: string) => updateRentersField("personalProperty", v)} options={RENTERS_PP_OPTIONS} tooltip="Covers your belongings if damaged or stolen" />
+                <Field label="Personal Liability" value={rentersFormData.liability} onChange={(v: string) => updateRentersField("liability", v)} options={LIABILITY_OPTIONS} tooltip="Protects if someone is injured in your unit" />
+                <Field label="Medical Payments" value={rentersFormData.medicalPayments} onChange={(v: string) => updateRentersField("medicalPayments", v)} options={MED_PAY_OPTIONS} tooltip="Guest medical bills, no fault required" />
+                <Field label="Deductible" value={rentersFormData.deductible} onChange={(v: string) => updateRentersField("deductible", v)} options={RENTERS_DEDUCTIBLE_OPTIONS} tooltip="Your out-of-pocket before insurance pays" />
               </div>
             </Section>
 
@@ -3184,9 +3265,9 @@ export default function QuoteIntakePage() {
                 </label>
                 {rentersFormData.hasHighValueItems && (
                   <>
-                    <Field label="Jewelry Value" value={rentersFormData.jewelryValue} onChange={(v: string) => updateRentersField("jewelryValue", v)} placeholder="$5,000" />
-                    <Field label="Electronics Value" value={rentersFormData.electronicsValue} onChange={(v: string) => updateRentersField("electronicsValue", v)} placeholder="$3,000" />
-                    <Field label="Other Valuables" value={rentersFormData.otherValuablesValue} onChange={(v: string) => updateRentersField("otherValuablesValue", v)} placeholder="Collectibles, art, etc." className="col-span-2" />
+                    <Field label="Jewelry Value" value={rentersFormData.jewelryValue} onChange={(v: string) => updateRentersField("jewelryValue", v)} placeholder="$5,000" tooltip="Standard policies limit jewelry claims" />
+                    <Field label="Electronics Value" value={rentersFormData.electronicsValue} onChange={(v: string) => updateRentersField("electronicsValue", v)} placeholder="$3,000" tooltip="Computers, cameras, gaming systems" />
+                    <Field label="Other Valuables" value={rentersFormData.otherValuablesValue} onChange={(v: string) => updateRentersField("otherValuablesValue", v)} placeholder="Collectibles, art, etc." className="col-span-2" tooltip="Art, collectibles, musical instruments" />
                   </>
                 )}
               </div>
@@ -3270,7 +3351,20 @@ export default function QuoteIntakePage() {
               <div className="mt-6 pt-6 border-t border-gray-700/50">
                 <h4 className="text-sm font-medium text-gray-300 mb-4">Mailing Address</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Field label="Street Address" value={umbrellaFormData.address} onChange={(v: string) => updateUmbrellaField("address", v)} required placeholder="123 Main St" className="col-span-2" error={errors.address} />
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Street Address <span className="text-red-400">*</span></label>
+                    <AddressAutocomplete
+                      value={umbrellaFormData.address}
+                      onChange={(v) => updateUmbrellaField("address", v)}
+                      onAddressSelect={(addr) => {
+                        updateUmbrellaField("city", addr.city);
+                        updateUmbrellaField("state", addr.state);
+                        updateUmbrellaField("zip", addr.zip);
+                      }}
+                      placeholder="Start typing address..."
+                      error={errors.address}
+                    />
+                  </div>
                   <Field label="City" value={umbrellaFormData.city} onChange={(v: string) => updateUmbrellaField("city", v)} required placeholder="Birmingham" />
                   <div className="grid grid-cols-2 gap-2">
                     <Field label="State" value={umbrellaFormData.state} onChange={(v: string) => updateUmbrellaField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
@@ -3372,7 +3466,7 @@ export default function QuoteIntakePage() {
             {/* Coverage */}
             <Section id="coverage" icon={Shield} title="Umbrella Coverage">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Umbrella Limit" value={umbrellaFormData.umbrellaLimit} onChange={(v: string) => updateUmbrellaField("umbrellaLimit", v)} options={UMBRELLA_LIMIT_OPTIONS} />
+                <Field label="Umbrella Limit" value={umbrellaFormData.umbrellaLimit} onChange={(v: string) => updateUmbrellaField("umbrellaLimit", v)} options={UMBRELLA_LIMIT_OPTIONS} tooltip="Extra liability over auto/home limits" />
               </div>
             </Section>
 
@@ -3452,7 +3546,20 @@ export default function QuoteIntakePage() {
                     <Field label="Lot Number" value={mobileHomeFormData.lotNumber} onChange={(v: string) => updateMobileHomeField("lotNumber", v)} placeholder="Lot 42" />
                   </>
                 )}
-                <Field label="Property Address" value={mobileHomeFormData.propertyAddress} onChange={(v: string) => updateMobileHomeField("propertyAddress", v)} required placeholder="123 Mobile Home Dr" className="col-span-2" error={errors.propertyAddress} />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Property Address <span className="text-red-400">*</span></label>
+                  <AddressAutocomplete
+                    value={mobileHomeFormData.propertyAddress}
+                    onChange={(v) => updateMobileHomeField("propertyAddress", v)}
+                    onAddressSelect={(addr) => {
+                      updateMobileHomeField("propertyCity", addr.city);
+                      updateMobileHomeField("propertyState", addr.state);
+                      updateMobileHomeField("propertyZip", addr.zip);
+                    }}
+                    placeholder="Start typing address..."
+                    error={errors.propertyAddress}
+                  />
+                </div>
                 <Field label="City" value={mobileHomeFormData.propertyCity} onChange={(v: string) => updateMobileHomeField("propertyCity", v)} required placeholder="Anytown" />
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="State" value={mobileHomeFormData.propertyState} onChange={(v: string) => updateMobileHomeField("propertyState", v)} required options={[{ value: "", label: "Select..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
@@ -3669,7 +3776,20 @@ export default function QuoteIntakePage() {
             {/* Business Location */}
             <Section id="location" icon={Home} title="Business Location">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Street Address" value={bopFormData.address} onChange={(v: string) => updateBopField("address", v)} required placeholder="123 Business Way" className="col-span-2" error={errors.address} />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Street Address <span className="text-red-400">*</span></label>
+                  <AddressAutocomplete
+                    value={bopFormData.address}
+                    onChange={(v) => updateBopField("address", v)}
+                    onAddressSelect={(addr) => {
+                      updateBopField("city", addr.city);
+                      updateBopField("state", addr.state);
+                      updateBopField("zip", addr.zip);
+                    }}
+                    placeholder="Start typing address..."
+                    error={errors.address}
+                  />
+                </div>
                 <Field label="City" value={bopFormData.city} onChange={(v: string) => updateBopField("city", v)} required placeholder="Dallas" />
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="State" value={bopFormData.state} onChange={(v: string) => updateBopField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
@@ -3808,7 +3928,20 @@ export default function QuoteIntakePage() {
             {/* Business Location */}
             <Section id="location" icon={Home} title="Business Location">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Street Address" value={glFormData.address} onChange={(v: string) => updateGlField("address", v)} required placeholder="123 Business Way" className="col-span-2" error={errors.address} />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Street Address <span className="text-red-400">*</span></label>
+                  <AddressAutocomplete
+                    value={glFormData.address}
+                    onChange={(v) => updateGlField("address", v)}
+                    onAddressSelect={(addr) => {
+                      updateGlField("city", addr.city);
+                      updateGlField("state", addr.state);
+                      updateGlField("zip", addr.zip);
+                    }}
+                    placeholder="Start typing address..."
+                    error={errors.address}
+                  />
+                </div>
                 <Field label="City" value={glFormData.city} onChange={(v: string) => updateGlField("city", v)} required placeholder="Dallas" />
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="State" value={glFormData.state} onChange={(v: string) => updateGlField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
@@ -3946,7 +4079,19 @@ export default function QuoteIntakePage() {
             {/* Business Location */}
             <Section id="location" icon={Home} title="Business Location">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Field label="Street Address" value={wcFormData.address} onChange={(v: string) => updateWcField("address", v)} placeholder="123 Business Way" className="col-span-2" />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Street Address</label>
+                  <AddressAutocomplete
+                    value={wcFormData.address}
+                    onChange={(v) => updateWcField("address", v)}
+                    onAddressSelect={(addr) => {
+                      updateWcField("city", addr.city);
+                      updateWcField("state", addr.state);
+                      updateWcField("zip", addr.zip);
+                    }}
+                    placeholder="Start typing address..."
+                  />
+                </div>
                 <Field label="City" value={wcFormData.city} onChange={(v: string) => updateWcField("city", v)} placeholder="Dallas" />
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="State" value={wcFormData.state} onChange={(v: string) => updateWcField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />
@@ -4100,7 +4245,19 @@ export default function QuoteIntakePage() {
                 <Field label="Date of Birth" value={recreationalFormData.dob} onChange={(v: string) => updateRecreationalField("dob", v)} type="date" required />
                 <Field label="Email" value={recreationalFormData.email} onChange={(v: string) => updateRecreationalField("email", v)} type="email" placeholder="john@email.com" />
                 <Field label="Phone" value={recreationalFormData.phone} onChange={(v: string) => updateRecreationalField("phone", v)} type="tel" required placeholder="(555) 555-5555" error={errors.phone} />
-                <Field label="Street Address" value={recreationalFormData.address} onChange={(v: string) => updateRecreationalField("address", v)} placeholder="123 Main St" className="col-span-2" />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Street Address</label>
+                  <AddressAutocomplete
+                    value={recreationalFormData.address}
+                    onChange={(v) => updateRecreationalField("address", v)}
+                    onAddressSelect={(addr) => {
+                      updateRecreationalField("city", addr.city);
+                      updateRecreationalField("state", addr.state);
+                      updateRecreationalField("zip", addr.zip);
+                    }}
+                    placeholder="Start typing address..."
+                  />
+                </div>
                 <Field label="City" value={recreationalFormData.city} onChange={(v: string) => updateRecreationalField("city", v)} placeholder="Dallas" />
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="State" value={recreationalFormData.state} onChange={(v: string) => updateRecreationalField("state", v)} required options={[{ value: "", label: "Select state..." }, ...STATES.map(s => ({ value: s, label: s }))]} />

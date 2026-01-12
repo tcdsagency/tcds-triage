@@ -97,13 +97,22 @@ export default function DashboardPage() {
   const [donnaAlerts, setDonnaAlerts] = useState<DonnaAlert[]>([]);
 
   const fetchDashboardData = async (showRefresh = false) => {
+    // Set a timeout to ensure loading state doesn't hang forever
+    const loadingTimeout = setTimeout(() => {
+      setLoading(false);
+      setRefreshing(false);
+    }, 10000); // 10 second max loading time
+
     try {
       if (showRefresh) setRefreshing(true);
       else setLoading(true);
 
-      // Fetch current user's name
+      // Fetch current user's name (with timeout)
       try {
-        const userRes = await fetch("/api/auth/me");
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const userRes = await fetch("/api/auth/me", { signal: controller.signal });
+        clearTimeout(timeoutId);
         if (userRes.ok) {
           const userData = await userRes.json();
           if (userData.user?.firstName) {
@@ -117,50 +126,47 @@ export default function DashboardPage() {
         console.error("User fetch error:", userErr);
       }
 
-      // Fetch pending review items
-      const pendingRes = await fetch("/api/pending-review?limit=5");
-      if (pendingRes.ok) {
-        const pendingData = await pendingRes.json();
-        if (pendingData.success) {
-          setPendingItems(pendingData.items || []);
-          setStats(prev => ({ ...prev, pendingReviewCount: pendingData.counts?.total || 0 }));
+      // Fetch data in parallel with individual timeouts
+      const fetchWithTimeout = async (url: string, timeout = 5000) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        try {
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (res.ok) return res.json();
+          return null;
+        } catch {
+          return null;
         }
+      };
+
+      const [pendingData, leadsData, presenceData, donnaData] = await Promise.all([
+        fetchWithTimeout("/api/pending-review?limit=5"),
+        fetchWithTimeout("/api/leads?limit=1"),
+        fetchWithTimeout("/api/3cx/presence"),
+        fetchWithTimeout("/api/donna/alerts?limit=10"),
+      ]);
+
+      // Process pending review
+      if (pendingData?.success) {
+        setPendingItems(pendingData.items || []);
+        setStats(prev => ({ ...prev, pendingReviewCount: pendingData.counts?.total || 0 }));
       }
 
-      // Fetch leads count
-      const leadsRes = await fetch("/api/leads?limit=1");
-      if (leadsRes.ok) {
-        const leadsData = await leadsRes.json();
-        if (leadsData.success) {
-          setStats(prev => ({ ...prev, activeLeads: leadsData.counts?.total || leadsData.leads?.length || 0 }));
-        }
+      // Process leads
+      if (leadsData?.success) {
+        setStats(prev => ({ ...prev, activeLeads: leadsData.counts?.total || leadsData.leads?.length || 0 }));
       }
 
-      // Fetch team presence from 3CX
-      try {
-        const presenceRes = await fetch("/api/3cx/presence");
-        if (presenceRes.ok) {
-          const presenceData = await presenceRes.json();
-          if (presenceData.success) {
-            setTeamPresence(presenceData.team || []);
-            setPresenceConnected(presenceData.connected || false);
-          }
-        }
-      } catch (presenceErr) {
-        console.error("Presence fetch error:", presenceErr);
+      // Process team presence
+      if (presenceData?.success) {
+        setTeamPresence(presenceData.team || []);
+        setPresenceConnected(presenceData.connected || false);
       }
 
-      // Fetch Donna AI alerts
-      try {
-        const donnaRes = await fetch("/api/donna/alerts?limit=10");
-        if (donnaRes.ok) {
-          const donnaData = await donnaRes.json();
-          if (donnaData.success) {
-            setDonnaAlerts(donnaData.alerts || []);
-          }
-        }
-      } catch (donnaErr) {
-        console.error("Donna alerts fetch error:", donnaErr);
+      // Process Donna alerts
+      if (donnaData?.success) {
+        setDonnaAlerts(donnaData.alerts || []);
       }
 
     } catch (err) {
@@ -169,6 +175,7 @@ export default function DashboardPage() {
         description: "Some metrics may be unavailable",
       });
     } finally {
+      clearTimeout(loadingTimeout);
       setLoading(false);
       setRefreshing(false);
     }
