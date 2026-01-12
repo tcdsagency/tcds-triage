@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { policies, vehicles, drivers } from '@/db/schema';
+import { policies, vehicles, drivers, customers } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { getHawkSoftClient, FULL_CLIENT_EXPANDS } from '@/lib/api/hawksoft';
 
 /**
  * GET /api/policy/[id]/details
@@ -9,7 +10,10 @@ import { eq, and } from 'drizzle-orm';
  * Fetches policy details including vehicles and drivers.
  * Used by the service request wizard to prefill forms.
  *
- * First tries to fetch from normalized tables, then falls back to raw_data JSON.
+ * Priority:
+ * 1. Normalized tables (vehicles, drivers)
+ * 2. rawData JSON on policy
+ * 3. Live fetch from HawkSoft API
  */
 export async function GET(
   request: NextRequest,
@@ -122,6 +126,79 @@ export async function GET(
         relationship: d.relationship || d.Relationship || d.type || '',
         isExcluded: d.isExcluded || d.excluded || false,
       }));
+    }
+
+    // If still no vehicles/drivers and it's an auto policy, try fetching from HawkSoft API
+    if ((policyVehicles.length === 0 || policyDrivers.length === 0) &&
+        policy.lineOfBusiness?.toLowerCase().includes('auto')) {
+      try {
+        // Get customer's HawkSoft client code
+        const [policyWithCustomer] = await db
+          .select({
+            customerId: policies.customerId,
+          })
+          .from(policies)
+          .where(eq(policies.id, id))
+          .limit(1);
+
+        if (policyWithCustomer?.customerId) {
+          const [customer] = await db
+            .select({
+              hawksoftClientCode: customers.hawksoftClientCode,
+            })
+            .from(customers)
+            .where(eq(customers.id, policyWithCustomer.customerId))
+            .limit(1);
+
+          if (customer?.hawksoftClientCode) {
+            console.log('Fetching from HawkSoft for client:', customer.hawksoftClientCode);
+            const hawksoft = getHawkSoftClient();
+            const clientData = await hawksoft.getClient(
+              parseInt(customer.hawksoftClientCode),
+              ['policies'],
+              ['policies.autos', 'policies.drivers']
+            );
+
+            // Find matching policy by policy number
+            const matchingPolicy = clientData.policies?.find(
+              (p: any) => p.policyNumber === policy.policyNumber
+            );
+
+            if (matchingPolicy) {
+              // Extract vehicles from HawkSoft (API returns 'autos' not 'vehicles')
+              const hsVehicles = matchingPolicy.autos || matchingPolicy.vehicles || [];
+              if (policyVehicles.length === 0 && hsVehicles.length > 0) {
+                policyVehicles = hsVehicles.map((v: any, idx: number) => ({
+                  id: `hs-vehicle-${idx}`,
+                  vin: v.vin || v.VIN || '',
+                  year: (v.year || v.Year)?.toString() || '',
+                  make: v.make || v.Make || '',
+                  model: v.model || v.Model || '',
+                  use: v.usage || v.use || v.Use || '',
+                  annualMiles: '',
+                }));
+              }
+
+              // Extract drivers from HawkSoft
+              if (policyDrivers.length === 0 && matchingPolicy.drivers?.length) {
+                policyDrivers = matchingPolicy.drivers.map((d: any, idx: number) => ({
+                  id: `hs-driver-${idx}`,
+                  firstName: d.firstName || '',
+                  lastName: d.lastName || '',
+                  dateOfBirth: d.dateOfBirth || null,
+                  licenseNumber: d.licenseNumber || '',
+                  licenseState: d.licenseState || '',
+                  relationship: '',
+                  isExcluded: false,
+                }));
+              }
+            }
+          }
+        }
+      } catch (hawkError) {
+        console.error('HawkSoft fetch failed:', hawkError);
+        // Continue with empty data - don't fail the whole request
+      }
     }
 
     return NextResponse.json({

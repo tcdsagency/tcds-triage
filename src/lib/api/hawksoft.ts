@@ -96,8 +96,9 @@ export interface HawkSoftPolicy {
   expirationDate: string;
   status: string;
   premium?: number;
-  // Auto-specific
+  // Auto-specific (API returns 'autos' which we normalize to 'vehicles')
   vehicles?: HawkSoftVehicle[];
+  autos?: HawkSoftVehicle[]; // Raw API field name
   drivers?: HawkSoftDriver[];
   // Property-specific
   locations?: HawkSoftLocation[];
