@@ -166,7 +166,7 @@ export function PropertyStep() {
               placeholder="123 Main St"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 formData.propertySameAsMailing && 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed',
                 errors.propertyAddress
                   ? 'border-red-300 dark:border-red-500'
@@ -191,7 +191,7 @@ export function PropertyStep() {
                 disabled={formData.propertySameAsMailing}
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   formData.propertySameAsMailing && 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed',
                   errors.propertyCity
                     ? 'border-red-300 dark:border-red-500'
@@ -210,7 +210,7 @@ export function PropertyStep() {
                 disabled={formData.propertySameAsMailing}
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   formData.propertySameAsMailing && 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed',
                   errors.propertyState
                     ? 'border-red-300 dark:border-red-500'
@@ -236,7 +236,7 @@ export function PropertyStep() {
                 placeholder="12345"
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   formData.propertySameAsMailing && 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed',
                   errors.propertyZip
                     ? 'border-red-300 dark:border-red-500'
@@ -329,7 +329,7 @@ export function PropertyStep() {
                 placeholder="Previous street address"
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   'border-gray-300 dark:border-gray-600',
                   'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                 )}
@@ -346,7 +346,7 @@ export function PropertyStep() {
                   onChange={(e) => updateField('priorCity', e.target.value)}
                   className={cn(
                     'w-full px-3 py-2 rounded-lg border transition-colors',
-                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                    'text-gray-900 bg-white',
                     'border-gray-300 dark:border-gray-600',
                     'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                   )}
@@ -361,7 +361,7 @@ export function PropertyStep() {
                   onChange={(e) => updateField('priorState', e.target.value)}
                   className={cn(
                     'w-full px-3 py-2 rounded-lg border transition-colors',
-                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                    'text-gray-900 bg-white',
                     'border-gray-300 dark:border-gray-600',
                     'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                   )}
@@ -383,7 +383,7 @@ export function PropertyStep() {
                   placeholder="12345"
                   className={cn(
                     'w-full px-3 py-2 rounded-lg border transition-colors',
-                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                    'text-gray-900 bg-white',
                     'border-gray-300 dark:border-gray-600',
                     'focus:outline-none focus:ring-2 focus:ring-emerald-500'
                   )}
@@ -491,7 +491,7 @@ export function PropertyStep() {
               max={new Date().getFullYear()}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors.yearBuilt
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -510,7 +510,7 @@ export function PropertyStep() {
               placeholder="2000"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}
@@ -525,7 +525,7 @@ export function PropertyStep() {
               onChange={(e) => updateField('stories', e.target.value)}
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 'border-gray-300 dark:border-gray-600',
                 'focus:outline-none focus:ring-2 focus:ring-emerald-500'
               )}

@@ -57,7 +57,7 @@ export function BusinessStep() {
               placeholder="Company Name, LLC"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors.businessName
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -79,7 +79,7 @@ export function BusinessStep() {
                 onChange={(e) => updateField('businessType', e.target.value)}
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   errors.businessType
                     ? 'border-red-300 dark:border-red-500'
                     : 'border-gray-300 dark:border-gray-600',
@@ -108,7 +108,7 @@ export function BusinessStep() {
                 min="0"
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   errors.yearsInBusiness
                     ? 'border-red-300 dark:border-red-500'
                     : 'border-gray-300 dark:border-gray-600',
@@ -132,7 +132,7 @@ export function BusinessStep() {
               placeholder="Describe the primary operations of the business..."
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors.businessDescription
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -167,7 +167,7 @@ export function BusinessStep() {
               placeholder="123 Business Ave, Suite 100"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors.propertyAddress
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -190,7 +190,7 @@ export function BusinessStep() {
                 onChange={(e) => updateField('propertyCity', e.target.value)}
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   errors.propertyCity
                     ? 'border-red-300 dark:border-red-500'
                     : 'border-gray-300 dark:border-gray-600',
@@ -210,7 +210,7 @@ export function BusinessStep() {
                 onChange={(e) => updateField('propertyState', e.target.value)}
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   errors.propertyState
                     ? 'border-red-300 dark:border-red-500'
                     : 'border-gray-300 dark:border-gray-600',
@@ -237,7 +237,7 @@ export function BusinessStep() {
                 placeholder="12345"
                 className={cn(
                   'w-full px-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   errors.propertyZip
                     ? 'border-red-300 dark:border-red-500'
                     : 'border-gray-300 dark:border-gray-600',
@@ -275,7 +275,7 @@ export function BusinessStep() {
                 placeholder="500,000"
                 className={cn(
                   'w-full pl-7 pr-3 py-2 rounded-lg border transition-colors',
-                  'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                  'text-gray-900 bg-white',
                   errors.annualRevenue
                     ? 'border-red-300 dark:border-red-500'
                     : 'border-gray-300 dark:border-gray-600',
@@ -300,7 +300,7 @@ export function BusinessStep() {
               min="0"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors.employeeCount
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
@@ -323,7 +323,7 @@ export function BusinessStep() {
               placeholder="XX-XXXXXXX"
               className={cn(
                 'w-full px-3 py-2 rounded-lg border transition-colors',
-                'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                'text-gray-900 bg-white',
                 errors.fein
                   ? 'border-red-300 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600',
