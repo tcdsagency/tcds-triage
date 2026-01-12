@@ -139,7 +139,7 @@ export function WizardProgress({
                 )}
               </div>
 
-              {/* Label */}
+              {/* Label with step number */}
               <span
                 className={cn(
                   'absolute top-8 text-xs font-medium whitespace-nowrap transition-colors',
@@ -148,7 +148,7 @@ export function WizardProgress({
                     : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300'
                 )}
               >
-                {step.title}
+                {index + 1} {step.title}
               </span>
             </button>
           );

@@ -65,6 +65,7 @@ export function CallProvider({ children }: CallProviderProps) {
   const activeCallRef = useRef<ActiveCall | null>(null);
   const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const newCallPollRef = useRef<NodeJS.Timeout | null>(null);
 
   // Keep activeCallRef in sync
   useEffect(() => {
@@ -494,6 +495,60 @@ export function CallProvider({ children }: CallProviderProps) {
       }
     }
   }, [lookupUserByExtension, usersByExtension]);
+
+  // Poll for NEW incoming calls when no active call (fallback for WebSocket)
+  useEffect(() => {
+    const currentExt = myExtensionRef.current;
+
+    // Only poll if we have an extension AND no active call
+    if (!currentExt || activeCall) {
+      if (newCallPollRef.current) {
+        clearInterval(newCallPollRef.current);
+        newCallPollRef.current = null;
+      }
+      return;
+    }
+
+    const pollForNewCalls = async () => {
+      try {
+        const res = await fetch(`/api/3cx/active-calls?extension=${currentExt}`);
+        if (!res.ok) return;
+
+        const data = await res.json();
+        if (data.hasActiveCall && data.calls?.length > 0) {
+          const call = data.calls[0];
+
+          // Skip if it's a placeholder from VoIPTools presence
+          if (call.sessionId?.startsWith('voip_')) return;
+
+          console.log('[CallProvider] Polling detected new call:', call.sessionId);
+
+          // Trigger call event
+          handleCallEvent({
+            type: call.status === 'ringing' ? 'call_ringing' : 'call_started',
+            sessionId: call.sessionId,
+            phoneNumber: call.phoneNumber,
+            direction: call.direction,
+            extension: currentExt,
+            customerId: call.customerId,
+          });
+        }
+      } catch (e) {
+        // Silent fail - polling will retry
+      }
+    };
+
+    // Poll every 3 seconds for new calls
+    pollForNewCalls(); // Check immediately
+    newCallPollRef.current = setInterval(pollForNewCalls, 3000);
+
+    return () => {
+      if (newCallPollRef.current) {
+        clearInterval(newCallPollRef.current);
+        newCallPollRef.current = null;
+      }
+    };
+  }, [myExtension, activeCall, handleCallEvent]);
 
   // Expose test function to window for debugging (dev only)
   useEffect(() => {

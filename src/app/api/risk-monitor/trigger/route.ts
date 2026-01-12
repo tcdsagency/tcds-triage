@@ -1,5 +1,7 @@
 // API Route: /api/risk-monitor/trigger
 // Manually trigger a scheduler run
+// GET - Called by Vercel cron (every 5 minutes)
+// POST - Manual trigger with options
 
 import { NextRequest, NextResponse } from "next/server";
 import { createRiskMonitorScheduler } from "@/lib/riskMonitor/scheduler";
@@ -7,7 +9,48 @@ import { db } from "@/db";
 import { riskMonitorSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-// POST - Manually trigger scheduler run
+export const maxDuration = 300; // 5 minute timeout for cron
+
+// GET - Vercel cron trigger (runs within time window)
+export async function GET(request: NextRequest) {
+  try {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (!tenantId) {
+      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    }
+
+    // Create scheduler and run (respects time window)
+    const scheduler = createRiskMonitorScheduler(tenantId);
+    const result = await scheduler.run(false); // false = scheduled run
+
+    // Log the result
+    console.log(`[Risk Monitor Cron] Run complete:`, {
+      success: result.success,
+      propertiesChecked: result.propertiesChecked,
+      alertsCreated: result.alertsCreated,
+      errors: result.errors,
+    });
+
+    return NextResponse.json({
+      success: result.success,
+      result: {
+        runId: result.runId,
+        propertiesChecked: result.propertiesChecked,
+        alertsCreated: result.alertsCreated,
+        duration: result.duration,
+        errors: result.errors,
+      },
+    });
+  } catch (error: any) {
+    console.error("[Risk Monitor Cron] Error:", error);
+    return NextResponse.json(
+      { error: "Cron trigger failed", details: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+// POST - Manually trigger scheduler run (with options)
 export async function POST(request: NextRequest) {
   try {
     const tenantId = process.env.DEFAULT_TENANT_ID;
