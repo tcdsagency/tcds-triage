@@ -71,10 +71,11 @@ export async function POST(
 
     if (itemType === 'message') {
       // Update message with the matched contact
+      // Ensure customerId is a string for the varchar field
       const [updated] = await db
         .update(messages)
         .set({
-          contactId: customerId,
+          contactId: String(customerId),
           contactName: customerName || null,
         })
         .where(eq(messages.id, itemId))
