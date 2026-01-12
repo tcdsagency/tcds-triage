@@ -102,7 +102,7 @@ function NavSection({ title, items, className }: { title?: string; items: NavIte
   return (
     <li className={className}>
       {title && (
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-2">
+        <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider px-2 mb-2">
           {title}
         </div>
       )}
@@ -116,14 +116,14 @@ function NavSection({ title, items, className }: { title?: string; items: NavIte
                 className={cn(
                   'group flex gap-x-3 rounded-md p-2 text-sm font-medium leading-6',
                   isActive
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                    ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-100'
                 )}
               >
                 <item.icon
                   className={cn(
                     'h-5 w-5 shrink-0',
-                    isActive ? 'text-emerald-600' : 'text-gray-400 group-hover:text-gray-600'
+                    isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:group-hover:text-gray-300'
                   )}
                 />
                 {item.name}
@@ -161,7 +161,7 @@ export function Sidebar() {
 
   return (
     <div className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-64 lg:flex-col">
-      <div className="flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white px-6 pb-4">
+      <div className="flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 pb-4">
         {/* Logo */}
         <div className="flex h-16 shrink-0 items-center">
           <Link href="/dashboard" className="flex items-center">

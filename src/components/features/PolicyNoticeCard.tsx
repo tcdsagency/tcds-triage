@@ -114,8 +114,8 @@ export default function PolicyNoticeCard({ notice, isSelected, onSelect, onActio
       className={cn(
         'rounded-lg border p-4 transition-all cursor-pointer hover:shadow-md',
         isSelected
-          ? 'border-blue-500 bg-blue-50 shadow-md'
-          : 'border-gray-200 bg-white hover:border-blue-300'
+          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 shadow-md'
+          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-blue-300 dark:hover:border-blue-600'
       )}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -150,14 +150,14 @@ export default function PolicyNoticeCard({ notice, isSelected, onSelect, onActio
         )}
       </div>
 
-      <h3 className="font-semibold text-gray-900 mb-1">{notice.title}</h3>
+      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">{notice.title}</h3>
 
-      <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+      <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
         <span className="font-medium">{normalizeName(notice.insuredName) || 'Unknown'}</span>
         {notice.policyNumber && (<><span className="text-gray-400">•</span><span>{notice.policyNumber}</span></>)}
       </div>
 
-      <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+      <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mb-2">
         {notice.carrier && <span>{notice.carrier}</span>}
         {notice.carrier && notice.lineOfBusiness && <span className="text-gray-400">•</span>}
         {notice.lineOfBusiness && <span>{notice.lineOfBusiness}</span>}
@@ -165,8 +165,8 @@ export default function PolicyNoticeCard({ notice, isSelected, onSelect, onActio
 
       {notice.noticeType === 'billing' && notice.amountDue && (
         <div className="flex items-center gap-2 text-sm mb-2">
-          <span className="text-gray-600">Amount Due:</span>
-          <span className="font-semibold text-gray-900">{formatCurrency(notice.amountDue)}</span>
+          <span className="text-gray-600 dark:text-gray-400">Amount Due:</span>
+          <span className="font-semibold text-gray-900 dark:text-gray-100">{formatCurrency(notice.amountDue)}</span>
         </div>
       )}
 
@@ -180,35 +180,35 @@ export default function PolicyNoticeCard({ notice, isSelected, onSelect, onActio
       )}
 
       {notice.assignedTo && (
-        <div className="text-xs text-gray-500 mb-2">Assigned to: <span className="font-medium">{notice.assignedTo.name}</span></div>
+        <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Assigned to: <span className="font-medium">{notice.assignedTo.name}</span></div>
       )}
 
       {notice.reviewNotes && (
-        <div className="text-xs text-gray-500 mb-2 truncate">Note: {notice.reviewNotes}</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400 mb-2 truncate">Note: {notice.reviewNotes}</div>
       )}
 
-      <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-        <span className="text-xs text-gray-400">{formatDate(notice.noticeDate || notice.createdAt)}</span>
+      <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700">
+        <span className="text-xs text-gray-400 dark:text-gray-500">{formatDate(notice.noticeDate || notice.createdAt)}</span>
 
         <div className="flex items-center gap-1">
           {notice.reviewStatus === 'pending' && onAction && (
-            <button className="px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded" onClick={(e) => { e.stopPropagation(); onAction('assign'); }}>Assign</button>
+            <button className="px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded" onClick={(e) => { e.stopPropagation(); onAction('assign'); }}>Assign</button>
           )}
 
           {(notice.reviewStatus === 'assigned' || notice.reviewStatus === 'reviewed') && onAction && (
-            <button className="px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50 rounded" onClick={(e) => { e.stopPropagation(); onAction('action'); }}>Take Action</button>
+            <button className="px-2 py-1 text-xs font-medium text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded" onClick={(e) => { e.stopPropagation(); onAction('action'); }}>Take Action</button>
           )}
 
           {notice.reviewStatus === 'actioned' && !notice.zapierWebhookSent && onAction && (
-            <button className="px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 rounded" onClick={(e) => { e.stopPropagation(); onAction('send-zapier'); }}>Send to Zapier</button>
+            <button className="px-2 py-1 text-xs font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded" onClick={(e) => { e.stopPropagation(); onAction('send-zapier'); }}>Send to Zapier</button>
           )}
 
           {notice.zapierWebhookSent && (
-            <span className="px-2 py-1 text-xs text-green-600">Sent to AZ</span>
+            <span className="px-2 py-1 text-xs text-green-600 dark:text-green-400">Sent to AZ</span>
           )}
 
           {notice.reviewStatus !== 'dismissed' && notice.reviewStatus !== 'actioned' && onAction && (
-            <button className="px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 rounded" onClick={(e) => { e.stopPropagation(); onAction('dismiss'); }}>Dismiss</button>
+            <button className="px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" onClick={(e) => { e.stopPropagation(); onAction('dismiss'); }}>Dismiss</button>
           )}
         </div>
       </div>
