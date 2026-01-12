@@ -719,7 +719,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 4.3 Create wrapup draft
+      // 4.3 Create wrapup draft (with transaction for data consistency)
       const serviceRequestTypeId = analysis ? getServiceRequestTypeId(analysis.serviceRequestType || analysis.callType) : null;
       const trestlePersonName = (trestleData as { person?: { name?: string } } | null)?.person?.name;
       const trestleEmails = (trestleData as { emails?: string[] } | null)?.emails;
@@ -728,102 +728,112 @@ export async function POST(request: NextRequest) {
       const shouldAutoVoid = isHangup && !analysis;
       const wrapupStatus = shouldAutoVoid ? "completed" : "pending_review";
 
-      const [wrapup] = await db
-        .insert(wrapupDrafts)
-        .values({
-          tenantId,
-          callId: call.id,
-          direction: direction === "inbound" ? "Inbound" : "Outbound",
-          agentExtension: extension,
-          agentName: body.agentName,
-          summary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),
-          customerName: analysis?.extractedData?.customerName || trestlePersonName,
-          customerPhone: phoneForLookup,
-          customerEmail: analysis?.extractedData?.email || (trestleEmails && trestleEmails.length > 0 ? trestleEmails[0] : undefined),
-          requestType: analysis?.callType || hangupReason,
-          status: wrapupStatus,
-          matchStatus: customerMatchStatus,
-          trestleData: trestleData,
-          aiCleanedSummary: analysis?.summary,
-          aiProcessingStatus: analysis ? "completed" : "skipped",
-          aiProcessedAt: new Date(),
-          aiExtraction: analysis ? {
-            actionItems: analysis.actionItems,
-            extractedData: analysis.extractedData,
-            sentiment: analysis.sentiment,
-            serviceRequestType: analysis.serviceRequestType,
-            serviceRequestTypeId,
-            agencyZoomCustomerId: matchedAzCustomerId,
-            agencyZoomLeadId: matchedLeadId,
-            matchType,
-          } : null,
-          aiConfidence: analysis ? "0.85" : null,
-          isAutoVoided: shouldAutoVoid,
-          autoVoidReason: shouldAutoVoid ? hangupReason : null,
-        })
-        .returning();
+      // Use transaction to ensure wrapup and match suggestions are created atomically
+      const txResult = await db.transaction(async (tx) => {
+        const [wrapup] = await tx
+          .insert(wrapupDrafts)
+          .values({
+            tenantId,
+            callId: call.id,
+            direction: direction === "inbound" ? "Inbound" : "Outbound",
+            agentExtension: extension,
+            agentName: body.agentName,
+            summary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),
+            customerName: analysis?.extractedData?.customerName || trestlePersonName,
+            customerPhone: phoneForLookup,
+            customerEmail: analysis?.extractedData?.email || (trestleEmails && trestleEmails.length > 0 ? trestleEmails[0] : undefined),
+            requestType: analysis?.callType || hangupReason,
+            status: wrapupStatus,
+            matchStatus: customerMatchStatus,
+            trestleData: trestleData,
+            aiCleanedSummary: analysis?.summary,
+            aiProcessingStatus: analysis ? "completed" : "skipped",
+            aiProcessedAt: new Date(),
+            aiExtraction: analysis ? {
+              actionItems: analysis.actionItems,
+              extractedData: analysis.extractedData,
+              sentiment: analysis.sentiment,
+              serviceRequestType: analysis.serviceRequestType,
+              serviceRequestTypeId,
+              agencyZoomCustomerId: matchedAzCustomerId,
+              agencyZoomLeadId: matchedLeadId,
+              matchType,
+            } : null,
+            aiConfidence: analysis ? "0.85" : null,
+            isAutoVoided: shouldAutoVoid,
+            autoVoidReason: shouldAutoVoid ? hangupReason : null,
+          })
+          .returning();
 
-      wrapupId = wrapup.id;
+        let suggestionCount = 0;
+
+        // 4.4 Store match suggestions for multiple matches (customers or leads)
+        if (customerMatchStatus === "multiple_matches") {
+          const suggestions: Array<{
+            tenantId: string;
+            wrapupDraftId: string;
+            source: string;
+            contactType: string;
+            contactId: string;
+            contactName: string;
+            contactPhone: string | null;
+            contactEmail: string | null;
+            confidence: string;
+            matchReason: string;
+            recommendedAction: string;
+          }> = [];
+
+          // Add customer matches
+          if (azMatches.length > 0) {
+            azMatches.forEach((az, index) => {
+              suggestions.push({
+                tenantId,
+                wrapupDraftId: wrapup.id,
+                source: "agencyzoom",
+                contactType: az.customerType || "customer",
+                contactId: az.id.toString(),
+                contactName: az.businessName || `${az.firstName || ''} ${az.lastName || ''}`.trim() || 'Unknown',
+                contactPhone: az.phone || az.phoneCell,
+                contactEmail: az.email,
+                confidence: (1 - index * 0.1).toFixed(2),
+                matchReason: "Phone number match - Customer",
+                recommendedAction: index === 0 ? "review" : "consider",
+              });
+            });
+          }
+
+          // Add lead matches
+          if (azLeadMatches.length > 0) {
+            azLeadMatches.forEach((lead, index) => {
+              suggestions.push({
+                tenantId,
+                wrapupDraftId: wrapup.id,
+                source: "agencyzoom",
+                contactType: "lead",
+                contactId: lead.id.toString(),
+                contactName: `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Unknown',
+                contactPhone: lead.phone,
+                contactEmail: lead.email,
+                confidence: (0.9 - index * 0.1).toFixed(2), // Leads slightly lower confidence
+                matchReason: "Phone number match - Lead",
+                recommendedAction: index === 0 && azMatches.length === 0 ? "review" : "consider",
+              });
+            });
+          }
+
+          if (suggestions.length > 0) {
+            await tx.insert(matchSuggestions).values(suggestions);
+            suggestionCount = suggestions.length;
+          }
+        }
+
+        return { wrapup, suggestionCount };
+      });
+
+      wrapupId = txResult.wrapup.id;
       console.log(`[Call-Completed] Created wrap-up draft: ${wrapupId} (matchStatus: ${customerMatchStatus}${shouldAutoVoid ? ", auto-voided: " + hangupReason : ""})`);
-
-      // 4.4 Store match suggestions for multiple matches (customers or leads)
-      if (customerMatchStatus === "multiple_matches") {
-        const suggestions: Array<{
-          tenantId: string;
-          wrapupDraftId: string;
-          source: string;
-          contactType: string;
-          contactId: string;
-          contactName: string;
-          contactPhone: string | null;
-          contactEmail: string | null;
-          confidence: string;
-          matchReason: string;
-          recommendedAction: string;
-        }> = [];
-
-        // Add customer matches
-        if (azMatches.length > 0) {
-          azMatches.forEach((az, index) => {
-            suggestions.push({
-              tenantId,
-              wrapupDraftId: wrapup.id,
-              source: "agencyzoom",
-              contactType: az.customerType || "customer",
-              contactId: az.id.toString(),
-              contactName: az.businessName || `${az.firstName || ''} ${az.lastName || ''}`.trim() || 'Unknown',
-              contactPhone: az.phone || az.phoneCell,
-              contactEmail: az.email,
-              confidence: (1 - index * 0.1).toFixed(2),
-              matchReason: "Phone number match - Customer",
-              recommendedAction: index === 0 ? "review" : "consider",
-            });
-          });
-        }
-
-        // Add lead matches
-        if (azLeadMatches.length > 0) {
-          azLeadMatches.forEach((lead, index) => {
-            suggestions.push({
-              tenantId,
-              wrapupDraftId: wrapup.id,
-              source: "agencyzoom",
-              contactType: "lead",
-              contactId: lead.id.toString(),
-              contactName: `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Unknown',
-              contactPhone: lead.phone,
-              contactEmail: lead.email,
-              confidence: (0.9 - index * 0.1).toFixed(2), // Leads slightly lower confidence
-              matchReason: "Phone number match - Lead",
-              recommendedAction: index === 0 && azMatches.length === 0 ? "review" : "consider",
-            });
-          });
-        }
-
-        if (suggestions.length > 0) {
-          await db.insert(matchSuggestions).values(suggestions);
-          console.log(`[Call-Completed] Stored ${suggestions.length} match suggestions (${azMatches.length} customers, ${azLeadMatches.length} leads)`);
-        }
+      if (txResult.suggestionCount > 0) {
+        console.log(`[Call-Completed] Stored ${txResult.suggestionCount} match suggestions (${azMatches.length} customers, ${azLeadMatches.length} leads)`);
       }
 
       // Note: Triage items removed - wrapup_drafts is the single source of truth

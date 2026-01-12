@@ -1021,6 +1021,51 @@ export const triageItems = pgTable('triage_items', {
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
+// REPORTED ISSUES (for debugging production problems)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const reportedIssues = pgTable('reported_issues', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // What type of item had the issue
+  itemType: varchar('item_type', { length: 50 }).notNull(), // 'wrapup', 'message', 'triage', etc.
+  itemId: varchar('item_id', { length: 100 }).notNull(), // UUID or other ID of the item
+
+  // Issue details
+  issueType: varchar('issue_type', { length: 100 }), // 'match_failed', 'wrong_customer', 'missing_data', etc.
+  description: text('description'), // User's description of the problem
+
+  // Snapshot of the item data at time of report (for debugging)
+  itemSnapshot: jsonb('item_snapshot').$type<Record<string, unknown>>(),
+
+  // User corrections/edits
+  userCorrections: jsonb('user_corrections').$type<Record<string, unknown>>(),
+
+  // Error details if there was an error
+  errorMessage: text('error_message'),
+  errorStack: text('error_stack'),
+
+  // Request context
+  requestPayload: jsonb('request_payload').$type<Record<string, unknown>>(),
+  responsePayload: jsonb('response_payload').$type<Record<string, unknown>>(),
+
+  // Resolution
+  isResolved: boolean('is_resolved').default(false),
+  resolvedAt: timestamp('resolved_at'),
+  resolvedById: uuid('resolved_by_id').references(() => users.id, { onDelete: 'set null' }),
+  resolutionNotes: text('resolution_notes'),
+
+  // Metadata
+  reportedById: uuid('reported_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('reported_issues_tenant_idx').on(table.tenantId),
+  index('reported_issues_item_idx').on(table.itemType, table.itemId),
+  index('reported_issues_resolved_idx').on(table.isResolved),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
 // QUOTES
 // ═══════════════════════════════════════════════════════════════════════════
 
