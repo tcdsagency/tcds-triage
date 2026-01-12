@@ -45,13 +45,22 @@ export async function POST(
             isLead: false,
           };
 
+      // First get the current aiExtraction
+      const current = await db.query.wrapupDrafts.findFirst({
+        where: eq(wrapupDrafts.id, itemId),
+        columns: { aiExtraction: true },
+      });
+
+      // Merge the match data with existing aiExtraction
+      const mergedExtraction = {
+        ...(current?.aiExtraction as Record<string, unknown> || {}),
+        ...matchData,
+      };
+
       const [updated] = await db
         .update(wrapupDrafts)
         .set({
-          // Store in aiExtraction for compatibility with existing flow
-          aiExtraction: sql`
-            COALESCE(${wrapupDrafts.aiExtraction}, '{}'::jsonb) || ${JSON.stringify(matchData)}::jsonb
-          `,
+          aiExtraction: mergedExtraction,
           matchStatus: 'matched',
         })
         .where(eq(wrapupDrafts.id, itemId))
