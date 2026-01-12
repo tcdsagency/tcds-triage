@@ -57,23 +57,23 @@ export async function POST(
         ...matchData,
       };
 
-      const [updated] = await db
-        .update(wrapupDrafts)
-        .set({
-          aiExtraction: mergedExtraction,
-          matchStatus: 'matched',
-        })
-        .where(eq(wrapupDrafts.id, itemId))
-        .returning();
+      // Use raw SQL to update - Drizzle ORM has issues with jsonb updates
+      const result = await db.execute(sql`
+        UPDATE wrapup_drafts
+        SET ai_extraction = ${JSON.stringify(mergedExtraction)}::jsonb,
+            match_status = 'matched'
+        WHERE id = ${itemId}::uuid
+        RETURNING id, match_status, customer_name, ai_extraction
+      `);
 
-      if (!updated) {
+      if (!result || result.length === 0) {
         return NextResponse.json({ error: 'Wrapup not found' }, { status: 404 });
       }
 
       return NextResponse.json({
         success: true,
         message: 'Wrapup matched to customer',
-        item: updated,
+        item: result[0],
         reminder: 'Please verify the customer\'s phone number is correct in AgencyZoom, as auto-match did not work.',
       });
     }
