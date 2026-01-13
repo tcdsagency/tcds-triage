@@ -19,7 +19,7 @@ import {
   ToggleLeft,
   ToggleRight,
 } from "lucide-react";
-import { FEATURES, getFeaturesByCategory, getDefaultPermissions } from "@/lib/feature-permissions";
+import { FEATURES, getFeaturesByCategory, getDefaultPermissions, getCategoryDisplayName } from "@/lib/feature-permissions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -603,9 +603,7 @@ export default function UsersPage() {
                 {Object.entries(getFeaturesByCategory()).map(([category, features]) => (
                   <div key={category} className="mb-4">
                     <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                      {category === 'core' ? 'Core Features' :
-                       category === 'advanced' ? 'Advanced Features' :
-                       'Admin Features'}
+                      {getCategoryDisplayName(category)}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       {features.map((feature) => (
