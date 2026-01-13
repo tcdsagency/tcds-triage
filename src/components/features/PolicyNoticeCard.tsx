@@ -30,7 +30,7 @@ export interface PolicyNotice {
   claimNumber?: string | null;
   claimDate?: string | null;
   claimStatus?: string | null;
-  reviewStatus?: 'pending' | 'assigned' | 'reviewed' | 'actioned' | 'dismissed' | null;
+  reviewStatus?: 'pending' | 'assigned' | 'reviewed' | 'flagged' | 'actioned' | 'dismissed' | null;
   assignedToId?: string | null;
   assignedAt?: string | null;
   reviewedAt?: string | null;
@@ -53,7 +53,7 @@ interface PolicyNoticeCardProps {
   notice: PolicyNotice;
   isSelected?: boolean;
   onSelect?: () => void;
-  onAction?: (action: 'assign' | 'review' | 'action' | 'dismiss' | 'send-zapier') => void;
+  onAction?: (action: 'assign' | 'review' | 'action' | 'dismiss' | 'flag' | 'send-zapier') => void;
 }
 
 const NOTICE_TYPE_CONFIG: Record<string, { icon: string; color: string }> = {
@@ -73,6 +73,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; i
   pending: { label: 'Pending', bg: 'bg-gray-100', text: 'text-gray-700', icon: '⏳' },
   assigned: { label: 'Assigned', bg: 'bg-blue-100', text: 'text-blue-700', icon: '👤' },
   reviewed: { label: 'Reviewed', bg: 'bg-purple-100', text: 'text-purple-700', icon: '✓' },
+  flagged: { label: 'Flagged', bg: 'bg-orange-100', text: 'text-orange-700', icon: '🚩' },
   actioned: { label: 'Actioned', bg: 'bg-green-100', text: 'text-green-700', icon: '✅' },
   dismissed: { label: 'Dismissed', bg: 'bg-gray-100', text: 'text-gray-500', icon: '✕' },
 };

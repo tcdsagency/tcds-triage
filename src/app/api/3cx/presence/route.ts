@@ -32,8 +32,8 @@ function mapPresenceStatus(rawStatus: string | undefined): { status: PresenceSta
       return { status: "away", text: "Away" };
     case "dnd":
     case "donotdisturb":
-    case "busy":
       return { status: "dnd", text: "Do Not Disturb" };
+    case "busy":
     case "ringing":
     case "talking":
     case "oncall":

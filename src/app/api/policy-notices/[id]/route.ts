@@ -226,7 +226,7 @@ export async function PATCH(
 // =============================================================================
 
 interface ActionRequest {
-  action: 'assign' | 'review' | 'action' | 'dismiss' | 'reopen';
+  action: 'assign' | 'review' | 'action' | 'dismiss' | 'flag' | 'reopen';
   userId?: string;
   reviewNotes?: string;
   actionTaken?: string;
@@ -328,6 +328,22 @@ export async function POST(
         updateData = {
           ...updateData,
           reviewStatus: 'dismissed',
+          reviewedById: body.userId,
+          reviewedAt: now,
+          reviewNotes: body.reviewNotes || existing.reviewNotes,
+        };
+        break;
+
+      case 'flag':
+        if (!body.userId) {
+          return NextResponse.json(
+            { error: "userId is required for flag action" },
+            { status: 400 }
+          );
+        }
+        updateData = {
+          ...updateData,
+          reviewStatus: 'flagged',
           reviewedById: body.userId,
           reviewedAt: now,
           reviewNotes: body.reviewNotes || existing.reviewNotes,

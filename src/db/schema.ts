@@ -175,6 +175,7 @@ export const policyNoticeReviewStatusEnum = pgEnum('policy_notice_review_status'
   'pending',        // Not yet reviewed
   'assigned',       // Assigned to an agent
   'reviewed',       // Agent has reviewed
+  'flagged',        // Flagged for follow-up or attention
   'actioned',       // Action taken and sent to AgencyZoom
   'dismissed',      // Dismissed (no action needed)
 ]);

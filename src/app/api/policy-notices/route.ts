@@ -158,6 +158,7 @@ export async function GET(request: NextRequest) {
       pending: 0,
       assigned: 0,
       reviewed: 0,
+      flagged: 0,
       actioned: 0,
       dismissed: 0,
     };
