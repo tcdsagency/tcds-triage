@@ -276,6 +276,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Query historical transcripts (from spreadsheet import)
+    // Search by EITHER customerId OR phone number (imported transcripts may not have customerId linked)
     if (customerId || matchPhone) {
       const historical = await db
         .select({
@@ -286,11 +287,16 @@ export async function POST(request: NextRequest) {
         })
         .from(historicalTranscripts)
         .where(
-          customerId
-            ? eq(historicalTranscripts.customerId, customerId)
-            : matchPhone
-              ? ilike(historicalTranscripts.customerPhone, `%${matchPhone}`)
-              : sql`1=0`
+          customerId && matchPhone
+            ? or(
+                eq(historicalTranscripts.customerId, customerId),
+                ilike(historicalTranscripts.customerPhone, `%${matchPhone}`)
+              )
+            : customerId
+              ? eq(historicalTranscripts.customerId, customerId)
+              : matchPhone
+                ? ilike(historicalTranscripts.customerPhone, `%${matchPhone}`)
+                : sql`1=0`
         )
         .orderBy(desc(historicalTranscripts.callDate))
         .limit(20);
