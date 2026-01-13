@@ -331,40 +331,157 @@ class RPRClient {
   }
 
   /**
-   * Search for property by address (autocomplete)
+   * Search for property by address using location suggestions API
+   * Returns property/listing info from RPR's search
    */
   async searchLocation(address: string): Promise<RPRLocationResult | null> {
     console.log(`[RPR] Searching for location: ${address}`);
 
-    const result = await this.apiRequest<{ locations: RPRLocationResult[] }>(
-      "/LocationSearch/Locations",
-      { term: address }
-    );
+    // Use the new location-suggestions endpoint
+    const result = await this.apiRequest<{
+      sections: Array<{
+        label: string;
+        sectionType?: string;
+        locations: Array<{
+          listingId?: string;
+          propertyId?: string;
+          description?: string;
+          address?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+          status?: string;
+        }>;
+      }>;
+    }>("/misc/location-suggestions", {
+      propertyMode: "1",
+      userQuery: address,
+      category: "1",
+      getPlacesAreasAndProperties: "true",
+    });
 
-    if (!result?.locations?.length) {
-      console.log("[RPR] No location found");
+    if (!result?.sections) {
+      console.log("[RPR] No sections found in response");
       return null;
     }
 
-    return result.locations[0];
+    // Priority: Listings section first (has active MLS data), then parcels
+    for (const section of result.sections) {
+      if (section.locations && section.locations.length > 0) {
+        const loc = section.locations[0];
+        console.log(`[RPR] Found location in section: ${section.label || section.sectionType}`);
+        return {
+          propertyId: loc.propertyId || loc.listingId || "",
+          address: loc.address || loc.description?.split(",")[0] || "",
+          city: loc.city || "",
+          state: loc.state || "",
+          zip: loc.zip || "",
+        };
+      }
+    }
+
+    console.log("[RPR] No location found in any section");
+    return null;
+  }
+
+  /**
+   * Search for property and return detailed location info including listing/property IDs
+   */
+  private async searchLocationWithDetails(address: string): Promise<{
+    propertyId?: string;
+    listingId?: string;
+    isListing: boolean;
+    status?: string;
+    parsedAddress: { street: string; city: string; state: string; zip: string };
+  } | null> {
+    console.log(`[RPR] Searching for location with details: ${address}`);
+
+    const result = await this.apiRequest<{
+      sections: Array<{
+        label: string;
+        sectionType?: string;
+        locations: Array<{
+          listingId?: string;
+          propertyId?: string;
+          description?: string;
+          address?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+          status?: string;
+        }>;
+      }>;
+    }>("/misc/location-suggestions", {
+      propertyMode: "1",
+      userQuery: address,
+      category: "1",
+      getPlacesAreasAndProperties: "true",
+    });
+
+    if (!result?.sections) {
+      console.log("[RPR] No sections found");
+      return null;
+    }
+
+    // Priority: Listings first (has active MLS data), then parcels
+    for (const section of result.sections) {
+      const sectionType = section.sectionType || section.label || "";
+      const isListingSection = sectionType.toLowerCase().includes("listing");
+
+      if (section.locations && section.locations.length > 0) {
+        const loc = section.locations[0];
+        console.log(`[RPR] Found in section: ${sectionType}, isListing: ${isListingSection}`);
+
+        // Parse address from description or fields
+        let parsedAddress = this.parseAddress(address);
+        if (loc.address || loc.city || loc.state) {
+          parsedAddress = {
+            street: loc.address || parsedAddress.street,
+            city: loc.city || parsedAddress.city,
+            state: loc.state || parsedAddress.state,
+            zip: loc.zip || parsedAddress.zip,
+          };
+        } else if (loc.description) {
+          const parts = loc.description.split(", ");
+          if (parts.length >= 3) {
+            parsedAddress = {
+              street: parts[0],
+              city: parts[1],
+              state: parts[2]?.split(" ")[0] || "",
+              zip: parts[2]?.split(" ")[1] || "",
+            };
+          }
+        }
+
+        return {
+          propertyId: loc.propertyId,
+          listingId: loc.listingId,
+          isListing: isListingSection || !!loc.listingId,
+          status: loc.status,
+          parsedAddress,
+        };
+      }
+    }
+
+    return null;
   }
 
   /**
    * Get common property data
    */
-  async getPropertyCommon(propertyId: string): Promise<RPRPropertyCommon | null> {
-    console.log(`[RPR] Getting common data for property: ${propertyId}`);
-
-    return this.apiRequest<RPRPropertyCommon>("/Property/GetCommon", { propertyId });
+  async getPropertyCommon(propertyId: string, isListing = false): Promise<RPRPropertyCommon | null> {
+    console.log(`[RPR] Getting common data for ${isListing ? 'listing' : 'property'}: ${propertyId}`);
+    const endpoint = isListing ? `/listings/${propertyId}/common` : `/properties/${propertyId}/common`;
+    return this.apiRequest<RPRPropertyCommon>(endpoint);
   }
 
   /**
    * Get detailed property data
    */
-  async getPropertyDetails(propertyId: string): Promise<RPRPropertyDetails | null> {
-    console.log(`[RPR] Getting details for property: ${propertyId}`);
-
-    return this.apiRequest<RPRPropertyDetails>("/Property/GetDetails", { propertyId });
+  async getPropertyDetails(propertyId: string, isListing = false): Promise<RPRPropertyDetails | null> {
+    console.log(`[RPR] Getting details for ${isListing ? 'listing' : 'property'}: ${propertyId}`);
+    const endpoint = isListing ? `/listings/${propertyId}/details` : `/properties/${propertyId}/details`;
+    return this.apiRequest<RPRPropertyDetails>(endpoint);
   }
 
   /**
@@ -372,12 +489,11 @@ class RPRClient {
    */
   async getPropertyListing(listingId: string): Promise<RPRListingData | null> {
     console.log(`[RPR] Getting listing data: ${listingId}`);
-
-    return this.apiRequest<RPRListingData>("/Property/GetListing", { listingId });
+    return this.apiRequest<RPRListingData>(`/listings/${listingId}/common`);
   }
 
   /**
-   * Look up complete property data by address using browser scraping via token service
+   * Look up complete property data by address using direct API calls
    */
   async lookupProperty(address: string): Promise<RPRPropertyData | null> {
     if (!this.isConfigured()) {
@@ -386,78 +502,70 @@ class RPRClient {
     }
 
     try {
-      console.log(`[RPR] Looking up property via scraping: ${address}`);
+      console.log(`[RPR] Looking up property via API: ${address}`);
 
-      // Use the token service's browser-based lookup endpoint
-      const encodedAddress = encodeURIComponent(address);
-      const response = await fetch(
-        `${TOKEN_SERVICE_URL}/lookup/rpr?address=${encodedAddress}`,
-        {
-          headers: {
-            Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
-          },
-          signal: AbortSignal.timeout(180000), // 3 minute timeout for browser scraping
-        }
-      );
+      // Step 1: Search for property location
+      const searchResult = await this.searchLocationWithDetails(address);
 
-      if (!response.ok) {
-        const error = await response.text();
-        console.error(`[RPR] Lookup service error: ${response.status} - ${error}`);
+      if (!searchResult) {
+        console.log("[RPR] Property not found in location search");
         return null;
       }
 
-      const result = await response.json();
+      const { propertyId, listingId, isListing, status, parsedAddress } = searchResult;
+      const id = listingId || propertyId;
 
-      if (!result.success) {
-        console.log(`[RPR] Lookup failed: ${result.error}`);
+      if (!id) {
+        console.log("[RPR] No property or listing ID found");
         return null;
       }
 
-      const data = result.data;
-      console.log(`[RPR] Lookup succeeded, captured ${data._apiCount || 0} API responses`);
+      // Step 2: Get common data
+      const commonData = await this.getPropertyCommon(id, isListing);
 
-      // Determine status from scraped data
-      let currentStatus: "off_market" | "active" | "pending" | "sold" | "unknown" =
-        data.currentStatus || "off_market";
+      // Step 3: Get details (optional, may not always be available)
+      const detailsData = await this.getPropertyDetails(id, isListing);
 
-      // Parse address from location suggestions if available
-      let parsedAddress = this.parseAddress(address);
-      if (data._locationSuggestions?.sections) {
-        for (const section of data._locationSuggestions.sections) {
-          for (const loc of section.locations || []) {
-            if (loc.description) {
-              const parts = loc.description.split(", ");
-              if (parts.length >= 3) {
-                parsedAddress = {
-                  street: parts[0],
-                  city: parts[1],
-                  state: parts[2]?.split(" ")[0] || "",
-                  zip: parts[2]?.split(" ")[1] || "",
-                };
-              }
-            }
-          }
+      // Determine current status
+      let currentStatus: "off_market" | "active" | "pending" | "sold" | "unknown" = "off_market";
+      if (status) {
+        const statusLower = status.toLowerCase();
+        if (statusLower === "active" || statusLower === "for sale") {
+          currentStatus = "active";
+        } else if (statusLower.includes("pending") || statusLower.includes("contingent")) {
+          currentStatus = "pending";
+        } else if (statusLower === "sold" || statusLower === "closed") {
+          currentStatus = "sold";
         }
+      } else if (isListing) {
+        currentStatus = "active"; // Default for listings
       }
 
-      // Build minimal property data from scraped results
+      console.log(`[RPR] Lookup succeeded, status: ${currentStatus}`);
+
+      // Build property data from API responses
       return {
-        propertyId: String(data._propertyId || "scraped"),
+        propertyId: id,
         address: {
           street: parsedAddress.street,
           city: parsedAddress.city,
           state: parsedAddress.state,
           zip: parsedAddress.zip,
+          county: commonData?.address?.county,
         },
-        // Basic property details from page scraping
-        beds: data.bedrooms || 0,
-        baths: data.bathrooms || 0,
-        sqft: data.sqft || 0,
-        yearBuilt: data.yearBuilt || 0,
-        stories: data.stories || 1,
-        // Minimal data - RPR scraping gives us status which is what we need for risk monitor
-        lotSqft: 0,
-        lotAcres: 0,
+        // Basic property details
+        beds: commonData?.searchResult?.bedrooms || 0,
+        baths: commonData?.searchResult?.totalBaths || commonData?.searchResult?.bathsFull || 0,
+        sqft: commonData?.searchResult?.livingAreaInSqFt || 0,
+        buildingSqft: commonData?.searchResult?.buildingAreaSqFt,
+        yearBuilt: commonData?.searchResult?.yearBuilt || 0,
+        stories: commonData?.searchResult?.stories || 1,
+        propertyType: commonData?.searchResult?.propertyType,
+        propertySubtype: commonData?.searchResult?.propertySubtype,
+        style: commonData?.searchResult?.style,
+        // Lot info
+        lotSqft: commonData?.searchResult?.lotSizeSqFt || 0,
+        lotAcres: commonData?.searchResult?.lotSizeAcres || 0,
         roofType: "Unknown",
         foundation: "Unknown",
         exteriorWalls: "Unknown",
@@ -508,7 +616,7 @@ class RPRClient {
       listingPrice: result.listing?.price,
       daysOnMarket: result.listing?.daysOnMarket,
       listingAgent: result.listing?.agent,
-      source: "scrape", // Browser-based scraping
+      source: "api", // Direct API calls
     };
   }
 

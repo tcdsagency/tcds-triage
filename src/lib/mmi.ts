@@ -479,8 +479,8 @@ class MMIClient {
    */
   async lookupByAddress(fullAddress: string): Promise<MMISearchResult> {
     if (!this.isConfigured()) {
-      console.log("[MMI] API not configured, trying scraping instead");
-      return this.lookupViaScraping(fullAddress);
+      console.log("[MMI] API not configured");
+      return { success: false, data: null, source: "api", error: "API not configured" };
     }
 
     try {
@@ -496,8 +496,8 @@ class MMIClient {
       );
 
       if (!searchResult) {
-        console.log("[MMI] Property not found in API, trying scraping");
-        return this.lookupViaScraping(fullAddress);
+        console.log("[MMI] Property not found in API");
+        return { success: false, data: null, source: "api", error: "Property not found" };
       }
 
       // Step 2: Get property history
@@ -587,8 +587,7 @@ class MMIClient {
       };
     } catch (error: any) {
       console.error("[MMI] API lookup error:", error.message);
-      console.log("[MMI] Falling back to scraping");
-      return this.lookupViaScraping(fullAddress);
+      return { success: false, data: null, source: "api", error: error.message };
     }
   }
 
