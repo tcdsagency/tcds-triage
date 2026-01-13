@@ -31,6 +31,7 @@ export async function GET() {
         role: users.role,
         avatarUrl: users.avatarUrl,
         featurePermissions: users.featurePermissions,
+        preferences: users.preferences,
       })
       .from(users)
       .where(eq(users.email, authUser.email || ""))
@@ -65,7 +66,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { firstName, lastName, phone, extension, directDial, avatarUrl } = body;
+    const { firstName, lastName, phone, extension, directDial, avatarUrl, preferences } = body;
 
     // Find the user by email
     const [existingUser] = await db
@@ -88,6 +89,7 @@ export async function PUT(request: NextRequest) {
         ...(extension !== undefined && { extension }),
         ...(directDial !== undefined && { directDial }),
         ...(avatarUrl !== undefined && { avatarUrl }),
+        ...(preferences !== undefined && { preferences }),
       })
       .where(eq(users.id, existingUser.id))
       .returning({
@@ -102,6 +104,7 @@ export async function PUT(request: NextRequest) {
         isAvailable: users.isAvailable,
         role: users.role,
         avatarUrl: users.avatarUrl,
+        preferences: users.preferences,
       });
 
     return NextResponse.json({
