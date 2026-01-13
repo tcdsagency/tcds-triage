@@ -915,18 +915,15 @@ export async function POST(request: NextRequest) {
       const trestlePersonName = (trestleData as { person?: { name?: string } } | null)?.person?.name;
       const trestleEmails = (trestleData as { emails?: string[] } | null)?.emails;
 
-      // Auto-void hangups, voicemails, and brief non-service calls
-      // These don't need manual review - they're logged for QA but auto-completed
-      const isVoicemail = analysis?.callQuality === "voicemail" ||
-                          analysis?.summary?.toLowerCase().includes("voicemail") ||
-                          analysis?.summary?.toLowerCase().includes("left a message");
-      const isBriefNoService = analysis?.callQuality === "brief_no_service";
-      const shouldAutoVoid = isHangup || isVoicemail || isBriefNoService;
-      const autoVoidReason = isVoicemail ? "voicemail" : (isBriefNoService ? "brief_no_service" : hangupReason);
+      // STRICT AUTO-VOID: Only auto-void if there's NO transcript
+      // If there's a transcript (even for short calls), it goes to pending review
+      const hasNoTranscript = !transcript || transcript.trim().length < 50;
+      const shouldAutoVoid = hasNoTranscript;
+      const autoVoidReason = hasNoTranscript ? "no_transcript" : null;
       const wrapupStatus = shouldAutoVoid ? "completed" as const : "pending_review" as const;
 
       if (shouldAutoVoid) {
-        console.log(`[Call-Completed] Auto-voiding: ${autoVoidReason} (hangup: ${isHangup}, voicemail: ${isVoicemail}, brief: ${isBriefNoService})`);
+        console.log(`[Call-Completed] Auto-voiding: no transcript (length: ${transcript?.length || 0})`);
       }
 
       // Use transaction to ensure wrapup and match suggestions are created atomically
