@@ -3,9 +3,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { wrapupDrafts, messages, customers } from "@/db/schema";
+import { wrapupDrafts, messages, customers, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { createClient } from "@/lib/supabase/server";
 
 // =============================================================================
 // TYPES
@@ -38,6 +39,36 @@ interface CompleteRequest {
 // NCM (No Customer Match) customer ID in AgencyZoom
 // This is a placeholder customer used for service requests from unknown callers
 const NCM_CUSTOMER_ID = process.env.NCM_CUSTOMER_ID || '0'; // Default to 0 if not set
+
+// Helper to get the current user's database ID from auth session
+async function getCurrentUserId(providedId?: string): Promise<string | null> {
+  // If a valid ID was provided, use it
+  if (providedId) {
+    return providedId;
+  }
+
+  // Otherwise, try to get from auth session
+  try {
+    const supabase = await createClient();
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+
+    if (!authUser?.email) {
+      return null;
+    }
+
+    // Look up user ID by email
+    const [dbUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, authUser.email))
+      .limit(1);
+
+    return dbUser?.id || null;
+  } catch (error) {
+    console.error("[Complete API] Failed to get current user:", error);
+    return null;
+  }
+}
 
 // =============================================================================
 // HELPERS
@@ -105,6 +136,9 @@ export async function POST(
       return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
     }
 
+    // Get the reviewer ID - either from body or from auth session
+    const reviewerId = await getCurrentUserId(body.reviewerId);
+
     // Get AgencyZoom client if needed
     const azClient = body.action !== 'skip' && body.action !== 'acknowledge'
       ? await getAgencyZoomClient()
@@ -141,7 +175,7 @@ export async function POST(
             reviewerDecision: "skipped",
             outcome: "skipped",
             completedAt: new Date(),
-            reviewerId: body.reviewerId || null,
+            reviewerId: reviewerId,
             reviewedAt: new Date(),
           })
           .where(eq(wrapupDrafts.id, itemId));
@@ -157,7 +191,7 @@ export async function POST(
             reviewerDecision: "voided",
             outcome: "voided",
             completedAt: new Date(),
-            reviewerId: body.reviewerId || null,
+            reviewerId: reviewerId,
             reviewedAt: new Date(),
           })
           .where(eq(wrapupDrafts.id, itemId));
@@ -208,7 +242,7 @@ export async function POST(
               outcome: isLead ? "lead_note_posted" : "note_posted",
               agencyzoomNoteId: noteResult.id?.toString(),
               completedAt: new Date(),
-              reviewerId: body.reviewerId || null,
+              reviewerId: reviewerId,
               reviewedAt: new Date(),
             })
             .where(eq(wrapupDrafts.id, itemId));
@@ -285,7 +319,7 @@ export async function POST(
               reviewerDecision: "approved",
               outcome: "lead_created",
               completedAt: new Date(),
-              reviewerId: body.reviewerId || null,
+              reviewerId: reviewerId,
               reviewedAt: new Date(),
             })
             .where(eq(wrapupDrafts.id, itemId));
@@ -355,7 +389,7 @@ export async function POST(
               outcome: "ncm_posted",
               agencyzoomTicketId: serviceResult.ticketId?.toString(),
               completedAt: new Date(),
-              reviewerId: body.reviewerId || null,
+              reviewerId: reviewerId,
               reviewedAt: new Date(),
             })
             .where(eq(wrapupDrafts.id, itemId));
