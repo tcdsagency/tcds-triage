@@ -915,15 +915,18 @@ export async function POST(request: NextRequest) {
       const trestlePersonName = (trestleData as { person?: { name?: string } } | null)?.person?.name;
       const trestleEmails = (trestleData as { emails?: string[] } | null)?.emails;
 
-      // STRICT AUTO-VOID: Only auto-void if there's NO transcript
-      // If there's a transcript (even for short calls), it goes to pending review
+      // STRICT AUTO-VOID: Only auto-void if there's NO transcript AND NO customer match
+      // If there's a transcript OR a customer match, it goes to pending review for E&O logging
       const hasNoTranscript = !transcript || transcript.trim().length < 50;
-      const shouldAutoVoid = hasNoTranscript;
-      const autoVoidReason = hasNoTranscript ? "no_transcript" : null;
+      const hasNoMatch = customerMatchStatus === "unmatched";
+      const shouldAutoVoid = hasNoTranscript && hasNoMatch;
+      const autoVoidReason = shouldAutoVoid ? "no_transcript_no_match" : null;
       const wrapupStatus = shouldAutoVoid ? "completed" as const : "pending_review" as const;
 
       if (shouldAutoVoid) {
-        console.log(`[Call-Completed] Auto-voiding: no transcript (length: ${transcript?.length || 0})`);
+        console.log(`[Call-Completed] Auto-voiding: no transcript (length: ${transcript?.length || 0}) AND no customer match`);
+      } else if (hasNoTranscript && !hasNoMatch) {
+        console.log(`[Call-Completed] NOT auto-voiding: no transcript but has customer match (${customerMatchStatus}) - needs E&O review`);
       }
 
       // Use transaction to ensure wrapup and match suggestions are created atomically

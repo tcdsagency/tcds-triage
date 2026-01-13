@@ -37,15 +37,15 @@ export async function GET(request: NextRequest) {
     const tickets = result.data.map(ticket => ({
       id: ticket.id,
       subject: ticket.subject,
-      description: ticket.serviceDesc || ticket.description,
-      customerName: ticket.customerName || ticket.householdName,
-      customerId: ticket.customerId || ticket.householdId,
-      csrName: ticket.csrName,
-      csrId: ticket.csrId,
-      priority: ticket.priorityName || ticket.priority,
-      category: ticket.categoryName || ticket.category,
-      createdAt: ticket.createDate || ticket.createdAt,
-      stage: ticket.stageName || ticket.workflowStageName,
+      description: ticket.serviceDesc,
+      customerName: ticket.name, // Household name
+      customerId: ticket.householdId,
+      csrName: undefined, // CSR name not available in type
+      csrId: ticket.csr,
+      priority: ticket.priorityId,
+      category: ticket.categoryId,
+      createdAt: ticket.createDate,
+      stage: ticket.workflowStageName,
     }));
 
     return NextResponse.json({
