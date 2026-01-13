@@ -558,13 +558,17 @@ export async function POST(request: NextRequest) {
     // Extract phone numbers from SIP URIs if needed
     const callerNumber = extractPhoneFromSIP(body.callerPhone || body.callerNumber);
     const calledNumber = extractPhoneFromSIP(body.calledNumber);
-    const extension = body.extension || body.agentExtension || "";
+    // Also extract extension from SIP URI - it might come as sip:+12058475616@tcds.al.3cx.us
+    const rawExtension = extractPhoneFromSIP(body.extension || body.agentExtension || "");
 
-    // Flag if extension looks like a phone number (more than 5 digits)
-    const extDigits = extension.replace(/\D/g, "");
+    // Get just the digits from the extension
+    const extDigits = rawExtension.replace(/\D/g, "");
+
+    // For database storage, truncate to last 10 chars (extension column is varchar(10))
+    const extension = extDigits.slice(-10);
     const extensionLooksLikePhone = extDigits.length > 5;
     if (extensionLooksLikePhone) {
-      console.log("[Call-Completed] ⚠️ WARNING: Extension looks like a phone number:", extension);
+      console.log("[Call-Completed] ⚠️ WARNING: Extension looks like a phone number:", rawExtension, "->", extension);
       console.log("[Call-Completed] ⚠️ This will cause agent matching to fail!");
     }
 
