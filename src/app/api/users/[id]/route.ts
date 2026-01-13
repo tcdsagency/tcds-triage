@@ -118,6 +118,7 @@ export async function PUT(
       "role", "extension", "directDial", "cellPhone",
       "agencyzoomId", "agentCode", "isAvailable", "currentStatus",
       "skillLevel", "inLeadRotation", "isActive", "permissions",
+      "featurePermissions",
     ];
 
     for (const field of allowedFields) {

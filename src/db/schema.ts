@@ -364,7 +364,10 @@ export const users = pgTable('users', {
     };
     defaultView: string;
   }>(),
-  
+
+  // Feature Permissions (per-user feature toggles)
+  featurePermissions: jsonb('feature_permissions').$type<Record<string, boolean>>(),
+
   // Status
   isActive: boolean('is_active').default(true),
   lastActiveAt: timestamp('last_active_at'),
