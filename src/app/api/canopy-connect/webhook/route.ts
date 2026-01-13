@@ -133,13 +133,14 @@ export async function POST(request: NextRequest) {
     // Canopy sends different event types
     const eventType = body.event_type || body.type || "pull.completed";
     const pullId = body.pull_id || body.pullId || body.data?.pull_id;
+    const pullStatus = body.status || "PENDING";
 
     if (!pullId) {
       console.error("[Canopy Webhook] No pull_id in payload");
       return NextResponse.json({ error: "Missing pull_id" }, { status: 400 });
     }
 
-    console.log(`[Canopy Webhook] Event: ${eventType}, Pull ID: ${pullId}`);
+    console.log(`[Canopy Webhook] Event: ${eventType}, Pull ID: ${pullId}, Status: ${pullStatus}`);
 
     // Check if we already have this pull
     const [existing] = await db
@@ -155,6 +156,16 @@ export async function POST(request: NextRequest) {
 
     if (eventType === "pull.expired") {
       return await handlePullExpired(tenantId, pullId, body, existing);
+    }
+
+    // Handle DATA_UPDATED events (incremental updates from Canopy)
+    if (eventType === "DATA_UPDATED") {
+      // Only fetch full data if status is SUCCESS (pull is complete)
+      if (pullStatus === "SUCCESS") {
+        return await handlePullCompleted(tenantId, pullId, body, existing);
+      }
+      // Otherwise just store/update the record with what we have
+      return await handleDataUpdated(tenantId, pullId, body, existing);
     }
 
     // Default: pull.completed
@@ -178,15 +189,30 @@ async function handlePullCompleted(
   body: any,
   existing: any
 ) {
-  // Fetch full pull data from Canopy API
+  // Fetch full pull data from Canopy API with timeout
   let pullData;
+  let fetchedFromApi = false;
+
   try {
     const client = getCanopyClient();
-    pullData = await client.getPull(pullId);
-    console.log(`[Canopy Webhook] Fetched pull data for ${pullId}`);
+
+    // Add 10 second timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("API timeout after 10s")), 10000)
+    );
+
+    pullData = await Promise.race([
+      client.getPull(pullId),
+      timeoutPromise
+    ]) as any;
+
+    fetchedFromApi = true;
+    console.log(`[Canopy Webhook] Fetched pull data for ${pullId} from API`);
   } catch (error) {
-    console.error("[Canopy Webhook] Failed to fetch pull data:", error);
+    console.error("[Canopy Webhook] Failed to fetch pull data:", error instanceof Error ? error.message : error);
+    // Fallback to webhook payload data
     pullData = body.data || body;
+    console.log(`[Canopy Webhook] Using webhook payload data for ${pullId}`);
   }
 
   // Extract data from pull
@@ -381,6 +407,53 @@ async function handlePullExpired(
     success: true,
     pullId,
     event: "pull.expired",
+  });
+}
+
+async function handleDataUpdated(
+  tenantId: string,
+  pullId: string,
+  body: any,
+  existing: any
+) {
+  // Extract any data from the update payload
+  const updates = body.data?.updates || [];
+
+  // Log what type of updates we received
+  const updateTypes = updates.map((u: any) => u.type).join(", ");
+  console.log(`[Canopy Webhook] DATA_UPDATED for ${pullId}: ${updateTypes || "no updates"}`);
+
+  if (existing) {
+    // Update the existing record with raw payload
+    await db
+      .update(canopyConnectPulls)
+      .set({
+        pullStatus: body.status || existing.pullStatus,
+        rawPayload: body,
+        updatedAt: new Date(),
+      })
+      .where(eq(canopyConnectPulls.id, existing.id));
+
+    console.log(`[Canopy Webhook] Updated existing pull ${pullId} with DATA_UPDATED`);
+  } else {
+    // Create a new record for tracking
+    await db.insert(canopyConnectPulls).values({
+      tenantId,
+      pullId,
+      pullStatus: body.status || "PENDING",
+      rawPayload: body,
+      matchStatus: "pending",
+    });
+
+    console.log(`[Canopy Webhook] Created new pull ${pullId} from DATA_UPDATED`);
+  }
+
+  return NextResponse.json({
+    success: true,
+    pullId,
+    event: "DATA_UPDATED",
+    status: body.status,
+    updates: updateTypes,
   });
 }
 
