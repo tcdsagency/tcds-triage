@@ -15,7 +15,10 @@ import {
   Loader2,
   ChevronRight,
   Phone,
+  PhoneIncoming,
+  PhoneOutgoing,
   Mail,
+  MessageSquare,
   DollarSign,
   Shield,
   Plus,
@@ -28,11 +31,15 @@ import {
   Umbrella,
   Heart,
   Calendar,
+  ArrowDownLeft,
+  ArrowUpRight,
+  ClipboardList,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import AgentDashboard from "@/components/dashboards/AgentDashboard";
 
 // =============================================================================
 // TYPES
@@ -69,6 +76,12 @@ interface SmartAction {
   color: string;
   priority: 'high' | 'medium' | 'low';
   href: string;
+}
+
+interface DashboardStats {
+  calls: { total: number; inbound: number; outbound: number };
+  messages: { total: number; inbound: number; outbound: number };
+  pendingReview: number;
 }
 
 // =============================================================================
@@ -283,8 +296,71 @@ export default function DashboardPage() {
   const [searchResults, setSearchResults] = useState<CustomerResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch current user role
+  useEffect(() => {
+    async function fetchUser() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            setUserRole(data.user.role);
+            setUserName(data.user.firstName || data.user.name?.split(' ')[0]);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch user:", err);
+      } finally {
+        setUserLoading(false);
+      }
+    }
+    fetchUser();
+  }, []);
+
+  // Fetch dashboard stats
+  useEffect(() => {
+    async function fetchStats() {
+      try {
+        const res = await fetch("/api/dashboard/stats?period=today");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.stats) {
+            setStats(data.stats);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch stats:", err);
+      } finally {
+        setStatsLoading(false);
+      }
+    }
+    fetchStats();
+    // Refresh stats every 60 seconds
+    const interval = setInterval(fetchStats, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Show agent dashboard for agents
+  if (!userLoading && userRole === 'agent') {
+    return <AgentDashboard userName={userName || undefined} />;
+  }
+
+  // Show loading while fetching user
+  if (userLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   // Perform customer search
   const performSearch = async (searchQuery: string) => {
@@ -424,6 +500,105 @@ export default function DashboardPage() {
             Simple. Fast. Smart.
           </p>
         </div>
+
+        {/* ================================================================= */}
+        {/* TODAY'S STATS */}
+        {/* ================================================================= */}
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Calls Inbound */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <PhoneIncoming className="w-5 h-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Calls In</p>
+                {statsLoading ? (
+                  <div className="h-7 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                ) : (
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats?.calls.inbound || 0}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Calls Outbound */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                <PhoneOutgoing className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Calls Out</p>
+                {statsLoading ? (
+                  <div className="h-7 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                ) : (
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats?.calls.outbound || 0}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                <MessageSquare className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Texts</p>
+                {statsLoading ? (
+                  <div className="h-7 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats?.messages.total || 0}</p>
+                    <span className="text-xs text-gray-500">
+                      <ArrowDownLeft className="w-3 h-3 inline text-green-500" />{stats?.messages.inbound || 0}
+                      {" / "}
+                      <ArrowUpRight className="w-3 h-3 inline text-blue-500" />{stats?.messages.outbound || 0}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Pending Review */}
+          <Link href="/pending-review">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-amber-300 dark:hover:border-amber-600 transition-all cursor-pointer">
+              <div className="flex items-center gap-3 mb-2">
+                <div className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center",
+                  (stats?.pendingReview || 0) > 0
+                    ? "bg-amber-100 dark:bg-amber-900/30"
+                    : "bg-gray-100 dark:bg-gray-700"
+                )}>
+                  <ClipboardList className={cn(
+                    "w-5 h-5",
+                    (stats?.pendingReview || 0) > 0
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-gray-500"
+                  )} />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Pending</p>
+                  {statsLoading ? (
+                    <div className="h-7 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                  ) : (
+                    <p className={cn(
+                      "text-2xl font-bold",
+                      (stats?.pendingReview || 0) > 0
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-gray-900 dark:text-white"
+                    )}>
+                      {stats?.pendingReview || 0}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Link>
+        </section>
 
         {/* ================================================================= */}
         {/* NEW QUOTE SECTION */}
