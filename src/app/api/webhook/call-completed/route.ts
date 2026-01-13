@@ -732,6 +732,7 @@ export async function POST(request: NextRequest) {
       let azLeadMatches: AgencyZoomLead[] = [];
       let matchType: "customer" | "lead" | "none" = "none";
       let matchedCustomerName: string | null = null;
+      let matchedLeadId: string | null = null;
 
       // First, check if customer was already matched during screen pop
       if (call.customerId) {
@@ -812,12 +813,6 @@ export async function POST(request: NextRequest) {
           console.log(`[Call-Completed] Multiple lead matches: ${azLeadMatches.length} leads`);
         }
       } // end if (customerMatchStatus === "unmatched") - AgencyZoom lookup block
-
-      // Declare matchedLeadId for use in wrapup - will be set if lead matched above
-      let matchedLeadId: string | null = null;
-      if (matchType === "lead" && azLeadMatches.length === 1 && azLeadMatches[0]) {
-        matchedLeadId = azLeadMatches[0].id.toString();
-      }
 
       // 4.2 Trestle IQ lookup for unmatched calls
       if (customerMatchStatus === "unmatched") {
