@@ -30,6 +30,8 @@ interface CompleteRequest {
     phone?: string;
     source?: string;
   };
+  // For grouped messages - acknowledge all messages from same phone number
+  messageIds?: string[];
 }
 
 // NCM (No Customer Match) customer ID in AgencyZoom
@@ -369,21 +371,39 @@ export async function POST(
       }
 
       if (body.action === 'acknowledge' || body.action === 'skip') {
-        await db
-          .update(messages)
-          .set({ isAcknowledged: true })
-          .where(eq(messages.id, itemId));
+        // Acknowledge all grouped messages if messageIds provided, otherwise just the single message
+        const idsToAcknowledge = body.messageIds && body.messageIds.length > 0 ? body.messageIds : [itemId];
 
-        return NextResponse.json({ success: true, action: body.action, message: "Message acknowledged" });
+        for (const msgId of idsToAcknowledge) {
+          await db
+            .update(messages)
+            .set({ isAcknowledged: true })
+            .where(eq(messages.id, msgId));
+        }
+
+        return NextResponse.json({
+          success: true,
+          action: body.action,
+          message: `${idsToAcknowledge.length} message(s) acknowledged`
+        });
       }
 
       if (body.action === 'void') {
-        await db
-          .update(messages)
-          .set({ isAcknowledged: true })
-          .where(eq(messages.id, itemId));
+        // Void all grouped messages if messageIds provided
+        const idsToVoid = body.messageIds && body.messageIds.length > 0 ? body.messageIds : [itemId];
 
-        return NextResponse.json({ success: true, action: "void", message: "Message voided" });
+        for (const msgId of idsToVoid) {
+          await db
+            .update(messages)
+            .set({ isAcknowledged: true })
+            .where(eq(messages.id, msgId));
+        }
+
+        return NextResponse.json({
+          success: true,
+          action: "void",
+          message: `${idsToVoid.length} message(s) voided`
+        });
       }
 
       const customerId = body.customerId

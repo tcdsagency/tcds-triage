@@ -267,6 +267,8 @@ export default function PendingReviewPage() {
           action,
           customerId: item.agencyzoomCustomerId || item.agencyzoomLeadId,
           isLead,
+          // Include all message IDs for grouped SMS conversations
+          messageIds: (item as any).messageIds,
         }),
       });
 

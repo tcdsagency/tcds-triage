@@ -62,6 +62,15 @@ interface PendingItem {
   transcription?: string;
   agencyzoomCustomerId?: string;
   agencyzoomLeadId?: string;
+
+  // Message grouping (for SMS conversations)
+  conversationThread?: {
+    direction: string;
+    body: string | null;
+    timestamp: string;
+    isAutoReply: boolean;
+  }[];
+  messageIds?: string[]; // All message IDs in this group (for bulk acknowledge)
 }
 
 interface PendingCounts {
@@ -207,9 +216,10 @@ export async function GET(request: NextRequest) {
     }
 
     // =======================================================================
-    // 2. Fetch Unacknowledged Messages
+    // 2. Fetch Unacknowledged Messages - GROUPED BY PHONE NUMBER
     // =======================================================================
     if (!typeFilter || typeFilter === 'message') {
+      // Get all unacknowledged inbound messages
       const unreadMessages = await db
         .select({
           id: messages.id,
@@ -234,42 +244,99 @@ export async function GET(request: NextRequest) {
         .orderBy(desc(messages.createdAt))
         .limit(limit);
 
+      // Group messages by phone number
+      const messagesByPhone = new Map<string, typeof unreadMessages>();
       for (const m of unreadMessages) {
-        const matchStatus: PendingItem['matchStatus'] = m.isAfterHours
+        const phone = m.fromNumber || '';
+        if (!messagesByPhone.has(phone)) {
+          messagesByPhone.set(phone, []);
+        }
+        messagesByPhone.get(phone)!.push(m);
+      }
+
+      // For each phone group, also fetch recent conversation (including auto-replies)
+      for (const [phone, phoneMessages] of messagesByPhone) {
+        const firstMsg = phoneMessages[0]; // Most recent unread message
+        const oldestMsg = phoneMessages[phoneMessages.length - 1];
+
+        // Get the full conversation thread (last 24 hours or since oldest unread)
+        const conversationCutoff = new Date(Math.min(
+          oldestMsg.createdAt.getTime(),
+          now.getTime() - 24 * 60 * 60 * 1000 // 24 hours ago
+        ));
+
+        const fullThread = await db
+          .select({
+            id: messages.id,
+            direction: messages.direction,
+            body: messages.body,
+            createdAt: messages.createdAt,
+            aiGenerated: messages.aiGenerated,
+          })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.tenantId, tenantId),
+              sql`(${messages.fromNumber} = ${phone} OR ${messages.toNumber} = ${phone})`,
+              sql`${messages.createdAt} >= ${conversationCutoff}`
+            )
+          )
+          .orderBy(messages.createdAt)
+          .limit(20);
+
+        // Build conversation summary
+        const unreadCount = phoneMessages.length;
+        const hasAutoReply = fullThread.some(m => m.direction === 'outbound' && m.aiGenerated);
+
+        // Create summary showing all unread messages
+        let summary = phoneMessages.map(m => m.body || '').filter(Boolean).join('\n---\n');
+        if (unreadCount > 1) {
+          summary = `[${unreadCount} unread messages]\n\n${summary}`;
+        }
+
+        const matchStatus: PendingItem['matchStatus'] = firstMsg.isAfterHours
           ? 'after_hours'
-          : m.contactName && !m.contactName.match(/^[\d\(\)\-\s\.]+$/)
+          : firstMsg.contactName && !firstMsg.contactName.match(/^[\d\(\)\-\s\.]+$/)
             ? 'matched'
             : 'unmatched';
         const msgMatchReason = matchStatus === 'unmatched' ? 'No match found in database' :
-                              matchStatus === 'after_hours' ? 'After hours message' : null;
+                              matchStatus === 'after_hours' ? 'After hours message' + (hasAutoReply ? ' (auto-reply sent)' : '') : null;
 
         // Skip if filtering by status and doesn't match
         if (statusFilter && statusFilter !== matchStatus) continue;
 
-        const ageMinutes = Math.floor((now.getTime() - new Date(m.createdAt).getTime()) / 60000);
+        const ageMinutes = Math.floor((now.getTime() - new Date(oldestMsg.createdAt).getTime()) / 60000);
 
         items.push({
-          id: m.id,
+          id: firstMsg.id, // Use first message ID as group ID
           type: 'message',
-          direction: m.direction as 'inbound' | 'outbound',
-          contactName: m.contactName,
-          contactPhone: m.fromNumber || '',
+          direction: 'inbound',
+          contactName: firstMsg.contactName,
+          contactPhone: phone,
           contactEmail: null,
-          contactType: m.contactType as 'customer' | 'lead' | null,
+          contactType: firstMsg.contactType as 'customer' | 'lead' | null,
           matchStatus,
           matchReason: msgMatchReason,
           sentiment: null,
-          isAutoPosted: false,
-          summary: m.body || '',
-          requestType: m.isAfterHours ? 'After Hours' : 'SMS',
+          isAutoPosted: hasAutoReply,
+          summary,
+          requestType: firstMsg.isAfterHours ? 'After Hours' : (unreadCount > 1 ? `${unreadCount} Messages` : 'SMS'),
           actionItems: [],
           policies: [],
           handledBy: null,
-          timestamp: m.createdAt.toISOString(),
+          timestamp: firstMsg.createdAt.toISOString(),
           ageMinutes,
           trestleData: null,
           matchSuggestions: [],
-          agencyzoomCustomerId: m.contactId || undefined,
+          agencyzoomCustomerId: firstMsg.contactId || undefined,
+          // Include conversation thread for display
+          conversationThread: fullThread.map(t => ({
+            direction: t.direction,
+            body: t.body,
+            timestamp: t.createdAt.toISOString(),
+            isAutoReply: t.aiGenerated || false,
+          })),
+          messageIds: phoneMessages.map(m => m.id), // All message IDs in this group
         });
       }
     }
