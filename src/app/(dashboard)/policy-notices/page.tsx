@@ -26,6 +26,7 @@ interface PaginatedResponse {
     pending: number;
     assigned: number;
     reviewed: number;
+    flagged: number;
     actioned: number;
     dismissed: number;
   };
@@ -47,6 +48,7 @@ export default function PolicyNoticesPage() {
     pending: 0,
     assigned: 0,
     reviewed: 0,
+    flagged: 0,
     actioned: 0,
     dismissed: 0,
   });
@@ -57,10 +59,12 @@ export default function PolicyNoticesPage() {
     totalPages: 0,
   });
 
+  // Active category tab
+  const [activeCategory, setActiveCategory] = useState<'billing' | 'claim' | 'policy'>('billing');
+
   // Filters
   const [filters, setFilters] = useState({
     status: '',
-    type: '',
     urgency: '',
     search: '',
     newToday: false,
@@ -70,6 +74,13 @@ export default function PolicyNoticesPage() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [newTodayCount, setNewTodayCount] = useState(0);
 
+  // Category counts
+  const [categoryCounts, setCategoryCounts] = useState({
+    billing: 0,
+    claim: 0,
+    policy: 0,
+  });
+
   // Users for assignment dropdown
   const [users, setUsers] = useState<User[]>([]);
 
@@ -78,8 +89,8 @@ export default function PolicyNoticesPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set('type', activeCategory); // Use active tab as type filter
       if (filters.status) params.set('status', filters.status);
-      if (filters.type) params.set('type', filters.type);
       if (filters.urgency) params.set('urgency', filters.urgency);
       if (filters.search) params.set('search', filters.search);
       if (filters.newToday) params.set('newToday', 'true');
@@ -101,7 +112,20 @@ export default function PolicyNoticesPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters, pagination.page, pagination.limit]);
+  }, [activeCategory, filters, pagination.page, pagination.limit]);
+
+  // Fetch category counts (for tab badges)
+  const fetchCategoryCounts = useCallback(async () => {
+    try {
+      const response = await fetch('/api/policy-notices/counts');
+      const data = await response.json();
+      if (data.success) {
+        setCategoryCounts(data.counts);
+      }
+    } catch (error) {
+      console.error('Error fetching category counts:', error);
+    }
+  }, []);
 
   // Fetch users for assignment
   const fetchUsers = useCallback(async () => {
@@ -120,7 +144,8 @@ export default function PolicyNoticesPage() {
   useEffect(() => {
     fetchNotices();
     fetchUsers();
-  }, [fetchNotices, fetchUsers]);
+    fetchCategoryCounts();
+  }, [fetchNotices, fetchUsers, fetchCategoryCounts]);
 
   // Sync from Adapt API
   const handleSync = async () => {
@@ -144,7 +169,7 @@ export default function PolicyNoticesPage() {
   // Handle notice action
   const handleAction = async (
     notice: PolicyNotice,
-    action: 'assign' | 'review' | 'action' | 'dismiss' | 'send-zapier',
+    action: 'assign' | 'review' | 'action' | 'dismiss' | 'flag' | 'send-zapier',
     data?: Record<string, string>
   ) => {
     try {
@@ -238,6 +263,31 @@ export default function PolicyNoticesPage() {
           </div>
         </div>
 
+        {/* Category Tabs */}
+        <div className="flex gap-1 mt-4 border-b border-gray-200 dark:border-gray-700">
+          <CategoryTab
+            label="Billing & Payments"
+            icon="💳"
+            count={categoryCounts.billing}
+            active={activeCategory === 'billing'}
+            onClick={() => { setActiveCategory('billing'); setPagination(p => ({ ...p, page: 1 })); }}
+          />
+          <CategoryTab
+            label="Claims"
+            icon="⚠️"
+            count={categoryCounts.claim}
+            active={activeCategory === 'claim'}
+            onClick={() => { setActiveCategory('claim'); setPagination(p => ({ ...p, page: 1 })); }}
+          />
+          <CategoryTab
+            label="Policy Changes"
+            icon="📄"
+            count={categoryCounts.policy}
+            active={activeCategory === 'policy'}
+            onClick={() => { setActiveCategory('policy'); setPagination(p => ({ ...p, page: 1 })); }}
+          />
+        </div>
+
         {/* Stats Row */}
         <div className="flex gap-4 mt-4">
           <StatBadge
@@ -260,6 +310,13 @@ export default function PolicyNoticesPage() {
             active={filters.status === 'reviewed'}
             color="purple"
             onClick={() => setFilters((f) => ({ ...f, status: f.status === 'reviewed' ? '' : 'reviewed' }))}
+          />
+          <StatBadge
+            label="Flagged"
+            count={stats.flagged}
+            active={filters.status === 'flagged'}
+            color="orange"
+            onClick={() => setFilters((f) => ({ ...f, status: f.status === 'flagged' ? '' : 'flagged' }))}
           />
           <StatBadge
             label="Actioned"
@@ -297,23 +354,6 @@ export default function PolicyNoticesPage() {
             />
           </div>
 
-          {/* Type Filter */}
-          <div className="mb-4">
-            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-              Type
-            </label>
-            <select
-              value={filters.type}
-              onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white text-gray-900"
-            >
-              <option value="">All Types</option>
-              <option value="billing">Billing</option>
-              <option value="policy">Policy</option>
-              <option value="claim">Claim</option>
-            </select>
-          </div>
-
           {/* Urgency Filter */}
           <div className="mb-4">
             <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
@@ -333,9 +373,9 @@ export default function PolicyNoticesPage() {
           </div>
 
           {/* Clear Filters */}
-          {(filters.status || filters.type || filters.urgency || filters.search || filters.newToday) && (
+          {(filters.status || filters.urgency || filters.search || filters.newToday) && (
             <button
-              onClick={() => setFilters({ status: '', type: '', urgency: '', search: '', newToday: false })}
+              onClick={() => setFilters({ status: '', urgency: '', search: '', newToday: false })}
               className="w-full px-3 py-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
             >
               Clear Filters
@@ -606,6 +646,31 @@ export default function PolicyNoticesPage() {
                 </button>
               )}
 
+              {/* Review / Flag buttons */}
+              {selectedNotice.reviewStatus !== 'actioned' && selectedNotice.reviewStatus !== 'dismissed' && (
+                <div className="flex gap-2">
+                  {selectedNotice.reviewStatus !== 'reviewed' && (
+                    <button
+                      onClick={() => handleAction(selectedNotice, 'review', { userId: 'current-user-id' })}
+                      className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                    >
+                      ✓ Mark Reviewed
+                    </button>
+                  )}
+                  {selectedNotice.reviewStatus !== 'flagged' && (
+                    <button
+                      onClick={() => {
+                        const notes = prompt('Flag reason (optional):') || '';
+                        handleAction(selectedNotice, 'flag', { userId: 'current-user-id', reviewNotes: notes });
+                      }}
+                      className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
+                    >
+                      🚩 Flag
+                    </button>
+                  )}
+                </div>
+              )}
+
               {selectedNotice.reviewStatus === 'actioned' && !selectedNotice.zapierWebhookSent && (
                 <button
                   onClick={() => handleAction(selectedNotice, 'send-zapier')}
@@ -641,6 +706,43 @@ export default function PolicyNoticesPage() {
 // SUB-COMPONENTS
 // =============================================================================
 
+function CategoryTab({
+  label,
+  icon,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  icon: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+        active
+          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+          : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+      }`}
+    >
+      <span>{icon}</span>
+      {label}
+      {count > 0 && (
+        <span className={`px-2 py-0.5 text-xs rounded-full ${
+          active
+            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+        }`}>
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function StatBadge({
   label,
   count,
@@ -651,7 +753,7 @@ function StatBadge({
   label: string;
   count: number;
   active: boolean;
-  color: 'gray' | 'blue' | 'purple' | 'green';
+  color: 'gray' | 'blue' | 'purple' | 'green' | 'orange';
   onClick: () => void;
 }) {
   const colors = {
@@ -659,6 +761,7 @@ function StatBadge({
     blue: active ? 'bg-blue-200 dark:bg-blue-800' : 'bg-blue-100 dark:bg-blue-900/30',
     purple: active ? 'bg-purple-200 dark:bg-purple-800' : 'bg-purple-100 dark:bg-purple-900/30',
     green: active ? 'bg-green-200 dark:bg-green-800' : 'bg-green-100 dark:bg-green-900/30',
+    orange: active ? 'bg-orange-200 dark:bg-orange-800' : 'bg-orange-100 dark:bg-orange-900/30',
   };
 
   return (
