@@ -1,5 +1,5 @@
 // API Route: /api/messages
-// Get messages - supports filtering by unread, recent
+// Get messages - supports filtering by unread, recent, all (including after-hours)
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
