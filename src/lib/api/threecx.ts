@@ -77,11 +77,18 @@ export class ThreeCXClient {
   // ---------------------------------------------------------------------------
 
   static async fromTenant(tenantId: string): Promise<ThreeCXClient | null> {
+    console.log(`[3CX] Loading config for tenant: ${tenantId}`);
+
     const [tenant] = await db
       .select({ integrations: tenants.integrations })
       .from(tenants)
       .where(eq(tenants.id, tenantId))
       .limit(1);
+
+    if (!tenant) {
+      console.error(`[3CX] Tenant not found: ${tenantId}`);
+      return null;
+    }
 
     const integrations = (tenant?.integrations as Record<string, any>) || {};
     const threecxConfig = integrations.threecx || {};
@@ -93,8 +100,11 @@ export class ThreeCXClient {
     const jwtPublicKey = threecxConfig.jwtPublicKey || process.env.THREECX_JWT_PUBLIC_KEY;
 
     if (!baseUrl || !clientId || !clientSecret) {
+      console.error(`[3CX] Missing config - baseUrl: ${!!baseUrl}, clientId: ${!!clientId}, clientSecret: ${!!clientSecret}`);
       return null;
     }
+
+    console.log(`[3CX] Config loaded - baseUrl: ${baseUrl}, clientId: ${clientId}, hasToken: ${!!threecxConfig.accessToken}`);
 
     return new ThreeCXClient(tenantId, {
       baseUrl,
@@ -113,6 +123,7 @@ export class ThreeCXClient {
 
   async authenticate(): Promise<boolean> {
     try {
+      console.log(`[3CX] Authenticating with client_id: ${this.config.clientId}, baseUrl: ${this.config.baseUrl}`);
       const response = await fetch(`${this.config.baseUrl}/connect/token`, {
         method: "POST",
         headers: {
@@ -122,16 +133,17 @@ export class ThreeCXClient {
           grant_type: "client_credentials",
           client_id: this.config.clientId,
           client_secret: this.config.clientSecret,
-          scope: "openid profile",
         }),
       });
 
       if (!response.ok) {
-        console.error("3CX OAuth2 failed:", response.status, await response.text());
+        const errorText = await response.text();
+        console.error(`[3CX] OAuth2 failed: ${response.status}`, errorText);
         return false;
       }
 
       const tokenData: ThreeCXTokenResponse = await response.json();
+      console.log(`[3CX] Got new token, expires in ${tokenData.expires_in}s`);
 
       this.config.accessToken = tokenData.access_token;
       this.config.refreshToken = tokenData.refresh_token;
@@ -142,7 +154,7 @@ export class ThreeCXClient {
 
       return true;
     } catch (error) {
-      console.error("3CX authentication error:", error);
+      console.error("[3CX] Authentication error:", error);
       return false;
     }
   }
@@ -212,15 +224,22 @@ export class ThreeCXClient {
   }
 
   private async ensureAuthenticated(): Promise<boolean> {
-    // Check if token exists and not expired (with 60s buffer)
+    // Check if token exists and not expired (with 10s buffer for short-lived tokens)
     if (this.config.accessToken && this.config.tokenExpiresAt) {
-      if (Date.now() < this.config.tokenExpiresAt - 60000) {
+      const now = Date.now();
+      const expiresAt = this.config.tokenExpiresAt;
+      const buffer = 10000; // 10 second buffer for 60-second tokens
+
+      if (now < expiresAt - buffer) {
+        console.log(`[3CX] Token still valid (expires in ${Math.round((expiresAt - now) / 1000)}s)`);
         return true;
       }
-      // Token expiring soon, refresh
+      // Token expiring soon or expired, refresh
+      console.log(`[3CX] Token expired or expiring soon (expires in ${Math.round((expiresAt - now) / 1000)}s), refreshing...`);
       return this.refreshAccessToken();
     }
     // No token, authenticate
+    console.log("[3CX] No token, authenticating...");
     return this.authenticate();
   }
 
@@ -279,74 +298,224 @@ export class ThreeCXClient {
   }
 
   // ---------------------------------------------------------------------------
-  // Call Control
+  // Call Control - Using 3CX Call Control API
+  // Docs: https://www.3cx.com/docs/call-control-api-endpoints/
+  // Endpoint pattern: /callcontrol/{dn}/participants/{participantId}/{action}
   // ---------------------------------------------------------------------------
 
-  async makeCall(fromExtension: string, toNumber: string): Promise<string | null> {
-    const result = await this.apiCall<{ CallId: string }>("/api/Calls/MakeCall", {
-      method: "POST",
-      body: JSON.stringify({
-        Extension: fromExtension,
-        Number: toNumber,
-      }),
-    });
-    return result?.CallId || null;
-  }
-
-  async dropCall(callId: string): Promise<boolean> {
+  /**
+   * Get extension info including active participants
+   * GET /callcontrol/{dn}
+   */
+  async getExtensionInfo(extension: string): Promise<{
+    dn: string;
+    type: string;
+    devices: any[];
+    participants: Array<{ id: string; callid: string; state: string; party_caller_id: string }>;
+  } | null> {
     try {
-      await this.apiCall("/api/Calls/DropActiveConnection", {
-        method: "POST",
-        body: JSON.stringify({ CallId: callId }),
-      });
-      return true;
-    } catch {
-      return false;
+      return await this.apiCall(`/callcontrol/${extension}`);
+    } catch (err) {
+      console.error("[3CX] getExtensionInfo error:", err);
+      return null;
     }
   }
 
-  async transferCall(callId: string, targetExtension: string, blind: boolean = false): Promise<boolean> {
-    const endpoint = blind ? "/api/Calls/BlindTransfer" : "/api/Calls/AttendedTransfer";
+  /**
+   * Find participant ID for an active call on an extension
+   * The 3CX Call Control API requires participant IDs, not call IDs
+   */
+  async findParticipantId(extension: string, callId?: string): Promise<string | null> {
+    const info = await this.getExtensionInfo(extension);
+    if (!info || !info.participants || info.participants.length === 0) {
+      console.log(`[3CX] No active participants found for ext ${extension}`);
+      return null;
+    }
+
+    // If callId provided, try to match it
+    if (callId) {
+      const match = info.participants.find(p =>
+        p.callid === callId || p.id === callId || String(p.callid) === String(callId)
+      );
+      if (match) {
+        console.log(`[3CX] Found participant ${match.id} for callId ${callId}`);
+        return match.id;
+      }
+    }
+
+    // Return first participant if no specific match
+    const first = info.participants[0];
+    console.log(`[3CX] Using first participant ${first.id} (callid: ${first.callid})`);
+    return first.id;
+  }
+
+  /**
+   * Make a call from an extension to a number
+   * POST /callcontrol/{dn}/devices/{deviceId}/makecall
+   */
+  async makeCall(fromExtension: string, toNumber: string): Promise<string | null> {
     try {
-      await this.apiCall(endpoint, {
+      const result = await this.apiCall<{ id: string; callid: string }>(`/callcontrol/${fromExtension}/devices/webrtc/makecall`, {
         method: "POST",
         body: JSON.stringify({
-          CallId: callId,
-          Destination: targetExtension,
+          destination: toNumber,
         }),
       });
-      return true;
-    } catch {
-      return false;
+      return result?.callid || result?.id || null;
+    } catch (err) {
+      console.error("[3CX] makeCall error:", err);
+      return null;
     }
   }
 
-  async holdCall(callId: string): Promise<boolean> {
+  /**
+   * Drop/end a call
+   * POST /callcontrol/{dn}/participants/{participantId}/drop
+   */
+  async dropCall(callId: string, extension?: string): Promise<boolean> {
     try {
-      await this.apiCall("/api/Calls/Hold", {
+      const dn = extension || this.config.clientId;
+
+      // Find the participant ID for this call
+      const participantId = await this.findParticipantId(dn, callId);
+      if (!participantId) {
+        console.log(`[3CX] No participant found to drop for ext ${dn}, callId ${callId}`);
+        return false;
+      }
+
+      await this.apiCall(`/callcontrol/${dn}/participants/${participantId}/drop`, {
         method: "POST",
-        body: JSON.stringify({ CallId: callId }),
       });
+      console.log(`[3CX] Call dropped (participant: ${participantId}, ext: ${dn})`);
       return true;
-    } catch {
+    } catch (err) {
+      console.error("[3CX] dropCall error:", err);
       return false;
     }
   }
 
-  async retrieveCall(callId: string): Promise<boolean> {
+  /**
+   * Transfer a call to another extension
+   * POST /callcontrol/{dn}/participants/{participantId}/transferto
+   */
+  async transferCall(callId: string, targetExtension: string, blind: boolean = true, extension?: string): Promise<boolean> {
     try {
-      await this.apiCall("/api/Calls/Retrieve", {
+      const dn = extension || this.config.clientId;
+
+      // Find the participant ID for this call
+      const participantId = await this.findParticipantId(dn, callId);
+      if (!participantId) {
+        console.log(`[3CX] No participant found to transfer for ext ${dn}, callId ${callId}`);
+        return false;
+      }
+
+      await this.apiCall(`/callcontrol/${dn}/participants/${participantId}/transferto`, {
         method: "POST",
-        body: JSON.stringify({ CallId: callId }),
+        body: JSON.stringify({
+          destination: targetExtension,
+        }),
       });
+      console.log(`[3CX] Call transferred to ${targetExtension} (participant: ${participantId}, blind: ${blind})`);
       return true;
-    } catch {
+    } catch (err) {
+      console.error("[3CX] transferCall error:", err);
       return false;
     }
   }
 
-  async getActiveCalls(): Promise<ThreeCXCallInfo[]> {
-    return await this.apiCall<ThreeCXCallInfo[]>("/api/Calls/GetActiveCalls") || [];
+  /**
+   * Put a call on hold
+   * POST /callcontrol/{dn}/participants/{participantId}/hold
+   */
+  async holdCall(callId: string, extension?: string): Promise<boolean> {
+    try {
+      const dn = extension || this.config.clientId;
+
+      // Find the participant ID for this call
+      const participantId = await this.findParticipantId(dn, callId);
+      if (!participantId) {
+        console.log(`[3CX] No participant found to hold for ext ${dn}, callId ${callId}`);
+        return false;
+      }
+
+      await this.apiCall(`/callcontrol/${dn}/participants/${participantId}/hold`, {
+        method: "POST",
+      });
+      console.log(`[3CX] Call put on hold (participant: ${participantId}, ext: ${dn})`);
+      return true;
+    } catch (err) {
+      console.error("[3CX] holdCall error:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Resume/unhold a call
+   * POST /callcontrol/{dn}/participants/{participantId}/unhold
+   */
+  async retrieveCall(callId: string, extension?: string): Promise<boolean> {
+    try {
+      const dn = extension || this.config.clientId;
+
+      // Find the participant ID for this call
+      const participantId = await this.findParticipantId(dn, callId);
+      if (!participantId) {
+        console.log(`[3CX] No participant found to unhold for ext ${dn}, callId ${callId}`);
+        return false;
+      }
+
+      await this.apiCall(`/callcontrol/${dn}/participants/${participantId}/unhold`, {
+        method: "POST",
+      });
+      console.log(`[3CX] Call resumed from hold (participant: ${participantId}, ext: ${dn})`);
+      return true;
+    } catch (err) {
+      console.error("[3CX] retrieveCall error:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Get active participants for an extension
+   * GET /callcontrol/{dn}/participants
+   */
+  async getActiveParticipants(extension: string): Promise<any[]> {
+    try {
+      const result = await this.apiCall<any[]>(`/callcontrol/${extension}/participants`);
+      return result || [];
+    } catch (err) {
+      console.error("[3CX] getActiveParticipants error:", err);
+      return [];
+    }
+  }
+
+  /**
+   * Get active calls for the system (using extension info)
+   */
+  async getActiveCalls(extension?: string): Promise<ThreeCXCallInfo[]> {
+    try {
+      const dn = extension || this.config.clientId;
+      const info = await this.getExtensionInfo(dn);
+
+      if (!info || !info.participants) {
+        return [];
+      }
+
+      return info.participants.map(p => ({
+        CallId: p.callid || p.id,
+        SessionId: p.id,
+        Direction: "inbound" as const,
+        From: p.party_caller_id || "",
+        To: dn,
+        State: p.state || "active",
+        StartTime: new Date().toISOString(),
+        Duration: 0,
+        Extension: dn,
+      }));
+    } catch (err) {
+      console.error("[3CX] getActiveCalls error:", err);
+      return [];
+    }
   }
 
   // ---------------------------------------------------------------------------

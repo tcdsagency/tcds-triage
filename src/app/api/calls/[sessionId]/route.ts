@@ -6,7 +6,6 @@ import { db } from "@/db";
 import { calls, liveTranscriptSegments } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { getThreeCXClient } from "@/lib/api/threecx";
-import { getVoIPToolsRelayClient } from "@/lib/api/voiptools-relay";
 
 // Helper to check if string is a valid UUID
 const isValidUUID = (str: string) =>
@@ -110,8 +109,11 @@ export async function PATCH(
     // Get the 3CX call ID for call control actions
     const externalCallId = call.externalCallId;
 
+    // Get agent extension for 3CX Call Control API (used as DN)
+    const agentExtension = call.extension;
+
     // ========================================================================
-    // HOLD - Put call on hold
+    // HOLD - Put call on hold using 3CX Call Control API
     // ========================================================================
     if (action === "hold") {
       if (!externalCallId) {
@@ -121,14 +123,17 @@ export async function PATCH(
         );
       }
 
-      console.log(`[Calls] Putting call ${call.id} on hold (3CX ID: ${externalCallId})`);
+      console.log(`[Calls] Putting call ${call.id} on hold (3CX ID: ${externalCallId}, ext: ${agentExtension})`);
+      console.log(`[Calls] DEFAULT_TENANT_ID: ${process.env.DEFAULT_TENANT_ID}`);
 
-      // Try VoIPTools first, then 3CX native
-      const voiptoolsClient = await getVoIPToolsRelayClient();
-      if (voiptoolsClient) {
+      const threecxClient = await getThreeCXClient();
+      console.log(`[Calls] 3CX client available: ${!!threecxClient}`);
+
+      if (threecxClient) {
         try {
-          const result = await voiptoolsClient.holdCall(externalCallId);
-          if (result) {
+          const success = await threecxClient.holdCall(externalCallId, agentExtension || undefined);
+          console.log(`[Calls] holdCall result: ${success}`);
+          if (success) {
             updates.status = "on_hold";
             await db.update(calls).set(updates).where(eq(calls.id, call.id));
             return NextResponse.json({
@@ -138,33 +143,18 @@ export async function PATCH(
             });
           }
         } catch (err) {
-          console.error("[Calls] VoIPTools hold error:", err);
-        }
-      }
-
-      // Fallback to 3CX native
-      const threecxClient = await getThreeCXClient();
-      if (threecxClient) {
-        const success = await threecxClient.holdCall(externalCallId);
-        if (success) {
-          updates.status = "on_hold";
-          await db.update(calls).set(updates).where(eq(calls.id, call.id));
-          return NextResponse.json({
-            success: true,
-            message: "Call placed on hold",
-            call: { id: call.id, status: "on_hold" },
-          });
+          console.error("[Calls] holdCall error:", err);
         }
       }
 
       return NextResponse.json(
-        { success: false, error: "Failed to put call on hold - no available API" },
+        { success: false, error: "Failed to put call on hold - 3CX API not available" },
         { status: 500 }
       );
     }
 
     // ========================================================================
-    // RESUME - Retrieve call from hold
+    // RESUME - Retrieve call from hold using 3CX Call Control API
     // ========================================================================
     if (action === "resume") {
       if (!externalCallId) {
@@ -174,31 +164,11 @@ export async function PATCH(
         );
       }
 
-      console.log(`[Calls] Resuming call ${call.id} from hold (3CX ID: ${externalCallId})`);
+      console.log(`[Calls] Resuming call ${call.id} from hold (3CX ID: ${externalCallId}, ext: ${agentExtension})`);
 
-      // Try VoIPTools first, then 3CX native
-      const voiptoolsClient = await getVoIPToolsRelayClient();
-      if (voiptoolsClient) {
-        try {
-          const result = await voiptoolsClient.retrieveCall(externalCallId);
-          if (result) {
-            updates.status = "active";
-            await db.update(calls).set(updates).where(eq(calls.id, call.id));
-            return NextResponse.json({
-              success: true,
-              message: "Call resumed",
-              call: { id: call.id, status: "active" },
-            });
-          }
-        } catch (err) {
-          console.error("[Calls] VoIPTools resume error:", err);
-        }
-      }
-
-      // Fallback to 3CX native
       const threecxClient = await getThreeCXClient();
       if (threecxClient) {
-        const success = await threecxClient.retrieveCall(externalCallId);
+        const success = await threecxClient.retrieveCall(externalCallId, agentExtension || undefined);
         if (success) {
           updates.status = "active";
           await db.update(calls).set(updates).where(eq(calls.id, call.id));
@@ -211,13 +181,13 @@ export async function PATCH(
       }
 
       return NextResponse.json(
-        { success: false, error: "Failed to resume call - no available API" },
+        { success: false, error: "Failed to resume call - 3CX API not available" },
         { status: 500 }
       );
     }
 
     // ========================================================================
-    // TRANSFER - Transfer call to another extension
+    // TRANSFER - Transfer call using 3CX Call Control API
     // ========================================================================
     if (action === "transfer") {
       const { targetExtension, blind = true } = body;
@@ -236,31 +206,11 @@ export async function PATCH(
         );
       }
 
-      console.log(`[Calls] Transferring call ${call.id} to ext ${targetExtension} (blind: ${blind}, 3CX ID: ${externalCallId})`);
+      console.log(`[Calls] Transferring call ${call.id} to ext ${targetExtension} (blind: ${blind}, 3CX ID: ${externalCallId}, ext: ${agentExtension})`);
 
-      // Try VoIPTools first, then 3CX native
-      const voiptoolsClient = await getVoIPToolsRelayClient();
-      if (voiptoolsClient) {
-        try {
-          const result = await voiptoolsClient.transferCall(externalCallId, targetExtension, blind);
-          if (result) {
-            updates.status = "transferred";
-            await db.update(calls).set(updates).where(eq(calls.id, call.id));
-            return NextResponse.json({
-              success: true,
-              message: `Call transferred to ${targetExtension}`,
-              call: { id: call.id, status: "transferred" },
-            });
-          }
-        } catch (err) {
-          console.error("[Calls] VoIPTools transfer error:", err);
-        }
-      }
-
-      // Fallback to 3CX native
       const threecxClient = await getThreeCXClient();
       if (threecxClient) {
-        const success = await threecxClient.transferCall(externalCallId, targetExtension, blind);
+        const success = await threecxClient.transferCall(externalCallId, targetExtension, blind, agentExtension || undefined);
         if (success) {
           updates.status = "transferred";
           await db.update(calls).set(updates).where(eq(calls.id, call.id));
@@ -273,34 +223,23 @@ export async function PATCH(
       }
 
       return NextResponse.json(
-        { success: false, error: "Failed to transfer call - no available API" },
+        { success: false, error: "Failed to transfer call - 3CX API not available" },
         { status: 500 }
       );
     }
 
     // ========================================================================
-    // END - End the call
+    // END - End the call using 3CX Call Control API
     // ========================================================================
     if (action === "end" || body.status === "completed") {
       // Try to actually drop the call via 3CX if we have an external call ID
       if (externalCallId) {
-        console.log(`[Calls] Ending call ${call.id} via API (3CX ID: ${externalCallId})`);
+        console.log(`[Calls] Ending call ${call.id} via 3CX Call Control API (3CX ID: ${externalCallId}, ext: ${agentExtension})`);
 
-        // Try VoIPTools first
-        const voiptoolsClient = await getVoIPToolsRelayClient();
-        if (voiptoolsClient) {
-          try {
-            await voiptoolsClient.dropCall(externalCallId);
-          } catch (err) {
-            console.error("[Calls] VoIPTools drop call error:", err);
-          }
-        }
-
-        // Also try 3CX native (belt and suspenders)
         const threecxClient = await getThreeCXClient();
         if (threecxClient) {
           try {
-            await threecxClient.dropCall(externalCallId);
+            await threecxClient.dropCall(externalCallId, agentExtension || undefined);
           } catch (err) {
             console.error("[Calls] 3CX drop call error:", err);
           }
