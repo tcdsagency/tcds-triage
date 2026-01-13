@@ -207,6 +207,7 @@ interface AIAnalysis {
   isHangup: boolean;
   callType?: string;
   serviceRequestType?: string; // Maps to AgencyZoom service request type
+  callQuality?: "voicemail" | "brief_no_service" | "normal"; // Quality assessment for auto-void
 }
 
 async function analyzeTranscript(transcript: string, durationSeconds: number = 0): Promise<AIAnalysis | null> {
