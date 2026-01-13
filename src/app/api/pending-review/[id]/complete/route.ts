@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { wrapupDrafts, messages, customers, users } from "@/db/schema";
+import { wrapupDrafts, messages, customers, users, calls } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 import { createClient } from "@/lib/supabase/server";
@@ -74,6 +74,40 @@ async function getCurrentUserId(providedId?: string): Promise<string | null> {
 // HELPERS
 // =============================================================================
 
+// Helper to fetch call transcript from the calls table
+async function getCallTranscript(callId: string | null): Promise<string | null> {
+  if (!callId) return null;
+
+  try {
+    const [call] = await db
+      .select({
+        transcription: calls.transcription,
+        transcriptionSegments: calls.transcriptionSegments,
+      })
+      .from(calls)
+      .where(eq(calls.id, callId))
+      .limit(1);
+
+    if (!call) return null;
+
+    // If we have segments, format them nicely with speaker labels
+    if (call.transcriptionSegments && Array.isArray(call.transcriptionSegments) && call.transcriptionSegments.length > 0) {
+      const formattedSegments = call.transcriptionSegments.map((segment: any) => {
+        const speaker = segment.speaker || segment.channel === 0 ? 'Agent' : 'Caller';
+        const text = segment.text || segment.transcript || '';
+        return `${speaker}: ${text}`;
+      }).join('\n');
+      return formattedSegments;
+    }
+
+    // Fall back to plain transcription
+    return call.transcription || null;
+  } catch (error) {
+    console.error("[Complete API] Failed to fetch call transcript:", error);
+    return null;
+  }
+}
+
 function formatNoteText(
   type: string,
   content: string,
@@ -81,6 +115,7 @@ function formatNoteText(
     phone?: string;
     requestType?: string;
     agentName?: string;
+    transcript?: string | null;
   }
 ): string {
   const timestamp = new Date().toLocaleString("en-US", {
@@ -115,6 +150,13 @@ function formatNoteText(
   }
 
   lines.push(`Date/Time: ${timestamp}`);
+
+  // Add transcript at the end if available
+  if (metadata?.transcript) {
+    lines.push("");
+    lines.push("--- Call Transcript ---");
+    lines.push(metadata.transcript);
+  }
 
   return lines.join("\n");
 }
@@ -223,9 +265,13 @@ export async function POST(
       }
 
       if (body.action === 'note' && contactId && azClient) {
+        // Fetch call transcript if available
+        const transcript = await getCallTranscript(wrapup.callId);
+
         const noteText = formatNoteText('wrapup', body.noteContent || wrapup.aiCleanedSummary || wrapup.summary || '', {
           phone: wrapup.customerPhone || undefined,
           requestType: wrapup.requestType || undefined,
+          transcript: transcript,
         });
 
         // Use addLeadNote for leads, addNote for customers
@@ -266,13 +312,22 @@ export async function POST(
         // Get customer email from extraction or wrapup
         const customerEmail = aiExtract?.agencyZoomEmail || wrapup.customerEmail || null;
 
+        // Fetch call transcript if available
+        const transcript = await getCallTranscript(wrapup.callId);
+
+        // Build summary with transcript appended
+        let summaryWithTranscript = body.noteContent || wrapup.aiCleanedSummary || wrapup.summary || '';
+        if (transcript) {
+          summaryWithTranscript += '\n\n--- Call Transcript ---\n' + transcript;
+        }
+
         const serviceRequestPayload = {
           customerId: contactId.toString(),
           customerName: wrapup.customerName || 'Unknown',
           customerEmail: customerEmail,
           customerPhone: wrapup.customerPhone || null,
           customerType: isLead ? 'lead' : 'customer',
-          summary: body.noteContent || wrapup.aiCleanedSummary || wrapup.summary || '',
+          summary: summaryWithTranscript,
           serviceRequestTypeId: aiExtract?.serviceRequestTypeId,
           serviceRequestTypeName: aiExtract?.serviceRequestTypeName || wrapup.requestType,
           priorityId: aiExtract?.priorityId,
@@ -337,15 +392,18 @@ export async function POST(
           return NextResponse.json({ error: "NCM customer not configured. Please set NCM_CUSTOMER_ID environment variable." }, { status: 500 });
         }
 
+        // Fetch call transcript if available
+        const callTranscript = await getCallTranscript(wrapup.callId);
+
         // Build the caller info for the note
         const callerName = wrapup.customerName || 'Unknown Caller';
         const callerPhone = wrapup.customerPhone || 'No phone';
-        const transcript = wrapup.aiCleanedSummary || wrapup.summary || 'No transcript available';
+        const summaryText = wrapup.aiCleanedSummary || wrapup.summary || 'No summary available';
         const requestType = wrapup.requestType || 'General Inquiry';
 
         // Format the description with all caller details
-        const description = [
-          transcript,
+        const descriptionParts = [
+          summaryText,
           '',
           '--- Caller Information ---',
           `Name: ${callerName}`,
@@ -356,7 +414,16 @@ export async function POST(
           `Request Type: ${requestType}`,
           `Handled By: ${wrapup.agentName || 'Unknown'}`,
           `Date/Time: ${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })}`,
-        ].filter(Boolean).join('\n');
+        ];
+
+        // Add call transcript at the end if available
+        if (callTranscript) {
+          descriptionParts.push('');
+          descriptionParts.push('--- Call Transcript ---');
+          descriptionParts.push(callTranscript);
+        }
+
+        const description = descriptionParts.filter(Boolean).join('\n');
 
         // Create service request via Zapier webhook (uses No Customer Match email)
         const serviceRequestPayload = {

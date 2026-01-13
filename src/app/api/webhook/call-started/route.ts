@@ -72,6 +72,76 @@ function normalizePhone(phone: string): string {
   return phone;
 }
 
+/**
+ * Find agent by extension using multiple matching strategies
+ * 1. Exact match on extension digits
+ * 2. Match by last 3 digits (common extension format)
+ * 3. Match if extension field contains a known user extension
+ */
+async function findAgentByExtension(
+  tenantId: string,
+  extensionRaw: string
+): Promise<{ id: string; firstName: string; lastName: string; avatarUrl: string | null; extension: string | null } | undefined> {
+  if (!extensionRaw) return undefined;
+
+  const extDigits = extensionRaw.replace(/\D/g, "");
+  if (!extDigits) return undefined;
+
+  // Strategy 1: Exact match
+  const [exactMatch] = await db
+    .select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      avatarUrl: users.avatarUrl,
+      extension: users.extension,
+    })
+    .from(users)
+    .where(and(eq(users.tenantId, tenantId), eq(users.extension, extDigits)))
+    .limit(1);
+
+  if (exactMatch) return exactMatch;
+
+  // Strategy 2: Match by last 3 digits (typical extension length)
+  if (extDigits.length > 3) {
+    const last3 = extDigits.slice(-3);
+    const [last3Match] = await db
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        avatarUrl: users.avatarUrl,
+        extension: users.extension,
+      })
+      .from(users)
+      .where(and(eq(users.tenantId, tenantId), eq(users.extension, last3)))
+      .limit(1);
+
+    if (last3Match) return last3Match;
+  }
+
+  // Strategy 3: Check if any known extension is at the end of the digits
+  // This handles cases like "+12051234102" where 102 is the extension
+  const allUsers = await db
+    .select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      avatarUrl: users.avatarUrl,
+      extension: users.extension,
+    })
+    .from(users)
+    .where(and(eq(users.tenantId, tenantId), ilike(users.extension, "%")));
+
+  for (const user of allUsers) {
+    if (user.extension && extDigits.endsWith(user.extension)) {
+      return user;
+    }
+  }
+
+  return undefined;
+}
+
 // Extract phone number from SIP URI or return as-is
 function extractPhoneFromSIP(sipUri: string | undefined): string {
   if (!sipUri) return "";
