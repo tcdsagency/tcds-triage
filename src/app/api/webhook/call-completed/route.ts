@@ -845,9 +845,19 @@ export async function POST(request: NextRequest) {
       const trestlePersonName = (trestleData as { person?: { name?: string } } | null)?.person?.name;
       const trestleEmails = (trestleData as { emails?: string[] } | null)?.emails;
 
-      // For hangups without analysis, auto-void and mark as completed
-      const shouldAutoVoid = isHangup && !analysis;
+      // Auto-void hangups, voicemails, and brief non-service calls
+      // These don't need manual review - they're logged for QA but auto-completed
+      const isVoicemail = analysis?.callQuality === "voicemail" ||
+                          analysis?.summary?.toLowerCase().includes("voicemail") ||
+                          analysis?.summary?.toLowerCase().includes("left a message");
+      const isBriefNoService = analysis?.callQuality === "brief_no_service";
+      const shouldAutoVoid = isHangup || isVoicemail || isBriefNoService;
+      const autoVoidReason = isVoicemail ? "voicemail" : (isBriefNoService ? "brief_no_service" : hangupReason);
       const wrapupStatus = shouldAutoVoid ? "completed" as const : "pending_review" as const;
+
+      if (shouldAutoVoid) {
+        console.log(`[Call-Completed] Auto-voiding: ${autoVoidReason} (hangup: ${isHangup}, voicemail: ${isVoicemail}, brief: ${isBriefNoService})`);
+      }
 
       // Use transaction to ensure wrapup and match suggestions are created atomically
       // Use upsert to handle duplicate webhook calls (Zapier may retry)
@@ -886,7 +896,7 @@ export async function POST(request: NextRequest) {
           } : null,
           aiConfidence: analysis ? "0.85" : null,
           isAutoVoided: shouldAutoVoid,
-          autoVoidReason: shouldAutoVoid ? hangupReason : null,
+          autoVoidReason: shouldAutoVoid ? autoVoidReason : null,
         };
 
         const [wrapup] = await tx
