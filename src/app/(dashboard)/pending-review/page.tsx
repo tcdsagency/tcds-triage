@@ -28,13 +28,7 @@ interface APIResponse {
 // CONSTANTS
 // =============================================================================
 
-const STATUS_TABS: { key: StatusFilter; label: string; icon: string }[] = [
-  { key: 'all', label: 'All', icon: '📋' },
-  { key: 'matched', label: 'Matched', icon: '✓' },
-  { key: 'needs_review', label: 'Needs Review', icon: '?' },
-  { key: 'unmatched', label: 'No Match', icon: '+' },
-  { key: 'after_hours', label: 'After Hours', icon: '🌙' },
-];
+// Status tabs now handled by PendingCountsBar component
 
 // =============================================================================
 // MAIN PAGE
@@ -395,55 +389,15 @@ export default function PendingReviewPage() {
         </button>
       </div>
 
-      {/* Counts Bar */}
+      {/* Unified Filter Bar */}
       <PendingCountsBar
         counts={counts}
         activeTypeFilter={typeFilter}
+        activeStatusFilter={statusFilter}
         onTypeFilter={setTypeFilter}
+        onStatusFilter={setStatusFilter}
         isLoading={loading}
       />
-
-      {/* Status Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700 pb-4">
-        {STATUS_TABS.map((tab) => {
-          const tabCount =
-            tab.key === 'all'
-              ? counts.total
-              : tab.key === 'matched'
-              ? counts.byStatus.matched
-              : tab.key === 'needs_review'
-              ? counts.byStatus.needsReview
-              : tab.key === 'unmatched'
-              ? counts.byStatus.unmatched
-              : counts.byStatus.afterHours;
-
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setStatusFilter(tab.key)}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                statusFilter === tab.key
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-              )}
-            >
-              <span>{tab.icon}</span>
-              <span>{tab.label}</span>
-              <span
-                className={cn(
-                  'px-1.5 py-0.5 rounded-full text-xs',
-                  statusFilter === tab.key
-                    ? 'bg-white/20'
-                    : 'bg-black/10 dark:bg-white/10'
-                )}
-              >
-                {tabCount}
-              </span>
-            </button>
-          );
-        })}
-      </div>
 
       {/* Content */}
       {loading ? (
