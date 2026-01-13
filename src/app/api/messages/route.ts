@@ -24,11 +24,13 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get("offset") || "0");
 
     // Build query conditions
-    // Exclude after-hours messages - they belong in Pending Review, not SMS conversations
-    const conditions = [
-      eq(messages.tenantId, tenantId),
-      or(eq(messages.isAfterHours, false), isNull(messages.isAfterHours)),
-    ];
+    const conditions = [eq(messages.tenantId, tenantId)];
+
+    // Optional: exclude after-hours for unread count but include all in history
+    const excludeAfterHours = searchParams.get("excludeAfterHours") === "true";
+    if (excludeAfterHours) {
+      conditions.push(or(eq(messages.isAfterHours, false), isNull(messages.isAfterHours)));
+    }
 
     if (filter === "unread") {
       conditions.push(eq(messages.isAcknowledged, false));
@@ -66,7 +68,7 @@ export async function GET(request: NextRequest) {
       .limit(limit)
       .offset(offset);
 
-    // Get unread count (excluding after-hours messages which are in Pending Review)
+    // Get unread count (all inbound messages that haven't been acknowledged)
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(messages)
@@ -74,8 +76,7 @@ export async function GET(request: NextRequest) {
         and(
           eq(messages.tenantId, tenantId),
           eq(messages.isAcknowledged, false),
-          eq(messages.direction, "inbound"),
-          or(eq(messages.isAfterHours, false), isNull(messages.isAfterHours))
+          eq(messages.direction, "inbound")
         )
       );
 
