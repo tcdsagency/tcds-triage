@@ -17,6 +17,7 @@ interface CompleteRequest {
   customerId?: string;
   isLead?: boolean; // true if matched to a lead (not a customer)
   noteContent?: string;
+  reviewerId?: string; // ID of the user who reviewed this item
   ticketDetails?: {
     subject?: string;
     description?: string;
@@ -140,6 +141,8 @@ export async function POST(
             reviewerDecision: "skipped",
             outcome: "skipped",
             completedAt: new Date(),
+            reviewerId: body.reviewerId || null,
+            reviewedAt: new Date(),
           })
           .where(eq(wrapupDrafts.id, itemId));
 
@@ -154,6 +157,8 @@ export async function POST(
             reviewerDecision: "voided",
             outcome: "voided",
             completedAt: new Date(),
+            reviewerId: body.reviewerId || null,
+            reviewedAt: new Date(),
           })
           .where(eq(wrapupDrafts.id, itemId));
 
@@ -203,6 +208,8 @@ export async function POST(
               outcome: isLead ? "lead_note_posted" : "note_posted",
               agencyzoomNoteId: noteResult.id?.toString(),
               completedAt: new Date(),
+              reviewerId: body.reviewerId || null,
+              reviewedAt: new Date(),
             })
             .where(eq(wrapupDrafts.id, itemId));
 
@@ -278,6 +285,8 @@ export async function POST(
               reviewerDecision: "approved",
               outcome: "lead_created",
               completedAt: new Date(),
+              reviewerId: body.reviewerId || null,
+              reviewedAt: new Date(),
             })
             .where(eq(wrapupDrafts.id, itemId));
 
@@ -346,6 +355,8 @@ export async function POST(
               outcome: "ncm_posted",
               agencyzoomTicketId: serviceResult.ticketId?.toString(),
               completedAt: new Date(),
+              reviewerId: body.reviewerId || null,
+              reviewedAt: new Date(),
             })
             .where(eq(wrapupDrafts.id, itemId));
 

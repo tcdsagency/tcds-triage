@@ -35,6 +35,9 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   ClipboardList,
+  MapPin,
+  UserPlus2,
+  Building2,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -132,6 +135,67 @@ const QUOTE_TYPES = [
     id: 'bop', // Business Owner's Policy
     label: 'Business',
     icon: Briefcase,
+    color: 'from-purple-500 to-purple-600',
+    hoverColor: 'group-hover:from-purple-600 group-hover:to-purple-700',
+    bgLight: 'bg-purple-100 dark:bg-purple-900/30',
+    textColor: 'text-purple-600 dark:text-purple-400',
+  },
+];
+
+// =============================================================================
+// POLICY CHANGE TYPE CONFIG
+// =============================================================================
+
+const POLICY_CHANGE_TYPES = [
+  {
+    id: 'add_vehicle',
+    label: 'Add Vehicle',
+    icon: Plus,
+    color: 'from-blue-500 to-blue-600',
+    hoverColor: 'group-hover:from-blue-600 group-hover:to-blue-700',
+    bgLight: 'bg-blue-100 dark:bg-blue-900/30',
+    textColor: 'text-blue-600 dark:text-blue-400',
+  },
+  {
+    id: 'replace_vehicle',
+    label: 'Replace Vehicle',
+    icon: RefreshCw,
+    color: 'from-blue-500 to-blue-600',
+    hoverColor: 'group-hover:from-blue-600 group-hover:to-blue-700',
+    bgLight: 'bg-blue-100 dark:bg-blue-900/30',
+    textColor: 'text-blue-600 dark:text-blue-400',
+  },
+  {
+    id: 'add_driver',
+    label: 'Add Driver',
+    icon: UserPlus2,
+    color: 'from-indigo-500 to-indigo-600',
+    hoverColor: 'group-hover:from-indigo-600 group-hover:to-indigo-700',
+    bgLight: 'bg-indigo-100 dark:bg-indigo-900/30',
+    textColor: 'text-indigo-600 dark:text-indigo-400',
+  },
+  {
+    id: 'address_change',
+    label: 'Address Change',
+    icon: MapPin,
+    color: 'from-green-500 to-green-600',
+    hoverColor: 'group-hover:from-green-600 group-hover:to-green-700',
+    bgLight: 'bg-green-100 dark:bg-green-900/30',
+    textColor: 'text-green-600 dark:text-green-400',
+  },
+  {
+    id: 'mortgagee_change',
+    label: 'Mortgagee',
+    icon: Building2,
+    color: 'from-amber-500 to-amber-600',
+    hoverColor: 'group-hover:from-amber-600 group-hover:to-amber-700',
+    bgLight: 'bg-amber-100 dark:bg-amber-900/30',
+    textColor: 'text-amber-600 dark:text-amber-400',
+  },
+  {
+    id: 'coverage_change',
+    label: 'Coverage',
+    icon: Shield,
     color: 'from-purple-500 to-purple-600',
     hoverColor: 'group-hover:from-purple-600 group-hover:to-purple-700',
     bgLight: 'bg-purple-100 dark:bg-purple-900/30',
@@ -649,6 +713,51 @@ export default function DashboardPage() {
                         {type.badge}
                       </span>
                     )}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ================================================================= */}
+        {/* POLICY CHANGE REQUEST SECTION */}
+        {/* ================================================================= */}
+        <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+            Policy Change Request
+          </h2>
+
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
+            {POLICY_CHANGE_TYPES.map((type) => {
+              const Icon = type.icon;
+              return (
+                <Link
+                  key={type.id}
+                  href={`/policy-change?type=${type.id}`}
+                  className="group relative"
+                >
+                  <div className="flex flex-col items-center p-3 rounded-xl transition-all duration-200 hover:scale-105">
+                    {/* Icon Circle */}
+                    <div className={cn(
+                      "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200",
+                      type.bgLight,
+                      "group-hover:bg-gradient-to-br",
+                      type.color,
+                      type.hoverColor,
+                      "group-hover:shadow-lg group-hover:shadow-current/20"
+                    )}>
+                      <Icon className={cn(
+                        "w-6 h-6 transition-colors",
+                        type.textColor,
+                        "group-hover:text-white"
+                      )} />
+                    </div>
+
+                    {/* Label */}
+                    <span className="mt-2 text-xs font-semibold text-gray-700 dark:text-gray-300 text-center">
+                      {type.label}
+                    </span>
                   </div>
                 </Link>
               );

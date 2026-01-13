@@ -16,12 +16,14 @@ interface CompleteRequest {
   action: "note" | "ticket" | "lead" | "skip";
   customerId?: string; // AgencyZoom customer ID to use (for match selection)
   noteContent?: string; // Override AI summary
+  reviewerId?: string; // ID of the user who reviewed this wrapup
   ticketDetails?: {
     subject: string;
     description?: string;
     priority?: "low" | "medium" | "high";
     pipelineId?: number;
     stageId?: number;
+    assigneeId?: number;
   };
   leadDetails?: {
     firstName: string;
@@ -157,6 +159,8 @@ export async function POST(
           reviewerDecision: "skipped",
           outcome: "skipped",
           completedAt: new Date(),
+          reviewerId: body.reviewerId || null,
+          reviewedAt: new Date(),
         })
         .where(eq(wrapupDrafts.id, wrapupId));
 
@@ -234,6 +238,8 @@ export async function POST(
                 outcome: "note_posted",
                 agencyzoomNoteId: noteResult.id?.toString(),
                 completedAt: new Date(),
+                reviewerId: body.reviewerId || null,
+                reviewedAt: new Date(),
               })
               .where(eq(wrapupDrafts.id, wrapupId));
 
@@ -382,6 +388,8 @@ export async function POST(
                 agencyzoomNoteId: noteId?.toString(),
                 agencyzoomTicketId: ticketResult.serviceTicketId?.toString(),
                 completedAt: new Date(),
+                reviewerId: body.reviewerId || null,
+                reviewedAt: new Date(),
               })
               .where(eq(wrapupDrafts.id, wrapupId));
           } else {
@@ -474,6 +482,8 @@ export async function POST(
                 reviewerDecision: "approved",
                 outcome: "lead_created",
                 completedAt: new Date(),
+                reviewerId: body.reviewerId || null,
+                reviewedAt: new Date(),
               })
               .where(eq(wrapupDrafts.id, wrapupId));
 

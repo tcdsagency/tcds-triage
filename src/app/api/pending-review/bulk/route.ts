@@ -18,6 +18,7 @@ interface BulkRequest {
     customerId?: string;
   }>;
   action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'delete';
+  reviewerId?: string; // ID of the user who reviewed these items
 }
 
 // =============================================================================
@@ -66,6 +67,8 @@ export async function POST(request: NextRequest) {
             reviewerDecision: "skipped",
             outcome: "skipped",
             completedAt: new Date(),
+            reviewerId: body.reviewerId || null,
+            reviewedAt: new Date(),
           })
           .where(inArray(wrapupDrafts.id, wrapupIds));
         results.processed += wrapupIds.length;
@@ -182,6 +185,8 @@ export async function POST(request: NextRequest) {
                     outcome: "note_posted",
                     agencyzoomNoteId: noteResult.id?.toString(),
                     completedAt: new Date(),
+                    reviewerId: body.reviewerId || null,
+                    reviewedAt: new Date(),
                   })
                   .where(eq(wrapupDrafts.id, item.id));
                 results.processed++;
@@ -217,6 +222,8 @@ export async function POST(request: NextRequest) {
                     agencyzoomNoteId: noteId?.toString(),
                     agencyzoomTicketId: ticketResult.serviceTicketId?.toString(),
                     completedAt: new Date(),
+                    reviewerId: body.reviewerId || null,
+                    reviewedAt: new Date(),
                   })
                   .where(eq(wrapupDrafts.id, item.id));
                 results.processed++;
