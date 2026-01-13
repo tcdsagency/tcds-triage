@@ -766,7 +766,7 @@ export async function GET(
         altEmail: azContact?.altEmail
       },
       
-      // Address from HawkSoft (more reliable for mailing)
+      // Address from HawkSoft (more reliable for mailing), fallback to AgencyZoom
       address: hsClient?.address ? {
         street: hsClient.address.address1,
         street2: hsClient.address.address2,
@@ -774,7 +774,12 @@ export async function GET(
         state: hsClient.address.state,
         zip: hsClient.address.zip,
         county: hsClient.address.county
-      } : undefined,
+      } : (azContact?.city ? {
+        street: azContact.address || undefined,
+        city: azContact.city,
+        state: azContact.state || undefined,
+        zip: azContact.zip || undefined
+      } : undefined),
       
       // Classification
       contactType: hsClient ? "customer" : (azContact?.type === "lead" ? "lead" : "prospect"),
