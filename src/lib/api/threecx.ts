@@ -613,6 +613,19 @@ export class ThreeCXClient {
 
 export async function getThreeCXClient(): Promise<ThreeCXClient | null> {
   const tenantId = process.env.DEFAULT_TENANT_ID;
-  if (!tenantId) return null;
-  return ThreeCXClient.fromTenant(tenantId);
+  console.log(`[3CX] getThreeCXClient called, tenantId: ${tenantId}`);
+
+  if (!tenantId) {
+    console.error("[3CX] DEFAULT_TENANT_ID not set");
+    return null;
+  }
+
+  try {
+    const client = await ThreeCXClient.fromTenant(tenantId);
+    console.log(`[3CX] Client created: ${!!client}`);
+    return client;
+  } catch (err) {
+    console.error("[3CX] Error creating client:", err);
+    return null;
+  }
 }
