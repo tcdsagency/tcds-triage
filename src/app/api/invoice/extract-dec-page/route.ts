@@ -1,47 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
+// Dynamic import for pdf-parse due to ESM compatibility
+async function parsePDF(buffer: Buffer): Promise<{ text: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pdfParse = require("pdf-parse");
+  return pdfParse(buffer);
+}
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function POST(request: NextRequest) {
-  try {
-    const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-
-    if (!file) {
-      return NextResponse.json(
-        { success: false, error: "No file provided" },
-        { status: 400 }
-      );
-    }
-
-    // Check file type - GPT-4 Vision only supports images, not PDFs
-    const mimeType = file.type || "image/png";
-    const supportedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-
-    if (!supportedTypes.includes(mimeType)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Unsupported file type: ${mimeType}. Please upload an image (JPG, PNG, GIF, or WebP). For PDFs, take a screenshot of the dec page first.`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Convert file to base64
-    const bytes = await file.arrayBuffer();
-    const base64 = Buffer.from(bytes).toString("base64");
-
-    // Use GPT-4o-mini with vision to extract data from the dec page
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are an expert at extracting insurance policy information from declarations pages.
+const EXTRACTION_PROMPT = `You are an expert at extracting insurance policy information from declarations pages.
 Extract the following fields from the document. Return ONLY valid JSON, no markdown or explanation.
 
 Required fields:
@@ -57,40 +28,98 @@ Required fields:
 - lineOfBusiness: Type of insurance (Homeowners, Auto, Commercial Auto, Commercial Property, General Liability, Workers Comp, Umbrella, Flood, or Other)
 - premium: Annual premium amount as a number (no $ or commas)
 
-If a field cannot be found, use an empty string for text fields or 0 for premium.`,
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Extract the policy information from this declarations page:",
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64}`,
-              },
-            },
-          ],
-        },
-      ],
-      max_tokens: 1000,
-      temperature: 0,
-    });
+If a field cannot be found, use an empty string for text fields or 0 for premium.`;
+
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file") as File | null;
+
+    if (!file) {
+      return NextResponse.json(
+        { success: false, error: "No file provided" },
+        { status: 400 }
+      );
+    }
+
+    const mimeType = file.type || "";
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+
+    let response;
+
+    // Handle PDFs - extract text first, then send to GPT
+    if (mimeType === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf")) {
+      console.log("[Invoice] Processing PDF file:", file.name);
+
+      // Extract text from PDF
+      const pdfData = await parsePDF(buffer);
+      const pdfText = pdfData.text;
+
+      if (!pdfText || pdfText.trim().length < 50) {
+        return NextResponse.json(
+          { success: false, error: "Could not extract text from PDF. The PDF may be image-based - try uploading a screenshot instead." },
+          { status: 400 }
+        );
+      }
+
+      console.log("[Invoice] Extracted PDF text length:", pdfText.length);
+
+      // Send extracted text to GPT for structured extraction
+      response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: EXTRACTION_PROMPT },
+          {
+            role: "user",
+            content: `Extract the policy information from this declarations page text:\n\n${pdfText.substring(0, 8000)}`,
+          },
+        ],
+        max_tokens: 1000,
+        temperature: 0,
+      });
+    }
+    // Handle images - use GPT-4 Vision
+    else if (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)) {
+      console.log("[Invoice] Processing image file:", file.name);
+
+      const base64 = buffer.toString("base64");
+
+      response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: EXTRACTION_PROMPT },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Extract the policy information from this declarations page:" },
+              { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
+            ],
+          },
+        ],
+        max_tokens: 1000,
+        temperature: 0,
+      });
+    }
+    // Unsupported file type
+    else {
+      return NextResponse.json(
+        { success: false, error: `Unsupported file type: ${mimeType}. Please upload a PDF or image (JPG, PNG, GIF, WebP).` },
+        { status: 400 }
+      );
+    }
 
     const content = response.choices[0]?.message?.content || "";
 
     // Parse the JSON response
     let extractedData;
     try {
-      // Remove any markdown code blocks if present
       const jsonStr = content.replace(/```json\n?|\n?```/g, "").trim();
       extractedData = JSON.parse(jsonStr);
     } catch (parseError) {
-      console.error("Failed to parse AI response:", content);
+      console.error("[Invoice] Failed to parse AI response:", content);
       return NextResponse.json(
-        { success: false, error: "Failed to parse extracted data" },
+        { success: false, error: "Failed to parse extracted data from AI response" },
         { status: 500 }
       );
     }
@@ -118,9 +147,8 @@ If a field cannot be found, use an empty string for text fields or 0 for premium
       tokensUsed: response.usage?.total_tokens || 0,
     });
   } catch (error: any) {
-    console.error("Dec page extraction error:", error);
+    console.error("[Invoice] Dec page extraction error:", error);
 
-    // Provide more specific error messages
     let errorMessage = "Failed to extract data from dec page";
 
     if (error?.code === "invalid_api_key" || error?.message?.includes("API key")) {
@@ -128,7 +156,7 @@ If a field cannot be found, use an empty string for text fields or 0 for premium
     } else if (error?.code === "insufficient_quota") {
       errorMessage = "OpenAI API quota exceeded";
     } else if (error?.message?.includes("Could not process image")) {
-      errorMessage = "Could not process image - try a clearer image or PDF";
+      errorMessage = "Could not process image - try a clearer image";
     } else if (error?.message) {
       errorMessage = error.message;
     }
