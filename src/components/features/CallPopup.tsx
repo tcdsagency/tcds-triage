@@ -869,10 +869,10 @@ export default function CallPopup({
   const externalParty = direction === "inbound" ? callerUser : calleeUser;
 
   return (
-    <div className="fixed inset-4 md:inset-auto md:top-4 md:right-4 md:w-[900px] md:h-[700px] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col z-50 overflow-hidden">
+    <div className="fixed inset-2 md:inset-auto md:top-2 md:right-2 md:w-[820px] md:h-[580px] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col z-50 overflow-hidden">
 
       {/* ===== HEADER ===== */}
-      <div className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between">
+      <div className="bg-gray-900 text-white px-3 py-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
           {/* Show agent avatar if we have user info */}
           {internalUser ? (
@@ -1046,7 +1046,7 @@ export default function CallPopup({
       <div className="flex-1 flex overflow-hidden">
         
         {/* ===== LEFT PANEL - Customer Info with MergedProfile ===== */}
-        <div className="w-80 border-r border-gray-200 overflow-y-auto bg-gray-50">
+        <div className="w-64 border-r border-gray-200 overflow-y-auto bg-gray-50 text-sm">
           
           {lookupLoading ? (
             <div className="flex items-center justify-center h-32">
@@ -1077,496 +1077,272 @@ export default function CallPopup({
             </div>
           ) : (
             // CUSTOMER FOUND - Show MergedProfile data
-            <div className="p-4">
+            <div className="p-3">
               
-              {/* Customer Header with Badges (same as CustomerProfilePage) */}
-              <div className="mb-4">
-                {/* Badges Row */}
-                <div className="flex flex-wrap gap-1.5 mb-3">
+              {/* Customer Header with Badges - Compact */}
+              <div className="mb-3">
+                {/* Name with inline badges */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                  <h2 className="font-bold text-base text-gray-900">
+                    {profile?.preferredName || profile?.name || customerLookup.name}
+                  </h2>
                   {profile?.clientLevel && (
                     <span className={cn(
-                      "px-2 py-0.5 rounded-full text-xs font-medium",
+                      "px-1.5 py-0.5 rounded text-[10px] font-medium",
                       CLIENT_LEVEL_CONFIG[profile.clientLevel]?.color || "bg-gray-100 text-gray-700"
                     )}>
-                      {CLIENT_LEVEL_CONFIG[profile.clientLevel]?.emoji} {profile.clientLevel} - {CLIENT_LEVEL_CONFIG[profile.clientLevel]?.label}
+                      {CLIENT_LEVEL_CONFIG[profile.clientLevel]?.emoji} {profile.clientLevel}
                     </span>
                   )}
                   {profile?.isOG && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700">
                       🌟 OG
                     </span>
                   )}
                 </div>
-                
-                {/* Name - Bold and prominent */}
-                <h2 className="font-bold text-xl text-gray-900">
-                  {profile?.preferredName || profile?.name || customerLookup.name}
-                </h2>
-                {profile?.preferredName && profile.preferredName !== profile.name && (
-                  <div className="text-sm text-gray-500">
-                    Legal: {profile.name}
-                  </div>
-                )}
-                
-                {/* Customer Since */}
-                {profile?.customerSince && (
-                  <div className="text-sm text-gray-500 mt-1">
-                    Customer since {new Date(profile.customerSince).getFullYear()}
-                  </div>
-                )}
-                
-                {/* Policy Types with Emojis (same as CustomerProfilePage) */}
+
+                {/* Policy Types with Premium - Compact */}
                 {profile?.activePolicyTypes && profile.activePolicyTypes.length > 0 && (
-                  <div className="flex items-center gap-1 mt-2">
+                  <div className="flex items-center gap-0.5">
                     {profile.activePolicyTypes.map((pt, i) => (
-                      <span key={i} className="text-lg" title={`${pt.type} (${pt.count})`}>
+                      <span key={i} className="text-sm" title={`${pt.type} (${pt.count})`}>
                         {pt.emoji}
                       </span>
                     ))}
-                    <span className="ml-2 text-sm font-medium text-gray-700">
+                    <span className="ml-1.5 text-xs font-medium text-gray-600">
                       ${profile.totalPremium?.toLocaleString()}/yr
                     </span>
+                    {profile?.customerSince && (
+                      <span className="text-xs text-gray-400 ml-1">
+                        • since {new Date(profile.customerSince).getFullYear()}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* Contact Info */}
-              <div className="space-y-1.5 text-sm mb-4 pb-4 border-b">
-                <div className="flex items-center gap-2">
-                  <span>📞</span>
-                  <span>{profile?.contact?.phone || customerLookup.phone}</span>
-                </div>
+              {/* Contact Info - Compact */}
+              <div className="text-xs text-gray-600 mb-3 pb-2 border-b flex items-center gap-3">
+                <span>📞 {profile?.contact?.phone || customerLookup.phone}</span>
                 {profile?.contact?.email && (
-                  <div className="flex items-center gap-2">
-                    <span>✉️</span>
-                    <span className="truncate">{profile.contact.email}</span>
-                  </div>
+                  <span className="truncate">✉️ {profile.contact.email}</span>
                 )}
               </div>
 
-              {/* ===== PERSONALIZATION SECTION - Most Prominent ===== */}
+              {/* ===== PERSONALIZATION SECTION - Compact ===== */}
               {aiOverview && (aiOverview.lastInteraction || (aiOverview.lifeEvents && aiOverview.lifeEvents.length > 0) || (aiOverview.personalizationPrompts && aiOverview.personalizationPrompts.length > 0)) && (
-                <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-3 mb-4 border border-amber-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span>💡</span>
-                    <span className="text-xs font-semibold text-amber-800 uppercase">Personal Touch</span>
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-2 mb-3 border border-amber-200">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-sm">💡</span>
+                    <span className="text-[10px] font-semibold text-amber-800 uppercase">Personal Touch</span>
                   </div>
 
-                  {/* Last Interaction */}
+                  {/* Last Interaction - Compact */}
                   {aiOverview.lastInteraction && (
-                    <div className="mb-3 pb-3 border-b border-amber-200">
-                      <div className="text-xs text-amber-700 font-medium mb-1">Last Contact:</div>
-                      <div className="flex items-start gap-2">
-                        <span className="text-lg">
-                          {aiOverview.lastInteraction.type === "phone_call" && "📞"}
-                          {aiOverview.lastInteraction.type === "email" && "✉️"}
-                          {aiOverview.lastInteraction.type === "sms" && "💬"}
-                          {aiOverview.lastInteraction.type === "mailed_card" && "💌"}
-                          {aiOverview.lastInteraction.type === "note" && "📝"}
-                          {aiOverview.lastInteraction.type === "policy_change" && "📋"}
-                          {aiOverview.lastInteraction.type === "claim" && "🛡️"}
-                          {aiOverview.lastInteraction.type === "quote" && "💰"}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm text-gray-800 font-medium">
-                            {new Date(aiOverview.lastInteraction.date).toLocaleDateString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              year: new Date(aiOverview.lastInteraction.date).getFullYear() !== new Date().getFullYear() ? "numeric" : undefined
-                            })}
-                            {aiOverview.lastInteraction.agentName && (
-                              <span className="text-gray-500 font-normal"> by {aiOverview.lastInteraction.agentName}</span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-600 line-clamp-2">
-                            {aiOverview.lastInteraction.summary}
-                          </p>
-                        </div>
-                      </div>
+                    <div className="text-xs mb-2 pb-2 border-b border-amber-200">
+                      <span className="text-amber-700 font-medium">Last: </span>
+                      <span className="text-gray-700">
+                        {new Date(aiOverview.lastInteraction.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        {aiOverview.lastInteraction.agentName && ` by ${aiOverview.lastInteraction.agentName}`}
+                        {" - "}{aiOverview.lastInteraction.summary.substring(0, 60)}...
+                      </span>
                     </div>
                   )}
 
-                  {/* Life Events */}
+                  {/* Life Events - Compact */}
                   {aiOverview.lifeEvents && aiOverview.lifeEvents.length > 0 && (
-                    <div className="mb-3">
-                      <div className="text-xs text-amber-700 font-medium mb-2">Life Events to Mention:</div>
-                      <div className="space-y-2">
-                        {aiOverview.lifeEvents.slice(0, 3).map((event, i) => (
-                          <div key={i} className="bg-white/60 rounded p-2 border border-amber-100">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span>{event.icon}</span>
-                              <span className="text-sm font-medium text-gray-800">{event.event}</span>
-                            </div>
-                            <p className="text-xs text-amber-700 italic pl-6">
-                              "{event.followUpQuestion}"
-                            </p>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="space-y-1">
+                      {aiOverview.lifeEvents.slice(0, 2).map((event, i) => (
+                        <div key={i} className="text-xs">
+                          <span>{event.icon} {event.event}</span>
+                          <span className="text-amber-600 italic ml-1">"{event.followUpQuestion}"</span>
+                        </div>
+                      ))}
                     </div>
                   )}
 
                   {/* Personalization Prompts (if no life events) */}
                   {(!aiOverview.lifeEvents || aiOverview.lifeEvents.length === 0) && aiOverview.personalizationPrompts && aiOverview.personalizationPrompts.length > 0 && (
-                    <div>
-                      <div className="text-xs text-amber-700 font-medium mb-1">Quick Tips:</div>
-                      <ul className="space-y-1">
-                        {aiOverview.personalizationPrompts.slice(0, 3).map((prompt, i) => (
-                          <li key={i} className="text-xs text-gray-700 flex items-start gap-1">
-                            <span className="text-amber-500">•</span>
-                            {prompt}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                    <ul className="space-y-0.5 text-xs">
+                      {aiOverview.personalizationPrompts.slice(0, 2).map((prompt, i) => (
+                        <li key={i} className="text-gray-700">• {prompt}</li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}
 
-              {/* ===== DEEP THINK SECTION - Past Transcript Insights ===== */}
+              {/* ===== DEEP THINK SECTION - Collapsible ===== */}
               {deepThinkLoading && (
-                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-3 mb-4 border border-purple-200">
-                  <div className="flex items-center gap-2">
-                    <span className="animate-pulse">🧠</span>
-                    <span className="text-xs font-semibold text-purple-800">AI Deep Think analyzing past calls...</span>
-                  </div>
+                <div className="bg-purple-50 rounded p-2 mb-2 border border-purple-200 text-xs">
+                  <span className="animate-pulse">🧠</span> AI analyzing past calls...
                 </div>
               )}
 
               {deepThinkData?.foundData && deepThinkData.insights && (
-                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-3 mb-4 border border-purple-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span>🧠</span>
-                    <span className="text-xs font-semibold text-purple-800 uppercase">AI Deep Think</span>
-                    <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
+                <details className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg mb-3 border border-purple-200">
+                  <summary className="p-2 cursor-pointer text-xs font-medium text-purple-800 flex items-center gap-1.5">
+                    <span>🧠</span> Deep Think
+                    <span className="bg-purple-100 text-purple-700 px-1 py-0.5 rounded text-[10px]">
                       {deepThinkData.insights.transcriptsAnalyzed} calls
                     </span>
-                  </div>
-
-                  {/* Success message */}
-                  <div className="text-sm text-purple-700 font-medium mb-2">
-                    ✨ Found data from {deepThinkData.insights.dateRange.oldest} - {deepThinkData.insights.dateRange.newest}
-                  </div>
-
-                  {/* Key Topics */}
-                  {deepThinkData.insights.keyTopics.length > 0 && (
-                    <div className="mb-2">
-                      <div className="text-xs text-purple-700 font-medium mb-1">Topics discussed:</div>
+                  </summary>
+                  <div className="px-2 pb-2 text-xs space-y-1.5">
+                    {/* Key Topics */}
+                    {deepThinkData.insights.keyTopics.length > 0 && (
                       <div className="flex flex-wrap gap-1">
-                        {deepThinkData.insights.keyTopics.slice(0, 5).map((topic, i) => (
-                          <span key={i} className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
+                        {deepThinkData.insights.keyTopics.slice(0, 4).map((topic, i) => (
+                          <span key={i} className="bg-purple-100 text-purple-700 px-1 py-0.5 rounded text-[10px]">
                             {topic}
                           </span>
                         ))}
                       </div>
-                    </div>
-                  )}
-
-                  {/* Life Events from transcripts */}
-                  {deepThinkData.insights.lifeEvents.length > 0 && (
-                    <div className="mb-2">
-                      <div className="text-xs text-purple-700 font-medium mb-1">Life events mentioned:</div>
-                      <div className="space-y-1">
-                        {deepThinkData.insights.lifeEvents.slice(0, 3).map((event, i) => (
-                          <div key={i} className="text-xs text-gray-700 flex items-start gap-1">
-                            <span className="text-purple-500">•</span>
-                            {event.event}
-                            {event.date && <span className="text-gray-400">({event.date})</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Suggested Talking Points */}
-                  {deepThinkData.insights.suggestedTalkingPoints.length > 0 && (
-                    <div className="border-t border-purple-200 pt-2 mt-2">
-                      <div className="text-xs text-purple-700 font-medium mb-1">💬 Suggested talking points:</div>
-                      <ul className="space-y-1">
-                        {deepThinkData.insights.suggestedTalkingPoints.slice(0, 3).map((point, i) => (
-                          <li key={i} className="text-xs text-gray-700 italic">
-                            "{point}"
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Conversation History */}
-                  {deepThinkData.insights.conversationHistory.length > 0 && (
-                    <details className="mt-2">
-                      <summary className="text-xs text-purple-600 cursor-pointer hover:text-purple-700">
-                        View past call summaries ({deepThinkData.insights.conversationHistory.length})
-                      </summary>
-                      <div className="mt-2 space-y-2 max-h-32 overflow-y-auto">
-                        {deepThinkData.insights.conversationHistory.map((conv, i) => (
-                          <div key={i} className="text-xs bg-white/60 rounded p-2 border border-purple-100">
-                            <div className="text-gray-500 mb-0.5">
-                              {conv.date}
-                              {conv.agentName && <span> • {conv.agentName}</span>}
-                            </div>
-                            <div className="text-gray-700">{conv.summary}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  )}
-                </div>
+                    )}
+                    {/* Talking Points */}
+                    {deepThinkData.insights.suggestedTalkingPoints.slice(0, 2).map((point, i) => (
+                      <div key={i} className="text-gray-600 italic">"{point}"</div>
+                    ))}
+                  </div>
+                </details>
               )}
 
-              {/* ===== CUSTOMER INTEL - Accumulated Knowledge ===== */}
+              {/* ===== CUSTOMER INTEL - Collapsible ===== */}
               {customerIntelLoading && (
-                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg p-3 mb-4 border border-emerald-200">
-                  <div className="flex items-center gap-2">
-                    <span className="animate-pulse">📚</span>
-                    <span className="text-xs font-semibold text-emerald-800">Loading customer knowledge...</span>
-                  </div>
+                <div className="bg-emerald-50 rounded p-2 mb-2 border border-emerald-200 text-xs">
+                  <span className="animate-pulse">📚</span> Loading knowledge...
                 </div>
               )}
 
               {customerIntel && customerIntel.factCount > 0 && (
-                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg p-3 mb-4 border border-emerald-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span>📚</span>
-                    <span className="text-xs font-semibold text-emerald-800 uppercase">Customer Knowledge</span>
-                    <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">
+                <details className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg mb-3 border border-emerald-200">
+                  <summary className="p-2 cursor-pointer text-xs font-medium text-emerald-800 flex items-center gap-1.5">
+                    <span>📚</span> Knowledge
+                    <span className="bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded text-[10px]">
                       {customerIntel.factCount} facts
                     </span>
-                  </div>
-
-                  {/* Personality Type */}
-                  {customerIntel.personality && (
-                    <div className="mb-3 pb-3 border-b border-emerald-200">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium text-emerald-700">Personality:</span>
-                        <span className="text-sm font-semibold text-gray-800">
-                          {customerIntel.personality.primaryType}
-                          {customerIntel.personality.secondaryType && (
-                            <span className="font-normal text-gray-500">/{customerIntel.personality.secondaryType}</span>
-                          )}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-600 mb-2">{customerIntel.personality.description}</p>
-                      {customerIntel.personality.communicationTips.length > 0 && (
-                        <div className="bg-white/60 rounded p-2">
-                          <div className="text-xs text-emerald-700 font-medium mb-1">Communication tips:</div>
-                          <ul className="space-y-0.5">
-                            {customerIntel.personality.communicationTips.slice(0, 2).map((tip, i) => (
-                              <li key={i} className="text-xs text-gray-600 flex items-start gap-1">
-                                <span className="text-emerald-500">•</span> {tip}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Facts by Category */}
-                  <details className="text-xs">
-                    <summary className="text-emerald-700 cursor-pointer hover:text-emerald-800 font-medium">
-                      View all {customerIntel.factCount} facts
-                    </summary>
-                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
-                      {Object.entries(customerIntel.facts).map(([category, facts]) => (
-                        <div key={category} className="bg-white/60 rounded p-2 border border-emerald-100">
-                          <div className="font-medium text-emerald-800 mb-1 capitalize flex items-center gap-1">
-                            {category === "family" && "👨‍👩‍👧"}
-                            {category === "occupation" && "💼"}
-                            {category === "life_event" && "🎉"}
-                            {category === "vehicle" && "🚗"}
-                            {category === "property" && "🏠"}
-                            {category === "interest" && "⭐"}
-                            {category === "preference" && "🎯"}
-                            {category === "concern" && "⚠️"}
-                            {category === "plan" && "📋"}
-                            {category === "other" && "📝"}
-                            {category.replace(/_/g, " ")}
-                          </div>
-                          <ul className="space-y-0.5">
-                            {facts.map((f, i) => (
-                              <li key={i} className="text-gray-700">• {f.fact}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-
-                  {/* Quick Facts Preview */}
-                  {!customerIntel.personality && (
-                    <div className="space-y-1">
-                      {Object.entries(customerIntel.facts).slice(0, 3).flatMap(([_, facts]) =>
+                    {customerIntel.personality && (
+                      <span className="text-gray-600 font-normal ml-1">
+                        {customerIntel.personality.primaryType}
+                      </span>
+                    )}
+                  </summary>
+                  <div className="px-2 pb-2 text-xs">
+                    {customerIntel.personality?.communicationTips?.[0] && (
+                      <div className="text-emerald-700 mb-1">💬 {customerIntel.personality.communicationTips[0]}</div>
+                    )}
+                    <div className="space-y-0.5 text-gray-600">
+                      {Object.entries(customerIntel.facts).slice(0, 2).flatMap(([_, facts]) =>
                         facts.slice(0, 2).map((f, i) => (
-                          <div key={i} className="text-xs text-gray-700 flex items-start gap-1">
-                            <span className="text-emerald-500">•</span> {f.fact}
-                          </div>
+                          <div key={i}>• {f.fact}</div>
                         ))
-                      ).slice(0, 4)}
+                      ).slice(0, 3)}
                     </div>
-                  )}
-                </div>
+                  </div>
+                </details>
               )}
 
-              {/* AI Insights Panel (same data as CustomerProfilePage Overview) */}
+              {/* AI Insights Panel - Compact */}
               {profileLoading ? (
-                <div className="bg-gray-100 rounded-lg p-3 mb-4 animate-pulse">
-                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                <div className="bg-gray-100 rounded p-2 mb-3 animate-pulse">
+                  <div className="h-3 bg-gray-200 rounded w-3/4"></div>
                 </div>
               ) : aiLoading ? (
-                <div className="bg-blue-50 rounded-lg p-3 mb-4">
-                  <div className="flex items-center gap-2 text-blue-700">
-                    <span className="animate-spin">🤖</span>
-                    <span className="text-sm">Loading AI insights...</span>
-                  </div>
+                <div className="bg-blue-50 rounded p-2 mb-3 text-xs text-blue-700">
+                  <span className="animate-spin">🤖</span> Loading insights...
                 </div>
               ) : aiOverview ? (
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-3 mb-4 border border-blue-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span>🤖</span>
-                    <span className="text-xs font-semibold text-blue-800 uppercase">AI Insights</span>
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-2 mb-3 border border-blue-100">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-sm">🤖</span>
+                    <span className="text-[10px] font-semibold text-blue-800 uppercase">AI Insights</span>
                   </div>
-                  
-                  {/* Summary */}
-                  <p className="text-sm text-gray-700 mb-3">{aiOverview.summary}</p>
-                  
-                  {/* Agent Tips */}
-                  {aiOverview.agentTips && aiOverview.agentTips.length > 0 && (
-                    <div className="mb-3">
-                      <div className="text-xs font-medium text-blue-700 mb-1">💡 Tips</div>
-                      <ul className="space-y-1">
-                        {aiOverview.agentTips.slice(0, 3).map((tip, i) => (
-                          <li key={i} className="text-xs text-gray-600 flex items-start gap-1">
-                            <span className="text-blue-400">•</span>
-                            {tip}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  
-                  {/* Coverage Gaps */}
-                  {aiOverview.coverageGaps && aiOverview.coverageGaps.length > 0 && (
-                    <div className="mb-3">
-                      <div className="text-xs font-medium text-amber-700 mb-1">⚠️ Coverage Gaps</div>
-                      <ul className="space-y-1">
-                        {aiOverview.coverageGaps.slice(0, 2).map((gap, i) => (
-                          <li key={i} className="text-xs text-gray-600 flex items-start gap-1">
-                            <span className="text-amber-400">•</span>
-                            {gap.recommendation}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  
-                  {/* Cross-sell Opportunities */}
-                  {aiOverview.crossSellOpportunities && aiOverview.crossSellOpportunities.length > 0 && (
-                    <div>
-                      <div className="text-xs font-medium text-green-700 mb-1">💰 Opportunities</div>
-                      <ul className="space-y-1">
-                        {aiOverview.crossSellOpportunities.slice(0, 2).map((opp, i) => (
-                          <li key={i} className="text-xs text-gray-600 flex items-start gap-1">
-                            <span className="text-green-400">•</span>
-                            {opp.product}: {opp.reason}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+
+                  {/* Summary - Compact */}
+                  <p className="text-xs text-gray-700 mb-2 line-clamp-2">{aiOverview.summary}</p>
+
+                  {/* Combined Tips/Gaps/Opportunities - Very Compact */}
+                  <div className="space-y-1 text-xs">
+                    {aiOverview.agentTips?.[0] && (
+                      <div className="text-blue-700">💡 {aiOverview.agentTips[0]}</div>
+                    )}
+                    {aiOverview.coverageGaps?.[0] && (
+                      <div className="text-amber-700">⚠️ {aiOverview.coverageGaps[0].recommendation}</div>
+                    )}
+                    {aiOverview.crossSellOpportunities?.[0] && (
+                      <div className="text-green-700">💰 {aiOverview.crossSellOpportunities[0].product}</div>
+                    )}
+                  </div>
                 </div>
               ) : null}
 
-              {/* Recent Notes from AgencyZoom */}
+              {/* Recent Notes - Collapsible */}
               {profile?.notes && profile.notes.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">
-                    📝 Recent Notes
-                  </h3>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {profile.notes.slice(0, 5).map((note, i) => (
-                      <div key={i} className="bg-white rounded border p-2 text-xs">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-gray-500">
-                            {note.createdAt
-                              ? new Date(note.createdAt).toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                })
-                              : ""}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <AgentAvatar name={note.createdBy?.name} size="xs" />
-                            <span className="text-gray-400">{note.createdBy?.name || "Agent"}</span>
-                          </div>
+                <details className="mb-3">
+                  <summary className="text-[10px] font-semibold text-gray-500 uppercase cursor-pointer mb-1">
+                    📝 Recent Notes ({profile.notes.length})
+                  </summary>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {profile.notes.slice(0, 3).map((note, i) => (
+                      <div key={i} className="bg-white rounded border p-1.5 text-[11px]">
+                        <div className="text-gray-400 mb-0.5">
+                          {note.createdAt ? new Date(note.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+                          {note.createdBy?.name && ` • ${note.createdBy.name}`}
                         </div>
-                        <p className="text-gray-700 line-clamp-2">
-                          {note.content?.substring(0, 150)}
-                          {(note.content?.length || 0) > 150 ? "..." : ""}
-                        </p>
+                        <p className="text-gray-700 line-clamp-2">{note.content?.substring(0, 100)}</p>
                       </div>
                     ))}
                   </div>
-                </div>
+                </details>
               )}
 
-              {/* Quick Policies Summary */}
+              {/* Quick Policies Summary - Collapsible */}
               {profile?.policies && profile.policies.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">
-                    Active Policies ({profile.activePolicyCount})
-                  </h3>
-                  <div className="space-y-2">
-                    {profile.policies.filter(p => p.status === "active").slice(0, 4).map((policy, i) => (
-                      <div key={i} className="bg-white rounded border p-2 text-sm">
+                <details className="mb-3" open>
+                  <summary className="text-[10px] font-semibold text-gray-500 uppercase cursor-pointer mb-1.5">
+                    📋 Policies ({profile.activePolicyCount})
+                  </summary>
+                  <div className="space-y-1">
+                    {profile.policies.filter(p => p.status === "active").slice(0, 3).map((policy, i) => (
+                      <div key={i} className="bg-white rounded border p-1.5 text-xs">
                         <div className="flex items-center justify-between">
                           <span className="font-medium flex items-center gap-1">
                             <span>{profile.activePolicyTypes?.find(pt => pt.type === policy.type)?.emoji || "📋"}</span>
                             {policy.type.charAt(0).toUpperCase() + policy.type.slice(1)}
                           </span>
-                          <span className="text-xs text-gray-500">
-                            ${policy.premium?.toLocaleString()}/yr
+                          <span className="text-gray-500">
+                            ${policy.premium?.toLocaleString()}
                           </span>
                         </div>
-                        <div className="text-xs text-gray-500 mt-0.5">
+                        <div className="text-[10px] text-gray-400 truncate">
                           {typeof policy.carrier === 'string' ? policy.carrier : policy.carrier?.name} • #{policy.policyNumber}
                         </div>
                       </div>
                     ))}
                   </div>
-                </div>
+                </details>
               )}
 
-              {/* Action Buttons */}
-              <div className="space-y-2">
-                {/* AgencyZoom Button */}
+              {/* Action Buttons - Compact */}
+              <div className="flex flex-wrap gap-1.5">
                 {customerLookup?.agencyzoomId && (
                   <AgencyZoomButton
                     href={getAgencyZoomUrl(customerLookup.agencyzoomId, "customer")}
-                    variant="default"
+                    variant="outline"
                     size="sm"
-                    className="w-full justify-center"
                   />
                 )}
-
-                {/* Open Full Profile Button */}
                 <button
                   onClick={openCustomerProfile}
-                  className="w-full px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center gap-2"
+                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded flex items-center gap-1"
                 >
-                  <span>👤</span>
-                  Open Full Profile
+                  👤 Profile
                 </button>
-
-                {/* Send Canopy Connect */}
                 <CanopyConnectSMS
                   customerPhone={phoneNumber}
                   customerName={customerLookup?.name?.split(' ')[0]}
                   customerId={customerLookup?.id}
                   variant="outline"
                   size="sm"
-                  className="w-full justify-center"
                 />
               </div>
 
@@ -1581,12 +1357,12 @@ export default function CallPopup({
         {/* ===== RIGHT PANEL - Transcript & Notes ===== */}
         <div className="flex-1 flex flex-col overflow-hidden">
           
-          {/* Tab Switcher */}
+          {/* Tab Switcher - Compact */}
           <div className="flex border-b bg-gray-50">
             <button
               onClick={() => setActiveTab("overview")}
               className={cn(
-                "flex-1 px-4 py-2 text-sm font-medium",
+                "flex-1 px-2 py-1.5 text-xs font-medium",
                 activeTab === "overview"
                   ? "border-b-2 border-blue-500 text-blue-600"
                   : "text-gray-500 hover:text-gray-700"
@@ -1597,7 +1373,7 @@ export default function CallPopup({
             <button
               onClick={() => setActiveTab("assist")}
               className={cn(
-                "flex-1 px-4 py-2 text-sm font-medium relative",
+                "flex-1 px-2 py-1.5 text-xs font-medium relative",
                 activeTab === "assist"
                   ? "border-b-2 border-purple-500 text-purple-600"
                   : "text-gray-500 hover:text-gray-700"
@@ -1605,13 +1381,13 @@ export default function CallPopup({
             >
               🎯 Assist
               {(matchedPlaybook || aiSuggestions.length > 0) && activeTab !== "assist" && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+                <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-purple-500 rounded-full animate-pulse" />
               )}
             </button>
             <button
               onClick={() => setActiveTab("notes")}
               className={cn(
-                "flex-1 px-4 py-2 text-sm font-medium",
+                "flex-1 px-2 py-1.5 text-xs font-medium",
                 activeTab === "notes"
                   ? "border-b-2 border-blue-500 text-blue-600"
                   : "text-gray-500 hover:text-gray-700"
@@ -1646,30 +1422,30 @@ export default function CallPopup({
             )}
 
             {activeTab === "notes" && (
-              <div className="h-full flex flex-col p-4">
-                <div className="text-xs font-semibold text-gray-500 uppercase mb-2">
+              <div className="h-full flex flex-col p-2">
+                <div className="text-[10px] font-semibold text-gray-500 uppercase mb-1">
                   Call Notes
                 </div>
                 <textarea
                   value={draftNotes}
                   onChange={(e) => setDraftNotes(e.target.value)}
-                  placeholder="Type notes during the call... These will be posted to HawkSoft and AgencyZoom."
-                  className="flex-1 w-full p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  placeholder="Type notes during the call..."
+                  className="flex-1 w-full p-2 border rounded resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs"
                 />
 
                 {/* Post destinations and button */}
-                <div className="mt-3 flex items-center justify-between">
-                  <div className="text-xs text-gray-500 flex items-center gap-3">
+                <div className="mt-1.5 flex items-center justify-between">
+                  <div className="text-[10px] text-gray-500 flex items-center gap-2">
                     {profile?.hawksoftId && (
-                      <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                        HawkSoft
+                      <span className="flex items-center gap-0.5">
+                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                        HS
                       </span>
                     )}
                     {profile?.agencyzoomId && (
-                      <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                        AgencyZoom
+                      <span className="flex items-center gap-0.5">
+                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                        AZ
                       </span>
                     )}
                   </div>
@@ -1678,13 +1454,13 @@ export default function CallPopup({
                     onClick={handlePostNotes}
                     disabled={!draftNotes.trim() || postingNotes}
                     className={cn(
-                      "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                      "px-2.5 py-1 rounded text-xs font-medium transition-colors",
                       notePosted
                         ? "bg-green-500 text-white"
                         : "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
                     )}
                   >
-                    {postingNotes ? "Posting..." : notePosted ? "✓ Posted!" : "Post Notes"}
+                    {postingNotes ? "..." : notePosted ? "✓" : "Post"}
                   </button>
                 </div>
               </div>
@@ -1693,38 +1469,31 @@ export default function CallPopup({
         </div>
       </div>
 
-      {/* ===== FOOTER ===== */}
-      <div className="border-t bg-gray-50 px-4 py-3 flex items-center justify-between">
-        <div className="flex gap-2">
+      {/* ===== FOOTER - Compact ===== */}
+      <div className="border-t bg-gray-50 px-3 py-1.5 flex items-center justify-between">
+        <div className="flex gap-1.5">
           <button
             onClick={() => setActiveTab("notes")}
-            className="px-4 py-2 text-sm bg-white border rounded-lg hover:bg-gray-50 flex items-center gap-1"
+            className="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-50 flex items-center gap-1"
           >
-            📝 Add Note
+            📝 Note
           </button>
-          <button className="px-4 py-2 text-sm bg-white border rounded-lg hover:bg-gray-50 flex items-center gap-1">
-            🎫 Create Task
+          <button className="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-50 flex items-center gap-1">
+            🎫 Task
           </button>
         </div>
-        <div className="flex gap-2">
-          {customerLookup?.agencyzoomId && (
-            <AgencyZoomButton
-              href={getAgencyZoomUrl(customerLookup.agencyzoomId, "customer")}
-              variant="outline"
-              size="sm"
-            />
-          )}
+        <div className="flex gap-1.5">
           {customerLookup && (
             <button
               onClick={openCustomerProfile}
-              className="px-4 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200"
+              className="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200"
             >
-              👤 Full Profile
+              👤 Profile
             </button>
           )}
           <button
             onClick={() => setShowWrapUp(true)}
-            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-2.5 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             📋 Wrap-Up
           </button>

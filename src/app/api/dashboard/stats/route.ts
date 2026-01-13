@@ -34,11 +34,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Get call stats - use directionLive for accurate direction
+    // Note: direction values are lowercase in the database (inbound/outbound)
     const [callStats] = await db
       .select({
         total: sql<number>`count(*)::int`,
-        inbound: sql<number>`count(*) filter (where ${calls.directionLive} = 'Inbound' OR (${calls.directionLive} IS NULL AND ${calls.direction} = 'Inbound'))::int`,
-        outbound: sql<number>`count(*) filter (where ${calls.directionLive} = 'Outbound' OR (${calls.directionLive} IS NULL AND ${calls.direction} = 'Outbound'))::int`,
+        inbound: sql<number>`count(*) filter (where LOWER(${calls.directionLive}) = 'inbound' OR (${calls.directionLive} IS NULL AND LOWER(${calls.direction}) = 'inbound'))::int`,
+        outbound: sql<number>`count(*) filter (where LOWER(${calls.directionLive}) = 'outbound' OR (${calls.directionLive} IS NULL AND LOWER(${calls.direction}) = 'outbound'))::int`,
       })
       .from(calls)
       .where(
