@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { hasSupervisorAccess, hasAgencySettingsAccess } from '@/lib/permissions';
+import { hasFeatureAccess, getDefaultPermissions } from '@/lib/feature-permissions';
 import {
   LayoutDashboard,
   Phone,
@@ -30,7 +31,28 @@ import {
   ClipboardCheck,
   Bell,
   Link2,
+  Moon,
 } from 'lucide-react';
+
+// Map routes to feature permission keys
+const ROUTE_FEATURE_MAP: Record<string, string> = {
+  '/dashboard': 'dashboard',
+  '/pending-review': 'pendingReview',
+  '/after-hours': 'afterHours',
+  '/leads': 'leads',
+  '/calls': 'calls',
+  '/messages': 'messages',
+  '/customers': 'customers',
+  '/quotes': 'quotes',
+  '/quote-extractor': 'quoteExtractor',
+  '/canopy-connect': 'canopyConnect',
+  '/risk-monitor': 'riskMonitor',
+  '/reports': 'reports',
+  '/invoice': 'invoices',
+  '/my-settings': 'settings',
+  '/agency-settings': 'adminSettings',
+  '/settings/users': 'userManagement',
+};
 
 // Dashboard section
 const dashboardNav = [
@@ -138,14 +160,18 @@ function NavSection({ title, items, className }: { title?: string; items: NavIte
 
 export function Sidebar() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | undefined>(undefined);
+  const [featurePermissions, setFeaturePermissions] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
-    // Fetch current user email for role-based access
+    // Fetch current user info for role-based and feature-based access
     fetch('/api/auth/me')
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.user?.email) {
-          setUserEmail(data.user.email.toLowerCase());
+        if (data.success && data.user) {
+          setUserEmail(data.user.email?.toLowerCase() || null);
+          setUserRole(data.user.role);
+          setFeaturePermissions(data.user.featurePermissions || null);
         }
       })
       .catch(() => {
@@ -156,8 +182,19 @@ export function Sidebar() {
   const canAccessSupervisor = hasSupervisorAccess(userEmail);
   const canAccessAgencySettings = hasAgencySettingsAccess(userEmail);
 
-  const intakeNav = getIntakeNav(canAccessSupervisor);
-  const settingsNav = getSettingsNav(canAccessAgencySettings);
+  // Helper to check if user can access a route
+  const canAccessRoute = (href: string): boolean => {
+    const featureKey = ROUTE_FEATURE_MAP[href];
+    // If route not in map, allow access (for routes like /properties, /reviews, etc.)
+    if (!featureKey) return true;
+    return hasFeatureAccess(featureKey, featurePermissions, userRole);
+  };
+
+  const intakeNav = getIntakeNav(canAccessSupervisor).filter(item => canAccessRoute(item.href));
+  const settingsNav = getSettingsNav(canAccessAgencySettings).filter(item => canAccessRoute(item.href));
+  const filteredDashboardNav = dashboardNav.filter(item => canAccessRoute(item.href));
+  const filteredCustomerNav = customerNav.filter(item => canAccessRoute(item.href));
+  const filteredToolsNav = toolsNav.filter(item => canAccessRoute(item.href));
 
   return (
     <div className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-64 lg:flex-col">
@@ -196,19 +233,29 @@ export function Sidebar() {
         <nav className="flex flex-1 flex-col">
           <ul role="list" className="flex flex-1 flex-col gap-y-6">
             {/* Dashboard */}
-            <NavSection items={dashboardNav} />
+            {filteredDashboardNav.length > 0 && (
+              <NavSection items={filteredDashboardNav} />
+            )}
 
             {/* Intake & Reception */}
-            <NavSection title="Intake & Reception" items={intakeNav} />
+            {intakeNav.length > 0 && (
+              <NavSection title="Intake & Reception" items={intakeNav} />
+            )}
 
             {/* Customer Management */}
-            <NavSection title="Customers" items={customerNav} />
+            {filteredCustomerNav.length > 0 && (
+              <NavSection title="Customers" items={filteredCustomerNav} />
+            )}
 
             {/* Agent Tools & Resources */}
-            <NavSection title="Tools & Resources" items={toolsNav} />
+            {filteredToolsNav.length > 0 && (
+              <NavSection title="Tools & Resources" items={filteredToolsNav} />
+            )}
 
             {/* Settings - pinned to bottom */}
-            <NavSection title="Settings" items={settingsNav} className="mt-auto" />
+            {settingsNav.length > 0 && (
+              <NavSection title="Settings" items={settingsNav} className="mt-auto" />
+            )}
           </ul>
         </nav>
       </div>

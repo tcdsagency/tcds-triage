@@ -30,6 +30,7 @@ export async function GET() {
         isAvailable: users.isAvailable,
         role: users.role,
         avatarUrl: users.avatarUrl,
+        featurePermissions: users.featurePermissions,
       })
       .from(users)
       .where(eq(users.email, authUser.email || ""))
