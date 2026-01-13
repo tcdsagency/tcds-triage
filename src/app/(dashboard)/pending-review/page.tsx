@@ -69,6 +69,7 @@ export default function PendingReviewPage() {
   const [findMatchItem, setFindMatchItem] = useState<PendingItem | null>(null);
   const [reportIssueItem, setReportIssueItem] = useState<PendingItem | null>(null);
   const [assignSRItem, setAssignSRItem] = useState<PendingItem | null>(null);
+  const [assignNCMItem, setAssignNCMItem] = useState<PendingItem | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
 
   // Reviewed items state
@@ -388,11 +389,10 @@ export default function PendingReviewPage() {
       }
     }
 
-    // Confirm NCM action
+    // For NCM (No Customer Match), show assignee selection modal
     if (action === 'ncm') {
-      if (!confirm('This will create a service request in the "No Customer Match" queue in AgencyZoom. The caller info, phone number, and transcript will be included. Continue?')) {
-        return;
-      }
+      setAssignNCMItem(item);
+      return;
     }
 
     // Determine if this is a lead (has leadId but no customerId, or contactType is 'lead')
@@ -614,6 +614,57 @@ export default function PendingReviewPage() {
     } catch (error) {
       console.error('SR creation error:', error);
       const errorMsg = error instanceof Error ? error.message : 'Failed to create service request';
+      toast.error(errorMsg);
+      setLastError(errorMsg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Handle creating NCM request with selected assignee
+  const handleAssignNCM = async (assigneeId: number, assigneeName: string) => {
+    if (!assignNCMItem) return;
+
+    const item = assignNCMItem;
+
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/pending-review/${item.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: item.type,
+          action: 'ncm',
+          ticketDetails: {
+            assigneeAgentId: assigneeId,
+          },
+          reviewerId: currentUserId,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // Remove item from list
+        setItems((prev) => prev.filter((i) => i.id !== item.id));
+        setSelectedItems((prev) => prev.filter((i) => i.id !== item.id));
+        if (selectedItemForReview?.id === item.id) {
+          setSelectedItemForReview(null);
+        }
+        // Close modal
+        setAssignNCMItem(null);
+        // Show success toast
+        toast.success(`NCM request created and assigned to ${assigneeName}`);
+        setLastError(null);
+        // Update counts
+        fetchItems();
+      } else {
+        const errorMsg = data.error || 'Failed to create NCM request';
+        toast.error(errorMsg);
+        setLastError(errorMsg);
+      }
+    } catch (error) {
+      console.error('NCM creation error:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to create NCM request';
       toast.error(errorMsg);
       setLastError(errorMsg);
     } finally {
@@ -947,6 +998,17 @@ export default function PendingReviewPage() {
           onClose={() => setAssignSRItem(null)}
           onSelect={handleAssignSR}
           title={`Assign Service Request for ${assignSRItem.contactName || 'Unknown'}`}
+          isLoading={actionLoading}
+        />
+      )}
+
+      {/* Assignee Selection Modal for NCM Requests */}
+      {assignNCMItem && (
+        <AssigneeSelectModal
+          isOpen={!!assignNCMItem}
+          onClose={() => setAssignNCMItem(null)}
+          onSelect={handleAssignNCM}
+          title={`Assign NCM Request for ${assignNCMItem.contactName || assignNCMItem.contactPhone || 'Unknown Caller'}`}
           isLoading={actionLoading}
         />
       )}
