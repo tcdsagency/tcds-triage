@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, customers, users } from "@/db/schema";
-import { eq, or, ilike, and, isNotNull } from "drizzle-orm";
+import { eq, or, ilike, and } from "drizzle-orm";
 
 // =============================================================================
 // REALTIME SERVER PUSH
@@ -131,7 +131,7 @@ async function findAgentByExtension(
       extension: users.extension,
     })
     .from(users)
-    .where(and(eq(users.tenantId, tenantId), isNotNull(users.extension)));
+    .where(and(eq(users.tenantId, tenantId), ilike(users.extension, "%")));
 
   for (const user of allUsers) {
     if (user.extension && extDigits.endsWith(user.extension)) {
@@ -206,7 +206,24 @@ export async function POST(request: NextRequest) {
     }
 
     const body: VoIPToolsCallStartedPayload = await request.json();
-    console.log("[Call-Started] Received:", JSON.stringify(body, null, 2));
+
+    // =========================================================================
+    // DETAILED LOGGING FOR TROUBLESHOOTING EXTENSION ISSUES
+    // =========================================================================
+    console.log("[Call-Started] ========== RAW PAYLOAD ==========");
+    console.log("[Call-Started] callId:", body.callId);
+    console.log("[Call-Started] sessionId:", body.sessionId);
+    console.log("[Call-Started] direction:", body.direction);
+    console.log("[Call-Started] callerPhone:", body.callerPhone);
+    console.log("[Call-Started] callerNumber:", body.callerNumber);
+    console.log("[Call-Started] fromNumber:", body.fromNumber);
+    console.log("[Call-Started] calledNumber:", body.calledNumber);
+    console.log("[Call-Started] toNumber:", body.toNumber);
+    console.log("[Call-Started] extension:", body.extension);
+    console.log("[Call-Started] agentExtension:", body.agentExtension);
+    console.log("[Call-Started] agentName:", body.agentName);
+    console.log("[Call-Started] Full payload:", JSON.stringify(body, null, 2));
+    console.log("[Call-Started] ================================");
 
     const tenantId = process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
 
@@ -219,6 +236,11 @@ export async function POST(request: NextRequest) {
     const rawCallerNumber = extractPhoneFromSIP(body.callerPhone || body.callerNumber || body.fromNumber);
     const rawCalledNumber = extractPhoneFromSIP(body.calledNumber || body.toNumber);
     const extension = (body.extension || body.agentExtension || "").replace(/\D/g, "");
+
+    // Flag if extension looks like a phone number
+    if (extension.length > 5) {
+      console.log("[Call-Started] ⚠️ WARNING: Extension looks like a phone number:", extension);
+    }
 
     // Detect if caller/called are swapped based on extension match
     // For outbound: if caller looks like external number and called is extension, swap them
@@ -274,14 +296,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. Find agent by extension (uses multiple matching strategies)
-    let agent: { id: string; firstName: string; lastName: string; avatarUrl: string | null; extension: string | null } | undefined;
+    // 2. Find agent by extension
+    let agent: { id: string; firstName: string; lastName: string } | undefined;
     if (extension) {
-      agent = await findAgentByExtension(tenantId, extension);
+      const [found] = await db
+        .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(and(eq(users.tenantId, tenantId), eq(users.extension, extension)))
+        .limit(1);
+      agent = found;
+
       if (agent) {
-        console.log(`[Call-Started] Found agent: ${agent.firstName} ${agent.lastName} (${agent.id}) via extension match`);
-      } else {
-        console.log(`[Call-Started] No agent found for extension: ${extension}`);
+        console.log(`[Call-Started] Found agent: ${agent.firstName} ${agent.lastName} (${agent.id})`);
       }
     }
 

@@ -63,57 +63,6 @@ function normalizePhone(phone: string): string {
   return phone;
 }
 
-/**
- * Find agent by extension using multiple matching strategies
- * 1. Exact match on extension digits
- * 2. Match by last 3 digits (common extension format)
- * 3. Match if extension field contains a known user extension
- */
-async function findAgentByExtension(
-  tenantId: string,
-  extensionRaw: string
-): Promise<{ id: string } | undefined> {
-  if (!extensionRaw) return undefined;
-
-  const extDigits = extensionRaw.replace(/\D/g, "");
-  if (!extDigits) return undefined;
-
-  // Strategy 1: Exact match
-  const [exactMatch] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(eq(users.tenantId, tenantId), eq(users.extension, extDigits)))
-    .limit(1);
-
-  if (exactMatch) return exactMatch;
-
-  // Strategy 2: Match by last 3 digits (typical extension length)
-  if (extDigits.length > 3) {
-    const last3 = extDigits.slice(-3);
-    const [last3Match] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(and(eq(users.tenantId, tenantId), eq(users.extension, last3)))
-      .limit(1);
-
-    if (last3Match) return last3Match;
-  }
-
-  // Strategy 3: Check if any known extension is at the end of the digits
-  const allUsers = await db
-    .select({ id: users.id, extension: users.extension })
-    .from(users)
-    .where(and(eq(users.tenantId, tenantId), isNotNull(users.extension)));
-
-  for (const user of allUsers) {
-    if (user.extension && extDigits.endsWith(user.extension)) {
-      return { id: user.id };
-    }
-  }
-
-  return undefined;
-}
-
 // =============================================================================
 // SESSION MATCHING
 // =============================================================================
@@ -138,9 +87,9 @@ async function matchCallSession(
   extension: string,
   timestamp: Date
 ): Promise<MatchResult> {
-  // Time window for matching (15 minutes before/after)
-  const timeWindowStart = new Date(timestamp.getTime() - 15 * 60 * 1000);
-  const timeWindowEnd = new Date(timestamp.getTime() + 15 * 60 * 1000);
+  // Time window for matching - use wider window (30 minutes) for better fallback matching
+  const timeWindowStart = new Date(timestamp.getTime() - 30 * 60 * 1000);
+  const timeWindowEnd = new Date(timestamp.getTime() + 30 * 60 * 1000);
 
   // Try exact callId match first - only check UUID column if callId is valid UUID
   let byCallId = null;
@@ -179,9 +128,37 @@ async function matchCallSession(
   }
 
   // Try phone number + time window
+  // Prefer calls that already have an agentId (came through call-started)
   const normalizedCaller = normalizePhone(callerNumber);
   const normalizedCalled = normalizePhone(calledNumber);
 
+  // First try to find a call WITH an agent assigned (from call-started)
+  const [byPhoneWithAgent] = await db
+    .select()
+    .from(calls)
+    .where(
+      and(
+        eq(calls.tenantId, tenantId),
+        gte(calls.startedAt, timeWindowStart),
+        lte(calls.startedAt, timeWindowEnd),
+        isNotNull(calls.agentId), // Prefer calls with agent
+        or(
+          eq(calls.fromNumber, normalizedCaller),
+          eq(calls.toNumber, normalizedCaller),
+          eq(calls.fromNumber, normalizedCalled),
+          eq(calls.toNumber, normalizedCalled)
+        )
+      )
+    )
+    .orderBy(desc(calls.startedAt))
+    .limit(1);
+
+  if (byPhoneWithAgent) {
+    console.log("[Call-Completed] Matched to existing call with agent:", byPhoneWithAgent.id);
+    return { call: byPhoneWithAgent, method: "phone_time", confidence: 0.95 };
+  }
+
+  // Fallback: match any call by phone (may not have agent)
   const [byPhoneTime] = await db
     .select()
     .from(calls)
@@ -554,7 +531,22 @@ export async function POST(request: NextRequest) {
     }
 
     const body: VoIPToolsPayload = await request.json();
-    console.log("[Call-Completed] Received:", JSON.stringify(body, null, 2));
+
+    // =========================================================================
+    // DETAILED LOGGING FOR TROUBLESHOOTING EXTENSION ISSUES
+    // =========================================================================
+    console.log("[Call-Completed] ========== RAW PAYLOAD ==========");
+    console.log("[Call-Completed] callId:", body.callId);
+    console.log("[Call-Completed] direction:", body.direction);
+    console.log("[Call-Completed] callerPhone:", body.callerPhone);
+    console.log("[Call-Completed] callerNumber:", body.callerNumber);
+    console.log("[Call-Completed] calledNumber:", body.calledNumber);
+    console.log("[Call-Completed] extension:", body.extension);
+    console.log("[Call-Completed] agentExtension:", body.agentExtension);
+    console.log("[Call-Completed] agentName:", body.agentName);
+    console.log("[Call-Completed] duration:", body.duration);
+    console.log("[Call-Completed] Full payload:", JSON.stringify(body, null, 2));
+    console.log("[Call-Completed] ================================");
 
     const tenantId = process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
 
@@ -567,6 +559,14 @@ export async function POST(request: NextRequest) {
     const callerNumber = extractPhoneFromSIP(body.callerPhone || body.callerNumber);
     const calledNumber = extractPhoneFromSIP(body.calledNumber);
     const extension = body.extension || body.agentExtension || "";
+
+    // Flag if extension looks like a phone number (more than 5 digits)
+    const extDigits = extension.replace(/\D/g, "");
+    const extensionLooksLikePhone = extDigits.length > 5;
+    if (extensionLooksLikePhone) {
+      console.log("[Call-Completed] ⚠️ WARNING: Extension looks like a phone number:", extension);
+      console.log("[Call-Completed] ⚠️ This will cause agent matching to fail!");
+    }
 
     console.log("[Call-Completed] Normalized - caller:", callerNumber, "called:", calledNumber, "ext:", extension);
 
@@ -609,6 +609,22 @@ export async function POST(request: NextRequest) {
     } else {
       matchStatus = "created";
 
+      // =========================================================================
+      // NO MATCHING CALL FOUND - Creating new record
+      // Check if this is an after-hours/fallback call (extension is a phone number)
+      // =========================================================================
+      const isAfterHoursOrFallback = extensionLooksLikePhone;
+
+      if (isAfterHoursOrFallback) {
+        console.log("[Call-Completed] 📞 AFTER-HOURS/FALLBACK CALL DETECTED");
+        console.log("[Call-Completed] 📞 Extension is a phone number:", extension);
+        console.log("[Call-Completed] 📞 This call will be marked as after-hours/unassigned");
+      } else {
+        console.log("[Call-Completed] ⚠️ NO MATCHING CALL - Creating new record");
+        console.log("[Call-Completed] ⚠️ callId:", body.callId);
+        console.log("[Call-Completed] ⚠️ extension from payload:", extension);
+      }
+
       // Create new call record
       const customerPhone = direction === "inbound" ? callerNumber : calledNumber;
       const customerPhoneDigits = customerPhone.replace(/\D/g, "");
@@ -632,14 +648,16 @@ export async function POST(request: NextRequest) {
         customer = found;
       }
 
-      // Find agent by extension (uses multiple matching strategies)
+      // Find agent by extension - skip if extension is a phone number (won't match anyway)
       let agentId: string | undefined;
-      if (extension) {
-        const agent = await findAgentByExtension(tenantId, extension);
+      if (extension && !isAfterHoursOrFallback) {
+        const extDigits = extension.replace(/\D/g, "");
+        const [agent] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.tenantId, tenantId), eq(users.extension, extDigits)))
+          .limit(1);
         agentId = agent?.id;
-        if (agentId) {
-          console.log(`[Call-Completed] Found agent ${agentId} via extension match for: ${extension}`);
-        }
       }
 
       const [created] = await db
@@ -654,6 +672,8 @@ export async function POST(request: NextRequest) {
           toNumber: normalizePhone(calledNumber || extension), // Use extension if no calledNumber
           customerId: customer?.id,
           agentId,
+          // Mark after-hours calls with disposition
+          disposition: isAfterHoursOrFallback ? "after_hours" : undefined,
           startedAt: new Date(timestamp.getTime() - (body.duration || 0) * 1000),
           endedAt: timestamp,
           durationSeconds: body.duration,
@@ -916,18 +936,55 @@ export async function POST(request: NextRequest) {
         const agentExt = call.extension || extension;
         // Prefer direction from call record
         const callDirection = call.direction || direction;
+        // Check if this is an after-hours call (from disposition set during call creation)
+        const isAfterHoursCall = call.disposition === "after_hours";
+
+        if (isAfterHoursCall) {
+          console.log("[Call-Completed] 📞 Creating wrapup for AFTER-HOURS call - will be marked for special handling");
+        }
+
+        // Look up agent name from users table using agentId or extension
+        let agentName: string | null = body.agentName || null;
+        if (!agentName && !isAfterHoursCall) {
+          // First try to get from call's agentId
+          if (call.agentId) {
+            const [agent] = await tx
+              .select({ firstName: users.firstName, lastName: users.lastName })
+              .from(users)
+              .where(eq(users.id, call.agentId))
+              .limit(1);
+            if (agent) {
+              agentName = `${agent.firstName || ""} ${agent.lastName || ""}`.trim() || null;
+            }
+          }
+          // Fallback: look up by extension
+          if (!agentName && agentExt) {
+            const extDigits = agentExt.replace(/\D/g, "");
+            if (extDigits.length <= 5) { // Only look up if it looks like an extension
+              const [agent] = await tx
+                .select({ firstName: users.firstName, lastName: users.lastName })
+                .from(users)
+                .where(and(eq(users.tenantId, tenantId), eq(users.extension, extDigits)))
+                .limit(1);
+              if (agent) {
+                agentName = `${agent.firstName || ""} ${agent.lastName || ""}`.trim() || null;
+              }
+            }
+          }
+        }
+        console.log(`[Call-Completed] Resolved agent name: ${agentName || "NULL"} (ext: ${agentExt}, agentId: ${call.agentId || "NULL"})`);
 
         const wrapupValues = {
           tenantId,
           callId: call.id,
           direction: (callDirection === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
-          agentExtension: agentExt,
-          agentName: body.agentName,
-          summary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),
+          agentExtension: isAfterHoursCall ? "after-hours" : agentExt, // Clear marker for after-hours
+          agentName: isAfterHoursCall ? "After-Hours Service" : agentName,
+          summary: analysis?.summary || (isShortCall ? "Short call - no conversation" : (isAfterHoursCall ? "After-hours call - forwarded to voicemail service" : "Hangup - no meaningful conversation")),
           customerName: matchedCustomerName || analysis?.extractedData?.customerName || trestlePersonName,
           customerPhone: phoneForLookup,
           customerEmail: analysis?.extractedData?.email || (trestleEmails && trestleEmails.length > 0 ? trestleEmails[0] : undefined),
-          requestType: analysis?.callType || hangupReason,
+          requestType: isAfterHoursCall ? "after_hours" : (analysis?.callType || hangupReason),
           status: wrapupStatus,
           matchStatus: customerMatchStatus,
           trestleData: trestleData,
