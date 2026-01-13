@@ -7,7 +7,7 @@
  * via Power Automate integration.
  */
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   FileText,
   Send,
@@ -17,10 +17,31 @@ import {
   Clock,
   FolderOpen,
   HelpCircle,
+  Search,
+  User,
+  Shield,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+
+interface SearchResult {
+  customerId: string;
+  customerName: string;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  policies: Array<{
+    policyId: string;
+    policyNumber: string;
+    carrier: string | null;
+    lineOfBusiness: string | null;
+    effectiveDate: string | null;
+    expirationDate: string | null;
+    premium: string | null;
+    status: string | null;
+  }>;
+}
 
 export default function TravelersApplicationPage() {
   const [policyNumber, setPolicyNumber] = useState('');
@@ -31,6 +52,12 @@ export default function TravelersApplicationPage() {
     policyNumber?: string;
   } | null>(null);
   const [recentRequests, setRecentRequests] = useState<string[]>([]);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,6 +105,56 @@ export default function TravelersApplicationPage() {
     }
   };
 
+  // Debounced search
+  const handleSearch = useCallback(async (query: string) => {
+    setSearchQuery(query);
+    setSearchError(null);
+
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const res = await fetch(`/api/travelers/search-policies?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setSearchResults(data.results || []);
+      } else {
+        setSearchError(data.error || 'Search failed');
+        setSearchResults([]);
+      }
+    } catch {
+      setSearchError('Network error');
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  const selectPolicy = (policy: SearchResult['policies'][0]) => {
+    setPolicyNumber(policy.policyNumber);
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchError(null);
+  };
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return '-';
+    try {
+      return new Date(dateStr).toLocaleDateString();
+    } catch {
+      return dateStr;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-2xl mx-auto space-y-6">
@@ -92,6 +169,115 @@ export default function TravelersApplicationPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">
             Retrieve policy applications from Travelers portal
           </p>
+        </div>
+
+        {/* Search Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="space-y-4">
+            {/* Customer Search */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Search by Customer Name
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  placeholder="Type customer name to search..."
+                  className="pl-10 pr-10"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              {isSearching && (
+                <div className="flex items-center gap-2 text-sm text-gray-500 mt-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Searching...
+                </div>
+              )}
+              {searchError && (
+                <p className="text-sm text-red-500 mt-2">{searchError}</p>
+              )}
+            </div>
+
+            {/* Search Results */}
+            {searchResults.length > 0 && (
+              <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden max-h-80 overflow-y-auto">
+                {searchResults.map((customer) => (
+                  <div
+                    key={customer.customerId}
+                    className="border-b border-gray-200 dark:border-gray-700 last:border-b-0"
+                  >
+                    {/* Customer Header */}
+                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 flex items-center gap-3">
+                      <User className="w-4 h-4 text-gray-400" />
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">
+                          {customer.customerName}
+                        </p>
+                        {customer.customerEmail && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {customer.customerEmail}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {/* Policies */}
+                    <div className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                      {customer.policies.map((policy) => (
+                        <button
+                          key={policy.policyId}
+                          type="button"
+                          onClick={() => selectPolicy(policy)}
+                          className="w-full px-4 py-3 text-left hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors flex items-center justify-between gap-4"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Shield className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                            <div className="min-w-0">
+                              <p className="font-mono text-sm text-gray-900 dark:text-white truncate">
+                                {policy.policyNumber}
+                              </p>
+                              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full">
+                                  {policy.lineOfBusiness || 'Policy'}
+                                </span>
+                                <span>{formatDate(policy.effectiveDate)} - {formatDate(policy.expirationDate)}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            className={cn(
+                              'text-xs px-2 py-1 rounded-full flex-shrink-0',
+                              policy.status === 'active'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                            )}
+                          >
+                            {policy.status || 'Unknown'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {searchQuery.length >= 2 && !isSearching && searchResults.length === 0 && !searchError && (
+              <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                No Travelers policies found for "{searchQuery}"
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Main Card */}

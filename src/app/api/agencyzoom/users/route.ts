@@ -11,13 +11,7 @@ import { eq } from 'drizzle-orm';
  */
 export async function GET(request: NextRequest) {
   try {
-    const client = getAgencyZoomClient();
-    
-    // Get AgencyZoom users
-    const azUsers = await client.getUsers();
-    
-    // Get our internal users with agencyzoomId
-    // Using a default tenant ID for now - in production this should be from auth
+    // Get our internal users with agencyzoomId first (fast - just DB query)
     const internalUsers = await db.query.users.findMany({
       columns: {
         id: true,
@@ -28,14 +22,28 @@ export async function GET(request: NextRequest) {
         extension: true,
       },
     });
-    
+
+    // Try to get AgencyZoom users (may fail/be slow - don't block)
+    let azUsers: any[] = [];
+    try {
+      const client = getAgencyZoomClient();
+      azUsers = await Promise.race([
+        client.getUsers(),
+        // Timeout after 5 seconds - just use internal users if AZ is slow
+        new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+      ]);
+    } catch (e) {
+      // AgencyZoom API failed or timed out - that's OK, we have internal users
+      console.log('[AgencyZoom Users] API failed/timed out, using internal users only');
+    }
+
     // Create a set of mapped AZ IDs
     const mappedAzIds = new Set(
       internalUsers
         .filter(u => u.agencyzoomId)
         .map(u => u.agencyzoomId)
     );
-    
+
     // Annotate AZ users with mapping status
     const annotatedUsers = azUsers.map(azUser => ({
       agencyzoomId: azUser.id,
@@ -45,7 +53,7 @@ export async function GET(request: NextRequest) {
       isMapped: mappedAzIds.has(azUser.id.toString()),
       mappedTo: internalUsers.find(u => u.agencyzoomId === azUser.id.toString()) || null,
     }));
-    
+
     return NextResponse.json({
       success: true,
       agencyzoomUsers: annotatedUsers,
