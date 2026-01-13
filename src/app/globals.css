@@ -12,12 +12,16 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Light mode only - system dark mode disabled */
+/* To re-enable: uncomment the media query below */
+/*
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
   }
 }
+*/
 
 body {
   background: var(--background);
