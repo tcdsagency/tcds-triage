@@ -137,6 +137,19 @@ export default function CallPopup({
 
   // End Call State
   const [endingCall, setEndingCall] = useState(false);
+
+  // Call Control State
+  const [isOnHold, setIsOnHold] = useState(false);
+  const [holdLoading, setHoldLoading] = useState(false);
+  const [showTransferDropdown, setShowTransferDropdown] = useState(false);
+  const [transferring, setTransferring] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<Array<{
+    id: string;
+    name: string;
+    extension: string;
+    status: string;
+  }>>([]);
+
   const [wrapupData, setWrapupData] = useState<{
     summary?: string;
     aiCleanedSummary?: string;
@@ -505,6 +518,95 @@ export default function CallPopup({
   }, [sessionId, onClose]);
 
   // =========================================================================
+  // Hold/Resume Call
+  // =========================================================================
+  const handleHoldToggle = useCallback(async () => {
+    setHoldLoading(true);
+    try {
+      const action = isOnHold ? "resume" : "hold";
+      const res = await fetch(`/api/calls/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setIsOnHold(!isOnHold);
+        console.log(`[CallPopup] Call ${action === "hold" ? "put on hold" : "resumed"}`);
+      } else {
+        console.error(`[CallPopup] Failed to ${action} call:`, data.error);
+      }
+    } catch (err) {
+      console.error("[CallPopup] Hold toggle error:", err);
+    } finally {
+      setHoldLoading(false);
+    }
+  }, [sessionId, isOnHold]);
+
+  // =========================================================================
+  // Transfer Call
+  // =========================================================================
+  const handleTransfer = useCallback(async (targetExtension: string, blind: boolean = true) => {
+    setTransferring(true);
+    try {
+      const res = await fetch(`/api/calls/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "transfer", targetExtension, blind }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        console.log(`[CallPopup] Call transferred to ${targetExtension}`);
+        setShowTransferDropdown(false);
+        // Close popup after successful transfer
+        onClose();
+      } else {
+        console.error("[CallPopup] Transfer failed:", data.error);
+      }
+    } catch (err) {
+      console.error("[CallPopup] Transfer error:", err);
+    } finally {
+      setTransferring(false);
+    }
+  }, [sessionId, onClose]);
+
+  // =========================================================================
+  // Load Team Members for Transfer Dropdown
+  // =========================================================================
+  useEffect(() => {
+    if (!showTransferDropdown) return;
+
+    const loadTeam = async () => {
+      try {
+        const res = await fetch("/api/3cx/presence");
+        const data = await res.json();
+        if (data.success && data.team) {
+          // Filter out current user's extension
+          const currentExt = callerUser?.extension || calleeUser?.extension;
+          setTeamMembers(
+            data.team.filter((member: any) => member.extension !== currentExt)
+          );
+        }
+      } catch (err) {
+        console.error("[CallPopup] Failed to load team for transfer:", err);
+      }
+    };
+
+    loadTeam();
+  }, [showTransferDropdown, callerUser, calleeUser]);
+
+  // Update hold state when callStatus changes
+  useEffect(() => {
+    if (externalCallStatus === "on_hold" || callStatus === "on_hold") {
+      setIsOnHold(true);
+    } else if (effectiveCallStatus === "connected") {
+      setIsOnHold(false);
+    }
+  }, [externalCallStatus, callStatus, effectiveCallStatus]);
+
+  // =========================================================================
   // Fetch Wrap-Up Data (from wrapupDrafts table - already has AI summary)
   // =========================================================================
   const fetchWrapupData = useCallback(async () => {
@@ -677,11 +779,12 @@ export default function CallPopup({
               <span>{formatDuration(callDuration)}</span>
               <span className={cn(
                 "px-1.5 py-0.5 rounded text-xs",
-                effectiveCallStatus === "connected" && "bg-green-600",
-                effectiveCallStatus === "ringing" && "bg-yellow-600",
+                isOnHold && "bg-amber-500 text-white animate-pulse",
+                !isOnHold && effectiveCallStatus === "connected" && "bg-green-600",
+                !isOnHold && effectiveCallStatus === "ringing" && "bg-yellow-600",
                 effectiveCallStatus === "ended" && "bg-gray-600"
               )}>
-                {effectiveCallStatus}
+                {isOnHold ? "ON HOLD" : effectiveCallStatus}
               </span>
               {isConnected && <span className="text-green-400">● Live</span>}
             </div>
@@ -689,14 +792,95 @@ export default function CallPopup({
         </div>
         <div className="flex items-center gap-1">
           {effectiveCallStatus !== "ended" && (
-            <button
-              onClick={handleEndCall}
-              disabled={endingCall}
-              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded text-sm font-medium flex items-center gap-1"
-              title="End Call"
-            >
-              {endingCall ? "⏳" : "📞"} End Call
-            </button>
+            <>
+              {/* Hold/Resume Button */}
+              <button
+                onClick={handleHoldToggle}
+                disabled={holdLoading}
+                className={cn(
+                  "px-3 py-1.5 rounded text-sm font-medium flex items-center gap-1 transition-colors",
+                  isOnHold
+                    ? "bg-amber-500 hover:bg-amber-600 text-white"
+                    : "bg-gray-600 hover:bg-gray-500 text-white"
+                )}
+                title={isOnHold ? "Resume Call" : "Put on Hold"}
+              >
+                {holdLoading ? "⏳" : isOnHold ? "▶️" : "⏸️"} {isOnHold ? "Resume" : "Hold"}
+              </button>
+
+              {/* Transfer Button & Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowTransferDropdown(!showTransferDropdown)}
+                  disabled={transferring}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium flex items-center gap-1"
+                  title="Transfer Call"
+                >
+                  {transferring ? "⏳" : "↗️"} Transfer
+                </button>
+
+                {/* Transfer Dropdown */}
+                {showTransferDropdown && (
+                  <div className="absolute top-full right-0 mt-1 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 overflow-hidden">
+                    <div className="px-3 py-2 bg-gray-50 border-b text-xs font-semibold text-gray-600 uppercase">
+                      Transfer to:
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {teamMembers.length === 0 ? (
+                        <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                          Loading team...
+                        </div>
+                      ) : (
+                        teamMembers.map((member) => (
+                          <button
+                            key={member.id}
+                            onClick={() => handleTransfer(member.extension)}
+                            disabled={member.status === "offline"}
+                            className={cn(
+                              "w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-gray-50 transition-colors",
+                              member.status === "offline" && "opacity-50 cursor-not-allowed"
+                            )}
+                          >
+                            <span className={cn(
+                              "w-2 h-2 rounded-full flex-shrink-0",
+                              member.status === "available" && "bg-green-500",
+                              member.status === "on_call" && "bg-red-500",
+                              member.status === "away" && "bg-yellow-500",
+                              member.status === "dnd" && "bg-red-600",
+                              member.status === "offline" && "bg-gray-400"
+                            )} />
+                            <span className="flex-1 text-sm text-gray-900 truncate">
+                              {member.name}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              ext {member.extension}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    <div className="px-3 py-2 bg-gray-50 border-t">
+                      <button
+                        onClick={() => setShowTransferDropdown(false)}
+                        className="w-full px-3 py-1 text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* End Call Button */}
+              <button
+                onClick={handleEndCall}
+                disabled={endingCall}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded text-sm font-medium flex items-center gap-1"
+                title="End Call"
+              >
+                {endingCall ? "⏳" : "📞"} End
+              </button>
+            </>
           )}
           <button
             onClick={() => { setIsMinimized(true); onMinimize(); }}

@@ -467,6 +467,82 @@ export class VoIPToolsRelayClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Call Control
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Put a call on hold
+   * VoIPTools API: POST /api/Hold/{callId}
+   */
+  async holdCall(callId: string): Promise<boolean> {
+    try {
+      await this.apiCall(`/api/Hold/${encodeURIComponent(callId)}`, {
+        method: "POST",
+      });
+      return true;
+    } catch (err) {
+      console.error("[VoIPTools] Hold call error:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Retrieve a call from hold
+   * VoIPTools API: POST /api/Retrieve/{callId}
+   */
+  async retrieveCall(callId: string): Promise<boolean> {
+    try {
+      await this.apiCall(`/api/Retrieve/${encodeURIComponent(callId)}`, {
+        method: "POST",
+      });
+      return true;
+    } catch (err) {
+      console.error("[VoIPTools] Retrieve call error:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Transfer a call to another extension
+   * VoIPTools API: POST /api/Transfer with callId and destination
+   * @param callId The call ID to transfer
+   * @param targetExtension The extension to transfer to
+   * @param blind True for blind transfer, false for attended transfer
+   */
+  async transferCall(callId: string, targetExtension: string, blind: boolean = true): Promise<boolean> {
+    try {
+      const endpoint = blind ? "/api/BlindTransfer" : "/api/Transfer";
+      await this.apiCall(endpoint, {
+        method: "POST",
+        body: JSON.stringify({
+          CallId: callId,
+          Destination: targetExtension,
+        }),
+      });
+      return true;
+    } catch (err) {
+      console.error("[VoIPTools] Transfer call error:", err);
+      return false;
+    }
+  }
+
+  /**
+   * End/drop a call
+   * VoIPTools API: POST /api/DropCall/{callId}
+   */
+  async dropCall(callId: string): Promise<boolean> {
+    try {
+      await this.apiCall(`/api/DropCall/${encodeURIComponent(callId)}`, {
+        method: "POST",
+      });
+      return true;
+    } catch (err) {
+      console.error("[VoIPTools] Drop call error:", err);
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Health & Status
   // ---------------------------------------------------------------------------
 
