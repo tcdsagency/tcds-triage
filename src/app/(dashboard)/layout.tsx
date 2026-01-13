@@ -6,6 +6,7 @@ import { CallProvider } from '@/components/providers/CallProvider';
 import { NotificationProvider } from '@/components/providers/NotificationProvider';
 import { TwoFAProvider } from '@/components/TwoFAProvider';
 import { TwoFASetup } from '@/components/providers/TwoFASetup';
+import { ThemeProvider } from '@/components/providers/ThemeProvider';
 
 export default async function DashboardLayout({
   children,
@@ -20,21 +21,23 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <NotificationProvider>
-        <TwoFAProvider>
-          <TwoFASetup />
-          <CallProvider>
-            <Sidebar />
-            <div className="lg:pl-64">
-              <Header user={user} />
-              <main className="py-6 px-4 sm:px-6 lg:px-8">
-                {children}
-              </main>
-            </div>
-          </CallProvider>
-        </TwoFAProvider>
-      </NotificationProvider>
-    </div>
+    <ThemeProvider>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <NotificationProvider>
+          <TwoFAProvider>
+            <TwoFASetup />
+            <CallProvider>
+              <Sidebar />
+              <div className="lg:pl-64">
+                <Header user={user} />
+                <main className="py-6 px-4 sm:px-6 lg:px-8">
+                  {children}
+                </main>
+              </div>
+            </CallProvider>
+          </TwoFAProvider>
+        </NotificationProvider>
+      </div>
+    </ThemeProvider>
   );
 }
