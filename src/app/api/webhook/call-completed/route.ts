@@ -727,17 +727,47 @@ export async function POST(request: NextRequest) {
         : (call.toNumber || calledNumber);
       const phoneForLookup = analysis?.extractedData?.phone || customerPhone;
 
-      // 4.1 AgencyZoom customer lookup (search both customers AND leads)
+      // 4.1 Customer matching - PRIORITY: Use screen pop match if available
       let azMatches: AgencyZoomCustomer[] = [];
       let azLeadMatches: AgencyZoomLead[] = [];
       let matchType: "customer" | "lead" | "none" = "none";
+      let matchedCustomerName: string | null = null;
 
-      try {
-        const azClient = await getAgencyZoomClient();
-        if (azClient && phoneForLookup) {
-          // First search customers
-          azMatches = await azClient.findCustomersByPhone(phoneForLookup, 5);
-          console.log(`[Call-Completed] AgencyZoom customer lookup for ${phoneForLookup}: ${azMatches.length} matches`);
+      // First, check if customer was already matched during screen pop
+      if (call.customerId) {
+        try {
+          const [existingCustomer] = await db
+            .select({
+              id: customers.id,
+              firstName: customers.firstName,
+              lastName: customers.lastName,
+              agencyzoomId: customers.agencyzoomId,
+            })
+            .from(customers)
+            .where(eq(customers.id, call.customerId))
+            .limit(1);
+
+          if (existingCustomer) {
+            // Use the screen pop match
+            customerMatchStatus = "matched";
+            matchedAzCustomerId = existingCustomer.agencyzoomId || null;
+            matchedCustomerName = `${existingCustomer.firstName || ""} ${existingCustomer.lastName || ""}`.trim() || null;
+            matchType = "customer";
+            console.log(`[Call-Completed] Using screen pop match: customer ${call.customerId} (AZ: ${matchedAzCustomerId})`);
+          }
+        } catch (error) {
+          console.error("[Call-Completed] Failed to lookup screen pop customer:", error);
+        }
+      }
+
+      // Only do AgencyZoom phone lookup if no screen pop match
+      if (customerMatchStatus === "unmatched") {
+        try {
+          const azClient = await getAgencyZoomClient();
+          if (azClient && phoneForLookup) {
+            // First search customers
+            azMatches = await azClient.findCustomersByPhone(phoneForLookup, 5);
+            console.log(`[Call-Completed] AgencyZoom customer lookup for ${phoneForLookup}: ${azMatches.length} matches`);
 
           // If no customers found, search leads
           if (azMatches.length === 0) {
@@ -754,32 +784,44 @@ export async function POST(request: NextRequest) {
             matchType = "customer";
           }
         }
-      } catch (error) {
-        console.error("[Call-Completed] AgencyZoom lookup error:", error);
+        } catch (error) {
+          console.error("[Call-Completed] AgencyZoom lookup error:", error);
+        }
+
+        // Determine match status from phone lookup - check customers first, then leads
+        if (azMatches.length === 1 && azMatches[0]) {
+          customerMatchStatus = "matched";
+          matchedAzCustomerId = azMatches[0].id.toString();
+          matchedCustomerName = `${azMatches[0].firstName || ""} ${azMatches[0].lastName || ""}`.trim() || null;
+          matchType = "customer";
+          console.log(`[Call-Completed] Single customer match: AZ customer ${matchedAzCustomerId}`);
+        } else if (azMatches.length > 1) {
+          customerMatchStatus = "multiple_matches";
+          matchType = "customer";
+          console.log(`[Call-Completed] Multiple customer matches: ${azMatches.length} customers`);
+        } else if (azLeadMatches.length === 1 && azLeadMatches[0]) {
+          // Single lead match
+          customerMatchStatus = "matched";
+          matchedLeadId = azLeadMatches[0].id.toString();
+          matchedCustomerName = `${azLeadMatches[0].firstName || ""} ${azLeadMatches[0].lastName || ""}`.trim() || null;
+          matchType = "lead";
+          console.log(`[Call-Completed] Single lead match: AZ lead ${matchedLeadId}`);
+        } else if (azLeadMatches.length > 1) {
+          customerMatchStatus = "multiple_matches";
+          matchType = "lead";
+          console.log(`[Call-Completed] Multiple lead matches: ${azLeadMatches.length} leads`);
+        }
+      } // end if (customerMatchStatus === "unmatched") - AgencyZoom lookup block
+
+      // Declare matchedLeadId for use in wrapup - will be set if lead matched above
+      let matchedLeadId: string | null = null;
+      if (matchType === "lead" && azLeadMatches.length === 1 && azLeadMatches[0]) {
+        matchedLeadId = azLeadMatches[0].id.toString();
       }
 
-      // Determine match status - check customers first, then leads
-      let matchedLeadId: string | null = null;
-
-      if (azMatches.length === 1 && azMatches[0]) {
-        customerMatchStatus = "matched";
-        matchedAzCustomerId = azMatches[0].id.toString();
-        console.log(`[Call-Completed] Single customer match: AZ customer ${matchedAzCustomerId}`);
-      } else if (azMatches.length > 1) {
-        customerMatchStatus = "multiple_matches";
-        console.log(`[Call-Completed] Multiple customer matches: ${azMatches.length} customers`);
-      } else if (azLeadMatches.length === 1 && azLeadMatches[0]) {
-        // Single lead match
-        customerMatchStatus = "matched";
-        matchedLeadId = azLeadMatches[0].id.toString();
-        console.log(`[Call-Completed] Single lead match: AZ lead ${matchedLeadId}`);
-      } else if (azLeadMatches.length > 1) {
-        customerMatchStatus = "multiple_matches";
-        console.log(`[Call-Completed] Multiple lead matches: ${azLeadMatches.length} leads`);
-      } else {
-        customerMatchStatus = "unmatched";
-
-        // 4.2 Trestle IQ lookup for unmatched calls
+      // 4.2 Trestle IQ lookup for unmatched calls
+      if (customerMatchStatus === "unmatched") {
+        // Trestle IQ lookup for unmatched calls
         if (phoneForLookup) {
           try {
             if (trestleIQClient) {
@@ -827,7 +869,7 @@ export async function POST(request: NextRequest) {
           agentExtension: agentExt,
           agentName: body.agentName,
           summary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),
-          customerName: analysis?.extractedData?.customerName || trestlePersonName,
+          customerName: matchedCustomerName || analysis?.extractedData?.customerName || trestlePersonName,
           customerPhone: phoneForLookup,
           customerEmail: analysis?.extractedData?.email || (trestleEmails && trestleEmails.length > 0 ? trestleEmails[0] : undefined),
           requestType: analysis?.callType || hangupReason,
