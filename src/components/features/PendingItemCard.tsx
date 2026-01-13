@@ -352,6 +352,25 @@ export default function PendingItemCard({
               {item.handledBy && (
                 <span>by {item.handledBy}</span>
               )}
+              {/* Call ID for reference */}
+              {item.callId && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(item.callId || '');
+                    // Simple feedback - could use toast but keeping it lightweight
+                    const btn = e.currentTarget;
+                    btn.textContent = '✓ Copied';
+                    setTimeout(() => {
+                      btn.textContent = `ID: ${item.callId?.slice(0, 8)}...`;
+                    }, 1500);
+                  }}
+                  className="font-mono text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:underline cursor-pointer"
+                  title={`Click to copy full ID: ${item.callId}`}
+                >
+                  ID: {item.callId.slice(0, 8)}...
+                </button>
+              )}
             </div>
           </div>
 
