@@ -33,6 +33,13 @@ export interface PendingItem {
 
   // Metadata
   handledBy: string | null;
+  handledByAgent: {
+    id: string;
+    name: string;
+    avatar: string | null;
+    extension: string | null;
+    initials: string;
+  } | null;
   timestamp: string;
   ageMinutes: number;
 
@@ -347,9 +354,6 @@ export default function PendingItemCard({
                   </span>
                 )}
               </span>
-              {item.handledBy && (
-                <span>by {item.handledBy}</span>
-              )}
               {/* Call ID for reference */}
               {item.callId && (
                 <button
@@ -372,18 +376,49 @@ export default function PendingItemCard({
             </div>
           </div>
 
-          {/* Sentiment badge (if not frustrated - that's in header) */}
-          {sentimentStyle && item.sentiment !== 'frustrated' && (
-            <span className={cn(
-              'flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium border',
-              sentimentStyle.bg,
-              sentimentStyle.text,
-              sentimentStyle.border
-            )}>
-              <span className="text-lg">{sentimentStyle.icon}</span>
-              <span>{sentimentStyle.label}</span>
-            </span>
-          )}
+          {/* Right side badges */}
+          <div className="flex items-center gap-2">
+            {/* Agent Profile Badge - Prominent display */}
+            {item.handledByAgent && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700">
+                {/* Avatar or Initials */}
+                {item.handledByAgent.avatar ? (
+                  <img
+                    src={item.handledByAgent.avatar}
+                    alt={item.handledByAgent.name}
+                    className="w-8 h-8 rounded-full object-cover ring-2 ring-blue-400 dark:ring-blue-500"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold ring-2 ring-blue-400 dark:ring-blue-500">
+                    {item.handledByAgent.initials}
+                  </div>
+                )}
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold text-gray-800 dark:text-gray-100 leading-tight">
+                    {item.handledByAgent.name}
+                  </span>
+                  {item.handledByAgent.extension && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      Ext. {item.handledByAgent.extension}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Sentiment badge (if not frustrated - that's in header) */}
+            {sentimentStyle && item.sentiment !== 'frustrated' && (
+              <span className={cn(
+                'flex items-center gap-1 px-2 py-1 rounded-lg text-sm font-medium border',
+                sentimentStyle.bg,
+                sentimentStyle.text,
+                sentimentStyle.border
+              )}>
+                <span className="text-lg">{sentimentStyle.icon}</span>
+                <span>{sentimentStyle.label}</span>
+              </span>
+            )}
+          </div>
         </div>
 
         {/* ===== AI SUMMARY (Prominent) ===== */}
