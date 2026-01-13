@@ -17,6 +17,20 @@ interface CustomerOverviewRequest {
   }>;
 }
 
+interface LastInteraction {
+  type: "phone_call" | "email" | "sms" | "mailed_card" | "note" | "policy_change" | "claim" | "quote";
+  date: string;
+  summary: string;
+  agentName?: string;
+}
+
+interface LifeEvent {
+  event: string;
+  date?: string;
+  followUpQuestion: string;
+  icon: string;
+}
+
 interface CustomerOverviewResponse {
   success: boolean;
   overview?: {
@@ -27,6 +41,9 @@ interface CustomerOverviewResponse {
     crossSellOpportunities: CrossSellOpportunity[];
     agentTips: string[];
     riskFlags: RiskFlag[];
+    lastInteraction?: LastInteraction;
+    lifeEvents: LifeEvent[];
+    personalizationPrompts: string[];
   };
   error?: string;
 }
@@ -624,6 +641,226 @@ function generateAgentTips(profile: MergedProfile, gaps: CoverageGap[], opportun
 }
 
 // =============================================================================
+// EXTRACT LAST INTERACTION
+// =============================================================================
+
+function extractLastInteraction(
+  notes: Array<{ content: string; createdAt?: string; createdBy?: string }>
+): LastInteraction | undefined {
+  if (!notes || notes.length === 0) return undefined;
+
+  // Sort by date descending
+  const sortedNotes = [...notes].sort((a, b) => {
+    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return dateB - dateA;
+  });
+
+  const mostRecent = sortedNotes[0];
+  if (!mostRecent) return undefined;
+
+  const content = (mostRecent.content || "").toLowerCase();
+
+  // Detect interaction type from content
+  let type: LastInteraction["type"] = "note";
+  if (content.includes("phone") || content.includes("called") || content.includes("spoke with") || content.includes("discussed")) {
+    type = "phone_call";
+  } else if (content.includes("email") || content.includes("emailed") || content.includes("sent email")) {
+    type = "email";
+  } else if (content.includes("text") || content.includes("sms") || content.includes("texted")) {
+    type = "sms";
+  } else if (content.includes("mailed") || content.includes("birthday card") || content.includes("sent card") || content.includes("holiday card")) {
+    type = "mailed_card";
+  } else if (content.includes("policy change") || content.includes("endorsement") || content.includes("updated policy")) {
+    type = "policy_change";
+  } else if (content.includes("claim") || content.includes("loss")) {
+    type = "claim";
+  } else if (content.includes("quote") || content.includes("quoted")) {
+    type = "quote";
+  }
+
+  // Create a brief summary (first 100 chars)
+  const summary = (mostRecent.content || "").substring(0, 100).trim() +
+    ((mostRecent.content?.length || 0) > 100 ? "..." : "");
+
+  return {
+    type,
+    date: mostRecent.createdAt || new Date().toISOString(),
+    summary,
+    agentName: mostRecent.createdBy
+  };
+}
+
+// =============================================================================
+// EXTRACT LIFE EVENTS FROM NOTES (AI-powered)
+// =============================================================================
+
+async function extractLifeEvents(
+  notes: Array<{ content: string; createdAt?: string; createdBy?: string }>
+): Promise<LifeEvent[]> {
+  if (!notes || notes.length === 0) return [];
+
+  // Combine recent notes for analysis
+  const notesText = notes.slice(0, 10).map(n => n.content || "").join("\n---\n");
+
+  // If no meaningful content, return empty
+  if (notesText.trim().length < 20) return [];
+
+  // Use AI if available
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `You are an insurance agency assistant. Analyze customer notes to extract life events that could affect their insurance needs or provide personalization opportunities.
+
+Look for mentions of:
+- New baby, pregnancy, child leaving for college
+- Marriage, divorce, engagement
+- New car, sold car, teenager getting license
+- New home, moving, home renovation, new roof
+- Retirement, job change, starting business
+- Health changes, surgery
+- Birthday celebrations
+- Vacation, travel plans
+- Pet adoption
+- Boat, RV, motorcycle purchase
+
+Return a JSON array of life events found. For each event include:
+- "event": Brief description of the event
+- "date": When it happened or was mentioned (if known), otherwise null
+- "followUpQuestion": A warm, personalized question the agent can ask
+- "icon": An appropriate emoji
+
+Only include events mentioned in the notes. Return [] if no life events found.
+Example: [{"event": "Had a new baby girl named Emma", "date": "2024-01", "followUpQuestion": "How is baby Emma doing? Is she sleeping through the night yet?", "icon": "👶"}]`
+            },
+            {
+              role: "user",
+              content: `Analyze these customer notes for life events:\n\n${notesText}`
+            }
+          ],
+          max_tokens: 500,
+          temperature: 0.3
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices[0]?.message?.content || "[]";
+
+        // Parse JSON from response
+        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          const events = JSON.parse(jsonMatch[0]);
+          return Array.isArray(events) ? events.slice(0, 5) : [];
+        }
+      }
+    } catch (error) {
+      console.error("Life events extraction error:", error);
+    }
+  }
+
+  // Fallback: basic keyword detection
+  return extractLifeEventsFallback(notes);
+}
+
+function extractLifeEventsFallback(
+  notes: Array<{ content: string; createdAt?: string }>
+): LifeEvent[] {
+  const events: LifeEvent[] = [];
+  const combinedContent = notes.map(n => n.content || "").join(" ").toLowerCase();
+
+  const patterns: Array<{ pattern: RegExp; event: string; question: string; icon: string }> = [
+    { pattern: /new baby|pregnant|expecting|baby (boy|girl)|newborn/i, event: "New baby", question: "How is the new baby doing? Getting any sleep?", icon: "👶" },
+    { pattern: /got married|wedding|just married|engaged|engagement/i, event: "Marriage/Engagement", question: "Congratulations! How was the wedding?", icon: "💒" },
+    { pattern: /new car|bought a car|new vehicle|trading in|just got a/i, event: "New vehicle", question: "How are you liking the new car?", icon: "🚗" },
+    { pattern: /new home|bought a house|moving|just moved|new address/i, event: "New home", question: "How is the new place? All settled in?", icon: "🏠" },
+    { pattern: /retir(ed|ing|ement)/i, event: "Retirement", question: "How is retirement treating you? Any travel plans?", icon: "🎉" },
+    { pattern: /teenager|teen driver|learner.?s permit|16th birthday/i, event: "Teen driver", question: "How is the driving practice going?", icon: "🚙" },
+    { pattern: /birthday|happy birthday|bday/i, event: "Birthday celebrated", question: "Hope you had a wonderful birthday!", icon: "🎂" },
+    { pattern: /new boat|bought a boat/i, event: "New boat", question: "How's the new boat? Getting out on the water much?", icon: "⛵" },
+    { pattern: /new puppy|new dog|new pet|adopted a/i, event: "New pet", question: "How is the new furry family member adjusting?", icon: "🐕" },
+    { pattern: /vacation|trip to|traveling to|going to/i, event: "Travel/Vacation", question: "How was your trip? Any adventures?", icon: "✈️" },
+  ];
+
+  for (const { pattern, event, question, icon } of patterns) {
+    if (pattern.test(combinedContent)) {
+      events.push({
+        event,
+        followUpQuestion: question,
+        icon
+      });
+      if (events.length >= 3) break; // Limit to 3 fallback events
+    }
+  }
+
+  return events;
+}
+
+// =============================================================================
+// GENERATE PERSONALIZATION PROMPTS
+// =============================================================================
+
+function generatePersonalizationPrompts(
+  profile: MergedProfile,
+  lifeEvents: LifeEvent[],
+  lastInteraction?: LastInteraction
+): string[] {
+  const prompts: string[] = [];
+
+  // Add prompts based on life events
+  for (const event of lifeEvents.slice(0, 2)) {
+    prompts.push(event.followUpQuestion);
+  }
+
+  // Add prompts based on profile data
+  if (profile.preferredName) {
+    prompts.push(`Remember to call them "${profile.preferredName}"`);
+  }
+
+  // Long-term customer acknowledgment
+  if (profile.customerSince) {
+    const years = new Date().getFullYear() - new Date(profile.customerSince).getFullYear();
+    if (years >= 5) {
+      prompts.push(`Thank them for ${years} years of loyalty`);
+    }
+  }
+
+  // OG customer
+  if (profile.isOG) {
+    prompts.push("Acknowledge their OG status - they've been with us since the beginning!");
+  }
+
+  // Last interaction follow-up
+  if (lastInteraction) {
+    const daysSince = Math.floor(
+      (new Date().getTime() - new Date(lastInteraction.date).getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (lastInteraction.type === "mailed_card") {
+      prompts.push("We recently sent them a card - ask if they received it!");
+    } else if (lastInteraction.type === "claim" && daysSince < 60) {
+      prompts.push("They had a recent claim - ask how everything is going");
+    } else if (lastInteraction.type === "quote" && daysSince < 30) {
+      prompts.push("We recently quoted them - follow up on their decision");
+    }
+  }
+
+  // Birthday check (if we had DOB, we'd check if recent birthday)
+
+  return prompts.slice(0, 4); // Max 4 prompts
+}
+
+// =============================================================================
 // MAIN HANDLER
 // =============================================================================
 
@@ -639,15 +876,29 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Get notes for personalization analysis
+    const notesForAnalysis = recentNotes || (profile.notes || []).map(n => ({
+      content: n.content,
+      createdAt: n.createdAt,
+      createdBy: n.createdBy?.name
+    }));
+
     // Generate all components (pass notes to AI summary)
-    const [summary, coverageGaps, crossSellOpportunities, riskFlags, policySnapshots] = await Promise.all([
+    const [summary, coverageGaps, crossSellOpportunities, riskFlags, policySnapshots, lifeEvents] = await Promise.all([
       generateAISummary(profile, recentNotes),
       Promise.resolve(detectCoverageGaps(profile)),
       Promise.resolve(detectCrossSellOpportunities(profile)),
       Promise.resolve(detectRiskFlags(profile)),
-      Promise.resolve(generatePolicySnapshots(profile.policies))
+      Promise.resolve(generatePolicySnapshots(profile.policies)),
+      extractLifeEvents(notesForAnalysis)
     ]);
-    
+
+    // Extract last interaction from notes
+    const lastInteraction = extractLastInteraction(notesForAnalysis);
+
+    // Generate personalization prompts
+    const personalizationPrompts = generatePersonalizationPrompts(profile, lifeEvents, lastInteraction);
+
     // Generate agent tips based on analysis
     const agentTips = generateAgentTips(profile, coverageGaps, crossSellOpportunities);
     
@@ -682,7 +933,10 @@ export async function POST(request: NextRequest) {
         coverageGaps,
         crossSellOpportunities,
         agentTips,
-        riskFlags
+        riskFlags,
+        lastInteraction,
+        lifeEvents,
+        personalizationPrompts
       }
     };
     
