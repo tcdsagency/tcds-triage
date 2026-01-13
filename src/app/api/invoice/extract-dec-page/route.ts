@@ -2,10 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
 // Dynamic import for pdf-parse due to ESM compatibility
+// Note: pdf-parse uses canvas internally which requires DOMMatrix
+// We pass a custom pagerender function to avoid the canvas dependency
 async function parsePDF(buffer: Buffer): Promise<{ text: string }> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const pdfParse = require("pdf-parse");
-  return pdfParse(buffer);
+
+  // Custom page render function that extracts text without using canvas
+  // This avoids the DOMMatrix error in serverless environments
+  const options = {
+    // Return text content only, skip image rendering
+    pagerender: function(pageData: any) {
+      return pageData.getTextContent().then(function(textContent: any) {
+        let lastY: number | null = null;
+        let text = '';
+        for (const item of textContent.items) {
+          if (lastY !== null && lastY !== item.transform[5]) {
+            text += '\n';
+          }
+          text += item.str;
+          lastY = item.transform[5];
+        }
+        return text;
+      });
+    }
+  };
+
+  return pdfParse(buffer, options);
 }
 
 const openai = new OpenAI({
