@@ -398,8 +398,26 @@ export async function POST(
             agencyZoomEmail?: string;
           } | null;
 
-          // Get customer email from extraction or wrapup
-          const customerEmail = aiExtract?.agencyZoomEmail || wrapup.customerEmail || null;
+          // Get customer email - check extraction, wrapup, then lookup from database
+          let customerEmail = aiExtract?.agencyZoomEmail || wrapup.customerEmail || null;
+
+          // If no email found and we have a customer ID, look it up from the database
+          if (!customerEmail && contactId && !isLead) {
+            try {
+              const [matchedCustomer] = await db
+                .select({ email: customers.email })
+                .from(customers)
+                .where(eq(customers.agencyzoomId, contactId.toString()))
+                .limit(1);
+
+              if (matchedCustomer?.email) {
+                customerEmail = matchedCustomer.email;
+                console.log(`[Complete API] Looked up customer email: ${customerEmail} for AZ ID ${contactId}`);
+              }
+            } catch (lookupError) {
+              console.error('[Complete API] Error looking up customer email:', lookupError);
+            }
+          }
 
           const serviceRequestPayload = {
             customerId: contactId.toString(),
