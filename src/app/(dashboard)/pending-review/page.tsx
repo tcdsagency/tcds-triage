@@ -10,6 +10,7 @@ import ReviewModal from '@/components/features/ReviewModal';
 import CustomerSearchModal from '@/components/features/CustomerSearchModal';
 import ReportIssueModal from '@/components/features/ReportIssueModal';
 import ReviewedItemCard, { ReviewedItemCardSkeleton, type ReviewedItem } from '@/components/features/ReviewedItemCard';
+import AssigneeSelectModal from '@/components/features/AssigneeSelectModal';
 import { hasFeatureAccess } from '@/lib/feature-permissions';
 
 // =============================================================================
@@ -64,6 +65,7 @@ export default function PendingReviewPage() {
   const [reviewModalItem, setReviewModalItem] = useState<PendingItem | null>(null);
   const [findMatchItem, setFindMatchItem] = useState<PendingItem | null>(null);
   const [reportIssueItem, setReportIssueItem] = useState<PendingItem | null>(null);
+  const [assignSRItem, setAssignSRItem] = useState<PendingItem | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
 
   // Reviewed items state
@@ -318,6 +320,12 @@ export default function PendingReviewPage() {
     item: PendingItem,
     action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'void' | 'ncm'
   ) => {
+    // For ticket (Create SR), show assignee selection modal
+    if (action === 'ticket') {
+      setAssignSRItem(item);
+      return;
+    }
+
     // Confirm void action
     if (action === 'void') {
       if (!confirm('Are you sure you want to void this item? It will be removed from the queue without any action.')) {
@@ -495,6 +503,59 @@ export default function PendingReviewPage() {
     } catch (error) {
       console.error('Match error:', error);
       const errorMsg = error instanceof Error ? error.message : 'Failed to match customer';
+      toast.error(errorMsg);
+      setLastError(errorMsg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Handle creating SR with selected assignee
+  const handleAssignSR = async (assigneeId: number, assigneeName: string) => {
+    if (!assignSRItem) return;
+
+    const item = assignSRItem;
+    const isLead = !!item.agencyzoomLeadId && !item.agencyzoomCustomerId;
+
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/pending-review/${item.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: item.type,
+          action: 'ticket',
+          customerId: item.agencyzoomCustomerId || item.agencyzoomLeadId,
+          isLead,
+          ticketDetails: {
+            assigneeAgentId: assigneeId,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // Remove item from list
+        setItems((prev) => prev.filter((i) => i.id !== item.id));
+        setSelectedItems((prev) => prev.filter((i) => i.id !== item.id));
+        if (selectedItemForReview?.id === item.id) {
+          setSelectedItemForReview(null);
+        }
+        // Close modal
+        setAssignSRItem(null);
+        // Show success toast
+        toast.success(`Service request created and assigned to ${assigneeName}`);
+        setLastError(null);
+        // Update counts
+        fetchItems();
+      } else {
+        const errorMsg = data.error || 'Failed to create service request';
+        toast.error(errorMsg);
+        setLastError(errorMsg);
+      }
+    } catch (error) {
+      console.error('SR creation error:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to create service request';
       toast.error(errorMsg);
       setLastError(errorMsg);
     } finally {
@@ -802,6 +863,17 @@ export default function PendingReviewPage() {
           }}
           item={reportIssueItem}
           lastError={lastError || undefined}
+        />
+      )}
+
+      {/* Assignee Selection Modal for Service Requests */}
+      {assignSRItem && (
+        <AssigneeSelectModal
+          isOpen={!!assignSRItem}
+          onClose={() => setAssignSRItem(null)}
+          onSelect={handleAssignSR}
+          title={`Assign Service Request for ${assignSRItem.contactName || 'Unknown'}`}
+          isLoading={actionLoading}
         />
       )}
     </div>
