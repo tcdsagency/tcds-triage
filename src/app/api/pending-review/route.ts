@@ -24,6 +24,7 @@ interface PendingItem {
 
   // Status/matching
   matchStatus: 'matched' | 'needs_review' | 'unmatched' | 'after_hours';
+  matchReason: string | null;
   sentiment: 'positive' | 'neutral' | 'frustrated' | null;
   isAutoPosted: boolean;
 
@@ -146,11 +147,19 @@ export async function GET(request: NextRequest) {
         const extraction = w.aiExtraction as any || {};
         const trestle = w.trestleData as any || {};
 
-        // Determine match status
+        // Determine match status and reason
         let matchStatus: PendingItem['matchStatus'] = 'unmatched';
-        if (w.matchStatus === 'matched') matchStatus = 'matched';
-        else if (w.matchStatus === 'multiple_matches') matchStatus = 'needs_review';
-        else if (w.matchStatus === 'unmatched') matchStatus = 'unmatched';
+        let matchReason: string | null = null;
+        if (w.matchStatus === 'matched') {
+          matchStatus = 'matched';
+          matchReason = null;
+        } else if (w.matchStatus === 'multiple_matches') {
+          matchStatus = 'needs_review';
+          matchReason = 'Multiple matches found in AgencyZoom';
+        } else if (w.matchStatus === 'unmatched') {
+          matchStatus = 'unmatched';
+          matchReason = trestle.person ? 'No match in database - Trestle identified caller' : 'No match found in database';
+        }
 
         // Skip if filtering by status and doesn't match
         if (statusFilter && statusFilter !== matchStatus) continue;
@@ -172,6 +181,7 @@ export async function GET(request: NextRequest) {
           contactEmail: w.customerEmail,
           contactType: extraction.matchType === 'customer' ? 'customer' : extraction.matchType === 'lead' ? 'lead' : null,
           matchStatus,
+          matchReason,
           sentiment: extraction.sentiment || null,
           isAutoPosted: w.outcome === 'note_posted' || w.outcome === 'posted_to_agencyzoom',
           summary: w.aiCleanedSummary || w.summary || '',
@@ -230,6 +240,8 @@ export async function GET(request: NextRequest) {
           : m.contactName && !m.contactName.match(/^[\d\(\)\-\s\.]+$/)
             ? 'matched'
             : 'unmatched';
+        const msgMatchReason = matchStatus === 'unmatched' ? 'No match found in database' :
+                              matchStatus === 'after_hours' ? 'After hours message' : null;
 
         // Skip if filtering by status and doesn't match
         if (statusFilter && statusFilter !== matchStatus) continue;
@@ -245,6 +257,7 @@ export async function GET(request: NextRequest) {
           contactEmail: null,
           contactType: m.contactType as 'customer' | 'lead' | null,
           matchStatus,
+          matchReason: msgMatchReason,
           sentiment: null,
           isAutoPosted: false,
           summary: m.body || '',
