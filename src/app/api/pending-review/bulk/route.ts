@@ -3,9 +3,22 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { wrapupDrafts, messages, customers } from "@/db/schema";
+import { wrapupDrafts, messages, customers, users } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { createClient } from "@/lib/supabase/server";
+
+// Helper to get the current user's database ID from auth session
+async function getCurrentUserId(providedId?: string): Promise<string | null> {
+  if (providedId) return providedId;
+  try {
+    const supabase = await createClient();
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser?.email) return null;
+    const [dbUser] = await db.select({ id: users.id }).from(users).where(eq(users.email, authUser.email)).limit(1);
+    return dbUser?.id || null;
+  } catch { return null; }
+}
 
 // =============================================================================
 // TYPES
@@ -38,6 +51,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No items provided" }, { status: 400 });
     }
 
+    // Get the reviewer ID - either from body or from auth session
+    const reviewerId = await getCurrentUserId(body.reviewerId);
+
     const results = {
       success: true,
       processed: 0,
@@ -67,7 +83,7 @@ export async function POST(request: NextRequest) {
             reviewerDecision: "skipped",
             outcome: "skipped",
             completedAt: new Date(),
-            reviewerId: body.reviewerId || null,
+            reviewerId: reviewerId,
             reviewedAt: new Date(),
           })
           .where(inArray(wrapupDrafts.id, wrapupIds));
@@ -185,7 +201,7 @@ export async function POST(request: NextRequest) {
                     outcome: "note_posted",
                     agencyzoomNoteId: noteResult.id?.toString(),
                     completedAt: new Date(),
-                    reviewerId: body.reviewerId || null,
+                    reviewerId: reviewerId,
                     reviewedAt: new Date(),
                   })
                   .where(eq(wrapupDrafts.id, item.id));
@@ -222,7 +238,7 @@ export async function POST(request: NextRequest) {
                     agencyzoomNoteId: noteId?.toString(),
                     agencyzoomTicketId: ticketResult.serviceTicketId?.toString(),
                     completedAt: new Date(),
-                    reviewerId: body.reviewerId || null,
+                    reviewerId: reviewerId,
                     reviewedAt: new Date(),
                   })
                   .where(eq(wrapupDrafts.id, item.id));
