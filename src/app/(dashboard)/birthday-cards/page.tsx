@@ -257,6 +257,23 @@ export default function BirthdayCardsPage() {
   };
 
   // ==========================================================================
+  // KEYBOARD NAVIGATION (Enter key to advance)
+  // ==========================================================================
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle Enter key in card mode when not loading
+      if (isCardMode && e.key === "Enter" && !actionLoading) {
+        e.preventDefault();
+        handleNext();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isCardMode, actionLoading, currentIndex, customers, preparedIds]);
+
+  // ==========================================================================
   // RENDER - CARD WRITING MODE
   // ==========================================================================
 
@@ -386,14 +403,14 @@ export default function BirthdayCardsPage() {
               Back
             </Button>
 
-            <div className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
               {isPrepared ? (
                 <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
                   <Check className="w-4 h-4" />
                   Card prepared
                 </span>
               ) : (
-                "Click Next to mark as prepared"
+                <span>Press <kbd className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono">Enter</kbd> or click Next</span>
               )}
             </div>
 
