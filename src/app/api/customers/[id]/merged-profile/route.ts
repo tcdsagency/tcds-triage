@@ -569,7 +569,13 @@ function transformHawkSoftClaims(hsClaims: any[], policies: Policy[]): Claim[] {
       reportedDate: claim.reportedDate || claim.createdDate,
       closedDate: claim.closedDate || claim.resolvedDate,
       status: mapHawkSoftClaimStatus(claim.status),
-      description: claim.description || claim.notes || claim.lossDescription,
+      description: claim.description || claim.lossDescription || (
+        // Handle notes - might be a string or array of note objects
+        typeof claim.notes === 'string' ? claim.notes :
+        Array.isArray(claim.notes) && claim.notes.length > 0 ?
+          claim.notes.map((n: any) => typeof n === 'string' ? n : n.notes || n.note || n.description || '').filter(Boolean).join(' | ') :
+          undefined
+      ),
       lossType: claim.lossType || claim.causeOfLoss,
       amountPaid: claim.amountPaid !== undefined ? parseFloat(claim.amountPaid) : undefined,
       amountReserved: claim.reserve !== undefined ? parseFloat(claim.reserve) : undefined,
