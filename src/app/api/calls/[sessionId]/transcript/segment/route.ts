@@ -147,6 +147,31 @@ export async function POST(
       }
     }
 
+    // If sessionId is a VM Bridge session (sess_UUID), find most recent active call
+    if (!call && sessionId.startsWith("sess_")) {
+      console.log(`[Transcript] VM Bridge session ID detected: ${sessionId}, finding active call...`);
+      // Find the most recent in_progress or ringing call
+      call = await db
+        .select()
+        .from(calls)
+        .where(sql`${calls.status} IN ('in_progress', 'ringing')`)
+        .orderBy(sql`${calls.startedAt} DESC`)
+        .limit(1)
+        .then(r => r[0]);
+
+      if (call) {
+        console.log(`[Transcript] Mapped VM Bridge session to active call: ${call.id} (status: ${call.status})`);
+        // Update status to in_progress if it was ringing
+        if (call.status === "ringing") {
+          await db
+            .update(calls)
+            .set({ status: "in_progress", answeredAt: new Date() })
+            .where(eq(calls.id, call.id));
+          console.log(`[Transcript] Updated call ${call.id} status to in_progress`);
+        }
+      }
+    }
+
     if (!call) {
       console.warn(`[Transcript] Call not found for sessionId: ${sessionId}`);
       return NextResponse.json(
