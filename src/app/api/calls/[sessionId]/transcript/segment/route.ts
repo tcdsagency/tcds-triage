@@ -41,18 +41,24 @@ async function pushToRealtimeServer(event: {
 
 // Verify webhook API key (supports both X-Api-Key and Authorization headers)
 function verifyWebhookKey(request: NextRequest): boolean {
-  const webhookKey = process.env.WEBHOOK_API_KEY;
+  const webhookKey = process.env.WEBHOOK_API_KEY?.trim();
 
+  // Check X-Api-Key header (VM Bridge format) - try both cases
+  const xApiKey = (request.headers.get("x-api-key") || request.headers.get("X-Api-Key"))?.trim();
+
+  // If no webhook key configured, allow (dev mode)
   if (!webhookKey) {
-    console.warn("[Transcript] WEBHOOK_API_KEY not configured");
-    return true; // Allow if not configured (dev mode)
+    console.warn("[Transcript] WEBHOOK_API_KEY not configured, allowing request");
+    return true;
   }
 
-  // Check X-Api-Key header (VM Bridge format)
-  const xApiKey = request.headers.get("X-Api-Key");
+  // Allow if key matches
   if (xApiKey === webhookKey) {
     return true;
   }
+
+  // Log mismatch for debugging (show full length to detect whitespace issues)
+  console.log("[Transcript] Auth mismatch - received len:", xApiKey?.length, "expected len:", webhookKey?.length);
 
   // Check Authorization: Bearer header
   const authHeader = request.headers.get("Authorization");
