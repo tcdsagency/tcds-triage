@@ -1,14 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
-
   useEffect(() => {
-    setMounted(true);
-
-    // Fetch user's theme preference
+    // Fetch user's theme preference and apply immediately
     async function applyTheme() {
       try {
         const res = await fetch('/api/auth/me');
@@ -43,11 +39,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     applyTheme();
   }, []);
-
-  // Prevent flash of incorrect theme
-  if (!mounted) {
-    return null;
-  }
 
   return <>{children}</>;
 }
