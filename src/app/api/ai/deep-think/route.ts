@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, liveTranscriptSegments, historicalTranscripts, customers } from "@/db/schema";
 import { eq, or, ilike, desc, and, sql } from "drizzle-orm";
+import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 
 // =============================================================================
 // TYPES
@@ -300,6 +301,37 @@ export async function POST(request: NextRequest) {
           content: hist.aiSummary || hist.transcript,
           agentName: hist.agentName || undefined
         });
+      }
+    }
+
+    // 4. Query MSSQL Transcript Server (3CX Recording Manager)
+    if (matchPhone) {
+      try {
+        const mssqlClient = await getMSSQLTranscriptsClient();
+        if (mssqlClient) {
+          console.log(`[Deep Think] Searching MSSQL transcript server for ${matchPhone}`);
+
+          const { records } = await mssqlClient.searchTranscripts({
+            callerNumber: matchPhone,
+            limit: 20
+          });
+
+          for (const record of records) {
+            if (record.transcript && record.transcript.length > 50) {
+              allTranscripts.push({
+                date: record.recordingDate.toISOString().split('T')[0],
+                content: record.transcript,
+                agentName: record.extension ? `Ext ${record.extension}` : undefined
+              });
+            }
+          }
+
+          console.log(`[Deep Think] Found ${records.length} transcripts from MSSQL`);
+          await mssqlClient.close();
+        }
+      } catch (mssqlError) {
+        console.error("[Deep Think] MSSQL search error:", mssqlError);
+        // Continue without MSSQL data - don't fail the whole request
       }
     }
 
