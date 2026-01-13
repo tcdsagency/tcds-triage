@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { messages, tenants, customers, triageItems } from "@/db/schema";
 import { eq, and, gte, desc, or, ilike } from "drizzle-orm";
-import { twilioClient, sendAfterHoursReply } from "@/lib/twilio";
+import { twilioClient } from "@/lib/twilio";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 
 // =============================================================================
@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
 
     console.log("[Webhook] Triage item created:", triageItem.id);
 
-    // 6. Handle after-hours auto-reply
+    // 6. Handle after-hours auto-reply - Send via AgencyZoom so it shows in their logs
     if (isAfterHours && afterHoursInfo.enabled && afterHoursInfo.autoReplyMessage) {
       // Check cooldown - don't spam the same number
       const cooldownPassed = await checkAutoReplyCooldown(
@@ -234,12 +234,30 @@ export async function POST(request: NextRequest) {
       );
 
       if (cooldownPassed) {
-        console.log("[Webhook] Sending after-hours auto-reply to:", payload.From);
+        console.log("[Webhook] Sending after-hours auto-reply via AgencyZoom to:", payload.From);
 
-        const result = await sendAfterHoursReply(
-          payload.From,
-          afterHoursInfo.autoReplyMessage
-        );
+        let result: { success: boolean; messageId?: string; error?: string } = { success: false };
+        let sentVia = "unknown";
+
+        // Try AgencyZoom first (so it shows in their SMS logs)
+        try {
+          const azClient = getAgencyZoomClient();
+          result = await azClient.sendSMS({
+            phoneNumber: payload.From,
+            message: afterHoursInfo.autoReplyMessage,
+            contactId: contactId ? parseInt(contactId) : undefined,
+          });
+          sentVia = "agencyzoom";
+          console.log("[Webhook] AgencyZoom SMS result:", result);
+        } catch (azError) {
+          console.warn("[Webhook] AgencyZoom SMS failed, falling back to Twilio:", azError);
+          // Fallback to Twilio if AgencyZoom fails
+          result = await twilioClient.sendSMS({
+            to: payload.From,
+            message: afterHoursInfo.autoReplyMessage,
+          });
+          sentVia = "twilio";
+        }
 
         if (result.success) {
           // Mark that we sent an auto-reply
@@ -267,7 +285,7 @@ export async function POST(request: NextRequest) {
             sentAt: new Date(),
           });
 
-          console.log("[Webhook] Auto-reply sent:", result.messageId);
+          console.log(`[Webhook] Auto-reply sent via ${sentVia}:`, result.messageId);
         } else {
           console.error("[Webhook] Auto-reply failed:", result.error);
         }

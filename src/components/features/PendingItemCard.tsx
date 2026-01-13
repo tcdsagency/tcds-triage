@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { cn, formatPhoneNumber } from '@/lib/utils';
-import { AgencyZoomLink, getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
+import { getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
 
 // =============================================================================
 // TYPES
@@ -191,23 +191,10 @@ export default function PendingItemCard({
 }: PendingItemCardProps) {
   const [showTranscript, setShowTranscript] = useState(false);
   const [showConversation, setShowConversation] = useState(false);
-  const [showMoreActions, setShowMoreActions] = useState(false);
-  const moreActionsRef = useRef<HTMLDivElement>(null);
 
   const statusStyle = STATUS_STYLES[item.matchStatus] || STATUS_STYLES.unmatched;
   const sentimentStyle = item.sentiment ? SENTIMENT_STYLES[item.sentiment] : null;
   const typeConfig = TYPE_CONFIG[item.type] || TYPE_CONFIG.wrapup;
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (moreActionsRef.current && !moreActionsRef.current.contains(e.target as Node)) {
-        setShowMoreActions(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // For after-hours messages, prefer phone number over email-like contact names
   const isEmailLikeName = item.contactName && item.contactName.includes('@');
@@ -583,98 +570,116 @@ export default function PendingItemCard({
         {/* ===== ACTION BUTTONS ===== */}
         {onQuickAction && (
           <div
-            className="flex flex-wrap items-center gap-2 pt-3 border-t border-gray-200 dark:border-gray-700"
+            className="pt-3 border-t border-gray-200 dark:border-gray-700 space-y-2"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* PRIMARY ACTION - Large and prominent */}
-            {primaryAction && primaryAction.onClick && (
+            {/* Primary Actions Row - Uniform buttons */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {/* Review & Post - Only when matched */}
+              {(item.matchStatus === 'matched' || item.agencyzoomCustomerId || item.agencyzoomLeadId) && onReviewClick && (
+                <button
+                  onClick={() => onReviewClick()}
+                  className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+                >
+                  Review & Post
+                </button>
+              )}
+
+              {/* Find Match - For unmatched/needs_review */}
+              {(item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review' || item.matchStatus === 'after_hours') && onFindMatch && (
+                <button
+                  onClick={() => onFindMatch()}
+                  className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  Find Match
+                </button>
+              )}
+
+              {/* Post Note - Quick action when matched */}
+              {(item.matchStatus === 'matched' || item.agencyzoomCustomerId || item.agencyzoomLeadId) && (
+                <button
+                  onClick={() => onQuickAction('note')}
+                  className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 border border-emerald-300 dark:border-emerald-700"
+                >
+                  Post Note
+                </button>
+              )}
+
+              {/* Create SR - Quick action when matched */}
+              {(item.matchStatus === 'matched' || item.agencyzoomCustomerId || item.agencyzoomLeadId) && (
+                <button
+                  onClick={() => onQuickAction('ticket')}
+                  className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 border border-blue-300 dark:border-blue-700"
+                >
+                  Create SR
+                </button>
+              )}
+
+              {/* NCM Queue - For unmatched without AZ link */}
+              {(item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review' || item.matchStatus === 'after_hours') &&
+                !item.agencyzoomCustomerId &&
+                !item.agencyzoomLeadId && (
+                <button
+                  onClick={() => onQuickAction('ncm')}
+                  className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/50 border border-orange-300 dark:border-orange-700"
+                  title="Post to No Customer Match queue"
+                >
+                  NCM Queue
+                </button>
+              )}
+
+              {/* Void - Always available */}
               <button
-                onClick={() => primaryAction.onClick?.()}
-                className={cn(
-                  'flex-1 sm:flex-none px-4 py-2 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2',
-                  primaryAction.className
-                )}
+                onClick={() => onQuickAction('void')}
+                className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 border border-red-300 dark:border-red-700"
               >
-                {primaryAction.icon} {primaryAction.label}
+                Void
               </button>
-            )}
+            </div>
 
-            {/* Post to NCM - For unmatched without AZ link */}
-            {(item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review' || item.matchStatus === 'after_hours') &&
-              !item.agencyzoomCustomerId &&
-              !item.agencyzoomLeadId && (
-              <button
-                onClick={() => onQuickAction('ncm')}
-                className="px-3 py-2 text-sm rounded-lg font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
-                title="Post to No Customer Match queue in AgencyZoom"
-              >
-                📋 NCM Queue
-              </button>
-            )}
-
-            {/* Skip - Secondary action */}
-            <button
-              onClick={() => onQuickAction('skip')}
-              className="px-3 py-2 text-sm rounded-lg font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-            >
-              Skip
-            </button>
-
-            {/* AgencyZoom Link */}
-            {(item.agencyzoomCustomerId || item.agencyzoomLeadId) && (
-              <AgencyZoomLink
-                href={getAgencyZoomUrl(
-                  item.agencyzoomCustomerId || item.agencyzoomLeadId || '',
-                  item.agencyzoomCustomerId ? 'customer' : 'lead'
-                )}
-                size="sm"
-                showText={false}
-              />
-            )}
-
-            {/* More Actions Dropdown */}
-            <div className="relative" ref={moreActionsRef}>
-              <button
-                onClick={() => setShowMoreActions(!showMoreActions)}
-                className="px-2 py-2 text-sm rounded-lg font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              >
-                •••
-              </button>
-
-              {showMoreActions && (
-                <div className="absolute right-0 bottom-full mb-1 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50">
-                  {item.type === 'message' && (
-                    <button
-                      onClick={() => {
-                        onQuickAction('acknowledge');
-                        setShowMoreActions(false);
-                      }}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-                    >
-                      ✓ Acknowledge
-                    </button>
+            {/* Secondary Actions Row */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* AgencyZoom Link - Larger button style */}
+              {(item.agencyzoomCustomerId || item.agencyzoomLeadId) && (
+                <a
+                  href={getAgencyZoomUrl(
+                    item.agencyzoomCustomerId || item.agencyzoomLeadId || '',
+                    item.agencyzoomCustomerId ? 'customer' : 'lead'
                   )}
-                  <button
-                    onClick={() => {
-                      onQuickAction('void');
-                      setShowMoreActions(false);
-                    }}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400"
-                  >
-                    🗑️ Void Item
-                  </button>
-                  {onReportIssue && (
-                    <button
-                      onClick={() => {
-                        onReportIssue();
-                        setShowMoreActions(false);
-                      }}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 dark:hover:bg-amber-900/20 text-amber-600 dark:text-amber-400"
-                    >
-                      ⚠️ Report Issue
-                    </button>
-                  )}
-                </div>
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
+                >
+                  Open in AgencyZoom
+                </a>
+              )}
+
+              {/* Skip */}
+              <button
+                onClick={() => onQuickAction('skip')}
+                className="px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Skip
+              </button>
+
+              {/* Acknowledge - For messages */}
+              {item.type === 'message' && (
+                <button
+                  onClick={() => onQuickAction('acknowledge')}
+                  className="px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                >
+                  Acknowledge
+                </button>
+              )}
+
+              {/* Report Issue */}
+              {onReportIssue && (
+                <button
+                  onClick={() => onReportIssue()}
+                  className="px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50"
+                >
+                  Report Issue
+                </button>
               )}
             </div>
           </div>

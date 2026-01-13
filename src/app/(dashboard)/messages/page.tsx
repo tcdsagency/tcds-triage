@@ -560,7 +560,34 @@ export default function MessagesPage() {
                       <Check className="w-3 h-3" />
                     </button>
                   )}
-                  <p>{msg.body}</p>
+                  {/* Media attachments */}
+                  {msg.mediaUrls && msg.mediaUrls.length > 0 && (
+                    <div className="mb-2 space-y-2">
+                      {msg.mediaUrls.map((url, idx) => (
+                        <a
+                          key={idx}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block"
+                        >
+                          <img
+                            src={url}
+                            alt={`Attachment ${idx + 1}`}
+                            className="max-w-full rounded-lg max-h-64 object-cover hover:opacity-90 transition-opacity"
+                            onError={(e) => {
+                              // If image fails to load, show a link instead
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              target.nextElementSibling?.classList.remove('hidden');
+                            }}
+                          />
+                          <span className="hidden text-sm underline">📎 View attachment</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {msg.body && <p>{msg.body}</p>}
                   <div className={cn(
                     "flex items-center justify-end gap-1 mt-1",
                     msg.direction === "outbound" ? "text-emerald-200" : "text-gray-400"
