@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, customers, wrapupDrafts, activities, users, matchSuggestions } from "@/db/schema";
-import { eq, or, ilike, and, gte, lte, desc } from "drizzle-orm";
+import { eq, or, ilike, and, gte, lte, desc, isNotNull } from "drizzle-orm";
 import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
 import { trestleIQClient } from "@/lib/api/trestleiq";
@@ -61,6 +61,57 @@ function normalizePhone(phone: string): string {
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   return phone;
+}
+
+/**
+ * Find agent by extension using multiple matching strategies
+ * 1. Exact match on extension digits
+ * 2. Match by last 3 digits (common extension format)
+ * 3. Match if extension field contains a known user extension
+ */
+async function findAgentByExtension(
+  tenantId: string,
+  extensionRaw: string
+): Promise<{ id: string } | undefined> {
+  if (!extensionRaw) return undefined;
+
+  const extDigits = extensionRaw.replace(/\D/g, "");
+  if (!extDigits) return undefined;
+
+  // Strategy 1: Exact match
+  const [exactMatch] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.tenantId, tenantId), eq(users.extension, extDigits)))
+    .limit(1);
+
+  if (exactMatch) return exactMatch;
+
+  // Strategy 2: Match by last 3 digits (typical extension length)
+  if (extDigits.length > 3) {
+    const last3 = extDigits.slice(-3);
+    const [last3Match] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.tenantId, tenantId), eq(users.extension, last3)))
+      .limit(1);
+
+    if (last3Match) return last3Match;
+  }
+
+  // Strategy 3: Check if any known extension is at the end of the digits
+  const allUsers = await db
+    .select({ id: users.id, extension: users.extension })
+    .from(users)
+    .where(and(eq(users.tenantId, tenantId), isNotNull(users.extension)));
+
+  for (const user of allUsers) {
+    if (user.extension && extDigits.endsWith(user.extension)) {
+      return { id: user.id };
+    }
+  }
+
+  return undefined;
 }
 
 // =============================================================================
@@ -581,16 +632,14 @@ export async function POST(request: NextRequest) {
         customer = found;
       }
 
-      // Find agent by extension
+      // Find agent by extension (uses multiple matching strategies)
       let agentId: string | undefined;
       if (extension) {
-        const extDigits = extension.replace(/\D/g, "");
-        const [agent] = await db
-          .select({ id: users.id })
-          .from(users)
-          .where(and(eq(users.tenantId, tenantId), eq(users.extension, extDigits)))
-          .limit(1);
+        const agent = await findAgentByExtension(tenantId, extension);
         agentId = agent?.id;
+        if (agentId) {
+          console.log(`[Call-Completed] Found agent ${agentId} via extension match for: ${extension}`);
+        }
       }
 
       const [created] = await db

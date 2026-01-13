@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, customers, users } from "@/db/schema";
-import { eq, or, ilike, and } from "drizzle-orm";
+import { eq, or, ilike, and, isNotNull } from "drizzle-orm";
 
 // =============================================================================
 // REALTIME SERVER PUSH
@@ -131,7 +131,7 @@ async function findAgentByExtension(
       extension: users.extension,
     })
     .from(users)
-    .where(and(eq(users.tenantId, tenantId), ilike(users.extension, "%")));
+    .where(and(eq(users.tenantId, tenantId), isNotNull(users.extension)));
 
   for (const user of allUsers) {
     if (user.extension && extDigits.endsWith(user.extension)) {
@@ -274,18 +274,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. Find agent by extension
-    let agent: { id: string; firstName: string; lastName: string } | undefined;
+    // 2. Find agent by extension (uses multiple matching strategies)
+    let agent: { id: string; firstName: string; lastName: string; avatarUrl: string | null; extension: string | null } | undefined;
     if (extension) {
-      const [found] = await db
-        .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
-        .from(users)
-        .where(and(eq(users.tenantId, tenantId), eq(users.extension, extension)))
-        .limit(1);
-      agent = found;
-
+      agent = await findAgentByExtension(tenantId, extension);
       if (agent) {
-        console.log(`[Call-Started] Found agent: ${agent.firstName} ${agent.lastName} (${agent.id})`);
+        console.log(`[Call-Started] Found agent: ${agent.firstName} ${agent.lastName} (${agent.id}) via extension match`);
+      } else {
+        console.log(`[Call-Started] No agent found for extension: ${extension}`);
       }
     }
 
