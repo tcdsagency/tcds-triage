@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { customers, users } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
+
+// Helper to check if string is a valid UUID
+function isUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
 
 // GET /api/customers/[id]
 export async function GET(
@@ -16,12 +22,24 @@ export async function GET(
       return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });
     }
 
-    // Get customer
-    const [customer] = await db
-      .select()
-      .from(customers)
-      .where(and(eq(customers.tenantId, tenantId), eq(customers.id, id)))
-      .limit(1);
+    // Get customer - support both internal UUID and AgencyZoom ID
+    let customer;
+
+    if (isUUID(id)) {
+      // Look up by internal UUID
+      [customer] = await db
+        .select()
+        .from(customers)
+        .where(and(eq(customers.tenantId, tenantId), eq(customers.id, id)))
+        .limit(1);
+    } else {
+      // Look up by AgencyZoom ID (numeric string)
+      [customer] = await db
+        .select()
+        .from(customers)
+        .where(and(eq(customers.tenantId, tenantId), eq(customers.agencyzoomId, id)))
+        .limit(1);
+    }
 
     if (!customer) {
       return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
