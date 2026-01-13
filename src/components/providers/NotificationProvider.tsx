@@ -113,8 +113,6 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
       if (isSupported && permission === "granted") {
         try {
           const notification = new Notification(title, {
-            icon: "/icon-192.png",
-            badge: "/icon-192.png",
             tag: options?.tag || "tcds-notification",
             ...notificationOptions,
           } as NotificationOptions);
