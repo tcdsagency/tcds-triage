@@ -32,3 +32,4 @@ yarn-error.log*
 .env.vercel
 .env.vercel-check
 .env.vercel.production
+.env.prod
