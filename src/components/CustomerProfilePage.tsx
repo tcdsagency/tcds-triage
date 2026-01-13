@@ -435,7 +435,7 @@ export default function CustomerProfilePage() {
                   )}
                 </div>
 
-                {/* Spouse / Co-Insured / 2nd Named Insured */}
+                {/* Spouse / Co-Insured / 2nd Named Insured + Other Household Members */}
                 {(() => {
                   const spouseRelationships = ['spouse', 'co-insured', 'coinsured', '2nd named insured', 'second named insured', 'co-applicant', 'partner'];
                   const spouse = profile.household?.find(member =>
@@ -443,16 +443,37 @@ export default function CustomerProfilePage() {
                       member.relationship?.toLowerCase().includes(rel)
                     )
                   );
-                  if (spouse) {
-                    return (
-                      <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
-                        <User className="w-3.5 h-3.5" />
-                        <span>{spouse.name}</span>
-                        <span className="text-gray-400 dark:text-gray-500">({spouse.relationship})</span>
-                      </div>
-                    );
-                  }
-                  return null;
+                  const otherMembers = profile.household?.filter(member =>
+                    member.id !== spouse?.id &&
+                    !spouseRelationships.some(rel =>
+                      member.relationship?.toLowerCase().includes(rel)
+                    )
+                  ) || [];
+
+                  return (
+                    <>
+                      {spouse && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
+                          <User className="w-3.5 h-3.5" />
+                          <span>{spouse.name}</span>
+                          <span className="text-gray-400 dark:text-gray-500">({spouse.relationship})</span>
+                        </div>
+                      )}
+                      {otherMembers.length > 0 && (
+                        <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                          <span className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wide">Other Household Members:</span>
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                            {otherMembers.map(member => (
+                              <span key={member.id} className="flex items-center gap-1">
+                                <span>{member.name}</span>
+                                <span className="text-gray-400 dark:text-gray-500">({member.relationship}{member.isDriver ? ', Driver' : ''})</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
                 })()}
 
                 <div className="flex items-center gap-2 flex-wrap">
