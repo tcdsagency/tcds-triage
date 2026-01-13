@@ -147,6 +147,22 @@ export default function CallPopup({
   const [postingNotes, setPostingNotes] = useState(false);
   const [notePosted, setNotePosted] = useState(false);
 
+  // Deep Think State (triggers after 2+ minutes)
+  const [deepThinkData, setDeepThinkData] = useState<{
+    foundData: boolean;
+    message?: string;
+    insights?: {
+      transcriptsAnalyzed: number;
+      dateRange: { oldest: string; newest: string };
+      keyTopics: string[];
+      lifeEvents: Array<{ event: string; date?: string; source: string }>;
+      conversationHistory: Array<{ date: string; summary: string; agentName?: string }>;
+      suggestedTalkingPoints: string[];
+    };
+  } | null>(null);
+  const [deepThinkLoading, setDeepThinkLoading] = useState(false);
+  const deepThinkTriggered = useRef(false);
+
   // Wrap-Up State
   const [showWrapUp, setShowWrapUp] = useState(false);
   const [wrapupLoading, setWrapupLoading] = useState(false);
@@ -317,6 +333,58 @@ export default function CallPopup({
 
     return () => clearInterval(interval);
   }, [isVisible, effectiveCallStatus, startTime]);
+
+  // =========================================================================
+  // DEEP THINK: Trigger after 2+ minutes to analyze past transcripts
+  // =========================================================================
+  useEffect(() => {
+    // Only trigger once per call, after 2 minutes (120 seconds)
+    if (
+      !isVisible ||
+      effectiveCallStatus === "ended" ||
+      !customerLookup?.id ||
+      deepThinkTriggered.current ||
+      callDuration < 120
+    ) {
+      return;
+    }
+
+    deepThinkTriggered.current = true;
+    setDeepThinkLoading(true);
+
+    console.log("[CallPopup] Deep Think triggered at 2+ minutes");
+
+    const runDeepThink = async () => {
+      try {
+        const res = await fetch("/api/ai/deep-think", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerId: customerLookup.id,
+            customerPhone: phoneNumber,
+            currentCallId: sessionId
+          })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          setDeepThinkData({
+            foundData: data.foundData,
+            message: data.message,
+            insights: data.insights
+          });
+          console.log(`[CallPopup] Deep Think complete: ${data.message}`);
+        }
+      } catch (err) {
+        console.error("[CallPopup] Deep Think error:", err);
+      } finally {
+        setDeepThinkLoading(false);
+      }
+    };
+
+    runDeepThink();
+  }, [isVisible, effectiveCallStatus, customerLookup, callDuration, phoneNumber, sessionId]);
 
   // =========================================================================
   // LIVE ASSIST: Fetch playbook and suggestions based on transcript
@@ -1089,6 +1157,97 @@ export default function CallPopup({
                         ))}
                       </ul>
                     </div>
+                  )}
+                </div>
+              )}
+
+              {/* ===== DEEP THINK SECTION - Past Transcript Insights ===== */}
+              {deepThinkLoading && (
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-3 mb-4 border border-purple-200">
+                  <div className="flex items-center gap-2">
+                    <span className="animate-pulse">🧠</span>
+                    <span className="text-xs font-semibold text-purple-800">AI Deep Think analyzing past calls...</span>
+                  </div>
+                </div>
+              )}
+
+              {deepThinkData?.foundData && deepThinkData.insights && (
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-3 mb-4 border border-purple-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span>🧠</span>
+                    <span className="text-xs font-semibold text-purple-800 uppercase">AI Deep Think</span>
+                    <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
+                      {deepThinkData.insights.transcriptsAnalyzed} calls
+                    </span>
+                  </div>
+
+                  {/* Success message */}
+                  <div className="text-sm text-purple-700 font-medium mb-2">
+                    ✨ Found data from {deepThinkData.insights.dateRange.oldest} - {deepThinkData.insights.dateRange.newest}
+                  </div>
+
+                  {/* Key Topics */}
+                  {deepThinkData.insights.keyTopics.length > 0 && (
+                    <div className="mb-2">
+                      <div className="text-xs text-purple-700 font-medium mb-1">Topics discussed:</div>
+                      <div className="flex flex-wrap gap-1">
+                        {deepThinkData.insights.keyTopics.slice(0, 5).map((topic, i) => (
+                          <span key={i} className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
+                            {topic}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Life Events from transcripts */}
+                  {deepThinkData.insights.lifeEvents.length > 0 && (
+                    <div className="mb-2">
+                      <div className="text-xs text-purple-700 font-medium mb-1">Life events mentioned:</div>
+                      <div className="space-y-1">
+                        {deepThinkData.insights.lifeEvents.slice(0, 3).map((event, i) => (
+                          <div key={i} className="text-xs text-gray-700 flex items-start gap-1">
+                            <span className="text-purple-500">•</span>
+                            {event.event}
+                            {event.date && <span className="text-gray-400">({event.date})</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Suggested Talking Points */}
+                  {deepThinkData.insights.suggestedTalkingPoints.length > 0 && (
+                    <div className="border-t border-purple-200 pt-2 mt-2">
+                      <div className="text-xs text-purple-700 font-medium mb-1">💬 Suggested talking points:</div>
+                      <ul className="space-y-1">
+                        {deepThinkData.insights.suggestedTalkingPoints.slice(0, 3).map((point, i) => (
+                          <li key={i} className="text-xs text-gray-700 italic">
+                            "{point}"
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Conversation History */}
+                  {deepThinkData.insights.conversationHistory.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="text-xs text-purple-600 cursor-pointer hover:text-purple-700">
+                        View past call summaries ({deepThinkData.insights.conversationHistory.length})
+                      </summary>
+                      <div className="mt-2 space-y-2 max-h-32 overflow-y-auto">
+                        {deepThinkData.insights.conversationHistory.map((conv, i) => (
+                          <div key={i} className="text-xs bg-white/60 rounded p-2 border border-purple-100">
+                            <div className="text-gray-500 mb-0.5">
+                              {conv.date}
+                              {conv.agentName && <span> • {conv.agentName}</span>}
+                            </div>
+                            <div className="text-gray-700">{conv.summary}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
                   )}
                 </div>
               )}
