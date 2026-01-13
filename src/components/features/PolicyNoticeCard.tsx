@@ -38,6 +38,7 @@ export interface PolicyNotice {
   actionTaken?: string | null;
   zapierWebhookSent?: boolean | null;
   noticeDate?: string | null;
+  fetchedAt?: string | null;
   createdAt: string;
   assignedTo?: { id: string; name: string } | null;
   customer?: { id: string; name: string; agencyZoomId?: number | null } | null;
@@ -101,7 +102,16 @@ function formatCurrency(amount: string | null | undefined): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
 }
 
+function isNewToday(fetchedAt: string | null | undefined): boolean {
+  if (!fetchedAt) return false;
+  const date = new Date(fetchedAt);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date >= today;
+}
+
 export default function PolicyNoticeCard({ notice, isSelected, onSelect, onAction }: PolicyNoticeCardProps) {
+  const isNew = isNewToday(notice.fetchedAt);
   const typeConfig = NOTICE_TYPE_CONFIG[notice.noticeType || 'billing'] || NOTICE_TYPE_CONFIG.billing;
   const urgencyConfig = URGENCY_CONFIG[notice.urgency || 'medium'] || URGENCY_CONFIG.medium;
   const statusConfig = STATUS_CONFIG[notice.reviewStatus || 'pending'] || STATUS_CONFIG.pending;
@@ -133,6 +143,15 @@ export default function PolicyNoticeCard({ notice, isSelected, onSelect, onActio
           <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full', statusConfig.bg, statusConfig.text)}>
             {statusConfig.icon} {statusConfig.label}
           </span>
+          {isNew && (
+            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300 flex items-center gap-1">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+              New
+            </span>
+          )}
         </div>
 
         {notice.noticeType === 'billing' && notice.dueDate && daysUntilDue !== null && (
