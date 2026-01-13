@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import DOMPurify from "isomorphic-dompurify";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Phone,
@@ -433,7 +434,27 @@ export default function CustomerProfilePage() {
                     </span>
                   )}
                 </div>
-                
+
+                {/* Spouse / Co-Insured / 2nd Named Insured */}
+                {(() => {
+                  const spouseRelationships = ['spouse', 'co-insured', 'coinsured', '2nd named insured', 'second named insured', 'co-applicant', 'partner'];
+                  const spouse = profile.household?.find(member =>
+                    spouseRelationships.some(rel =>
+                      member.relationship?.toLowerCase().includes(rel)
+                    )
+                  );
+                  if (spouse) {
+                    return (
+                      <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
+                        <User className="w-3.5 h-3.5" />
+                        <span>{spouse.name}</span>
+                        <span className="text-gray-400 dark:text-gray-500">({spouse.relationship})</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Contact type badge */}
                   <Badge
@@ -1350,10 +1371,10 @@ function OverviewTab({
           </h3>
           <div className="space-y-3">
             {profile.notes.slice(0, 3).map((note) => (
-              <div key={note.id} className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-2">
-                  {note.content}
-                </p>
+              <div key={note.id} className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg overflow-hidden">
+                <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
+                  <NoteContent content={note.content} />
+                </div>
                 <div className="flex items-center gap-2 mt-2 text-xs text-gray-500 dark:text-gray-400">
                   {note.createdBy && (
                     <>
@@ -1946,6 +1967,51 @@ function HouseholdTab({ household }: { household: HouseholdMember[] }) {
   );
 }
 
+// Helper to detect if content contains HTML
+function isHtmlContent(content: string): boolean {
+  // Check for common HTML patterns
+  return /<[a-z][\s\S]*>/i.test(content);
+}
+
+// Component to render note content (handles both plain text and HTML)
+function NoteContent({ content }: { content: string }) {
+  const isHtml = useMemo(() => isHtmlContent(content), [content]);
+
+  if (isHtml) {
+    // Sanitize and render HTML content
+    const sanitizedHtml = DOMPurify.sanitize(content, {
+      ALLOWED_TAGS: [
+        'p', 'br', 'b', 'i', 'u', 'strong', 'em', 'a', 'ul', 'ol', 'li',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code',
+        'table', 'thead', 'tbody', 'tr', 'th', 'td', 'div', 'span', 'img',
+        'hr', 'sub', 'sup', 'font'
+      ],
+      ALLOWED_ATTR: [
+        'href', 'src', 'alt', 'title', 'class', 'style', 'target', 'rel',
+        'width', 'height', 'border', 'cellpadding', 'cellspacing', 'align',
+        'valign', 'bgcolor', 'color', 'size', 'face'
+      ],
+      ALLOW_DATA_ATTR: false,
+    });
+
+    return (
+      <div
+        className="text-sm text-gray-700 dark:text-gray-300 prose prose-sm dark:prose-invert max-w-none
+                   [&_table]:text-xs [&_img]:max-w-full [&_img]:h-auto [&_a]:text-blue-600 [&_a]:underline
+                   [&_.MsoNormal]:my-1 [&_p]:my-1"
+        dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+      />
+    );
+  }
+
+  // Plain text content
+  return (
+    <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+      {content}
+    </p>
+  );
+}
+
 function NotesTab({
   notes,
   onAddNote
@@ -1964,7 +2030,7 @@ function NotesTab({
           Add Note
         </Button>
       </div>
-      
+
       {notes.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center">
           <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-3" />
@@ -1984,16 +2050,14 @@ function NotesTab({
           {notes.map((note) => (
             <div
               key={note.id}
-              className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
+              className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 overflow-hidden"
             >
               {note.subject && (
-                <div className="font-medium text-gray-900 dark:text-white mb-1">
+                <div className="font-medium text-gray-900 dark:text-white mb-2">
                   {note.subject}
                 </div>
               )}
-              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                {note.content}
-              </p>
+              <NoteContent content={note.content} />
               <div className="flex items-center gap-2 mt-3 text-xs text-gray-500 dark:text-gray-400">
                 {note.createdBy && (
                   <>
@@ -2083,9 +2147,13 @@ function ActivityTab({
                     {item.subject}
                   </div>
                 )}
-                <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">
-                  {item.content}
-                </p>
+                <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3 overflow-hidden">
+                  {item.type === "note" ? (
+                    <NoteContent content={item.content} />
+                  ) : (
+                    <p>{item.content}</p>
+                  )}
+                </div>
                 {item.createdBy && (
                   <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                     by {item.createdBy.name}
