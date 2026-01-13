@@ -79,6 +79,7 @@ export default function PendingReviewPage() {
   const [alertsEnabled, setAlertsEnabled] = useState(false);
   const [userPermissions, setUserPermissions] = useState<Record<string, boolean> | null>(null);
   const [userRole, setUserRole] = useState<string | undefined>(undefined);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const alertIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // ==========================================================================
@@ -191,6 +192,7 @@ export default function PendingReviewPage() {
         if (data.success && data.user) {
           setUserPermissions(data.user.featurePermissions || null);
           setUserRole(data.user.role);
+          setCurrentUserId(data.user.id);
           // Check if alerts are enabled for this user
           const enabled = hasFeatureAccess('pendingReviewAlerts', data.user.featurePermissions, data.user.role);
           setAlertsEnabled(enabled);
@@ -355,6 +357,7 @@ export default function PendingReviewPage() {
           isLead,
           // Include all message IDs for grouped SMS conversations
           messageIds: (item as any).messageIds,
+          reviewerId: currentUserId,
         }),
       });
 
@@ -416,6 +419,7 @@ export default function PendingReviewPage() {
           isLead,
           noteContent,
           ticketDetails,
+          reviewerId: currentUserId,
         }),
       });
 
@@ -530,6 +534,7 @@ export default function PendingReviewPage() {
           ticketDetails: {
             assigneeAgentId: assigneeId,
           },
+          reviewerId: currentUserId,
         }),
       });
 
@@ -588,6 +593,7 @@ export default function PendingReviewPage() {
             customerId: i.agencyzoomCustomerId || i.agencyzoomLeadId,
           })),
           action,
+          reviewerId: currentUserId,
         }),
       });
 
