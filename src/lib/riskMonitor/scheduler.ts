@@ -727,8 +727,8 @@ Detected: ${new Date().toLocaleString()}
     // Links
     if (policy.azContactId) {
       lines.push(`**AgencyZoom:** https://app.agencyzoom.com/customer/index?id=${policy.azContactId}`);
+      lines.push(`**App Profile:** https://tcds-triage.vercel.app/customers/${policy.azContactId}?azId=${policy.azContactId}`);
     }
-    lines.push(`**App Profile:** https://tcds-triage.vercel.app/customers/${policy.azContactId || policy.id}`);
 
     return lines.join("\n");
 
@@ -789,7 +789,7 @@ ${alertType === "sold" ? `• Sale Date: ${saleDate}` : ""}
 
 QUICK LINKS
 • AgencyZoom Profile: ${policy.azContactId ? `https://app.agencyzoom.com/customer/index?id=${policy.azContactId}` : "N/A"}
-• TCDS App: https://tcds-triage.vercel.app/customers/${policy.azContactId || policy.id}
+• TCDS App: ${policy.azContactId ? `https://tcds-triage.vercel.app/customers/${policy.azContactId}?azId=${policy.azContactId}` : "N/A"}
 • Risk Monitor Dashboard: https://tcds-triage.vercel.app/risk-monitor
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
