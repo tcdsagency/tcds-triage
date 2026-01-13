@@ -1,19 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import type { PendingItem } from './PendingItemCard';
 
-// Agent options for service request assignment
-const AGENT_OPTIONS = [
-  { id: 94007, name: 'Lee Tidwell' },
-  { id: 94004, name: 'Todd Conn' },
-  { id: 159477, name: 'Stephanie Goodman' },
-  { id: 94008, name: 'Angie Sousa' },
-  { id: 94006, name: 'Blair Lee' },
-  { id: 94005, name: 'Montrice Lemaster' },
-  { id: 132766, name: 'Paulo Gacula' },
-];
+interface AgencyZoomUser {
+  agencyzoomId: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
 
 export interface TicketDetails {
   subject?: string;
@@ -41,6 +37,39 @@ export default function ReviewModal({
   );
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('');
   const [activeTab, setActiveTab] = useState<'note' | 'ticket'>('note');
+
+  // AgencyZoom users for assignment dropdown
+  const [agentOptions, setAgentOptions] = useState<AgencyZoomUser[]>([]);
+  const [agentSearchTerm, setAgentSearchTerm] = useState('');
+  const [loadingAgents, setLoadingAgents] = useState(false);
+
+  // Fetch AgencyZoom users when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const fetchUsers = async () => {
+      setLoadingAgents(true);
+      try {
+        const res = await fetch('/api/agencyzoom/users');
+        const data = await res.json();
+        if (data.success && data.agencyzoomUsers) {
+          setAgentOptions(data.agencyzoomUsers);
+        }
+      } catch (error) {
+        console.error('Failed to fetch AgencyZoom users:', error);
+      } finally {
+        setLoadingAgents(false);
+      }
+    };
+
+    fetchUsers();
+  }, [isOpen]);
+
+  // Filter agents by search term
+  const filteredAgents = agentOptions.filter(agent => {
+    const fullName = `${agent.firstName} ${agent.lastName}`.toLowerCase();
+    return fullName.includes(agentSearchTerm.toLowerCase());
+  });
 
   if (!isOpen) return null;
 
@@ -180,6 +209,19 @@ export default function ReviewModal({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Assign To <span className="text-red-500">*</span>
                 </label>
+                {/* Search input for filtering agents */}
+                <input
+                  type="text"
+                  value={agentSearchTerm}
+                  onChange={(e) => setAgentSearchTerm(e.target.value)}
+                  placeholder="Search agents..."
+                  className={cn(
+                    'w-full px-3 py-2 rounded-lg border transition-colors mb-2',
+                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                    'border-gray-300 dark:border-gray-600',
+                    'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                  )}
+                />
                 <select
                   value={selectedAgentId}
                   onChange={(e) => setSelectedAgentId(e.target.value ? Number(e.target.value) : '')}
@@ -189,14 +231,20 @@ export default function ReviewModal({
                     'border-gray-300 dark:border-gray-600',
                     'focus:outline-none focus:ring-2 focus:ring-blue-500'
                   )}
+                  disabled={loadingAgents}
                 >
-                  <option value="" className="text-gray-500">Select an agent...</option>
-                  {AGENT_OPTIONS.map((agent) => (
-                    <option key={agent.id} value={agent.id} className="text-gray-900">
-                      {agent.name}
+                  <option value="" className="text-gray-500">
+                    {loadingAgents ? 'Loading agents...' : 'Select an agent...'}
+                  </option>
+                  {filteredAgents.map((agent) => (
+                    <option key={agent.agencyzoomId} value={agent.agencyzoomId} className="text-gray-900">
+                      {agent.firstName} {agent.lastName}
                     </option>
                   ))}
                 </select>
+                {filteredAgents.length === 0 && !loadingAgents && agentSearchTerm && (
+                  <p className="text-xs text-red-500 mt-1">No agents match "{agentSearchTerm}"</p>
+                )}
               </div>
             </>
           )}
