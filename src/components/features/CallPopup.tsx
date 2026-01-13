@@ -48,6 +48,20 @@ interface CustomerLookup {
   phone: string;
 }
 
+interface LastInteraction {
+  type: "phone_call" | "email" | "sms" | "mailed_card" | "note" | "policy_change" | "claim" | "quote";
+  date: string;
+  summary: string;
+  agentName?: string;
+}
+
+interface LifeEvent {
+  event: string;
+  date?: string;
+  followUpQuestion: string;
+  icon: string;
+}
+
 interface AIOverview {
   summary: string;
   keyFacts: string[];
@@ -68,6 +82,9 @@ interface AIOverview {
     severity: "high" | "medium" | "low";
   }>;
   agentTips: string[];
+  lastInteraction?: LastInteraction;
+  lifeEvents?: LifeEvent[];
+  personalizationPrompts?: string[];
 }
 
 // =============================================================================
@@ -996,6 +1013,85 @@ export default function CallPopup({
                   </div>
                 )}
               </div>
+
+              {/* ===== PERSONALIZATION SECTION - Most Prominent ===== */}
+              {aiOverview && (aiOverview.lastInteraction || (aiOverview.lifeEvents && aiOverview.lifeEvents.length > 0) || (aiOverview.personalizationPrompts && aiOverview.personalizationPrompts.length > 0)) && (
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-3 mb-4 border border-amber-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span>💡</span>
+                    <span className="text-xs font-semibold text-amber-800 uppercase">Personal Touch</span>
+                  </div>
+
+                  {/* Last Interaction */}
+                  {aiOverview.lastInteraction && (
+                    <div className="mb-3 pb-3 border-b border-amber-200">
+                      <div className="text-xs text-amber-700 font-medium mb-1">Last Contact:</div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-lg">
+                          {aiOverview.lastInteraction.type === "phone_call" && "📞"}
+                          {aiOverview.lastInteraction.type === "email" && "✉️"}
+                          {aiOverview.lastInteraction.type === "sms" && "💬"}
+                          {aiOverview.lastInteraction.type === "mailed_card" && "💌"}
+                          {aiOverview.lastInteraction.type === "note" && "📝"}
+                          {aiOverview.lastInteraction.type === "policy_change" && "📋"}
+                          {aiOverview.lastInteraction.type === "claim" && "🛡️"}
+                          {aiOverview.lastInteraction.type === "quote" && "💰"}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-gray-800 font-medium">
+                            {new Date(aiOverview.lastInteraction.date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: new Date(aiOverview.lastInteraction.date).getFullYear() !== new Date().getFullYear() ? "numeric" : undefined
+                            })}
+                            {aiOverview.lastInteraction.agentName && (
+                              <span className="text-gray-500 font-normal"> by {aiOverview.lastInteraction.agentName}</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-600 line-clamp-2">
+                            {aiOverview.lastInteraction.summary}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Life Events */}
+                  {aiOverview.lifeEvents && aiOverview.lifeEvents.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-xs text-amber-700 font-medium mb-2">Life Events to Mention:</div>
+                      <div className="space-y-2">
+                        {aiOverview.lifeEvents.slice(0, 3).map((event, i) => (
+                          <div key={i} className="bg-white/60 rounded p-2 border border-amber-100">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span>{event.icon}</span>
+                              <span className="text-sm font-medium text-gray-800">{event.event}</span>
+                            </div>
+                            <p className="text-xs text-amber-700 italic pl-6">
+                              "{event.followUpQuestion}"
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Personalization Prompts (if no life events) */}
+                  {(!aiOverview.lifeEvents || aiOverview.lifeEvents.length === 0) && aiOverview.personalizationPrompts && aiOverview.personalizationPrompts.length > 0 && (
+                    <div>
+                      <div className="text-xs text-amber-700 font-medium mb-1">Quick Tips:</div>
+                      <ul className="space-y-1">
+                        {aiOverview.personalizationPrompts.slice(0, 3).map((prompt, i) => (
+                          <li key={i} className="text-xs text-gray-700 flex items-start gap-1">
+                            <span className="text-amber-500">•</span>
+                            {prompt}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* AI Insights Panel (same data as CustomerProfilePage Overview) */}
               {profileLoading ? (

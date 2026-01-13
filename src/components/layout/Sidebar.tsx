@@ -32,6 +32,7 @@ import {
   Bell,
   Link2,
   Moon,
+  Cake,
 } from 'lucide-react';
 
 // Map routes to feature permission keys
@@ -79,6 +80,7 @@ const getIntakeNav = (canAccessSupervisor: boolean) => {
 // Customer Management section
 const customerNav = [
   { name: 'Customers', href: '/customers', icon: Users },
+  { name: 'Birthday Cards', href: '/birthday-cards', icon: Cake },
   { name: 'Policy Notices', href: '/policy-notices', icon: Bell },
   { name: 'Policy Change', href: '/policy-change', icon: FilePen },
   { name: 'Payment Advance', href: '/payment-advance', icon: CreditCard },
