@@ -37,7 +37,8 @@ import {
   Truck,
   Droplets,
   User,
-  Wind
+  Wind,
+  FileWarning
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -68,6 +69,8 @@ import {
   CoverageGap,
   ClientLevel,
   CLIENT_LEVEL_CONFIG,
+  Claim,
+  ClaimStatus,
   formatPhoneNumber,
   formatAddress,
   getInitials
@@ -124,13 +127,14 @@ const STATUS_COLORS: Record<string, string> = {
 // TABS DEFINITION
 // =============================================================================
 
-type TabType = "overview" | "policies" | "household" | "life" | "notes" | "activity";
+type TabType = "overview" | "policies" | "household" | "life" | "claims" | "notes" | "activity";
 
 const TABS: { id: TabType; label: string; icon: any }[] = [
   { id: "overview", label: "Overview", icon: User },
   { id: "policies", label: "Policies", icon: Shield },
   { id: "household", label: "Household", icon: Users },
   { id: "life", label: "Life Insurance", icon: Heart },
+  { id: "claims", label: "Claims", icon: FileWarning },
   { id: "notes", label: "Notes", icon: MessageSquare },
   { id: "activity", label: "Activity", icon: Clock }
 ];
@@ -1064,6 +1068,10 @@ export default function CustomerProfilePage() {
                   console.log("Life insurance application started:", quoteId);
                 }}
               />
+            )}
+
+            {activeTab === "claims" && (
+              <ClaimsTab claims={profile.claims || []} policies={profile.policies} />
             )}
 
             {activeTab === "notes" && (
@@ -2030,6 +2038,215 @@ function NoteContent({ content }: { content: string }) {
     <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
       {content}
     </p>
+  );
+}
+
+// =============================================================================
+// CLAIMS TAB
+// =============================================================================
+
+const CLAIM_STATUS_COLORS: Record<ClaimStatus, string> = {
+  open: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  closed: "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
+  pending: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+  denied: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  settled: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  under_review: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  unknown: "bg-gray-100 text-gray-500 dark:bg-gray-900/30 dark:text-gray-500"
+};
+
+function ClaimsTab({
+  claims,
+  policies
+}: {
+  claims: Claim[];
+  policies: Policy[];
+}) {
+  // Helper to get policy info
+  const getPolicyInfo = (policyId?: string, policyNumber?: string) => {
+    if (policyId) {
+      return policies.find(p => p.id === policyId);
+    }
+    if (policyNumber) {
+      return policies.find(p => p.policyNumber === policyNumber);
+    }
+    return undefined;
+  };
+
+  // Helper to format currency
+  const formatCurrency = (amount?: number) => {
+    if (amount === undefined || amount === null) return "—";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  };
+
+  // Helper to format date
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return "—";
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric"
+    });
+  };
+
+  // Sort claims: open/pending first, then by date of loss
+  const sortedClaims = [...claims].sort((a, b) => {
+    const statusOrder: Record<ClaimStatus, number> = {
+      open: 0,
+      pending: 1,
+      under_review: 2,
+      settled: 3,
+      closed: 4,
+      denied: 5,
+      unknown: 6
+    };
+    const statusDiff = statusOrder[a.status] - statusOrder[b.status];
+    if (statusDiff !== 0) return statusDiff;
+    return new Date(b.dateOfLoss).getTime() - new Date(a.dateOfLoss).getTime();
+  });
+
+  // Count open claims
+  const openClaimCount = claims.filter(c => c.status === "open" || c.status === "pending" || c.status === "under_review").length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+            Claims ({claims.length})
+          </h3>
+          {openClaimCount > 0 && (
+            <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+              {openClaimCount} Open
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      {claims.length === 0 ? (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center">
+          <FileWarning className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">
+            No Claims Found
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Claims from HawkSoft or risk monitoring alerts will appear here
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sortedClaims.map((claim) => {
+            const policy = getPolicyInfo(claim.policyId, claim.policyNumber);
+            const PolicyIcon = policy ? POLICY_ICONS[policy.type] : Shield;
+
+            return (
+              <div
+                key={claim.id}
+                className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-10 h-10 rounded-lg flex items-center justify-center",
+                      policy ? POLICY_COLORS[policy.type] : "bg-gray-100 dark:bg-gray-700"
+                    )}>
+                      <PolicyIcon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-white">
+                        Claim #{claim.claimNumber}
+                      </div>
+                      {(claim.policyNumber || policy?.policyNumber) && (
+                        <div className="text-sm text-gray-500 dark:text-gray-400">
+                          Policy: {claim.policyNumber || policy?.policyNumber}
+                          {policy?.carrier?.name && ` • ${policy.carrier.name}`}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <Badge className={cn("capitalize", CLAIM_STATUS_COLORS[claim.status])}>
+                    {claim.status.replace("_", " ")}
+                  </Badge>
+                </div>
+
+                {/* Details */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+                      Date of Loss
+                    </div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      {formatDate(claim.dateOfLoss)}
+                    </div>
+                  </div>
+                  {claim.reportedDate && (
+                    <div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+                        Reported
+                      </div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                        {formatDate(claim.reportedDate)}
+                      </div>
+                    </div>
+                  )}
+                  {claim.lossType && (
+                    <div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+                        Loss Type
+                      </div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white capitalize">
+                        {claim.lossType}
+                      </div>
+                    </div>
+                  )}
+                  {(claim.amountPaid !== undefined || claim.amountReserved !== undefined) && (
+                    <div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+                        {claim.amountPaid !== undefined ? "Amount Paid" : "Reserved"}
+                      </div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                        {formatCurrency(claim.amountPaid ?? claim.amountReserved)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Description */}
+                {claim.description && (
+                  <div className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 rounded-md p-3 mb-3">
+                    {claim.description}
+                  </div>
+                )}
+
+                {/* Adjuster & Footer */}
+                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <div className="flex items-center gap-4">
+                    {claim.adjuster && (
+                      <div className="flex items-center gap-1">
+                        <User className="w-3 h-3" />
+                        <span>Adjuster: {claim.adjuster.name}</span>
+                      </div>
+                    )}
+                    {claim.closedDate && (
+                      <span>Closed: {formatDate(claim.closedDate)}</span>
+                    )}
+                  </div>
+                  <Badge variant="outline" className="text-xs capitalize">
+                    {claim.source.replace("_", " ")}
+                  </Badge>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

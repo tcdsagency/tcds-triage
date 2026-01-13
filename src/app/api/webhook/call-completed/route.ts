@@ -639,8 +639,13 @@ export async function POST(request: NextRequest) {
 
     // Create wrapup for calls with analysis OR hangups (for QA review)
     if (analysis || isHangup) {
-      // Get customer phone from call direction
-      const customerPhone = direction === "inbound" ? callerNumber : calledNumber;
+      // Get customer phone from call record (preferred) or webhook data
+      // For outbound calls: customer is the "to" number
+      // For inbound calls: customer is the "from" number
+      const callDir = call.direction || direction;
+      const customerPhone = callDir === "inbound"
+        ? (call.fromNumber || callerNumber)
+        : (call.toNumber || calledNumber);
       const phoneForLookup = analysis?.extractedData?.phone || customerPhone;
 
       // 4.1 AgencyZoom customer lookup (search both customers AND leads)
@@ -731,11 +736,16 @@ export async function POST(request: NextRequest) {
       // Use transaction to ensure wrapup and match suggestions are created atomically
       // Use upsert to handle duplicate webhook calls (Zapier may retry)
       const txResult = await db.transaction(async (tx) => {
+        // Prefer extension from call record (set during call-started), fall back to webhook body
+        const agentExt = call.extension || extension;
+        // Prefer direction from call record
+        const callDirection = call.direction || direction;
+
         const wrapupValues = {
           tenantId,
           callId: call.id,
-          direction: (direction === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
-          agentExtension: extension,
+          direction: (callDirection === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
+          agentExtension: agentExt,
           agentName: body.agentName,
           summary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),
           customerName: analysis?.extractedData?.customerName || trestlePersonName,

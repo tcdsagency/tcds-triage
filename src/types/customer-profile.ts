@@ -320,6 +320,43 @@ export interface Note {
 }
 
 // =============================================================================
+// CLAIMS
+// =============================================================================
+
+export type ClaimStatus =
+  | "open"
+  | "closed"
+  | "pending"
+  | "denied"
+  | "settled"
+  | "under_review"
+  | "unknown";
+
+export interface Claim {
+  id: string;
+  claimNumber: string;
+  policyId?: string;
+  policyNumber?: string;
+  policyType?: PolicyType;
+  dateOfLoss: string;
+  reportedDate?: string;
+  closedDate?: string;
+  status: ClaimStatus;
+  description?: string;
+  lossType?: string;
+  amountPaid?: number;
+  amountReserved?: number;
+  deductible?: number;
+  adjuster?: {
+    name: string;
+    phone?: string;
+    email?: string;
+  };
+  source: "hawksoft" | "risk_monitor" | "manual";
+  rawData?: Record<string, unknown>;
+}
+
+// =============================================================================
 // AI INSIGHTS
 // =============================================================================
 
@@ -420,6 +457,7 @@ export interface MergedProfile {
   household: HouseholdMember[];
   recentActivity: Activity[];
   notes: Note[];
+  claims: Claim[];
   
   // AI Insights (optional, loaded separately)
   aiOverview?: AIOverview;
