@@ -20,6 +20,15 @@ import { trestleIQClient } from "@/lib/api/trestleiq";
 import { getServiceRequestTypeId } from "@/lib/constants/agencyzoom";
 
 // =============================================================================
+// AGENCY MAIN NUMBER
+// When calls come through with this as the "extension", it means:
+// - Call was routed via IVR, after-hours service, or call forwarding
+// - NOT a direct agent call - will not match to any agent
+// - Should be treated as after-hours/unassigned
+// =============================================================================
+const AGENCY_MAIN_NUMBER = "2058475616"; // +1 (205) 847-5616
+
+// =============================================================================
 // REALTIME SERVER NOTIFICATION
 // =============================================================================
 
@@ -555,6 +564,15 @@ export async function POST(request: NextRequest) {
     const timestamp = new Date(rawTimestamp || Date.now());
     const direction = body.direction?.toLowerCase() === "inbound" ? "inbound" : "outbound";
 
+    // ==========================================================================
+    // IMPORTANT: Agency Main Number is +12058475616
+    // When extension field contains this number (as SIP URI or digits), it means:
+    // - The call was routed through the main line (IVR, after-hours, forwarded)
+    // - These are typically OUTBOUND from customer perspective (customer called in)
+    // - Agent matching will fail because this isn't a real agent extension
+    // - These calls should be marked as after-hours or unassigned
+    // ==========================================================================
+
     // Extract phone numbers from SIP URIs if needed
     const callerNumber = extractPhoneFromSIP(body.callerPhone || body.callerNumber);
     const calledNumber = extractPhoneFromSIP(body.calledNumber);
@@ -566,8 +584,14 @@ export async function POST(request: NextRequest) {
 
     // For database storage, truncate to last 10 chars (extension column is varchar(10))
     const extension = extDigits.slice(-10);
+
+    // Check if this is the agency main number (indicates IVR/after-hours/forwarded call)
+    const isAgencyMainNumber = extDigits.includes(AGENCY_MAIN_NUMBER) || extension === AGENCY_MAIN_NUMBER;
     const extensionLooksLikePhone = extDigits.length > 5;
-    if (extensionLooksLikePhone) {
+
+    if (isAgencyMainNumber) {
+      console.log("[Call-Completed] 📞 Extension is agency main number - this is an IVR/after-hours call");
+    } else if (extensionLooksLikePhone) {
       console.log("[Call-Completed] ⚠️ WARNING: Extension looks like a phone number:", rawExtension, "->", extension);
       console.log("[Call-Completed] ⚠️ This will cause agent matching to fail!");
     }
@@ -615,13 +639,15 @@ export async function POST(request: NextRequest) {
 
       // =========================================================================
       // NO MATCHING CALL FOUND - Creating new record
-      // Check if this is an after-hours/fallback call (extension is a phone number)
+      // Check if this is an after-hours/fallback call:
+      // - Extension is the agency main number (IVR/forwarded)
+      // - Extension looks like a phone number (not a real agent extension)
       // =========================================================================
-      const isAfterHoursOrFallback = extensionLooksLikePhone;
+      const isAfterHoursOrFallback = isAgencyMainNumber || extensionLooksLikePhone;
 
       if (isAfterHoursOrFallback) {
         console.log("[Call-Completed] 📞 AFTER-HOURS/FALLBACK CALL DETECTED");
-        console.log("[Call-Completed] 📞 Extension is a phone number:", extension);
+        console.log("[Call-Completed] 📞 Reason:", isAgencyMainNumber ? "Agency main number" : "Extension is phone number", "->", extension);
         console.log("[Call-Completed] 📞 This call will be marked as after-hours/unassigned");
       } else {
         console.log("[Call-Completed] ⚠️ NO MATCHING CALL - Creating new record");
