@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
         isActive: users.isActive,
         lastActiveAt: users.lastActiveAt,
         createdAt: users.createdAt,
+        featurePermissions: users.featurePermissions,
       })
       .from(users)
       .where(eq(users.tenantId, tenantId))
@@ -107,6 +108,7 @@ export async function POST(request: NextRequest) {
       agencyzoomId,
       agentCode,
       inLeadRotation = true,
+      featurePermissions,
     } = body;
 
     // Validation
@@ -166,6 +168,7 @@ export async function POST(request: NextRequest) {
         agencyzoomId: agencyzoomId || null,
         agentCode: agentCode || null,
         inLeadRotation,
+        featurePermissions: featurePermissions || null,
         isActive: true,
         isAvailable: true,
         currentStatus: "available",
