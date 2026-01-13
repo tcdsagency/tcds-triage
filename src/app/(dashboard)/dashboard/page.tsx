@@ -571,89 +571,102 @@ export default function DashboardPage() {
         {/* ================================================================= */}
         {/* TODAY'S STATS */}
         {/* ================================================================= */}
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {/* Calls Inbound */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                <PhoneIncoming className="w-5 h-5 text-green-600 dark:text-green-400" />
+        <section className="grid grid-cols-3 gap-4">
+          {/* Total Calls */}
+          <Link href="/calls">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-600 transition-all cursor-pointer">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                  <Phone className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Total Calls</p>
+                  {statsLoading ? (
+                    <div className="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                  ) : (
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats?.calls.total || 0}</p>
+                  )}
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Calls In</p>
-                {statsLoading ? (
-                  <div className="h-7 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
-                ) : (
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats?.calls.inbound || 0}</p>
-                )}
-              </div>
+              {!statsLoading && (
+                <div className="mt-3 flex items-center gap-4 text-sm">
+                  <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                    <ArrowDownLeft className="w-4 h-4" />
+                    <span className="font-semibold">{stats?.calls.inbound || 0}</span>
+                    <span className="text-gray-400 text-xs">in</span>
+                  </span>
+                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                    <ArrowUpRight className="w-4 h-4" />
+                    <span className="font-semibold">{stats?.calls.outbound || 0}</span>
+                    <span className="text-gray-400 text-xs">out</span>
+                  </span>
+                </div>
+              )}
             </div>
-          </div>
+          </Link>
 
-          {/* Calls Outbound */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                <PhoneOutgoing className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          {/* Total Texts */}
+          <Link href="/messages">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-purple-300 dark:hover:border-purple-600 transition-all cursor-pointer">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                  <MessageSquare className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Total Texts</p>
+                  {statsLoading ? (
+                    <div className="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                  ) : (
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats?.messages.total || 0}</p>
+                  )}
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Calls Out</p>
-                {statsLoading ? (
-                  <div className="h-7 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
-                ) : (
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats?.calls.outbound || 0}</p>
-                )}
-              </div>
+              {!statsLoading && (
+                <div className="mt-3 flex items-center gap-4 text-sm">
+                  <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                    <ArrowDownLeft className="w-4 h-4" />
+                    <span className="font-semibold">{stats?.messages.inbound || 0}</span>
+                    <span className="text-gray-400 text-xs">in</span>
+                  </span>
+                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                    <ArrowUpRight className="w-4 h-4" />
+                    <span className="font-semibold">{stats?.messages.outbound || 0}</span>
+                    <span className="text-gray-400 text-xs">out</span>
+                  </span>
+                </div>
+              )}
             </div>
-          </div>
-
-          {/* Messages */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                <MessageSquare className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Texts</p>
-                {statsLoading ? (
-                  <div className="h-7 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats?.messages.total || 0}</p>
-                    <span className="text-xs text-gray-500">
-                      <ArrowDownLeft className="w-3 h-3 inline text-green-500" />{stats?.messages.inbound || 0}
-                      {" / "}
-                      <ArrowUpRight className="w-3 h-3 inline text-blue-500" />{stats?.messages.outbound || 0}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          </Link>
 
           {/* Pending Review */}
           <Link href="/pending-review">
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-amber-300 dark:hover:border-amber-600 transition-all cursor-pointer">
-              <div className="flex items-center gap-3 mb-2">
+            <div className={cn(
+              "bg-white dark:bg-gray-800 rounded-xl border p-4 hover:shadow-md transition-all cursor-pointer",
+              (stats?.pendingReview || 0) > 0
+                ? "border-amber-300 dark:border-amber-600"
+                : "border-gray-200 dark:border-gray-700"
+            )}>
+              <div className="flex items-center gap-3">
                 <div className={cn(
-                  "w-10 h-10 rounded-lg flex items-center justify-center",
+                  "w-12 h-12 rounded-lg flex items-center justify-center",
                   (stats?.pendingReview || 0) > 0
                     ? "bg-amber-100 dark:bg-amber-900/30"
                     : "bg-gray-100 dark:bg-gray-700"
                 )}>
                   <ClipboardList className={cn(
-                    "w-5 h-5",
+                    "w-6 h-6",
                     (stats?.pendingReview || 0) > 0
                       ? "text-amber-600 dark:text-amber-400"
                       : "text-gray-500"
                   )} />
                 </div>
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Pending</p>
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Pending Review</p>
                   {statsLoading ? (
-                    <div className="h-7 w-12 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                    <div className="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
                   ) : (
                     <p className={cn(
-                      "text-2xl font-bold",
+                      "text-3xl font-bold",
                       (stats?.pendingReview || 0) > 0
                         ? "text-amber-600 dark:text-amber-400"
                         : "text-gray-900 dark:text-white"
@@ -663,6 +676,11 @@ export default function DashboardPage() {
                   )}
                 </div>
               </div>
+              {!statsLoading && (stats?.pendingReview || 0) > 0 && (
+                <div className="mt-3 text-sm text-amber-600 dark:text-amber-400 font-medium">
+                  Items need attention →
+                </div>
+              )}
             </div>
           </Link>
         </section>
