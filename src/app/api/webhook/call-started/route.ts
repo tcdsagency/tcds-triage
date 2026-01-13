@@ -146,13 +146,37 @@ export async function POST(request: NextRequest) {
     const direction = body.direction?.toLowerCase() === "outbound" ? "outbound" : "inbound";
 
     // Extract phone numbers from SIP URIs if needed
-    const callerNumber = extractPhoneFromSIP(body.callerPhone || body.callerNumber || body.fromNumber);
-    const calledNumber = extractPhoneFromSIP(body.calledNumber || body.toNumber);
+    const rawCallerNumber = extractPhoneFromSIP(body.callerPhone || body.callerNumber || body.fromNumber);
+    const rawCalledNumber = extractPhoneFromSIP(body.calledNumber || body.toNumber);
     const extension = (body.extension || body.agentExtension || "").replace(/\D/g, "");
+
+    // Detect if caller/called are swapped based on extension match
+    // For outbound: if caller looks like external number and called is extension, swap them
+    // For inbound: if called looks like external number and caller is extension, swap them
+    let callerNumber = rawCallerNumber;
+    let calledNumber = rawCalledNumber;
+
+    const callerIsExtension = rawCallerNumber.replace(/\D/g, "") === extension;
+    const calledIsExtension = rawCalledNumber.replace(/\D/g, "") === extension;
+    const callerIsExternal = rawCallerNumber.length >= 10 || rawCallerNumber.startsWith("+");
+    const calledIsExternal = rawCalledNumber.length >= 10 || rawCalledNumber.startsWith("+");
+
+    // Swap if data appears reversed
+    if (direction === "outbound" && callerIsExternal && calledIsExtension) {
+      console.log("[Call-Started] Detected swapped caller/called for outbound, correcting...");
+      callerNumber = rawCalledNumber; // Extension becomes caller
+      calledNumber = rawCallerNumber; // External becomes called
+    } else if (direction === "inbound" && calledIsExternal && callerIsExtension) {
+      console.log("[Call-Started] Detected swapped caller/called for inbound, correcting...");
+      callerNumber = rawCalledNumber; // External becomes caller
+      calledNumber = rawCallerNumber; // Extension becomes called
+    }
 
     console.log("[Call-Started] Normalized - direction:", direction, "caller:", callerNumber, "called:", calledNumber, "ext:", extension);
 
     // Determine customer phone based on direction
+    // For inbound: customer is the caller (external number calling in)
+    // For outbound: customer is the called party (agent calling out)
     const customerPhone = direction === "inbound" ? callerNumber : calledNumber;
     const customerPhoneDigits = customerPhone.replace(/\D/g, "");
 

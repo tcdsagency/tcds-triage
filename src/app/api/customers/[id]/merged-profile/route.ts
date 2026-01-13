@@ -11,10 +11,10 @@ import {
   FULL_CLIENT_EXPANDS
 } from "@/lib/api/hawksoft";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
-import { 
-  MergedProfile, 
-  MergedProfileResponse, 
-  Policy, 
+import {
+  MergedProfile,
+  MergedProfileResponse,
+  Policy,
   PolicyType,
   HouseholdMember,
   Activity,
@@ -24,6 +24,8 @@ import {
   Driver,
   PropertyDetails,
   Lienholder,
+  Claim,
+  ClaimStatus,
   getPolicyTypeFromLineOfBusiness,
   getPolicyTypeEmoji,
   CARRIER_INFO,
@@ -536,6 +538,54 @@ function transformAgencyZoomNotes(azNotes: any[]): Note[] {
 }
 
 // =============================================================================
+// TRANSFORM HAWKSOFT CLAIMS
+// =============================================================================
+
+function mapHawkSoftClaimStatus(status: string): ClaimStatus {
+  const normalized = (status || "").toLowerCase().trim();
+  if (normalized.includes("open") || normalized === "new") return "open";
+  if (normalized.includes("closed") || normalized === "resolved") return "closed";
+  if (normalized.includes("pending")) return "pending";
+  if (normalized.includes("denied") || normalized.includes("reject")) return "denied";
+  if (normalized.includes("settled") || normalized.includes("paid")) return "settled";
+  if (normalized.includes("review") || normalized.includes("investigation")) return "under_review";
+  return "unknown";
+}
+
+function transformHawkSoftClaims(hsClaims: any[], policies: Policy[]): Claim[] {
+  if (!hsClaims || !Array.isArray(hsClaims)) return [];
+
+  return hsClaims.map((claim) => {
+    // Find matching policy for additional context
+    const policy = policies.find(p => p.id === String(claim.policyId));
+
+    return {
+      id: String(claim.claimId || claim.id),
+      claimNumber: claim.claimNumber || claim.number || "Unknown",
+      policyId: String(claim.policyId),
+      policyNumber: policy?.policyNumber,
+      policyType: policy?.type,
+      dateOfLoss: claim.dateOfLoss || claim.lossDate || claim.createdDate,
+      reportedDate: claim.reportedDate || claim.createdDate,
+      closedDate: claim.closedDate || claim.resolvedDate,
+      status: mapHawkSoftClaimStatus(claim.status),
+      description: claim.description || claim.notes || claim.lossDescription,
+      lossType: claim.lossType || claim.causeOfLoss,
+      amountPaid: claim.amountPaid !== undefined ? parseFloat(claim.amountPaid) : undefined,
+      amountReserved: claim.reserve !== undefined ? parseFloat(claim.reserve) : undefined,
+      deductible: claim.deductible !== undefined ? parseFloat(claim.deductible) : undefined,
+      adjuster: claim.adjuster || claim.adjusters?.[0] ? {
+        name: claim.adjuster?.name || claim.adjusters?.[0]?.name || "Unknown",
+        phone: claim.adjuster?.phone || claim.adjusters?.[0]?.phone,
+        email: claim.adjuster?.email || claim.adjusters?.[0]?.email,
+      } : undefined,
+      source: "hawksoft" as const,
+      rawData: claim,
+    };
+  });
+}
+
+// =============================================================================
 // HELPER: Look up user by HawkSoft agent code
 // =============================================================================
 
@@ -868,7 +918,8 @@ export async function GET(
         return Array.from(driversMap.values());
       })(),
       recentActivity: [],  // Would come from combined sources
-      notes: transformAgencyZoomNotes(azNotes)
+      notes: transformAgencyZoomNotes(azNotes),
+      claims: transformHawkSoftClaims(hsClient?.claims || [], policies)
     };
     
     const response: MergedProfileResponse = {
