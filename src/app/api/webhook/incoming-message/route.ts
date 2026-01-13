@@ -4,8 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { messages, tenants, customers, triageItems } from "@/db/schema";
-import { eq, and, gte, desc, or, ilike } from "drizzle-orm";
-import { twilioClient } from "@/lib/twilio";
+import { eq, and, gte, or, ilike } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 
 // =============================================================================
@@ -224,7 +223,7 @@ export async function POST(request: NextRequest) {
 
     console.log("[Webhook] Triage item created:", triageItem.id);
 
-    // 6. Handle after-hours auto-reply - Send via Twilio (same as main SMS feature)
+    // 6. Handle after-hours auto-reply - Send via AgencyZoom (shows in AZ message history)
     if (isAfterHours && afterHoursInfo.enabled && afterHoursInfo.autoReplyMessage) {
       // Check cooldown - don't spam the same number
       const cooldownPassed = await checkAutoReplyCooldown(
@@ -234,13 +233,10 @@ export async function POST(request: NextRequest) {
       );
 
       if (cooldownPassed) {
-        console.log("[Webhook] Sending after-hours auto-reply via Twilio to:", payload.From);
+        console.log("[Webhook] Sending after-hours auto-reply via AgencyZoom to:", payload.From);
 
-        // Use Twilio directly (same as main SMS feature in /api/sms/send)
-        const result = await twilioClient.sendSMS({
-          to: payload.From,
-          message: afterHoursInfo.autoReplyMessage,
-        });
+        // Send via AgencyZoom sidecar (appears in AZ message history)
+        const result = await sendSMSViaAgencyZoom(payload.From, afterHoursInfo.autoReplyMessage);
 
         if (result.success) {
           // Mark that we sent an auto-reply
@@ -257,7 +253,7 @@ export async function POST(request: NextRequest) {
             fromNumber: payload.To,
             toNumber: payload.From,
             body: afterHoursInfo.autoReplyMessage,
-            externalId: result.messageId,
+            externalId: `az_${Date.now()}`,
             status: "sent",
             contactId,
             contactName,
@@ -268,7 +264,7 @@ export async function POST(request: NextRequest) {
             sentAt: new Date(),
           });
 
-          console.log("[Webhook] Auto-reply sent via Twilio:", result.messageId);
+          console.log("[Webhook] Auto-reply sent via AgencyZoom");
         } else {
           console.error("[Webhook] Auto-reply failed:", result.error);
         }
@@ -299,6 +295,36 @@ export async function POST(request: NextRequest) {
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+const SIDECAR_URL = process.env.SIDECAR_URL || "https://tcds-sidecar-production.up.railway.app";
+
+async function sendSMSViaAgencyZoom(
+  phoneNumber: string,
+  message: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch(`${SIDECAR_URL}/agencyzoom/sms`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone_number: phoneNumber.replace(/\D/g, ""), // Digits only
+        message,
+      }),
+    });
+
+    const data = await response.json();
+    return {
+      success: data.success === true,
+      error: data.error || undefined,
+    };
+  } catch (error) {
+    console.error("[sendSMSViaAgencyZoom] Error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
 
 interface AfterHoursInfo {
   isAfterHours: boolean;

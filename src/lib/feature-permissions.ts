@@ -276,6 +276,14 @@ export const FEATURES: FeatureConfig[] = [
     defaultEnabled: false,
     route: '/settings/users',
   },
+  {
+    key: 'settingsLanding',
+    label: 'Settings Overview',
+    description: 'Settings landing page with links to all settings',
+    category: 'admin',
+    defaultEnabled: false,
+    route: '/settings',
+  },
 
   // =============================================================================
   // SPECIAL FEATURES - Non-page features

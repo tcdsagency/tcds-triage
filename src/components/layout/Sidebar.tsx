@@ -35,24 +35,44 @@ import {
   Cake,
 } from 'lucide-react';
 
-// Map routes to feature permission keys
+// Map routes to feature permission keys (must match keys in feature-permissions.ts)
 const ROUTE_FEATURE_MAP: Record<string, string> = {
+  // Core
   '/dashboard': 'dashboard',
   '/pending-review': 'pendingReview',
   '/after-hours': 'afterHours',
-  '/leads': 'leads',
-  '/calls': 'calls',
   '/messages': 'messages',
+  '/calls': 'calls',
   '/customers': 'customers',
+  '/leads': 'leads',
   '/quotes': 'quotes',
+  '/policy-notices': 'policyNotices',
+  // Tools
+  '/invoice': 'invoice',
+  '/policy-change': 'policyChange',
+  '/id-cards': 'idCards',
+  '/birthday-cards': 'birthdayCards',
+  '/mortgagee-payments': 'mortgageePayments',
+  '/payment-advance': 'paymentAdvance',
+  '/same-day-payment': 'sameDayPayment',
   '/quote-extractor': 'quoteExtractor',
   '/canopy-connect': 'canopyConnect',
+  '/travelers-application': 'travelersApplication',
+  // Advanced
+  '/competitive-intel': 'competitiveIntel',
   '/risk-monitor': 'riskMonitor',
+  '/properties': 'properties',
   '/reports': 'reports',
-  '/invoice': 'invoices',
-  '/my-settings': 'settings',
-  '/agency-settings': 'adminSettings',
+  '/reviews': 'reviews',
+  '/ai-tasks': 'aiTasks',
+  '/training': 'training',
+  // Admin
+  '/supervisor': 'supervisor',
+  '/wrapup-review': 'wrapupReview',
+  '/my-settings': 'mySettings',
+  '/agency-settings': 'agencySettings',
   '/settings/users': 'userManagement',
+  '/settings': 'settingsLanding',
 };
 
 // Dashboard section
