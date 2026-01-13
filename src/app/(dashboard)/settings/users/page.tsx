@@ -16,7 +16,10 @@ import {
   X,
   Loader2,
   PhoneCall,
+  ToggleLeft,
+  ToggleRight,
 } from "lucide-react";
+import { FEATURES, getFeaturesByCategory, getDefaultPermissions } from "@/lib/feature-permissions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +61,7 @@ interface User {
   isActive: boolean;
   lastActiveAt: string | null;
   createdAt: string;
+  featurePermissions: Record<string, boolean> | null;
 }
 
 interface UserFormData {
@@ -72,6 +76,7 @@ interface UserFormData {
   agencyzoomId: string;
   agentCode: string;
   inLeadRotation: boolean;
+  featurePermissions: Record<string, boolean>;
 }
 
 const initialFormData: UserFormData = {
@@ -86,6 +91,7 @@ const initialFormData: UserFormData = {
   agencyzoomId: "",
   agentCode: "",
   inLeadRotation: true,
+  featurePermissions: getDefaultPermissions(),
 };
 
 // =============================================================================
@@ -156,6 +162,7 @@ export default function UsersPage() {
       agencyzoomId: user.agencyzoomId || "",
       agentCode: user.agentCode || "",
       inLeadRotation: user.inLeadRotation,
+      featurePermissions: user.featurePermissions || getDefaultPermissions(),
     });
     setIsModalOpen(true);
   };
@@ -583,6 +590,53 @@ export default function UsersPage() {
                   Include in lead rotation
                 </span>
               </label>
+
+              {/* Feature Permissions */}
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Shield className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Feature Access
+                  </span>
+                </div>
+
+                {Object.entries(getFeaturesByCategory()).map(([category, features]) => (
+                  <div key={category} className="mb-4">
+                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                      {category === 'core' ? 'Core Features' :
+                       category === 'advanced' ? 'Advanced Features' :
+                       'Admin Features'}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {features.map((feature) => (
+                        <label
+                          key={feature.key}
+                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                          title={feature.description}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.featurePermissions[feature.key] ?? feature.defaultEnabled}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                featurePermissions: {
+                                  ...formData.featurePermissions,
+                                  [feature.key]: e.target.checked,
+                                },
+                              })
+                            }
+                            className="rounded border-gray-300"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">
+                            {feature.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Modal Footer */}
