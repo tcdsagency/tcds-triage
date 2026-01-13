@@ -302,7 +302,7 @@ export async function GET(request: NextRequest) {
             and(
               eq(messages.tenantId, tenantId),
               sql`(${messages.fromNumber} = ${phone} OR ${messages.toNumber} = ${phone})`,
-              sql`${messages.createdAt} >= ${conversationCutoff}`
+              sql`${messages.createdAt} >= ${conversationCutoff.toISOString()}`
             )
           )
           .orderBy(messages.createdAt)
