@@ -726,7 +726,7 @@ export async function POST(request: NextRequest) {
 
       // For hangups without analysis, auto-void and mark as completed
       const shouldAutoVoid = isHangup && !analysis;
-      const wrapupStatus = shouldAutoVoid ? "completed" : "pending_review";
+      const wrapupStatus = shouldAutoVoid ? "completed" as const : "pending_review" as const;
 
       // Use transaction to ensure wrapup and match suggestions are created atomically
       // Use upsert to handle duplicate webhook calls (Zapier may retry)
@@ -734,7 +734,7 @@ export async function POST(request: NextRequest) {
         const wrapupValues = {
           tenantId,
           callId: call.id,
-          direction: direction === "inbound" ? "Inbound" : "Outbound",
+          direction: (direction === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
           agentExtension: extension,
           agentName: body.agentName,
           summary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),

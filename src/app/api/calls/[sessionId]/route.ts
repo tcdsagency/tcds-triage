@@ -142,13 +142,21 @@ export async function PATCH(
               call: { id: call.id, status: "on_hold" },
             });
           }
-        } catch (err) {
+          return NextResponse.json(
+            { success: false, error: "Hold failed - no active participant found on extension" },
+            { status: 400 }
+          );
+        } catch (err: any) {
           console.error("[Calls] holdCall error:", err);
+          return NextResponse.json(
+            { success: false, error: `Hold failed: ${err.message}` },
+            { status: 500 }
+          );
         }
       }
 
       return NextResponse.json(
-        { success: false, error: "Failed to put call on hold - 3CX API not available" },
+        { success: false, error: "3CX client not available - check tenant configuration" },
         { status: 500 }
       );
     }
@@ -233,17 +241,22 @@ export async function PATCH(
     // ========================================================================
     if (action === "end" || body.status === "completed") {
       // Try to actually drop the call via 3CX if we have an external call ID
-      if (externalCallId) {
+      if (externalCallId && agentExtension) {
         console.log(`[Calls] Ending call ${call.id} via 3CX Call Control API (3CX ID: ${externalCallId}, ext: ${agentExtension})`);
 
         const threecxClient = await getThreeCXClient();
+        console.log(`[Calls] 3CX client available for drop: ${!!threecxClient}`);
+
         if (threecxClient) {
           try {
-            await threecxClient.dropCall(externalCallId, agentExtension || undefined);
-          } catch (err) {
-            console.error("[Calls] 3CX drop call error:", err);
+            const dropSuccess = await threecxClient.dropCall(externalCallId, agentExtension);
+            console.log(`[Calls] dropCall result: ${dropSuccess}`);
+          } catch (err: any) {
+            console.error("[Calls] 3CX drop call error:", err.message);
           }
         }
+      } else {
+        console.log(`[Calls] Cannot drop call - missing externalCallId (${externalCallId}) or extension (${agentExtension})`);
       }
 
       updates.status = "completed";

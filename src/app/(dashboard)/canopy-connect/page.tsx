@@ -486,12 +486,76 @@ export default function CanopyConnectPage() {
 
                 {/* Action Buttons */}
                 <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
-                  {selectedPull.matchStatus === 'pending' && (
+                  {/* Create Lead - for unmatched pulls */}
+                  {(selectedPull.matchStatus === 'pending' || selectedPull.matchStatus === 'needs_review') && !selectedPull.matchedCustomerId && (
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Create a new lead for ${selectedPull.firstName} ${selectedPull.lastName}?`)) return;
+                        try {
+                          const response = await fetch(`/api/canopy-connect/${selectedPull.id}/create-lead`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ isLead: true, leadSource: 'Canopy Connect' }),
+                          });
+                          const data = await response.json();
+                          if (data.success) {
+                            alert(`Lead created: ${data.customer.firstName} ${data.customer.lastName}`);
+                            await fetchPulls();
+                            await fetchPullDetail(selectedPull.id);
+                          } else {
+                            alert(`Error: ${data.error}`);
+                          }
+                        } catch (error) {
+                          console.error('Error creating lead:', error);
+                          alert('Failed to create lead');
+                        }
+                      }}
+                      className="w-full px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                    >
+                      Create New Lead
+                    </button>
+                  )}
+
+                  {/* Match to existing customer */}
+                  {(selectedPull.matchStatus === 'pending' || selectedPull.matchStatus === 'needs_review') && (
                     <button
                       onClick={() => setShowMatchModal(true)}
                       className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                     >
-                      Match to Customer
+                      Match to Existing Customer
+                    </button>
+                  )}
+
+                  {/* Update matched customer with Canopy data */}
+                  {selectedPull.matchStatus === 'matched' && selectedPull.matchedCustomerId && (
+                    <button
+                      onClick={async () => {
+                        if (!confirm('Update customer with data from this Canopy pull?')) return;
+                        try {
+                          const response = await fetch(`/api/canopy-connect/${selectedPull.id}/update-customer`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              customerId: selectedPull.matchedCustomerId,
+                              updateFields: ['phone', 'email', 'address', 'dateOfBirth'],
+                            }),
+                          });
+                          const data = await response.json();
+                          if (data.success) {
+                            alert(`Customer updated: ${data.updatedFields.join(', ')}`);
+                            await fetchPulls();
+                            await fetchPullDetail(selectedPull.id);
+                          } else {
+                            alert(`Error: ${data.error}`);
+                          }
+                        } catch (error) {
+                          console.error('Error updating customer:', error);
+                          alert('Failed to update customer');
+                        }
+                      }}
+                      className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+                    >
+                      Update Customer Data
                     </button>
                   )}
 
