@@ -5,7 +5,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { wrapupDrafts, messages, users, calls } from "@/db/schema";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, or } from "drizzle-orm";
+import { createClient } from "@/lib/supabase/server";
+
+// Helper to get current user's role and extension
+async function getCurrentUser(): Promise<{ id: string; role: string | null; extension: string | null } | null> {
+  try {
+    const supabase = await createClient();
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+
+    if (!authUser?.email) return null;
+
+    const [dbUser] = await db
+      .select({
+        id: users.id,
+        role: users.role,
+        extension: users.extension,
+      })
+      .from(users)
+      .where(eq(users.email, authUser.email))
+      .limit(1);
+
+    return dbUser || null;
+  } catch (error) {
+    console.error("[Pending Review] Failed to get current user:", error);
+    return null;
+  }
+}
 
 // =============================================================================
 // TYPES
@@ -109,13 +135,40 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
     }
 
+    // Get current user to determine filtering rules
+    const currentUser = await getCurrentUser();
+    const isAgent = currentUser?.role === 'agent';
+    const userExtension = currentUser?.extension;
+
+    // For agents without an extension configured, they can't see any wrapups
+    const agentCanSeeWrapups = !isAgent || (isAgent && userExtension);
+
     const items: PendingItem[] = [];
     const now = new Date();
 
     // =======================================================================
     // 1. Fetch Pending Wrapups
     // =======================================================================
-    if (!typeFilter || typeFilter === 'wrapup') {
+    if ((!typeFilter || typeFilter === 'wrapup') && agentCanSeeWrapups) {
+      // Build where conditions
+      // For agents: only show wrapups where agent_extension matches their extension
+      // For CSRs/admins: show all wrapups
+      const whereConditions = [
+        eq(wrapupDrafts.tenantId, tenantId),
+        eq(wrapupDrafts.status, 'pending_review'),
+      ];
+
+      // Add extension filter for agents only
+      if (isAgent && userExtension) {
+        // Agent can see calls they handled (agent_extension) OR calls to/from their extension
+        whereConditions.push(
+          or(
+            eq(wrapupDrafts.agentExtension, userExtension),
+            eq(calls.extension, userExtension)
+          )!
+        );
+      }
+
       const wrapups = await db
         .select({
           id: wrapupDrafts.id,
@@ -140,12 +193,7 @@ export async function GET(request: NextRequest) {
         })
         .from(wrapupDrafts)
         .leftJoin(calls, eq(wrapupDrafts.callId, calls.id))
-        .where(
-          and(
-            eq(wrapupDrafts.tenantId, tenantId),
-            eq(wrapupDrafts.status, 'pending_review')
-          )
-        )
+        .where(and(...whereConditions))
         .orderBy(desc(wrapupDrafts.createdAt))
         .limit(limit);
 
