@@ -423,43 +423,63 @@ class RPRClient {
       return null;
     }
 
-    // Priority: Listings first (has active MLS data), then parcels
-    for (const section of result.sections) {
+    // Helper to extract result from a section
+    const extractFromSection = (section: typeof result.sections[0], isListingSection: boolean) => {
+      if (!section.locations || section.locations.length === 0) return null;
+
+      const loc = section.locations[0];
       const sectionType = section.sectionType || section.label || "";
-      const isListingSection = sectionType.toLowerCase().includes("listing");
+      console.log(`[RPR] Found in section: ${sectionType}, isListing: ${isListingSection}`);
 
-      if (section.locations && section.locations.length > 0) {
-        const loc = section.locations[0];
-        console.log(`[RPR] Found in section: ${sectionType}, isListing: ${isListingSection}`);
-
-        // Parse address from description or fields
-        let parsedAddress = this.parseAddress(address);
-        if (loc.address || loc.city || loc.state) {
-          parsedAddress = {
-            street: loc.address || parsedAddress.street,
-            city: loc.city || parsedAddress.city,
-            state: loc.state || parsedAddress.state,
-            zip: loc.zip || parsedAddress.zip,
-          };
-        } else if (loc.description) {
-          const parts = loc.description.split(", ");
-          if (parts.length >= 3) {
-            parsedAddress = {
-              street: parts[0],
-              city: parts[1],
-              state: parts[2]?.split(" ")[0] || "",
-              zip: parts[2]?.split(" ")[1] || "",
-            };
-          }
-        }
-
-        return {
-          propertyId: loc.propertyId,
-          listingId: loc.listingId,
-          isListing: isListingSection || !!loc.listingId,
-          status: loc.status,
-          parsedAddress,
+      // Parse address from description or fields
+      let parsedAddress = this.parseAddress(address);
+      if (loc.address || loc.city || loc.state) {
+        parsedAddress = {
+          street: loc.address || parsedAddress.street,
+          city: loc.city || parsedAddress.city,
+          state: loc.state || parsedAddress.state,
+          zip: loc.zip || parsedAddress.zip,
         };
+      } else if (loc.description) {
+        const parts = loc.description.split(", ");
+        if (parts.length >= 3) {
+          parsedAddress = {
+            street: parts[0],
+            city: parts[1],
+            state: parts[2]?.split(" ")[0] || "",
+            zip: parts[2]?.split(" ")[1] || "",
+          };
+        }
+      }
+
+      return {
+        propertyId: loc.propertyId,
+        listingId: loc.listingId,
+        isListing: isListingSection || !!loc.listingId,
+        status: loc.status,
+        parsedAddress,
+      };
+    };
+
+    // FIRST PASS: Look for listing sections (active MLS data has priority)
+    for (const section of result.sections) {
+      const sectionType = (section.sectionType || section.label || "").toLowerCase();
+      const isListingSection = sectionType.includes("listing");
+
+      if (isListingSection) {
+        const result = extractFromSection(section, true);
+        if (result) return result;
+      }
+    }
+
+    // SECOND PASS: Fall back to address/parcel sections
+    for (const section of result.sections) {
+      const sectionType = (section.sectionType || section.label || "").toLowerCase();
+      const isListingSection = sectionType.includes("listing");
+
+      if (!isListingSection) {
+        const result = extractFromSection(section, false);
+        if (result) return result;
       }
     }
 
@@ -526,9 +546,28 @@ class RPRClient {
       // Step 3: Get details (optional, may not always be available)
       const detailsData = await this.getPropertyDetails(id, isListing);
 
-      // Determine current status
+      // Determine current status - check common data first (has actual listing status)
       let currentStatus: "off_market" | "active" | "pending" | "sold" | "unknown" = "off_market";
-      if (status) {
+
+      // Priority 1: Check common data for listing status (most accurate)
+      const commonStatus = (commonData?.searchResult as any)?.status;
+      const hasListingId = !!(commonData?.searchResult as any)?.listingId;
+
+      if (commonStatus) {
+        const statusLower = commonStatus.toLowerCase();
+        if (statusLower === "active" || statusLower === "for sale") {
+          currentStatus = "active";
+        } else if (statusLower.includes("pending") || statusLower.includes("contingent")) {
+          currentStatus = "pending";
+        } else if (statusLower === "sold" || statusLower === "closed") {
+          currentStatus = "sold";
+        } else if (statusLower === "off market" || statusLower === "off_market") {
+          currentStatus = "off_market";
+        }
+        console.log(`[RPR] Status from common data: ${commonStatus} -> ${currentStatus}`);
+      }
+      // Priority 2: Check location search status
+      else if (status) {
         const statusLower = status.toLowerCase();
         if (statusLower === "active" || statusLower === "for sale") {
           currentStatus = "active";
@@ -537,8 +576,10 @@ class RPRClient {
         } else if (statusLower === "sold" || statusLower === "closed") {
           currentStatus = "sold";
         }
-      } else if (isListing) {
-        currentStatus = "active"; // Default for listings
+      }
+      // Priority 3: If has listing ID, assume active
+      else if (isListing || hasListingId) {
+        currentStatus = "active";
       }
 
       console.log(`[RPR] Lookup succeeded, status: ${currentStatus}`);
