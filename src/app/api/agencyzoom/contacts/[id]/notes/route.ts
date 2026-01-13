@@ -4,6 +4,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Note, NotesResponse, AddNoteRequest, AddNoteResponse } from "@/types/customer-profile";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { createClient } from "@/lib/supabase/server";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 // =============================================================================
 // CONFIGURATION
@@ -134,9 +138,46 @@ export async function POST(
       }, { status: 400 });
     }
 
+    // Get current user for signature
+    let userName = "Unknown User";
+    try {
+      const supabase = await createClient();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+
+      if (authUser?.email) {
+        const [dbUser] = await db
+          .select({ firstName: users.firstName, lastName: users.lastName })
+          .from(users)
+          .where(eq(users.email, authUser.email))
+          .limit(1);
+
+        if (dbUser) {
+          userName = `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim() || authUser.email;
+        } else {
+          userName = authUser.email;
+        }
+      }
+    } catch (authError) {
+      console.warn("Could not get user for note signature:", authError);
+    }
+
+    // Format date/time for signature
+    const now = new Date();
+    const formattedDateTime = now.toLocaleString('en-US', {
+      month: 'numeric',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    // Add signature to note content
+    const noteWithSignature = `${body.content.trim()}\n\n— Note posted by ${userName} on ${formattedDateTime} via Triage`;
+
     // Use v1 API via AgencyZoom client (JWT auth)
     const client = getAgencyZoomClient();
-    const result = await client.addNote(parseInt(contactId), body.content.trim());
+    const result = await client.addNote(parseInt(contactId), noteWithSignature);
 
     if (!result.success) {
       console.error(`AgencyZoom note creation failed for contact ${contactId}`);
