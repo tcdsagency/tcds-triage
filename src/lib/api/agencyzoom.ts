@@ -850,11 +850,15 @@ export class AgencyZoomClient {
       .join('; ');
 
     // Send SMS via internal endpoint (uses app.agencyzoom.com, not api)
+    // Must include browser-like headers to pass AgencyZoom's validation
     const smsResponse = await fetch('https://app.agencyzoom.com/integration/sms/send-text', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Cookie': cookieHeader,
+        'Origin': 'https://app.agencyzoom.com',
+        'Referer': 'https://app.agencyzoom.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         ...(sessionData.data.csrfToken && {
           'X-CSRF-TOKEN': sessionData.data.csrfToken,
         }),
