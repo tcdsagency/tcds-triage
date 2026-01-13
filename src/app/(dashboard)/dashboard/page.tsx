@@ -95,7 +95,8 @@ const QUOTE_TYPES = [
     textColor: 'text-green-600 dark:text-green-400',
   },
   {
-    id: 'bundle',
+    id: 'bundle', // Goes to quote selector page
+    href: '/quote/new',
     label: 'Bundle',
     icon: Package,
     color: 'from-amber-500 to-orange-500',
@@ -105,7 +106,7 @@ const QUOTE_TYPES = [
     badge: 'SAVE 25%',
   },
   {
-    id: 'boat',
+    id: 'recreational', // Boat/RV/ATV
     label: 'Boat/RV',
     icon: Ship,
     color: 'from-cyan-500 to-cyan-600',
@@ -114,7 +115,7 @@ const QUOTE_TYPES = [
     textColor: 'text-cyan-600 dark:text-cyan-400',
   },
   {
-    id: 'commercial',
+    id: 'bop', // Business Owner's Policy
     label: 'Business',
     icon: Briefcase,
     color: 'from-purple-500 to-purple-600',
@@ -303,8 +304,8 @@ export default function DashboardPage() {
 
       if (customersRes.ok) {
         const data = await customersRes.json();
-        if (data.customers) {
-          data.customers.forEach((c: any) => {
+        if (data.results) {
+          data.results.forEach((c: any) => {
             results.push({
               id: c.id,
               agencyzoomId: c.azCustomerId || c.agencyzoomId,
@@ -435,10 +436,11 @@ export default function DashboardPage() {
           <div className="grid grid-cols-3 sm:grid-cols-5 gap-4">
             {QUOTE_TYPES.map((type) => {
               const Icon = type.icon;
+              const href = (type as any).href || `/quote/new/${type.id}`;
               return (
                 <Link
                   key={type.id}
-                  href={`/quote/new/${type.id}`}
+                  href={href}
                   className="group relative"
                 >
                   <div className="flex flex-col items-center p-4 rounded-xl transition-all duration-200 hover:scale-105">
