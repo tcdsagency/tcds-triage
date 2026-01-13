@@ -729,39 +729,58 @@ export async function POST(request: NextRequest) {
       const wrapupStatus = shouldAutoVoid ? "completed" : "pending_review";
 
       // Use transaction to ensure wrapup and match suggestions are created atomically
+      // Use upsert to handle duplicate webhook calls (Zapier may retry)
       const txResult = await db.transaction(async (tx) => {
+        const wrapupValues = {
+          tenantId,
+          callId: call.id,
+          direction: direction === "inbound" ? "Inbound" : "Outbound",
+          agentExtension: extension,
+          agentName: body.agentName,
+          summary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),
+          customerName: analysis?.extractedData?.customerName || trestlePersonName,
+          customerPhone: phoneForLookup,
+          customerEmail: analysis?.extractedData?.email || (trestleEmails && trestleEmails.length > 0 ? trestleEmails[0] : undefined),
+          requestType: analysis?.callType || hangupReason,
+          status: wrapupStatus,
+          matchStatus: customerMatchStatus,
+          trestleData: trestleData,
+          aiCleanedSummary: analysis?.summary,
+          aiProcessingStatus: analysis ? "completed" : "skipped",
+          aiProcessedAt: new Date(),
+          aiExtraction: analysis ? {
+            actionItems: analysis.actionItems,
+            extractedData: analysis.extractedData,
+            sentiment: analysis.sentiment,
+            serviceRequestType: analysis.serviceRequestType,
+            serviceRequestTypeId,
+            agencyZoomCustomerId: matchedAzCustomerId,
+            agencyZoomLeadId: matchedLeadId,
+            matchType,
+          } : null,
+          aiConfidence: analysis ? "0.85" : null,
+          isAutoVoided: shouldAutoVoid,
+          autoVoidReason: shouldAutoVoid ? hangupReason : null,
+        };
+
         const [wrapup] = await tx
           .insert(wrapupDrafts)
-          .values({
-            tenantId,
-            callId: call.id,
-            direction: direction === "inbound" ? "Inbound" : "Outbound",
-            agentExtension: extension,
-            agentName: body.agentName,
-            summary: analysis?.summary || (isShortCall ? "Short call - no conversation" : "Hangup - no meaningful conversation"),
-            customerName: analysis?.extractedData?.customerName || trestlePersonName,
-            customerPhone: phoneForLookup,
-            customerEmail: analysis?.extractedData?.email || (trestleEmails && trestleEmails.length > 0 ? trestleEmails[0] : undefined),
-            requestType: analysis?.callType || hangupReason,
-            status: wrapupStatus,
-            matchStatus: customerMatchStatus,
-            trestleData: trestleData,
-            aiCleanedSummary: analysis?.summary,
-            aiProcessingStatus: analysis ? "completed" : "skipped",
-            aiProcessedAt: new Date(),
-            aiExtraction: analysis ? {
-              actionItems: analysis.actionItems,
-              extractedData: analysis.extractedData,
-              sentiment: analysis.sentiment,
-              serviceRequestType: analysis.serviceRequestType,
-              serviceRequestTypeId,
-              agencyZoomCustomerId: matchedAzCustomerId,
-              agencyZoomLeadId: matchedLeadId,
-              matchType,
-            } : null,
-            aiConfidence: analysis ? "0.85" : null,
-            isAutoVoided: shouldAutoVoid,
-            autoVoidReason: shouldAutoVoid ? hangupReason : null,
+          .values(wrapupValues)
+          .onConflictDoUpdate({
+            target: wrapupDrafts.callId,
+            set: {
+              summary: wrapupValues.summary,
+              customerName: wrapupValues.customerName,
+              customerPhone: wrapupValues.customerPhone,
+              customerEmail: wrapupValues.customerEmail,
+              requestType: wrapupValues.requestType,
+              aiCleanedSummary: wrapupValues.aiCleanedSummary,
+              aiProcessingStatus: wrapupValues.aiProcessingStatus,
+              aiProcessedAt: wrapupValues.aiProcessedAt,
+              aiExtraction: wrapupValues.aiExtraction,
+              aiConfidence: wrapupValues.aiConfidence,
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
