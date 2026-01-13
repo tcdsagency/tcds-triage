@@ -975,6 +975,44 @@ export const liveTranscriptSegments = pgTable('live_transcript_segments', {
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
+// HISTORICAL TRANSCRIPTS - Imported legacy call transcripts for AI Deep Think
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const historicalTranscripts = pgTable('historical_transcripts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Customer matching
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+  customerPhone: varchar('customer_phone', { length: 20 }),
+  customerName: varchar('customer_name', { length: 200 }),
+
+  // Call metadata from import
+  callDate: timestamp('call_date').notNull(),
+  direction: varchar('direction', { length: 20 }), // 'inbound', 'outbound'
+  agentName: varchar('agent_name', { length: 100 }),
+  durationSeconds: integer('duration_seconds'),
+
+  // Transcript content
+  transcript: text('transcript').notNull(),
+
+  // AI-extracted insights (populated on import or first access)
+  aiSummary: text('ai_summary'),
+  aiTopics: jsonb('ai_topics').$type<string[]>(), // Extracted topics/keywords
+  aiLifeEvents: jsonb('ai_life_events').$type<Array<{event: string; date?: string}>>(),
+
+  // Source tracking
+  importSource: varchar('import_source', { length: 50 }).default('spreadsheet'), // 'spreadsheet', 'mssql', 'migration'
+  externalId: varchar('external_id', { length: 100 }), // Original ID from source system
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('historical_transcripts_customer_idx').on(table.customerId),
+  index('historical_transcripts_phone_idx').on(table.customerPhone),
+  index('historical_transcripts_date_idx').on(table.callDate),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TRIAGE QUEUE
 // ═══════════════════════════════════════════════════════════════════════════
 
