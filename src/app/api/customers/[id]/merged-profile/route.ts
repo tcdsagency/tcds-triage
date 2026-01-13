@@ -682,21 +682,33 @@ export async function GET(
             .limit(1);
           debugInfo.lookupMethod = "uuid";
         } else {
-          // Look up by HawkSoft client code (the URL might be using the HawkSoft ID directly)
+          // Look up by AgencyZoom ID first (most common from dashboard links)
           [customerRecord] = await db
             .select({
               hawksoftClientCode: customers.hawksoftClientCode,
               agencyzoomId: customers.agencyzoomId,
             })
             .from(customers)
-            .where(eq(customers.hawksoftClientCode, customerId))
+            .where(eq(customers.agencyzoomId, customerId))
             .limit(1);
-          debugInfo.lookupMethod = "hawksoft_client_code";
+          debugInfo.lookupMethod = "agencyzoom_id";
 
-          // If found by HawkSoft code, use that ID directly
+          // If not found by AgencyZoom ID, try HawkSoft client code
+          if (!customerRecord) {
+            [customerRecord] = await db
+              .select({
+                hawksoftClientCode: customers.hawksoftClientCode,
+                agencyzoomId: customers.agencyzoomId,
+              })
+              .from(customers)
+              .where(eq(customers.hawksoftClientCode, customerId))
+              .limit(1);
+            debugInfo.lookupMethod = "hawksoft_client_code";
+          }
+
+          // If still not found, try using it directly as hawksoftId
           if (!customerRecord) {
             // Not found in DB, but the customerId might BE the HawkSoft client number
-            // Try using it directly as hawksoftId
             hawksoftId = customerId;
             debugInfo.dbLookup = "not in db, using customerId as hawksoftId directly";
           }
