@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
     const assignedToId = searchParams.get("assignedToId");
     const carrier = searchParams.get("carrier");
     const search = searchParams.get("search");
+    const newToday = searchParams.get("newToday") === "true"; // Filter for notices fetched today
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "50");
     const offset = (page - 1) * limit;
@@ -66,6 +67,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (newToday) {
+      // Filter for notices fetched today (since midnight)
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      conditions.push(sql`${policyNotices.fetchedAt} >= ${todayStart.toISOString()}`);
+    }
+
     // Execute query
     const notices = await db
       .select({
@@ -100,8 +108,11 @@ export async function GET(request: NextRequest) {
         zapierWebhookSentAt: policyNotices.zapierWebhookSentAt,
         zapierWebhookStatus: policyNotices.zapierWebhookStatus,
         noticeDate: policyNotices.noticeDate,
+        fetchedAt: policyNotices.fetchedAt,
         createdAt: policyNotices.createdAt,
         updatedAt: policyNotices.updatedAt,
+        priorityScore: policyNotices.priorityScore,
+        donnaContext: policyNotices.donnaContext,
         // Join assignedTo user
         assignedToName: users.firstName,
         assignedToLastName: users.lastName,
@@ -156,6 +167,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Get last synced timestamp and count of new today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [syncInfo] = await db
+      .select({
+        lastSyncedAt: sql<string>`MAX(${policyNotices.fetchedAt})`,
+        newTodayCount: sql<number>`COUNT(*) FILTER (WHERE ${policyNotices.fetchedAt} >= ${todayStart.toISOString()})::int`,
+      })
+      .from(policyNotices)
+      .where(eq(policyNotices.tenantId, tenantId));
+
     // Format response
     const formattedNotices = notices.map((notice) => ({
       ...notice,
@@ -199,6 +222,8 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(count / limit),
       },
       stats: statusCounts,
+      lastSyncedAt: syncInfo?.lastSyncedAt || null,
+      newTodayCount: syncInfo?.newTodayCount || 0,
     });
   } catch (error) {
     console.error("Error fetching policy notices:", error);

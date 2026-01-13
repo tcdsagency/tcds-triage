@@ -29,6 +29,8 @@ interface PaginatedResponse {
     actioned: number;
     dismissed: number;
   };
+  lastSyncedAt: string | null;
+  newTodayCount: number;
 }
 
 // =============================================================================
@@ -61,7 +63,12 @@ export default function PolicyNoticesPage() {
     type: '',
     urgency: '',
     search: '',
+    newToday: false,
   });
+
+  // Sync info
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [newTodayCount, setNewTodayCount] = useState(0);
 
   // Users for assignment dropdown
   const [users, setUsers] = useState<User[]>([]);
@@ -75,6 +82,7 @@ export default function PolicyNoticesPage() {
       if (filters.type) params.set('type', filters.type);
       if (filters.urgency) params.set('urgency', filters.urgency);
       if (filters.search) params.set('search', filters.search);
+      if (filters.newToday) params.set('newToday', 'true');
       params.set('page', pagination.page.toString());
       params.set('limit', pagination.limit.toString());
 
@@ -85,6 +93,8 @@ export default function PolicyNoticesPage() {
         setNotices(data.notices);
         setStats(data.stats);
         setPagination(data.pagination);
+        setLastSyncedAt(data.lastSyncedAt);
+        setNewTodayCount(data.newTodayCount);
       }
     } catch (error) {
       console.error('Error fetching notices:', error);
@@ -179,27 +189,53 @@ export default function PolicyNoticesPage() {
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
               Policy Notices
             </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Review and action policy notices from Adapt Insurance
-            </p>
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Review and action policy notices from Adapt Insurance
+              </p>
+              {lastSyncedAt && (
+                <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
+                  <span>&#x1F550;</span>
+                  Last synced: {formatRelativeTime(lastSyncedAt)}
+                </span>
+              )}
+            </div>
           </div>
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {syncing ? (
-              <>
-                <span className="animate-spin">&#x21bb;</span>
-                Syncing...
-              </>
-            ) : (
-              <>
-                <span>&#x21bb;</span>
-                Sync Now
-              </>
+          <div className="flex items-center gap-3">
+            {newTodayCount > 0 && (
+              <button
+                onClick={() => setFilters(f => ({ ...f, newToday: !f.newToday }))}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
+                  filters.newToday
+                    ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-500 dark:bg-emerald-900/50 dark:text-emerald-300'
+                    : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400'
+                }`}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                {newTodayCount} New Today
+              </button>
             )}
-          </button>
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {syncing ? (
+                <>
+                  <span className="animate-spin">&#x21bb;</span>
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <span>&#x21bb;</span>
+                  Sync Now
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Stats Row */}
@@ -297,9 +333,9 @@ export default function PolicyNoticesPage() {
           </div>
 
           {/* Clear Filters */}
-          {(filters.status || filters.type || filters.urgency || filters.search) && (
+          {(filters.status || filters.type || filters.urgency || filters.search || filters.newToday) && (
             <button
-              onClick={() => setFilters({ status: '', type: '', urgency: '', search: '' })}
+              onClick={() => setFilters({ status: '', type: '', urgency: '', search: '', newToday: false })}
               className="w-full px-3 py-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
             >
               Clear Filters
@@ -644,4 +680,28 @@ function DetailRow({ label, value }: { label: string; value: string }) {
       <span className="text-gray-900 dark:text-gray-100 font-medium">{value}</span>
     </div>
   );
+}
+
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return date.toLocaleDateString();
+}
+
+function isNewToday(fetchedAt: string | null): boolean {
+  if (!fetchedAt) return false;
+  const date = new Date(fetchedAt);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date >= today;
 }
