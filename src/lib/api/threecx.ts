@@ -326,11 +326,18 @@ export class ThreeCXClient {
    * The 3CX Call Control API requires participant IDs, not call IDs
    */
   async findParticipantId(extension: string, callId?: string): Promise<string | null> {
+    console.log(`[3CX] findParticipantId called - ext: ${extension}, callId: ${callId}`);
+
     const info = await this.getExtensionInfo(extension);
+    console.log(`[3CX] getExtensionInfo result:`, JSON.stringify(info, null, 2));
+
     if (!info || !info.participants || info.participants.length === 0) {
       console.log(`[3CX] No active participants found for ext ${extension}`);
       return null;
     }
+
+    console.log(`[3CX] Found ${info.participants.length} participants:`,
+      info.participants.map(p => `id=${p.id}, callid=${p.callid}, state=${p.state}`).join('; '));
 
     // If callId provided, try to match it
     if (callId) {
@@ -341,6 +348,7 @@ export class ThreeCXClient {
         console.log(`[3CX] Found participant ${match.id} for callId ${callId}`);
         return match.id;
       }
+      console.log(`[3CX] No exact match for callId ${callId}, using first participant`);
     }
 
     // Return first participant if no specific match
@@ -375,6 +383,7 @@ export class ThreeCXClient {
   async dropCall(callId: string, extension?: string): Promise<boolean> {
     try {
       const dn = extension || this.config.clientId;
+      console.log(`[3CX] dropCall called - callId: ${callId}, extension: ${dn}`);
 
       // Find the participant ID for this call
       const participantId = await this.findParticipantId(dn, callId);
@@ -383,13 +392,14 @@ export class ThreeCXClient {
         return false;
       }
 
+      console.log(`[3CX] Calling POST /callcontrol/${dn}/participants/${participantId}/drop`);
       await this.apiCall(`/callcontrol/${dn}/participants/${participantId}/drop`, {
         method: "POST",
       });
-      console.log(`[3CX] Call dropped (participant: ${participantId}, ext: ${dn})`);
+      console.log(`[3CX] Call dropped successfully (participant: ${participantId}, ext: ${dn})`);
       return true;
-    } catch (err) {
-      console.error("[3CX] dropCall error:", err);
+    } catch (err: any) {
+      console.error("[3CX] dropCall error:", err?.message || err);
       return false;
     }
   }
@@ -430,6 +440,7 @@ export class ThreeCXClient {
   async holdCall(callId: string, extension?: string): Promise<boolean> {
     try {
       const dn = extension || this.config.clientId;
+      console.log(`[3CX] holdCall called - callId: ${callId}, extension: ${dn}`);
 
       // Find the participant ID for this call
       const participantId = await this.findParticipantId(dn, callId);
@@ -438,13 +449,14 @@ export class ThreeCXClient {
         return false;
       }
 
+      console.log(`[3CX] Calling POST /callcontrol/${dn}/participants/${participantId}/hold`);
       await this.apiCall(`/callcontrol/${dn}/participants/${participantId}/hold`, {
         method: "POST",
       });
-      console.log(`[3CX] Call put on hold (participant: ${participantId}, ext: ${dn})`);
+      console.log(`[3CX] Call put on hold successfully (participant: ${participantId}, ext: ${dn})`);
       return true;
-    } catch (err) {
-      console.error("[3CX] holdCall error:", err);
+    } catch (err: any) {
+      console.error("[3CX] holdCall error:", err?.message || err);
       return false;
     }
   }

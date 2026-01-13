@@ -190,6 +190,7 @@ export default function CallPopup({
   const [holdLoading, setHoldLoading] = useState(false);
   const [showTransferDropdown, setShowTransferDropdown] = useState(false);
   const [transferring, setTransferring] = useState(false);
+  const [callControlError, setCallControlError] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<Array<{
     id: string;
     name: string;
@@ -625,6 +626,7 @@ export default function CallPopup({
   // =========================================================================
   const handleEndCall = useCallback(async () => {
     setEndingCall(true);
+    setCallControlError(null);
     try {
       const res = await fetch(`/api/calls/${sessionId}`, {
         method: "PATCH",
@@ -632,14 +634,19 @@ export default function CallPopup({
         body: JSON.stringify({ action: "end" }),
       });
 
-      if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
         // Close the popup after ending the call
         onClose();
       } else {
-        console.error("Failed to end call:", await res.text());
+        console.error("Failed to end call:", data.error);
+        setCallControlError(data.error || "Failed to end call");
+        setTimeout(() => setCallControlError(null), 5000);
       }
     } catch (err) {
       console.error("Error ending call:", err);
+      setCallControlError("Network error - could not reach server");
+      setTimeout(() => setCallControlError(null), 5000);
     } finally {
       setEndingCall(false);
     }
@@ -650,6 +657,7 @@ export default function CallPopup({
   // =========================================================================
   const handleHoldToggle = useCallback(async () => {
     setHoldLoading(true);
+    setCallControlError(null);
     try {
       const action = isOnHold ? "resume" : "hold";
       const res = await fetch(`/api/calls/${sessionId}`, {
@@ -664,9 +672,14 @@ export default function CallPopup({
         console.log(`[CallPopup] Call ${action === "hold" ? "put on hold" : "resumed"}`);
       } else {
         console.error(`[CallPopup] Failed to ${action} call:`, data.error);
+        setCallControlError(data.error || `Failed to ${action} call`);
+        // Auto-clear error after 5 seconds
+        setTimeout(() => setCallControlError(null), 5000);
       }
     } catch (err) {
       console.error("[CallPopup] Hold toggle error:", err);
+      setCallControlError("Network error - could not reach server");
+      setTimeout(() => setCallControlError(null), 5000);
     } finally {
       setHoldLoading(false);
     }
@@ -916,6 +929,12 @@ export default function CallPopup({
               </span>
               {isConnected && <span className="text-green-400">● Live</span>}
             </div>
+            {/* Call Control Error Display */}
+            {callControlError && (
+              <div className="text-xs text-red-400 bg-red-900/50 px-2 py-1 rounded mt-1">
+                ⚠️ {callControlError}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1">
