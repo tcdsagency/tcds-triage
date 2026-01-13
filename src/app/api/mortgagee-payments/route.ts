@@ -82,7 +82,18 @@ export async function GET(request: NextRequest) {
       .leftJoin(customers, eq(policies.customerId, customers.id))
       .leftJoin(properties, eq(properties.policyId, policies.id))
       .where(whereConditions)
-      .orderBy(desc(mortgagees.updatedAt))
+      .orderBy(
+        // Order by next due date soonest first (nulls last), then by status priority
+        sql`CASE WHEN ${mortgagees.nextDueDate} IS NULL THEN 1 ELSE 0 END`,
+        sql`${mortgagees.nextDueDate} ASC NULLS LAST`,
+        sql`CASE ${mortgagees.currentPaymentStatus}
+          WHEN 'lapsed' THEN 0
+          WHEN 'late' THEN 1
+          WHEN 'grace_period' THEN 2
+          WHEN 'current' THEN 3
+          ELSE 4
+        END`
+      )
       .limit(limit)
       .offset(offset);
 

@@ -126,7 +126,9 @@ export async function GET(request: NextRequest) {
       .leftJoin(customers, eq(policyNotices.customerId, customers.id))
       .where(and(...conditions))
       .orderBy(
-        // Order by urgency first, then by notice date
+        // Order by due date soonest first (nulls last), then by urgency, then notice date
+        sql`CASE WHEN ${policyNotices.dueDate} IS NULL THEN 1 ELSE 0 END`,
+        sql`${policyNotices.dueDate} ASC NULLS LAST`,
         sql`CASE ${policyNotices.urgency}
           WHEN 'urgent' THEN 0
           WHEN 'high' THEN 1
