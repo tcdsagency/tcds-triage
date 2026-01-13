@@ -9,14 +9,17 @@ import BulkActionBar from '@/components/features/BulkActionBar';
 import ReviewModal from '@/components/features/ReviewModal';
 import CustomerSearchModal from '@/components/features/CustomerSearchModal';
 import ReportIssueModal from '@/components/features/ReportIssueModal';
+import ReviewedItemCard, { ReviewedItemCardSkeleton, type ReviewedItem } from '@/components/features/ReviewedItemCard';
 import { hasFeatureAccess } from '@/lib/feature-permissions';
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
+type MainView = 'pending' | 'reviewed';
 type StatusFilter = 'all' | 'matched' | 'needs_review' | 'unmatched' | 'after_hours';
 type TypeFilter = 'all' | 'wrapup' | 'message';
+type ReviewedFilter = 'all' | 'auto_voided' | 'reviewed';
 
 interface APIResponse {
   success: boolean;
@@ -40,6 +43,10 @@ const ALERT_THRESHOLD_SECONDS = 90;
 const ALERT_INTERVAL_MS = 5000; // Play sound every 5 seconds when alerting
 
 export default function PendingReviewPage() {
+  // Main view state
+  const [mainView, setMainView] = useState<MainView>('pending');
+
+  // Pending items state
   const [items, setItems] = useState<PendingItem[]>([]);
   const [counts, setCounts] = useState<PendingCounts>({
     wrapups: 0,
@@ -58,6 +65,13 @@ export default function PendingReviewPage() {
   const [findMatchItem, setFindMatchItem] = useState<PendingItem | null>(null);
   const [reportIssueItem, setReportIssueItem] = useState<PendingItem | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+
+  // Reviewed items state
+  const [reviewedItems, setReviewedItems] = useState<ReviewedItem[]>([]);
+  const [reviewedCounts, setReviewedCounts] = useState({ total: 0, autoVoided: 0, reviewed: 0 });
+  const [reviewedFilter, setReviewedFilter] = useState<ReviewedFilter>('all');
+  const [reviewedLoading, setReviewedLoading] = useState(false);
+  const [resubmitLoading, setResubmitLoading] = useState<string | null>(null);
 
   // Alert system state
   const [alertsEnabled, setAlertsEnabled] = useState(false);
@@ -97,6 +111,70 @@ export default function PendingReviewPage() {
     const interval = setInterval(fetchItems, 30000);
     return () => clearInterval(interval);
   }, [fetchItems]);
+
+  // ==========================================================================
+  // REVIEWED ITEMS FETCHING
+  // ==========================================================================
+
+  const fetchReviewedItems = useCallback(async () => {
+    setReviewedLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (reviewedFilter !== 'all') params.set('filter', reviewedFilter);
+      params.set('limit', '50');
+
+      const res = await fetch(`/api/reviewed-items?${params.toString()}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setReviewedItems(data.items || []);
+        setReviewedCounts(data.counts || { total: 0, autoVoided: 0, reviewed: 0 });
+      } else {
+        console.error('Failed to fetch reviewed items:', data.error);
+        toast.error('Failed to load reviewed items');
+      }
+    } catch (error) {
+      console.error('Reviewed items fetch error:', error);
+      toast.error('Failed to load reviewed items');
+    } finally {
+      setReviewedLoading(false);
+    }
+  }, [reviewedFilter]);
+
+  // Fetch reviewed items when switching to that tab or filter changes
+  useEffect(() => {
+    if (mainView === 'reviewed') {
+      fetchReviewedItems();
+    }
+  }, [mainView, fetchReviewedItems]);
+
+  // Handle re-submit for review
+  const handleResubmit = async (id: string) => {
+    setResubmitLoading(id);
+    try {
+      const res = await fetch('/api/reviewed-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'resubmit' }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Item re-submitted for review');
+        // Remove from reviewed list
+        setReviewedItems((prev) => prev.filter((item) => item.id !== id));
+        // Refresh pending items
+        fetchItems();
+      } else {
+        toast.error(data.error || 'Failed to re-submit item');
+      }
+    } catch (error) {
+      console.error('Re-submit error:', error);
+      toast.error('Failed to re-submit item');
+    } finally {
+      setResubmitLoading(null);
+    }
+  };
 
   // ==========================================================================
   // PENDING REVIEW ALERTS SYSTEM
@@ -492,38 +570,79 @@ export default function PendingReviewPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Pending Review
+            {mainView === 'pending' ? 'Pending Review' : 'Review Log'}
           </h1>
           <p className="text-gray-500 dark:text-gray-400">
-            Review calls, messages, and leads awaiting action
+            {mainView === 'pending'
+              ? 'Review calls, messages, and leads awaiting action'
+              : 'View completed and auto-voided items'}
           </p>
         </div>
         <button
-          onClick={fetchItems}
-          disabled={loading}
+          onClick={mainView === 'pending' ? fetchItems : fetchReviewedItems}
+          disabled={mainView === 'pending' ? loading : reviewedLoading}
           className={cn(
             'px-4 py-2 rounded-lg font-medium transition-colors',
-            loading
+            (mainView === 'pending' ? loading : reviewedLoading)
               ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
               : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
           )}
         >
-          {loading ? '...' : '↻ Refresh'}
+          {(mainView === 'pending' ? loading : reviewedLoading) ? '...' : '↻ Refresh'}
         </button>
       </div>
 
-      {/* Unified Filter Bar */}
-      <PendingCountsBar
-        counts={counts}
-        activeTypeFilter={typeFilter}
-        activeStatusFilter={statusFilter}
-        onTypeFilter={setTypeFilter}
-        onStatusFilter={setStatusFilter}
-        isLoading={loading}
-      />
+      {/* Main View Tabs */}
+      <div className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-700">
+        <button
+          onClick={() => setMainView('pending')}
+          className={cn(
+            'px-4 py-2 font-semibold text-sm transition-colors border-b-2 -mb-px',
+            mainView === 'pending'
+              ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+          )}
+        >
+          Pending
+          {counts.total > 0 && (
+            <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+              {counts.total}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setMainView('reviewed')}
+          className={cn(
+            'px-4 py-2 font-semibold text-sm transition-colors border-b-2 -mb-px',
+            mainView === 'reviewed'
+              ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+          )}
+        >
+          Reviewed
+          {reviewedCounts.total > 0 && (
+            <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+              {reviewedCounts.total}
+            </span>
+          )}
+        </button>
+      </div>
 
-      {/* Content */}
-      {loading ? (
+      {/* PENDING VIEW */}
+      {mainView === 'pending' && (
+        <>
+          {/* Unified Filter Bar */}
+          <PendingCountsBar
+            counts={counts}
+            activeTypeFilter={typeFilter}
+            activeStatusFilter={statusFilter}
+            onTypeFilter={setTypeFilter}
+            onStatusFilter={setStatusFilter}
+            isLoading={loading}
+          />
+
+          {/* Content */}
+          {loading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {[1, 2, 3, 4].map((i) => (
             <PendingItemCardSkeleton key={i} />
@@ -562,15 +681,94 @@ export default function PendingReviewPage() {
         </div>
       )}
 
-      {/* Bulk Action Bar */}
-      <BulkActionBar
-        selectedItems={selectedItems}
-        onSelectAll={handleSelectAll}
-        onClearSelection={handleClearSelection}
-        onBulkAction={handleBulkAction}
-        totalItems={filteredItems.length}
-        isLoading={actionLoading}
-      />
+          {/* Bulk Action Bar */}
+          <BulkActionBar
+            selectedItems={selectedItems}
+            onSelectAll={handleSelectAll}
+            onClearSelection={handleClearSelection}
+            onBulkAction={handleBulkAction}
+            totalItems={filteredItems.length}
+            isLoading={actionLoading}
+          />
+        </>
+      )}
+
+      {/* REVIEWED VIEW */}
+      {mainView === 'reviewed' && (
+        <>
+          {/* Reviewed Filter Bar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">Filter:</span>
+            <button
+              onClick={() => setReviewedFilter('all')}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                reviewedFilter === 'all'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              )}
+            >
+              All ({reviewedCounts.total})
+            </button>
+            <button
+              onClick={() => setReviewedFilter('reviewed')}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                reviewedFilter === 'reviewed'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              )}
+            >
+              Reviewed ({reviewedCounts.reviewed})
+            </button>
+            <button
+              onClick={() => setReviewedFilter('auto_voided')}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                reviewedFilter === 'auto_voided'
+                  ? 'bg-gray-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              )}
+            >
+              Auto-Voided ({reviewedCounts.autoVoided})
+            </button>
+          </div>
+
+          {/* Reviewed Content */}
+          {reviewedLoading ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {[1, 2, 3, 4].map((i) => (
+                <ReviewedItemCardSkeleton key={i} />
+              ))}
+            </div>
+          ) : reviewedItems.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">📋</div>
+              <h2 className="text-xl font-medium text-gray-900 dark:text-white mb-2">
+                No reviewed items
+              </h2>
+              <p className="text-gray-500 dark:text-gray-400">
+                {reviewedFilter === 'auto_voided'
+                  ? 'No auto-voided items found'
+                  : reviewedFilter === 'reviewed'
+                    ? 'No manually reviewed items found'
+                    : 'Completed items will appear here'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {reviewedItems.map((item) => (
+                <ReviewedItemCard
+                  key={item.id}
+                  item={item}
+                  onResubmit={handleResubmit}
+                  isLoading={resubmitLoading === item.id}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       {/* Review Modal */}
       {reviewModalItem && (
