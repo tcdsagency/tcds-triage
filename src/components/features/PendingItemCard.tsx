@@ -21,6 +21,7 @@ export interface PendingItem {
 
   // Status/matching
   matchStatus: 'matched' | 'needs_review' | 'unmatched' | 'after_hours';
+  matchReason: string | null;
   sentiment: 'positive' | 'neutral' | 'frustrated' | null;
   isAutoPosted: boolean;
 
@@ -454,6 +455,14 @@ export default function PendingItemCard({
             </span>
           )}
         </div>
+
+        {/* ===== MATCH REASON (for unmatched/needs_review) ===== */}
+        {item.matchReason && (item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review') && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            <span>ℹ️</span>
+            <span>{item.matchReason}</span>
+          </div>
+        )}
 
         {/* ===== TRESTLE IDENTITY HINT (for unmatched) ===== */}
         {item.matchStatus === 'unmatched' && item.trestleData && (
