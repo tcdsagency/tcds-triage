@@ -231,6 +231,15 @@ export interface ServiceRequestWizardContextType {
   // Submit
   submitRequest: () => Promise<void>;
   isSubmitting: boolean;
+
+  // Assignee selection
+  showAssigneeModal: boolean;
+  setShowAssigneeModal: (show: boolean) => void;
+  assigneeId: number | null;
+  assigneeName: string | null;
+  handleAssigneeSelect: (id: number, name: string) => void;
+  openAssigneeModal: () => void;
+  submitWithAssignee: (assigneeId: number, assigneeName: string) => Promise<void>;
 }
 
 // =============================================================================

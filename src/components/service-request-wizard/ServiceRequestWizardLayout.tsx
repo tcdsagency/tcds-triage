@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useServiceRequestWizard } from './ServiceRequestWizardProvider';
 import { getChangeTypeById } from './config/change-types';
+import AssigneeSelectModal from '@/components/features/AssigneeSelectModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -30,8 +31,11 @@ export function ServiceRequestWizardLayout({ children }: LayoutProps) {
     canGoPrev,
     canGoNext,
     formData,
-    submitRequest,
     isSubmitting,
+    showAssigneeModal,
+    setShowAssigneeModal,
+    openAssigneeModal,
+    submitWithAssignee,
   } = useServiceRequestWizard();
 
   const changeType = formData.changeType ? getChangeTypeById(formData.changeType) : null;
@@ -74,7 +78,7 @@ export function ServiceRequestWizardLayout({ children }: LayoutProps) {
 
             {currentStep === totalSteps - 1 ? (
               <Button
-                onClick={submitRequest}
+                onClick={openAssigneeModal}
                 disabled={isSubmitting}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
@@ -145,6 +149,15 @@ export function ServiceRequestWizardLayout({ children }: LayoutProps) {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
         {children}
       </div>
+
+      {/* Assignee Selection Modal */}
+      <AssigneeSelectModal
+        isOpen={showAssigneeModal}
+        onClose={() => setShowAssigneeModal(false)}
+        onSelect={(id, name) => submitWithAssignee(id, name)}
+        title="Assign Service Request"
+        isLoading={isSubmitting}
+      />
     </div>
   );
 }
