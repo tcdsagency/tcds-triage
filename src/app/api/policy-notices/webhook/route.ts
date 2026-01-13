@@ -25,7 +25,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { policyNotices, customers, policies } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, ne } from "drizzle-orm";
 
 // Webhook secret for validation (optional but recommended)
 const WEBHOOK_SECRET = process.env.POLICY_NOTICE_WEBHOOK_SECRET;
@@ -79,6 +79,61 @@ function extractHawkSoftClientCode(managementSystemClientId: string): string | n
   if (!managementSystemClientId) return null;
   const parts = managementSystemClientId.split(":");
   return parts.length >= 2 ? parts[1] : parts[0];
+}
+
+// Check if notice type indicates policy was reinstated/rescinded
+function isRescindedNotice(noticeType: string, noticeReason: string): boolean {
+  const type = (noticeType || "").toUpperCase();
+  const reason = (noticeReason || "").toUpperCase();
+
+  const rescindKeywords = ["RESCIND", "REINSTATE", "REINSTATED", "RESCINDED", "CANCELLATION_RESCINDED", "CANCEL_RESCIND"];
+
+  return rescindKeywords.some(keyword =>
+    type.includes(keyword) || reason.includes(keyword)
+  );
+}
+
+// Auto-resolve related pending notices when a rescinded notice comes in
+async function autoResolveRelatedNotices(
+  tenantId: string,
+  policyNumber: string,
+  newNoticeId: string,
+  insuredName: string
+): Promise<number> {
+  if (!policyNumber) return 0;
+
+  // Find pending notices for the same policy that are billing/cancellation related
+  const relatedNotices = await db
+    .select({ id: policyNotices.id, title: policyNotices.title })
+    .from(policyNotices)
+    .where(
+      and(
+        eq(policyNotices.tenantId, tenantId),
+        eq(policyNotices.policyNumber, policyNumber),
+        inArray(policyNotices.reviewStatus, ["pending", "assigned"]),
+        ne(policyNotices.id, newNoticeId) // Don't resolve the new notice itself
+      )
+    );
+
+  if (relatedNotices.length === 0) return 0;
+
+  // Auto-resolve these notices
+  const resolvedIds = relatedNotices.map(n => n.id);
+
+  await db
+    .update(policyNotices)
+    .set({
+      reviewStatus: "dismissed",
+      actionTaken: "auto_resolved",
+      actionDetails: `Auto-resolved: Cancellation rescinded notice received for policy ${policyNumber}. Customer ${insuredName} has reinstated coverage.`,
+      actionedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(inArray(policyNotices.id, resolvedIds));
+
+  console.log(`[Policy Notices] Auto-resolved ${resolvedIds.length} notices for policy ${policyNumber} due to rescinded notice`);
+
+  return resolvedIds.length;
 }
 
 // =============================================================================
@@ -270,6 +325,28 @@ export async function POST(request: NextRequest) {
       })
       .returning({ id: policyNotices.id });
 
+    // Auto-resolve related notices if this is a "rescinded" or "reinstated" notice
+    let autoResolvedCount = 0;
+    if (isRescindedNotice(noticeTypeRaw, noticeReason) && policyNumber) {
+      autoResolvedCount = await autoResolveRelatedNotices(
+        tenantId,
+        policyNumber,
+        newNotice.id,
+        insuredName
+      );
+
+      // Also mark the rescinded notice itself as auto-actioned (it's informational)
+      await db
+        .update(policyNotices)
+        .set({
+          reviewStatus: "actioned",
+          actionTaken: "auto_resolved",
+          actionDetails: `Cancellation rescinded - policy reinstated. ${autoResolvedCount} related notice(s) were also auto-resolved.`,
+          actionedAt: new Date(),
+        })
+        .where(eq(policyNotices.id, newNotice.id));
+    }
+
     return NextResponse.json({
       success: true,
       noticeId: newNotice.id,
@@ -286,6 +363,10 @@ export async function POST(request: NextRequest) {
         policyNumber,
         carrier,
       },
+      autoResolved: autoResolvedCount > 0 ? {
+        count: autoResolvedCount,
+        message: `Auto-resolved ${autoResolvedCount} related pending notice(s) for policy ${policyNumber}`,
+      } : undefined,
     });
   } catch (error) {
     console.error("Policy notice webhook error:", error);
