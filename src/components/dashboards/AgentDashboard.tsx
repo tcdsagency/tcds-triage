@@ -98,6 +98,16 @@ const AGENT_TOOLS = [
     textColor: 'text-purple-600 dark:text-purple-400',
   },
   {
+    id: 'travelers-application',
+    label: 'Travelers App',
+    description: 'Fetch applications',
+    icon: FileText,
+    href: '/travelers-application',
+    color: 'from-sky-500 to-sky-600',
+    bgLight: 'bg-sky-100 dark:bg-sky-900/30',
+    textColor: 'text-sky-600 dark:text-sky-400',
+  },
+  {
     id: 'properties',
     label: 'Property Reports',
     description: 'View property details',

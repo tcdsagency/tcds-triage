@@ -164,6 +164,14 @@ export const FEATURES: FeatureConfig[] = [
     defaultEnabled: true,
     route: '/canopy-connect',
   },
+  {
+    key: 'travelersApplication',
+    label: 'Travelers Application',
+    description: 'Retrieve Travelers policy applications',
+    category: 'tools',
+    defaultEnabled: true,
+    route: '/travelers-application',
+  },
 
   // =============================================================================
   // ADVANCED - Analytics and monitoring features

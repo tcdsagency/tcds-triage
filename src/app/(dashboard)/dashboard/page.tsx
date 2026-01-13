@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   Car,
@@ -491,14 +492,16 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-5xl mx-auto space-y-8">
 
-        {/* Header */}
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Dashboard
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Simple. Fast. Smart.
-          </p>
+        {/* Header with Logo */}
+        <div className="flex justify-center">
+          <Image
+            src="/tcds-logo.svg"
+            alt="TCDS Agency"
+            width={180}
+            height={80}
+            className="h-16 w-auto"
+            priority
+          />
         </div>
 
         {/* ================================================================= */}
