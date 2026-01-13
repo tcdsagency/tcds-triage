@@ -163,6 +163,20 @@ export default function CallPopup({
   const [deepThinkLoading, setDeepThinkLoading] = useState(false);
   const deepThinkTriggered = useRef(false);
 
+  // Customer Intelligence State (accumulated knowledge about customer)
+  const [customerIntel, setCustomerIntel] = useState<{
+    facts: Record<string, Array<{ fact: string; keywords: string[]; sourceDate?: string }>>;
+    personality: {
+      primaryType: string;
+      secondaryType: string;
+      scores: { dominance: number; influence: number; steadiness: number; conscientiousness: number };
+      description: string;
+      communicationTips: string[];
+    } | null;
+    factCount: number;
+  } | null>(null);
+  const [customerIntelLoading, setCustomerIntelLoading] = useState(false);
+
   // Wrap-Up State
   const [showWrapUp, setShowWrapUp] = useState(false);
   const [wrapupLoading, setWrapupLoading] = useState(false);
@@ -385,6 +399,35 @@ export default function CallPopup({
 
     runDeepThink();
   }, [isVisible, effectiveCallStatus, customerLookup, callDuration, phoneNumber, sessionId]);
+
+  // =========================================================================
+  // CUSTOMER INTELLIGENCE: Load accumulated customer facts and personality
+  // =========================================================================
+  useEffect(() => {
+    if (!customerLookup?.id || !isVisible) return;
+
+    const loadCustomerIntel = async () => {
+      setCustomerIntelLoading(true);
+      try {
+        const res = await fetch(`/api/ai/customer-intel?customerId=${customerLookup.id}`);
+        const data = await res.json();
+
+        if (data.success && data.factCount > 0) {
+          setCustomerIntel({
+            facts: data.facts,
+            personality: data.personality,
+            factCount: data.factCount
+          });
+        }
+      } catch (err) {
+        console.error("[CallPopup] Customer intel error:", err);
+      } finally {
+        setCustomerIntelLoading(false);
+      }
+    };
+
+    loadCustomerIntel();
+  }, [customerLookup?.id, isVisible]);
 
   // =========================================================================
   // LIVE ASSIST: Fetch playbook and suggestions based on transcript
@@ -1248,6 +1291,100 @@ export default function CallPopup({
                         ))}
                       </div>
                     </details>
+                  )}
+                </div>
+              )}
+
+              {/* ===== CUSTOMER INTEL - Accumulated Knowledge ===== */}
+              {customerIntelLoading && (
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg p-3 mb-4 border border-emerald-200">
+                  <div className="flex items-center gap-2">
+                    <span className="animate-pulse">📚</span>
+                    <span className="text-xs font-semibold text-emerald-800">Loading customer knowledge...</span>
+                  </div>
+                </div>
+              )}
+
+              {customerIntel && customerIntel.factCount > 0 && (
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg p-3 mb-4 border border-emerald-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span>📚</span>
+                    <span className="text-xs font-semibold text-emerald-800 uppercase">Customer Knowledge</span>
+                    <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">
+                      {customerIntel.factCount} facts
+                    </span>
+                  </div>
+
+                  {/* Personality Type */}
+                  {customerIntel.personality && (
+                    <div className="mb-3 pb-3 border-b border-emerald-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-medium text-emerald-700">Personality:</span>
+                        <span className="text-sm font-semibold text-gray-800">
+                          {customerIntel.personality.primaryType}
+                          {customerIntel.personality.secondaryType && (
+                            <span className="font-normal text-gray-500">/{customerIntel.personality.secondaryType}</span>
+                          )}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 mb-2">{customerIntel.personality.description}</p>
+                      {customerIntel.personality.communicationTips.length > 0 && (
+                        <div className="bg-white/60 rounded p-2">
+                          <div className="text-xs text-emerald-700 font-medium mb-1">Communication tips:</div>
+                          <ul className="space-y-0.5">
+                            {customerIntel.personality.communicationTips.slice(0, 2).map((tip, i) => (
+                              <li key={i} className="text-xs text-gray-600 flex items-start gap-1">
+                                <span className="text-emerald-500">•</span> {tip}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Facts by Category */}
+                  <details className="text-xs">
+                    <summary className="text-emerald-700 cursor-pointer hover:text-emerald-800 font-medium">
+                      View all {customerIntel.factCount} facts
+                    </summary>
+                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                      {Object.entries(customerIntel.facts).map(([category, facts]) => (
+                        <div key={category} className="bg-white/60 rounded p-2 border border-emerald-100">
+                          <div className="font-medium text-emerald-800 mb-1 capitalize flex items-center gap-1">
+                            {category === "family" && "👨‍👩‍👧"}
+                            {category === "occupation" && "💼"}
+                            {category === "life_event" && "🎉"}
+                            {category === "vehicle" && "🚗"}
+                            {category === "property" && "🏠"}
+                            {category === "interest" && "⭐"}
+                            {category === "preference" && "🎯"}
+                            {category === "concern" && "⚠️"}
+                            {category === "plan" && "📋"}
+                            {category === "other" && "📝"}
+                            {category.replace(/_/g, " ")}
+                          </div>
+                          <ul className="space-y-0.5">
+                            {facts.map((f, i) => (
+                              <li key={i} className="text-gray-700">• {f.fact}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+
+                  {/* Quick Facts Preview */}
+                  {!customerIntel.personality && (
+                    <div className="space-y-1">
+                      {Object.entries(customerIntel.facts).slice(0, 3).flatMap(([_, facts]) =>
+                        facts.slice(0, 2).map((f, i) => (
+                          <div key={i} className="text-xs text-gray-700 flex items-start gap-1">
+                            <span className="text-emerald-500">•</span> {f.fact}
+                          </div>
+                        ))
+                      ).slice(0, 4)}
+                    </div>
                   )}
                 </div>
               )}
