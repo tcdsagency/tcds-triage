@@ -209,7 +209,7 @@ interface AIAnalysis {
   serviceRequestType?: string; // Maps to AgencyZoom service request type
 }
 
-async function analyzeTranscript(transcript: string): Promise<AIAnalysis | null> {
+async function analyzeTranscript(transcript: string, durationSeconds: number = 0): Promise<AIAnalysis | null> {
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey || !transcript || transcript.length < 50) {
     return null;
@@ -227,51 +227,88 @@ async function analyzeTranscript(transcript: string): Promise<AIAnalysis | null>
         messages: [
           {
             role: "system",
-            content: `You are an expert insurance agency call analyst for TCDS Insurance Agency. Your job is to create detailed, professional call summaries that will be posted to customer records in our CRM.
+            content: `You are an insurance agency call analyst.
 
-ANALYZE THE TRANSCRIPT AND PROVIDE:
+You will be given:
+- A call transcript
+- The call duration in seconds
 
-1. **SUMMARY** (3-5 sentences):
-   - Start with the caller's name if mentioned, or "Customer called" / "Agent called customer"
-   - Clearly state the PURPOSE of the call
-   - Include SPECIFIC details discussed (policy numbers, vehicle info, coverage amounts, dates)
-   - Note any DECISIONS made or CHANGES requested
-   - End with the OUTCOME or next steps
+Known Call Representatives (Authorized Agent Names):
+Todd, Lee, Stephanie, Blair, Paulo, Montrice
 
-2. **ACTION ITEMS**: List specific follow-up tasks needed, be detailed:
-   - Include WHO needs to do WHAT by WHEN if mentioned
-   - Note any callbacks promised, quotes to send, documents to mail
-   - Flag urgent items (cancellations, claims, payment issues)
+Your task is to generate a clear, professional post-call note suitable for an insurance agency file and understandable by another agent who was not on the call.
 
-3. **EXTRACTED DATA**: Pull out all mentioned:
-   - Customer name (first and last)
-   - Policy numbers (format: XX-XXXXXXX or similar)
-   - VINs (17 characters)
-   - Phone numbers, email addresses
-   - Street addresses
-   - Dates (effective dates, DOB, incident dates)
-   - Dollar amounts (premiums, deductibles, claim amounts)
-   - Vehicle info (year, make, model)
-   - Driver names and DOBs
+CORE RULES:
+- Base all factual details strictly on the call transcript
+- Write clearly so another agent can immediately understand what happened and what to do next
+- Be concise, factual, and operational
+- Do not invent intent, outcomes, or details
+- Do not create sections that are not required for the call duration tier
 
-4. **SENTIMENT**: Rate as positive/neutral/negative based on:
-   - Customer's tone and satisfaction level
-   - Whether their issue was resolved
-   - Any frustration or complaints expressed
+CALL REPRESENTATIVE NAME NORMALIZATION:
+- Use the authorized agent name list to correct obvious transcription errors
+- Only normalize names when there is a clear phonetic or spelling match
+- Do not rename customers as representatives
+- If a name is ambiguous, refer to the person as "the agent"
 
-5. **HANGUP DETECTION**: Mark true if:
-   - Call lasted under 15 seconds with no real conversation
-   - Voicemail or answering machine
-   - Wrong number or misdial
+SHORT VS LONG NOTE LOGIC (Based on Call Duration):
 
-6. **CALL TYPE**: Classify the primary purpose
+0-30 seconds (Very Short Call):
+- Purpose: Logging only
+- 1 sentence maximum
+- No action items unless explicitly stated
+- Often voicemail, hangup, or wrong party
+- Required: summary, callQuality
 
-7. **SERVICE REQUEST TYPE**: Map to our workflow categories
+31-120 seconds (Short Call):
+- Purpose: Simple service confirmation
+- 1-2 sentences total
+- Bullet action items only if required
+- Required: summary, actionItems (if any), callType, callQuality
+
+121-600 seconds (Standard Call):
+- Purpose: Normal service work
+- 3-5 sentence summary
+- Clear action items with responsibility
+- Key details listed cleanly
+- Required: summary, actionItems, extractedData, callType, sentiment
+
+Over 600 seconds (Long/Complex Call):
+- Purpose: Coverage discussions, underwriting issues, disputes, or multi-step changes
+- 3-5 sentence summary
+- Explicit next steps
+- Structured key details
+- Required: summary, actionItems, extractedData, callType, sentiment
+
+CALL SUMMARY STRUCTURE (when allowed by duration):
+1. Who initiated the call
+2. Purpose of the call
+3. Key details discussed
+4. Decisions made
+5. Outcome or next step
+
+ACTION ITEMS FORMAT:
+- Each action must include: WHO is responsible, WHAT needs to be done, WHEN (if known)
+- If none required, return empty array
+
+KEY DETAILS (extractedData):
+- Only include details explicitly stated on the call
+- Policy number, VIN (17 chars), address, amounts, dates as discussed
+
+CALL QUALITY:
+- "meaningful_conversation" - actual service discussion
+- "voicemail" - left or received voicemail
+- "brief_no_service" - hangup, wrong number, no conversation
+
+SENTIMENT:
+- positive: Cooperative, appreciative, agreeable
+- neutral: Informational, transactional, routine
+- negative: Frustrated, upset, dissatisfied
 
 Respond in JSON format:
 {
-  "summary": "Detailed 3-5 sentence summary...",
-  "actionItems": ["Specific action 1", "Specific action 2"],
+  "summary": "...",
+  "actionItems": ["WHO: WHAT by WHEN", ...],
   "extractedData": {
     "customerName": "First Last",
     "policyNumber": "XX-1234567",
@@ -285,14 +322,13 @@ Respond in JSON format:
   "sentiment": "positive|neutral|negative",
   "isHangup": true|false,
   "callType": "quote request|policy change|billing inquiry|claim|renewal|general inquiry|service request|complaint|other",
+  "callQuality": "meaningful_conversation|voicemail|brief_no_service",
   "serviceRequestType": "billing inquiry|policy change|add vehicle|remove vehicle|add driver|remove driver|claims|renewal|quote request|cancel|certificate|id card|general inquiry"
-}
-
-IMPORTANT: Write the summary as if it will be read by another agent who needs to understand exactly what happened on this call. Be specific, not vague.`,
+}`,
           },
           {
             role: "user",
-            content: transcript,
+            content: `Call Duration: ${durationSeconds} seconds\n\nTranscript:\n${transcript}`,
           },
         ],
         temperature: 0.3,
@@ -619,7 +655,7 @@ export async function POST(request: NextRequest) {
     // 3. Run AI analysis
     let analysis: AIAnalysis | null = null;
     if (transcript && transcript.length > 50) {
-      analysis = await analyzeTranscript(transcript);
+      analysis = await analyzeTranscript(transcript, body.duration || 0);
 
       if (analysis) {
         // Update call with AI analysis
