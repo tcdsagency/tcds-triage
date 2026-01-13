@@ -323,6 +323,25 @@ export async function POST(request: NextRequest) {
     // Analyze with AI
     const analysis = await analyzeTranscriptsWithAI(uniqueTranscripts, customerName);
 
+    // Extract and store customer intelligence (fire and forget)
+    if (customerId) {
+      const combinedTranscript = uniqueTranscripts
+        .slice(0, 5)
+        .map(t => t.content)
+        .join("\n\n---\n\n");
+
+      fetch(new URL("/api/ai/customer-intel", request.url).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId,
+          transcript: combinedTranscript,
+          sourceType: "historical",
+          sourceDate: uniqueTranscripts[0]?.date
+        })
+      }).catch(err => console.error("[Deep Think] Intel extraction failed:", err));
+    }
+
     // Calculate date range
     const dates = uniqueTranscripts.map(t => new Date(t.date));
     const oldest = new Date(Math.min(...dates.map(d => d.getTime())));
