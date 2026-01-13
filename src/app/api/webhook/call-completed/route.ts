@@ -227,25 +227,68 @@ async function analyzeTranscript(transcript: string): Promise<AIAnalysis | null>
         messages: [
           {
             role: "system",
-            content: `You are an insurance agency call analyst. Analyze this call transcript and extract:
-1. A 2-3 sentence summary
-2. Action items that need follow-up
-3. Key data mentioned (customer name, policy number, VIN, phone, email, address, dates, amounts)
-4. Overall sentiment (positive/neutral/negative)
-5. Whether this was a hangup/brief call with no meaningful conversation
-6. Call type (quote request, policy change, billing inquiry, claim, renewal, etc.)
-7. Service request type - classify as one of: billing inquiry, policy change, add vehicle, remove vehicle, add driver, remove driver, claims, renewal, quote request, cancel, certificate, id card, general inquiry
+            content: `You are an expert insurance agency call analyst for TCDS Insurance Agency. Your job is to create detailed, professional call summaries that will be posted to customer records in our CRM.
+
+ANALYZE THE TRANSCRIPT AND PROVIDE:
+
+1. **SUMMARY** (3-5 sentences):
+   - Start with the caller's name if mentioned, or "Customer called" / "Agent called customer"
+   - Clearly state the PURPOSE of the call
+   - Include SPECIFIC details discussed (policy numbers, vehicle info, coverage amounts, dates)
+   - Note any DECISIONS made or CHANGES requested
+   - End with the OUTCOME or next steps
+
+2. **ACTION ITEMS**: List specific follow-up tasks needed, be detailed:
+   - Include WHO needs to do WHAT by WHEN if mentioned
+   - Note any callbacks promised, quotes to send, documents to mail
+   - Flag urgent items (cancellations, claims, payment issues)
+
+3. **EXTRACTED DATA**: Pull out all mentioned:
+   - Customer name (first and last)
+   - Policy numbers (format: XX-XXXXXXX or similar)
+   - VINs (17 characters)
+   - Phone numbers, email addresses
+   - Street addresses
+   - Dates (effective dates, DOB, incident dates)
+   - Dollar amounts (premiums, deductibles, claim amounts)
+   - Vehicle info (year, make, model)
+   - Driver names and DOBs
+
+4. **SENTIMENT**: Rate as positive/neutral/negative based on:
+   - Customer's tone and satisfaction level
+   - Whether their issue was resolved
+   - Any frustration or complaints expressed
+
+5. **HANGUP DETECTION**: Mark true if:
+   - Call lasted under 15 seconds with no real conversation
+   - Voicemail or answering machine
+   - Wrong number or misdial
+
+6. **CALL TYPE**: Classify the primary purpose
+
+7. **SERVICE REQUEST TYPE**: Map to our workflow categories
 
 Respond in JSON format:
 {
-  "summary": "...",
-  "actionItems": ["...", "..."],
-  "extractedData": { "customerName": "...", "policyNumber": "...", ... },
+  "summary": "Detailed 3-5 sentence summary...",
+  "actionItems": ["Specific action 1", "Specific action 2"],
+  "extractedData": {
+    "customerName": "First Last",
+    "policyNumber": "XX-1234567",
+    "phone": "205-555-1234",
+    "email": "email@example.com",
+    "address": "123 Main St, City, AL 35126",
+    "vin": "1HGBH41JXMN109186",
+    "effectiveDate": "01/15/2026",
+    "amount": "$1,234.56"
+  },
   "sentiment": "positive|neutral|negative",
   "isHangup": true|false,
-  "callType": "...",
+  "callType": "quote request|policy change|billing inquiry|claim|renewal|general inquiry|service request|complaint|other",
   "serviceRequestType": "billing inquiry|policy change|add vehicle|remove vehicle|add driver|remove driver|claims|renewal|quote request|cancel|certificate|id card|general inquiry"
-}`,
+}
+
+IMPORTANT: Write the summary as if it will be read by another agent who needs to understand exactly what happened on this call. Be specific, not vague.`,
           },
           {
             role: "user",
@@ -253,7 +296,7 @@ Respond in JSON format:
           },
         ],
         temperature: 0.3,
-        max_tokens: 1000,
+        max_tokens: 1500,
       }),
     });
 
