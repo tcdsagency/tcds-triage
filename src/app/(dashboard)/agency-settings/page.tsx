@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { FEATURES, getFeaturesByCategory, getDefaultPermissions } from "@/lib/feature-permissions";
 
 export default function AgencySettingsPage() {
   const [saving, setSaving] = useState(false);
@@ -32,6 +33,7 @@ export default function AgencySettingsPage() {
     agentCode: "",
     inLeadRotation: true,
     avatarUrl: "",
+    featurePermissions: getDefaultPermissions(),
   });
   const [userSaving, setUserSaving] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
@@ -801,6 +803,7 @@ export default function AgencySettingsPage() {
       agentCode: "",
       inLeadRotation: true,
       avatarUrl: "",
+      featurePermissions: getDefaultPermissions(),
     });
     setUserError(null);
     setNewPassword("");
@@ -824,6 +827,7 @@ export default function AgencySettingsPage() {
       agentCode: user.agentCode || "",
       inLeadRotation: user.inLeadRotation ?? true,
       avatarUrl: user.avatarUrl || "",
+      featurePermissions: user.featurePermissions || getDefaultPermissions(),
     });
     setUserError(null);
     setNewPassword("");
@@ -2355,6 +2359,53 @@ export default function AgencySettingsPage() {
                       <div className="text-sm text-gray-500">This user will receive leads in the round-robin queue</div>
                     </div>
                   </label>
+                </div>
+
+                {/* Feature Permissions */}
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                    <Shield className="w-4 h-4" />
+                    Feature Access
+                  </h4>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-3 mb-4 text-sm text-emerald-700 dark:text-emerald-300">
+                    Control which features this user can access. Admins have access to all features regardless of these settings.
+                  </div>
+                  {Object.entries(getFeaturesByCategory()).map(([category, features]) => (
+                    <div key={category} className="mb-4">
+                      <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                        {category === 'core' ? 'Core Features' :
+                         category === 'advanced' ? 'Advanced Features' :
+                         'Admin Features'}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {features.map((feature) => (
+                          <label
+                            key={feature.key}
+                            className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                            title={feature.description}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={userFormData.featurePermissions[feature.key] ?? feature.defaultEnabled}
+                              onChange={(e) =>
+                                setUserFormData({
+                                  ...userFormData,
+                                  featurePermissions: {
+                                    ...userFormData.featurePermissions,
+                                    [feature.key]: e.target.checked,
+                                  },
+                                })
+                              }
+                              className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span className="text-sm text-gray-700 dark:text-gray-300">
+                              {feature.label}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Password Reset (only when editing) */}
