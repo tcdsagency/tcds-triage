@@ -984,14 +984,15 @@ async function handleAutoTranscription(event) {
       const monitoringExt = selectVirtualExtension();
       sessionManager.setMonitoringExtension(session, monitoringExt);
 
-      // Call Listen2
+      // Call Listen2 - get fresh token (may have been refreshed during getVoipToolsCallId retry)
+      const currentToken = await getVoipToolsToken();
       const listen2Url = `${voipToolsBaseUrl}/api/Listen2/${encodeURIComponent(
         JSON.stringify({ callId: String(voipCallId), extNumber: String(monitoringExt) })
       )}`;
 
       const voipResponse = await axios.get(listen2Url, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${currentToken}`,
           'public-key': process.env.VOIPTOOLS_PUBLIC_KEY,
           'private-key': process.env.VOIPTOOLS_PRIVATE_KEY,
         },
@@ -1142,14 +1143,15 @@ app.post('/api/transcription/start', authenticateRequest, async (req, res) => {
     const monitoringExt = selectVirtualExtension();
     sessionManager.setMonitoringExtension(session, monitoringExt);
 
-    // Call Listen2
+    // Call Listen2 - get fresh token (may have been refreshed during getVoipToolsCallId retry)
+    const currentToken = await getVoipToolsToken();
     const listen2Url = `${voipToolsBaseUrl}/api/Listen2/${encodeURIComponent(
       JSON.stringify({ callId: String(voipCallId), extNumber: String(monitoringExt) })
     )}`;
 
     const voipResponse = await axios.get(listen2Url, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${currentToken}`,
         'public-key': process.env.VOIPTOOLS_PUBLIC_KEY,
         'private-key': process.env.VOIPTOOLS_PRIVATE_KEY,
       },
