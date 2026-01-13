@@ -66,6 +66,7 @@ export function CallProvider({ children }: CallProviderProps) {
   const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const newCallPollRef = useRef<NodeJS.Timeout | null>(null);
+  const notOnCallCountRef = useRef<number>(0); // Debounce counter for presence-based call end detection
 
   // Keep activeCallRef in sync
   useEffect(() => {
@@ -264,30 +265,41 @@ export function CallProvider({ children }: CallProviderProps) {
             const myPresence = presenceData.team?.find((t: any) => t.extension === currentExt);
 
             if (myPresence && myPresence.status !== 'on_call' && activeCallRef.current?.status !== "ended") {
-              // Presence shows NOT on call, but we have an active popup - call must have ended
-              console.log(`[CallProvider] Presence shows ${myPresence.status}, marking call as ended`);
-              setActiveCall(prev => prev ? { ...prev, status: "ended" } : null);
+              // Presence shows NOT on call - increment counter (debounce to avoid false positives)
+              notOnCallCountRef.current++;
+              console.log(`[CallProvider] Presence shows ${myPresence.status}, not-on-call count: ${notOnCallCountRef.current}/3`);
 
-              // Also update the call in the database
-              try {
-                await fetch(`/api/calls/${activeCall.sessionId}`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'end' }),
-                });
-              } catch (e) {
-                console.error('[CallProvider] Failed to update call status:', e);
+              // Require 3 consecutive "not on call" checks before marking call as ended
+              // This prevents premature popup closure due to VoIPTools presence lag
+              if (notOnCallCountRef.current >= 3) {
+                console.log(`[CallProvider] Confirmed call ended after ${notOnCallCountRef.current} consecutive presence checks`);
+                setActiveCall(prev => prev ? { ...prev, status: "ended" } : null);
+                notOnCallCountRef.current = 0; // Reset counter
+
+                // Also update the call in the database
+                try {
+                  await fetch(`/api/calls/${activeCall.sessionId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'end' }),
+                  });
+                } catch (e) {
+                  console.error('[CallProvider] Failed to update call status:', e);
+                }
+
+                // Auto-close after 30 seconds for wrap-up
+                if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+                closeTimeoutRef.current = setTimeout(() => {
+                  console.log(`[CallProvider] Auto-closing popup after presence detected end`);
+                  setIsPopupVisible(false);
+                  setActiveCall(null);
+                  closeTimeoutRef.current = null;
+                }, 30000);
+                return;
               }
-
-              // Auto-close after 30 seconds for wrap-up
-              if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
-              closeTimeoutRef.current = setTimeout(() => {
-                console.log(`[CallProvider] Auto-closing popup after presence detected end`);
-                setIsPopupVisible(false);
-                setActiveCall(null);
-                closeTimeoutRef.current = null;
-              }, 30000);
-              return;
+            } else if (myPresence && myPresence.status === 'on_call') {
+              // Reset counter when presence confirms on_call
+              notOnCallCountRef.current = 0;
             }
           }
         }
@@ -589,6 +601,7 @@ export function CallProvider({ children }: CallProviderProps) {
     setActiveCall(call);
     setIsPopupVisible(true);
     setIsPopupMinimized(false);
+    notOnCallCountRef.current = 0; // Reset debounce counter for new call
   }, []);
 
   const closePopup = useCallback(() => {
