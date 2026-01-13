@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     // Optional: exclude after-hours for unread count but include all in history
     const excludeAfterHours = searchParams.get("excludeAfterHours") === "true";
     if (excludeAfterHours) {
-      conditions.push(or(eq(messages.isAfterHours, false), isNull(messages.isAfterHours)));
+      conditions.push(or(eq(messages.isAfterHours, false), isNull(messages.isAfterHours))!);
     }
 
     if (filter === "unread") {
