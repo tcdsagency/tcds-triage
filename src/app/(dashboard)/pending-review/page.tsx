@@ -41,7 +41,10 @@ interface APIResponse {
 
 // Alert threshold in seconds (1:30 = 90 seconds)
 const ALERT_THRESHOLD_SECONDS = 90;
-const ALERT_INTERVAL_MS = 5000; // Play sound every 5 seconds when alerting
+const ALERT_INTERVAL_MS = 60000; // Play sound every 60 seconds when alerting
+
+// Snooze options in minutes
+const SNOOZE_OPTIONS = [5, 10, 15] as const;
 
 export default function PendingReviewPage() {
   // Main view state
@@ -81,6 +84,10 @@ export default function PendingReviewPage() {
   const [userRole, setUserRole] = useState<string | undefined>(undefined);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const alertIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Snooze state
+  const [snoozeUntil, setSnoozeUntil] = useState<Date | null>(null);
+  const [showSnoozeModal, setShowSnoozeModal] = useState(false);
 
   // ==========================================================================
   // DATA FETCHING
@@ -242,6 +249,44 @@ export default function PendingReviewPage() {
     }
   }, []);
 
+  // Check if currently snoozed
+  const isSnoozed = snoozeUntil && new Date() < snoozeUntil;
+
+  // Handle snooze selection
+  const handleSnooze = (minutes: number) => {
+    const until = new Date(Date.now() + minutes * 60 * 1000);
+    setSnoozeUntil(until);
+    setShowSnoozeModal(false);
+    toast.success(`Alerts snoozed for ${minutes} minutes`, {
+      description: `Alerts will resume at ${until.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`,
+    });
+  };
+
+  // Clear snooze when all items are cleared
+  useEffect(() => {
+    if (items.length === 0 && snoozeUntil) {
+      setSnoozeUntil(null);
+    }
+  }, [items.length, snoozeUntil]);
+
+  // Auto-clear snooze when it expires
+  useEffect(() => {
+    if (!snoozeUntil) return;
+
+    const timeUntilExpiry = snoozeUntil.getTime() - Date.now();
+    if (timeUntilExpiry <= 0) {
+      setSnoozeUntil(null);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setSnoozeUntil(null);
+      toast.info('Snooze ended - alerts resumed');
+    }, timeUntilExpiry);
+
+    return () => clearTimeout(timeout);
+  }, [snoozeUntil]);
+
   // Check for items waiting too long and trigger alerts
   useEffect(() => {
     if (!alertsEnabled) {
@@ -254,6 +299,11 @@ export default function PendingReviewPage() {
     }
 
     const checkAndAlert = () => {
+      // Skip if snoozed
+      if (snoozeUntil && new Date() < snoozeUntil) {
+        return;
+      }
+
       // Find items waiting longer than threshold (convert ageMinutes to seconds)
       const overdueItems = items.filter(item => (item.ageMinutes * 60) >= ALERT_THRESHOLD_SECONDS);
 
@@ -273,6 +323,9 @@ export default function PendingReviewPage() {
           // Request permission
           Notification.requestPermission();
         }
+
+        // Show snooze modal automatically when alert triggers
+        setShowSnoozeModal(true);
       }
     };
 
@@ -288,7 +341,7 @@ export default function PendingReviewPage() {
         alertIntervalRef.current = null;
       }
     };
-  }, [alertsEnabled, items, playAlertTone]);
+  }, [alertsEnabled, items, playAlertTone, snoozeUntil]);
 
   // ==========================================================================
   // SELECTION HANDLERS
@@ -645,18 +698,33 @@ export default function PendingReviewPage() {
               : 'View completed and auto-voided items'}
           </p>
         </div>
-        <button
-          onClick={mainView === 'pending' ? fetchItems : fetchReviewedItems}
-          disabled={mainView === 'pending' ? loading : reviewedLoading}
-          className={cn(
-            'px-4 py-2 rounded-lg font-medium transition-colors',
-            (mainView === 'pending' ? loading : reviewedLoading)
-              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-              : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+        <div className="flex items-center gap-3">
+          {/* Snooze indicator */}
+          {alertsEnabled && isSnoozed && snoozeUntil && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg text-sm">
+              <span>Snoozed until {snoozeUntil.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+              <button
+                onClick={() => setSnoozeUntil(null)}
+                className="ml-1 hover:text-amber-900 dark:hover:text-amber-200"
+                title="Cancel snooze"
+              >
+                ✕
+              </button>
+            </div>
           )}
-        >
-          {(mainView === 'pending' ? loading : reviewedLoading) ? '...' : '↻ Refresh'}
-        </button>
+          <button
+            onClick={mainView === 'pending' ? fetchItems : fetchReviewedItems}
+            disabled={mainView === 'pending' ? loading : reviewedLoading}
+            className={cn(
+              'px-4 py-2 rounded-lg font-medium transition-colors',
+              (mainView === 'pending' ? loading : reviewedLoading)
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+            )}
+          >
+            {(mainView === 'pending' ? loading : reviewedLoading) ? '...' : '↻ Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Main View Tabs */}
@@ -881,6 +949,55 @@ export default function PendingReviewPage() {
           title={`Assign Service Request for ${assignSRItem.contactName || 'Unknown'}`}
           isLoading={actionLoading}
         />
+      )}
+
+      {/* Snooze Alert Modal */}
+      {showSnoozeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setShowSnoozeModal(false)}
+          />
+
+          {/* Modal */}
+          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 mx-auto mb-4 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
+                <span className="text-3xl">🔔</span>
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                Pending Items Alert
+              </h3>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">
+                {items.filter(item => (item.ageMinutes * 60) >= ALERT_THRESHOLD_SECONDS).length} item(s) waiting over 90 seconds
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">
+                Snooze alerts for:
+              </p>
+              <div className="grid grid-cols-3 gap-3">
+                {SNOOZE_OPTIONS.map((minutes) => (
+                  <button
+                    key={minutes}
+                    onClick={() => handleSnooze(minutes)}
+                    className="px-4 py-3 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-400 rounded-xl font-semibold transition-colors"
+                  >
+                    {minutes} min
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setShowSnoozeModal(false)}
+                className="w-full mt-4 px-4 py-3 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-medium transition-colors"
+              >
+                Dismiss (Keep Alerting)
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
