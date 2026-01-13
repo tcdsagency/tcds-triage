@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Search, Send, Phone, User, MoreVertical, Plus, Check, CheckCheck,
   Clock, AlertCircle, MessageSquare, Settings, ChevronDown, Paperclip,
@@ -137,6 +137,7 @@ const groupIntoConversations = (messages: SMSMessage[]): Conversation[] => {
 
 export default function MessagesPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const phoneParam = searchParams.get('phone');
   const nameParam = searchParams.get('name');
   const customerIdParam = searchParams.get('customerId');
@@ -511,7 +512,21 @@ export default function MessagesPage() {
                 variant="outline"
                 size="sm"
               />
-              <Button variant="outline" size="sm">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // Navigate to customer profile if we have a contact ID
+                  const contactId = selectedConversation.contact.id;
+                  if (contactId && contactId !== selectedConversation.id) {
+                    // contactId is an AgencyZoom ID, go to customer page
+                    router.push(`/customers/${contactId}`);
+                  } else {
+                    // No customer match, search by phone
+                    router.push(`/customers?search=${encodeURIComponent(selectedConversation.contact.phone)}`);
+                  }
+                }}
+              >
                 <User className="w-4 h-4 mr-2" />
                 Profile
               </Button>
