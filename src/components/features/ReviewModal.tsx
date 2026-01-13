@@ -52,8 +52,32 @@ export default function ReviewModal({
       try {
         const res = await fetch('/api/agencyzoom/users');
         const data = await res.json();
-        if (data.success && data.agencyzoomUsers) {
-          setAgentOptions(data.agencyzoomUsers);
+        if (data.success) {
+          // Use internalUsers (our DB users with agencyzoomId) since AgencyZoom API may return empty
+          // Transform to expected format
+          const users: AgencyZoomUser[] = [];
+
+          // First add any AgencyZoom users returned
+          if (data.agencyzoomUsers?.length > 0) {
+            users.push(...data.agencyzoomUsers);
+          }
+
+          // Then add internal users with agencyzoomId (if not already in list)
+          if (data.internalUsers?.length > 0) {
+            const existingIds = new Set(users.map(u => u.agencyzoomId));
+            for (const user of data.internalUsers) {
+              if (user.agencyzoomId && !existingIds.has(parseInt(user.agencyzoomId))) {
+                users.push({
+                  agencyzoomId: parseInt(user.agencyzoomId),
+                  firstName: user.firstName || '',
+                  lastName: user.lastName || '',
+                  email: user.email || '',
+                });
+              }
+            }
+          }
+
+          setAgentOptions(users);
         }
       } catch (error) {
         console.error('Failed to fetch AgencyZoom users:', error);
