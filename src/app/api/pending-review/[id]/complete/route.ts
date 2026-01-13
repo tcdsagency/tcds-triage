@@ -24,6 +24,7 @@ interface CompleteRequest {
     description?: string;
     priority?: 'low' | 'medium' | 'high';
     assigneeAgentId?: number; // AgencyZoom CSR ID - USER SELECTED
+    appendToTicketId?: number; // Existing ticket ID to append to instead of creating new
   };
   leadDetails?: {
     firstName: string;
@@ -300,18 +301,6 @@ export async function POST(
       }
 
       if (body.action === 'ticket' && contactId) {
-        // Create service request via Zapier webhook
-        const aiExtract = wrapup.aiExtraction as {
-          serviceRequestTypeId?: number;
-          serviceRequestTypeName?: string;
-          priorityId?: number;
-          policyNumbers?: string[];
-          agencyZoomEmail?: string;
-        } | null;
-
-        // Get customer email from extraction or wrapup
-        const customerEmail = aiExtract?.agencyZoomEmail || wrapup.customerEmail || null;
-
         // Fetch call transcript if available
         const transcript = await getCallTranscript(wrapup.callId);
 
@@ -321,34 +310,126 @@ export async function POST(
           summaryWithTranscript += '\n\n--- Call Transcript ---\n' + transcript;
         }
 
-        const serviceRequestPayload = {
-          customerId: contactId.toString(),
-          customerName: wrapup.customerName || 'Unknown',
-          customerEmail: customerEmail,
-          customerPhone: wrapup.customerPhone || null,
-          customerType: isLead ? 'lead' : 'customer',
-          summary: summaryWithTranscript,
-          serviceRequestTypeId: aiExtract?.serviceRequestTypeId,
-          serviceRequestTypeName: aiExtract?.serviceRequestTypeName || wrapup.requestType,
-          priorityId: aiExtract?.priorityId,
-          policyNumbers: aiExtract?.policyNumbers || [],
-          assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007, // Default to Lee if not specified
-          wrapupId: itemId,
-        };
+        // Check if we're appending to an existing ticket
+        const appendToTicketId = body.ticketDetails?.appendToTicketId;
 
-        // Call the service-request API which handles Zapier webhook
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app');
-        const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(serviceRequestPayload),
-        });
+        if (appendToTicketId) {
+          // APPEND MODE: Add note to existing service ticket
+          console.log(`[Complete API] Appending to existing ticket ${appendToTicketId}`);
 
-        const serviceResult = await serviceResponse.json();
-        if (serviceResult.success) {
-          result = { success: true, action: "ticket", ticketId: serviceResult.ticketId, noteId: serviceResult.noteId };
+          // Format the note content
+          const timestamp = new Date().toLocaleString("en-US", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+            timeZone: "America/Chicago",
+          });
+
+          const noteContent = [
+            '📞 Additional Call Note Added',
+            `Date: ${timestamp}`,
+            '',
+            summaryWithTranscript,
+            '',
+            `Request Type: ${wrapup.requestType || 'General'}`,
+            wrapup.agentName ? `Handled by: ${wrapup.agentName}` : '',
+          ].filter(Boolean).join('\n');
+
+          // Try to add note to the service ticket
+          if (azClient) {
+            const ticketNoteResult = await azClient.addServiceTicketNote(appendToTicketId, noteContent);
+
+            if (ticketNoteResult.success) {
+              // Update wrapup record
+              await db
+                .update(wrapupDrafts)
+                .set({
+                  status: "completed",
+                  reviewerDecision: "approved",
+                  outcome: "ticket_appended",
+                  agencyzoomTicketId: appendToTicketId.toString(),
+                  completedAt: new Date(),
+                  reviewerId: reviewerId,
+                  reviewedAt: new Date(),
+                })
+                .where(eq(wrapupDrafts.id, itemId));
+
+              result = { success: true, action: "ticket", ticketId: appendToTicketId, message: "Note appended to existing ticket" };
+            } else {
+              // Fallback: Post as customer note instead
+              console.log('[Complete API] Ticket note failed, posting as customer note');
+              const noteResult = isLead
+                ? await azClient.addLeadNote(contactId, `[Appended to Service Request #${appendToTicketId}]\n\n${noteContent}`)
+                : await azClient.addNote(contactId, `[Appended to Service Request #${appendToTicketId}]\n\n${noteContent}`);
+
+              if (noteResult.success) {
+                await db
+                  .update(wrapupDrafts)
+                  .set({
+                    status: "completed",
+                    reviewerDecision: "approved",
+                    outcome: "ticket_appended",
+                    agencyzoomTicketId: appendToTicketId.toString(),
+                    agencyzoomNoteId: noteResult.id?.toString(),
+                    completedAt: new Date(),
+                    reviewerId: reviewerId,
+                    reviewedAt: new Date(),
+                  })
+                  .where(eq(wrapupDrafts.id, itemId));
+
+                result = { success: true, action: "ticket", ticketId: appendToTicketId, noteId: noteResult.id, message: "Note posted to customer (ticket note API unavailable)" };
+              } else {
+                return NextResponse.json({ error: "Failed to append note" }, { status: 500 });
+              }
+            }
+          } else {
+            return NextResponse.json({ error: "AgencyZoom client not available" }, { status: 500 });
+          }
         } else {
-          return NextResponse.json({ error: serviceResult.error || "Failed to create service request" }, { status: 500 });
+          // CREATE NEW MODE: Create service request via Zapier webhook
+          const aiExtract = wrapup.aiExtraction as {
+            serviceRequestTypeId?: number;
+            serviceRequestTypeName?: string;
+            priorityId?: number;
+            policyNumbers?: string[];
+            agencyZoomEmail?: string;
+          } | null;
+
+          // Get customer email from extraction or wrapup
+          const customerEmail = aiExtract?.agencyZoomEmail || wrapup.customerEmail || null;
+
+          const serviceRequestPayload = {
+            customerId: contactId.toString(),
+            customerName: wrapup.customerName || 'Unknown',
+            customerEmail: customerEmail,
+            customerPhone: wrapup.customerPhone || null,
+            customerType: isLead ? 'lead' : 'customer',
+            summary: summaryWithTranscript,
+            serviceRequestTypeId: aiExtract?.serviceRequestTypeId,
+            serviceRequestTypeName: aiExtract?.serviceRequestTypeName || wrapup.requestType,
+            priorityId: aiExtract?.priorityId,
+            policyNumbers: aiExtract?.policyNumbers || [],
+            assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007, // Default to Lee if not specified
+            wrapupId: itemId,
+          };
+
+          // Call the service-request API which handles Zapier webhook
+          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app');
+          const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(serviceRequestPayload),
+          });
+
+          const serviceResult = await serviceResponse.json();
+          if (serviceResult.success) {
+            result = { success: true, action: "ticket", ticketId: serviceResult.ticketId, noteId: serviceResult.noteId };
+          } else {
+            return NextResponse.json({ error: serviceResult.error || "Failed to create service request" }, { status: 500 });
+          }
         }
       }
 
@@ -546,7 +627,7 @@ export async function POST(
         }
       }
 
-      // Ticket - Create service request for matched customer
+      // Ticket - Create service request for matched customer or append to existing
       if (body.action === 'ticket' && customerId) {
         // Fetch the matched customer's email from our database
         const [matchedCustomer] = await db
@@ -578,35 +659,90 @@ export async function POST(
           `Received: ${new Date(message.createdAt || Date.now()).toLocaleString('en-US', { timeZone: 'America/Chicago' })}`,
         ].join('\n');
 
-        // Create service request via Zapier webhook
-        const serviceRequestPayload = {
-          customerId: customerId.toString(),
-          customerName: customerName,
-          customerEmail: customerEmail,  // Use fetched email so it routes to correct customer
-          customerPhone: senderPhone,
-          customerType: 'customer' as const,
-          summary: description,
-          serviceRequestTypeName: body.ticketDetails?.subject || 'SMS Service Request',
-          assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007, // Default to Lee
-        };
+        // Check if we're appending to an existing ticket
+        const appendToTicketId = body.ticketDetails?.appendToTicketId;
 
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app');
-        const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(serviceRequestPayload),
-        });
+        if (appendToTicketId) {
+          // APPEND MODE: Add note to existing service ticket
+          console.log(`[Complete API] Appending SMS to existing ticket ${appendToTicketId}`);
 
-        const serviceResult = await serviceResponse.json();
-        if (serviceResult.success) {
-          await db
-            .update(messages)
-            .set({ isAcknowledged: true })
-            .where(eq(messages.id, itemId));
+          const timestamp = new Date().toLocaleString("en-US", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+            timeZone: "America/Chicago",
+          });
 
-          result = { success: true, action: "ticket", ticketId: serviceResult.ticketId, noteId: serviceResult.noteId };
+          const noteContent = [
+            '💬 Additional SMS Note Added',
+            `Date: ${timestamp}`,
+            '',
+            description,
+          ].join('\n');
+
+          if (azClient) {
+            const ticketNoteResult = await azClient.addServiceTicketNote(appendToTicketId, noteContent);
+
+            if (ticketNoteResult.success) {
+              await db
+                .update(messages)
+                .set({ isAcknowledged: true })
+                .where(eq(messages.id, itemId));
+
+              result = { success: true, action: "ticket", ticketId: appendToTicketId, message: "Note appended to existing ticket" };
+            } else {
+              // Fallback: Post as customer note instead
+              console.log('[Complete API] Ticket note failed, posting as customer note');
+              const noteResult = await azClient.addNote(customerId, `[Appended to Service Request #${appendToTicketId}]\n\n${noteContent}`);
+
+              if (noteResult.success) {
+                await db
+                  .update(messages)
+                  .set({ isAcknowledged: true })
+                  .where(eq(messages.id, itemId));
+
+                result = { success: true, action: "ticket", ticketId: appendToTicketId, noteId: noteResult.id, message: "Note posted to customer (ticket note API unavailable)" };
+              } else {
+                return NextResponse.json({ error: "Failed to append note" }, { status: 500 });
+              }
+            }
+          } else {
+            return NextResponse.json({ error: "AgencyZoom client not available" }, { status: 500 });
+          }
         } else {
-          return NextResponse.json({ error: serviceResult.error || "Failed to create service request" }, { status: 500 });
+          // CREATE NEW MODE: Create service request via Zapier webhook
+          const serviceRequestPayload = {
+            customerId: customerId.toString(),
+            customerName: customerName,
+            customerEmail: customerEmail,  // Use fetched email so it routes to correct customer
+            customerPhone: senderPhone,
+            customerType: 'customer' as const,
+            summary: description,
+            serviceRequestTypeName: body.ticketDetails?.subject || 'SMS Service Request',
+            assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007, // Default to Lee
+          };
+
+          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app');
+          const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(serviceRequestPayload),
+          });
+
+          const serviceResult = await serviceResponse.json();
+          if (serviceResult.success) {
+            await db
+              .update(messages)
+              .set({ isAcknowledged: true })
+              .where(eq(messages.id, itemId));
+
+            result = { success: true, action: "ticket", ticketId: serviceResult.ticketId, noteId: serviceResult.noteId };
+          } else {
+            return NextResponse.json({ error: serviceResult.error || "Failed to create service request" }, { status: 500 });
+          }
         }
       }
 

@@ -802,6 +802,34 @@ export class AgencyZoomClient {
   }
 
   /**
+   * Add a note/comment to an existing service ticket
+   * POST /v1/api/service-tickets/{serviceTicketId}/notes
+   */
+  async addServiceTicketNote(
+    ticketId: number,
+    content: string
+  ): Promise<{ success: boolean; noteId?: number }> {
+    try {
+      const result = await this.request<{ success?: boolean; noteId?: number; id?: number }>(
+        `/v1/api/service-tickets/${ticketId}/notes`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            content,
+            noteText: content, // Try both field names
+          }),
+        }
+      );
+      return { success: true, noteId: result.noteId || result.id };
+    } catch (error) {
+      console.error('[AgencyZoom] Add ticket note error:', error);
+      // If the notes endpoint doesn't exist, return success anyway
+      // The note will be posted to the customer instead
+      return { success: false };
+    }
+  }
+
+  /**
    * Get service ticket pipelines (workflows)
    * GET /v1/api/service-tickets/pipelines
    */

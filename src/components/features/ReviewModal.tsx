@@ -11,9 +11,20 @@ interface AgencyZoomUser {
   email: string;
 }
 
+interface ExistingTicket {
+  id: number;
+  subject: string;
+  description?: string;
+  customerName?: string;
+  csrName?: string;
+  createdAt?: string;
+  stage?: string;
+}
+
 export interface TicketDetails {
   subject?: string;
   assigneeAgentId?: number;
+  appendToTicketId?: number; // ID of existing ticket to append to
 }
 
 interface ReviewModalProps {
@@ -42,6 +53,48 @@ export default function ReviewModal({
   const [agentOptions, setAgentOptions] = useState<AgencyZoomUser[]>([]);
   const [agentSearchTerm, setAgentSearchTerm] = useState('');
   const [loadingAgents, setLoadingAgents] = useState(false);
+
+  // Existing tickets for append option
+  const [existingTickets, setExistingTickets] = useState<ExistingTicket[]>([]);
+  const [loadingTickets, setLoadingTickets] = useState(false);
+  const [appendMode, setAppendMode] = useState(false);
+  const [selectedTicketId, setSelectedTicketId] = useState<number | ''>('');
+
+  // Fetch existing tickets for the customer when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Reset append mode when modal opens
+    setAppendMode(false);
+    setSelectedTicketId('');
+
+    // Only fetch if we have a matched customer
+    const customerId = item.agencyzoomCustomerId || item.agencyzoomLeadId;
+    const customerName = item.contactName;
+
+    if (!customerId && !customerName) return;
+
+    const fetchTickets = async () => {
+      setLoadingTickets(true);
+      try {
+        const params = new URLSearchParams();
+        if (customerId) params.set('customerId', customerId.toString());
+        if (customerName) params.set('customerName', customerName);
+
+        const res = await fetch(`/api/agencyzoom/customer-tickets?${params}`);
+        const data = await res.json();
+        if (data.success && data.tickets) {
+          setExistingTickets(data.tickets);
+        }
+      } catch (error) {
+        console.error('Failed to fetch existing tickets:', error);
+      } finally {
+        setLoadingTickets(false);
+      }
+    };
+
+    fetchTickets();
+  }, [isOpen, item.agencyzoomCustomerId, item.agencyzoomLeadId, item.contactName]);
 
   // Fetch AgencyZoom users when modal opens
   useEffect(() => {
@@ -102,13 +155,20 @@ export default function ReviewModal({
   };
 
   const handleCreateTicket = () => {
-    if (!selectedAgentId) {
+    // In append mode, need a ticket selected
+    if (appendMode && !selectedTicketId) {
+      alert('Please select an existing ticket to append to.');
+      return;
+    }
+    // In create mode, need an agent selected
+    if (!appendMode && !selectedAgentId) {
       alert('Please select an agent to assign the service request to.');
       return;
     }
     onAction('ticket', noteContent, {
       subject: ticketSubject,
-      assigneeAgentId: selectedAgentId as number,
+      assigneeAgentId: selectedAgentId as number || undefined,
+      appendToTicketId: appendMode ? (selectedTicketId as number) : undefined,
     });
   };
 
@@ -211,65 +271,134 @@ export default function ReviewModal({
           {/* Ticket-specific fields */}
           {activeTab === 'ticket' && (
             <>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Service Request Subject
-                </label>
-                <input
-                  type="text"
-                  value={ticketSubject}
-                  onChange={(e) => setTicketSubject(e.target.value)}
-                  className={cn(
-                    'w-full px-3 py-2 rounded-lg border transition-colors',
-                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
-                    'border-gray-300 dark:border-gray-600',
-                    'focus:outline-none focus:ring-2 focus:ring-blue-500'
-                  )}
-                  placeholder="Subject line for the service request..."
-                />
-              </div>
+              {/* Append to Existing Toggle - only show if there are existing tickets */}
+              {existingTickets.length > 0 && (
+                <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <span className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                        Existing Open Requests Found
+                      </span>
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        {existingTickets.length} open request{existingTickets.length !== 1 ? 's' : ''} for this customer
+                      </p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <span className="text-sm text-amber-700 dark:text-amber-300">
+                        Append to existing
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={appendMode}
+                        onChange={(e) => {
+                          setAppendMode(e.target.checked);
+                          if (!e.target.checked) setSelectedTicketId('');
+                        }}
+                        className="w-4 h-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+                      />
+                    </label>
+                  </div>
 
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Assign To <span className="text-red-500">*</span>
-                </label>
-                {/* Search input for filtering agents */}
-                <input
-                  type="text"
-                  value={agentSearchTerm}
-                  onChange={(e) => setAgentSearchTerm(e.target.value)}
-                  placeholder="Search agents..."
-                  className={cn(
-                    'w-full px-3 py-2 rounded-lg border transition-colors mb-2',
-                    'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
-                    'border-gray-300 dark:border-gray-600',
-                    'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                  {/* Show existing ticket selector when append mode is on */}
+                  {appendMode && (
+                    <div className="mt-3">
+                      <label className="block text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
+                        Select Request to Append To <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={selectedTicketId}
+                        onChange={(e) => setSelectedTicketId(e.target.value ? Number(e.target.value) : '')}
+                        className={cn(
+                          'w-full px-3 py-2 rounded-lg border transition-colors',
+                          'text-gray-900 bg-white',
+                          'border-amber-300 dark:border-amber-600',
+                          'focus:outline-none focus:ring-2 focus:ring-amber-500'
+                        )}
+                      >
+                        <option value="" className="text-gray-500">
+                          Select an existing request...
+                        </option>
+                        {existingTickets.map((ticket) => (
+                          <option key={ticket.id} value={ticket.id} className="text-gray-900">
+                            #{ticket.id} - {ticket.subject} {ticket.csrName ? `(${ticket.csrName})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedTicketId && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                          Your call summary will be added as a note to this existing request.
+                        </p>
+                      )}
+                    </div>
                   )}
-                />
-                <select
-                  value={selectedAgentId}
-                  onChange={(e) => setSelectedAgentId(e.target.value ? Number(e.target.value) : '')}
-                  className={cn(
-                    'w-full px-3 py-2 rounded-lg border transition-colors',
-                    'text-gray-900 bg-white',
-                    'border-gray-300 dark:border-gray-600',
-                    'focus:outline-none focus:ring-2 focus:ring-blue-500'
-                  )}
-                  disabled={loadingAgents}
-                >
-                  <option value="" className="text-gray-500">
-                    {loadingAgents ? 'Loading agents...' : 'Select an agent...'}
-                  </option>
-                  {filteredAgents.map((agent) => (
-                    <option key={agent.agencyzoomId} value={agent.agencyzoomId} className="text-gray-900">
-                      {agent.firstName} {agent.lastName}
+                </div>
+              )}
+
+              {/* Subject - only show if creating new */}
+              {!appendMode && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Service Request Subject
+                  </label>
+                  <input
+                    type="text"
+                    value={ticketSubject}
+                    onChange={(e) => setTicketSubject(e.target.value)}
+                    className={cn(
+                      'w-full px-3 py-2 rounded-lg border transition-colors',
+                      'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                      'border-gray-300 dark:border-gray-600',
+                      'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                    )}
+                    placeholder="Subject line for the service request..."
+                  />
+                </div>
+              )}
+
+              {/* Agent assignment - only show if creating new */}
+              {!appendMode && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Assign To <span className="text-red-500">*</span>
+                  </label>
+                  {/* Search input for filtering agents */}
+                  <input
+                    type="text"
+                    value={agentSearchTerm}
+                    onChange={(e) => setAgentSearchTerm(e.target.value)}
+                    placeholder="Search agents..."
+                    className={cn(
+                      'w-full px-3 py-2 rounded-lg border transition-colors mb-2',
+                      'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-900',
+                      'border-gray-300 dark:border-gray-600',
+                      'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                    )}
+                  />
+                  <select
+                    value={selectedAgentId}
+                    onChange={(e) => setSelectedAgentId(e.target.value ? Number(e.target.value) : '')}
+                    className={cn(
+                      'w-full px-3 py-2 rounded-lg border transition-colors',
+                      'text-gray-900 bg-white',
+                      'border-gray-300 dark:border-gray-600',
+                      'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                    )}
+                    disabled={loadingAgents}
+                  >
+                    <option value="" className="text-gray-500">
+                      {loadingAgents ? 'Loading agents...' : 'Select an agent...'}
                     </option>
-                  ))}
-                </select>
-                {filteredAgents.length === 0 && !loadingAgents && agentSearchTerm && (
-                  <p className="text-xs text-red-500 mt-1">No agents match "{agentSearchTerm}"</p>
-                )}
-              </div>
+                    {filteredAgents.map((agent) => (
+                      <option key={agent.agencyzoomId} value={agent.agencyzoomId} className="text-gray-900">
+                        {agent.firstName} {agent.lastName}
+                      </option>
+                    ))}
+                  </select>
+                  {filteredAgents.length === 0 && !loadingAgents && agentSearchTerm && (
+                    <p className="text-xs text-red-500 mt-1">No agents match "{agentSearchTerm}"</p>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -350,11 +479,14 @@ export default function ReviewModal({
                   disabled={isLoading || !noteContent.trim()}
                   className={cn(
                     'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                    'bg-blue-600 text-white hover:bg-blue-700',
+                    appendMode ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-blue-600 text-white hover:bg-blue-700',
                     (isLoading || !noteContent.trim()) && 'opacity-50 cursor-not-allowed'
                   )}
                 >
-                  {isLoading ? 'Creating...' : 'Create Service Request'}
+                  {isLoading
+                    ? (appendMode ? 'Appending...' : 'Creating...')
+                    : (appendMode ? 'Append to Request' : 'Create Service Request')
+                  }
                 </button>
               )}
             </div>
