@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
+/* Enable class-based dark mode (instead of media query) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+}
+
+/* Dark mode CSS variables */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 @theme inline {
