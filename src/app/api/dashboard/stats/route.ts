@@ -35,11 +35,12 @@ export async function GET(request: NextRequest) {
 
     // Get call stats - use directionLive for accurate direction
     // Note: direction values are lowercase in the database (inbound/outbound)
+    // Can't use LOWER() on enum types, so comparing directly
     const [callStats] = await db
       .select({
         total: sql<number>`count(*)::int`,
-        inbound: sql<number>`count(*) filter (where LOWER(${calls.directionLive}) = 'inbound' OR (${calls.directionLive} IS NULL AND LOWER(${calls.direction}) = 'inbound'))::int`,
-        outbound: sql<number>`count(*) filter (where LOWER(${calls.directionLive}) = 'outbound' OR (${calls.directionLive} IS NULL AND LOWER(${calls.direction}) = 'outbound'))::int`,
+        inbound: sql<number>`count(*) filter (where ${calls.directionLive}::text = 'inbound' OR (${calls.directionLive} IS NULL AND ${calls.direction}::text = 'inbound'))::int`,
+        outbound: sql<number>`count(*) filter (where ${calls.directionLive}::text = 'outbound' OR (${calls.directionLive} IS NULL AND ${calls.direction}::text = 'outbound'))::int`,
       })
       .from(calls)
       .where(
