@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import PendingItemCard, { PendingItemCardSkeleton, type PendingItem } from '@/components/features/PendingItemCard';
@@ -9,6 +9,7 @@ import BulkActionBar from '@/components/features/BulkActionBar';
 import ReviewModal from '@/components/features/ReviewModal';
 import CustomerSearchModal from '@/components/features/CustomerSearchModal';
 import ReportIssueModal from '@/components/features/ReportIssueModal';
+import { hasFeatureAccess } from '@/lib/feature-permissions';
 
 // =============================================================================
 // TYPES
@@ -34,6 +35,10 @@ interface APIResponse {
 // MAIN PAGE
 // =============================================================================
 
+// Alert threshold in seconds (1:30 = 90 seconds)
+const ALERT_THRESHOLD_SECONDS = 90;
+const ALERT_INTERVAL_MS = 5000; // Play sound every 5 seconds when alerting
+
 export default function PendingReviewPage() {
   const [items, setItems] = useState<PendingItem[]>([]);
   const [counts, setCounts] = useState<PendingCounts>({
@@ -53,6 +58,12 @@ export default function PendingReviewPage() {
   const [findMatchItem, setFindMatchItem] = useState<PendingItem | null>(null);
   const [reportIssueItem, setReportIssueItem] = useState<PendingItem | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+
+  // Alert system state
+  const [alertsEnabled, setAlertsEnabled] = useState(false);
+  const [userPermissions, setUserPermissions] = useState<Record<string, boolean> | null>(null);
+  const [userRole, setUserRole] = useState<string | undefined>(undefined);
+  const alertIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // ==========================================================================
   // DATA FETCHING
@@ -86,6 +97,116 @@ export default function PendingReviewPage() {
     const interval = setInterval(fetchItems, 30000);
     return () => clearInterval(interval);
   }, [fetchItems]);
+
+  // ==========================================================================
+  // PENDING REVIEW ALERTS SYSTEM
+  // ==========================================================================
+
+  // Fetch user permissions on mount
+  useEffect(() => {
+    async function fetchUserPermissions() {
+      try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+        if (data.success && data.user) {
+          setUserPermissions(data.user.featurePermissions || null);
+          setUserRole(data.user.role);
+          // Check if alerts are enabled for this user
+          const enabled = hasFeatureAccess('pendingReviewAlerts', data.user.featurePermissions, data.user.role);
+          setAlertsEnabled(enabled);
+        }
+      } catch (error) {
+        console.error('Failed to fetch user permissions:', error);
+      }
+    }
+    fetchUserPermissions();
+  }, []);
+
+  // Play alert tone using Web Audio API
+  const playAlertTone = useCallback(() => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+      // Create oscillator for alert tone
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      // Alert tone: two-tone pattern
+      oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A5
+      oscillator.frequency.setValueAtTime(1100, audioContext.currentTime + 0.15); // ~C#6
+      oscillator.frequency.setValueAtTime(880, audioContext.currentTime + 0.3); // A5
+
+      // Envelope
+      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.02);
+      gainNode.gain.linearRampToValueAtTime(0.2, audioContext.currentTime + 0.15);
+      gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.17);
+      gainNode.gain.linearRampToValueAtTime(0.2, audioContext.currentTime + 0.3);
+      gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.32);
+      gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.5);
+
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.5);
+
+      // Clean up after sound finishes
+      setTimeout(() => {
+        audioContext.close();
+      }, 600);
+    } catch (err) {
+      console.log('Web Audio not available:', err);
+    }
+  }, []);
+
+  // Check for items waiting too long and trigger alerts
+  useEffect(() => {
+    if (!alertsEnabled) {
+      // Clear any existing interval if alerts disabled
+      if (alertIntervalRef.current) {
+        clearInterval(alertIntervalRef.current);
+        alertIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const checkAndAlert = () => {
+      // Find items waiting longer than threshold (convert ageMinutes to seconds)
+      const overdueItems = items.filter(item => (item.ageMinutes * 60) >= ALERT_THRESHOLD_SECONDS);
+
+      if (overdueItems.length > 0) {
+        // Play alert tone
+        playAlertTone();
+
+        // Show notification if browser supports it and permission granted
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Pending Review Alert', {
+            body: `${overdueItems.length} item(s) waiting over 90 seconds!`,
+            icon: '/favicon.ico',
+            tag: 'pending-review-alert', // Prevents duplicate notifications
+            requireInteraction: true,
+          });
+        } else if ('Notification' in window && Notification.permission !== 'denied') {
+          // Request permission
+          Notification.requestPermission();
+        }
+      }
+    };
+
+    // Initial check
+    checkAndAlert();
+
+    // Set up recurring interval
+    alertIntervalRef.current = setInterval(checkAndAlert, ALERT_INTERVAL_MS);
+
+    return () => {
+      if (alertIntervalRef.current) {
+        clearInterval(alertIntervalRef.current);
+        alertIntervalRef.current = null;
+      }
+    };
+  }, [alertsEnabled, items, playAlertTone]);
 
   // ==========================================================================
   // SELECTION HANDLERS

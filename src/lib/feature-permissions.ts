@@ -114,6 +114,15 @@ export const FEATURES: FeatureConfig[] = [
     defaultEnabled: true,
   },
 
+  // Alerts & Notifications
+  {
+    key: 'pendingReviewAlerts',
+    label: 'Pending Review Alerts',
+    description: 'Continuous audio alert when items wait > 90 seconds in pending review',
+    category: 'advanced',
+    defaultEnabled: false,
+  },
+
   // Admin Features
   {
     key: 'settings',
