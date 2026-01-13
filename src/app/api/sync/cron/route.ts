@@ -111,6 +111,21 @@ export async function GET(request: NextRequest) {
       results.donna = { error: String(e) };
     }
 
+    // 5. Sync DOB data from HawkSoft (for birthday cards feature)
+    logs.push('Syncing date of birth data...');
+    try {
+      const dobRes = await fetch(`${getBaseUrl(request)}/api/sync/dob`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 500 }), // Process up to 500 new customers per night
+      });
+      results.dob = await dobRes.json();
+      logs.push(`DOB: ${results.dob.results?.synced || 0} synced from HawkSoft`);
+    } catch (e) {
+      logs.push(`DOB sync error: ${e}`);
+      results.dob = { error: String(e) };
+    }
+
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     logs.push(`Sync complete in ${duration}s`);
 
