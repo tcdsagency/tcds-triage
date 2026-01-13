@@ -50,6 +50,9 @@ export function ServiceRequestWizardProvider({ children, prefillPolicyNumber, pr
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingPolicyDetails, setLoadingPolicyDetails] = useState(false);
+  const [showAssigneeModal, setShowAssigneeModal] = useState(false);
+  const [assigneeId, setAssigneeId] = useState<number | null>(null);
+  const [assigneeName, setAssigneeName] = useState<string | null>(null);
 
   // Auto-save to localStorage
   useEffect(() => {
@@ -289,6 +292,8 @@ export function ServiceRequestWizardProvider({ children, prefillPolicyNumber, pr
           policyNumber: formData.policy?.policyNumber,
           changeType: formData.changeType,
           data,
+          assigneeId: assigneeId || undefined,
+          assigneeName: assigneeName || undefined,
         }),
       });
 
@@ -299,6 +304,125 @@ export function ServiceRequestWizardProvider({ children, prefillPolicyNumber, pr
         localStorage.removeItem('serviceRequest_draft');
         // Show success and redirect
         alert(`Change request submitted!\n\nID: ${result.changeRequestId}\n${result.summary}`);
+        router.push('/customers');
+      } else {
+        setErrors({ submit: result.error || 'Failed to submit request' });
+      }
+    } catch (e) {
+      console.error(e);
+      setErrors({ submit: 'Failed to submit request. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [formData, router, validateCurrentStep, assigneeId, assigneeName]);
+
+  // Handle assignee selection
+  const handleAssigneeSelect = useCallback((id: number, name: string) => {
+    setAssigneeId(id);
+    setAssigneeName(name);
+    setShowAssigneeModal(false);
+  }, []);
+
+  // Open assignee modal (called before submit)
+  const openAssigneeModal = useCallback(() => {
+    if (validateCurrentStep()) {
+      setShowAssigneeModal(true);
+    }
+  }, [validateCurrentStep]);
+
+  // Submit with specific assignee (bypasses state timing issues)
+  const submitWithAssignee = useCallback(async (selectedAssigneeId: number, selectedAssigneeName: string) => {
+    if (!validateCurrentStep()) return;
+
+    setAssigneeId(selectedAssigneeId);
+    setAssigneeName(selectedAssigneeName);
+    setShowAssigneeModal(false);
+    setIsSubmitting(true);
+
+    try {
+      // Build submission data based on change type
+      let data: Record<string, any> = {
+        effectiveDate: formData.effectiveDate,
+        notes: formData.notes,
+      };
+
+      switch (formData.changeType) {
+        case 'add_vehicle':
+          data = {
+            ...data,
+            ...formData.vehicle,
+            isReplacing: formData.isReplacing,
+            replacingVehicleId: formData.replacingVehicleId,
+            replacingVehicle: formData.isReplacing
+              ? formData.policyDetails?.vehicles.find(v => v.id === formData.replacingVehicleId)?.displayName
+              : undefined,
+          };
+          break;
+        case 'replace_vehicle':
+          data = { ...data, ...formData.vehicle };
+          break;
+        case 'remove_vehicle':
+          const selectedVehicle = formData.policyDetails?.vehicles.find(
+            v => v.id === formData.selectedVehicleId
+          );
+          data = {
+            ...data,
+            vehicleToRemove: selectedVehicle?.displayName || formData.vehicleToRemove,
+            selectedVehicleId: formData.selectedVehicleId,
+            removalReason: formData.removalReason,
+            newOwnerInfo: formData.newOwnerInfo,
+            isReplacing: formData.isReplacing,
+            stillInPossession: formData.stillInPossession,
+            outOfPossessionDate: formData.outOfPossessionDate,
+          };
+          break;
+        case 'add_driver':
+          data = { ...data, ...formData.driver };
+          break;
+        case 'remove_driver':
+          const selectedDriver = formData.policyDetails?.drivers.find(
+            d => d.id === formData.selectedDriverId
+          );
+          data = {
+            ...data,
+            driverToRemove: selectedDriver?.displayName || formData.driverToRemove,
+            selectedDriverId: formData.selectedDriverId,
+            removalReason: formData.driverRemovalReason,
+          };
+          break;
+        case 'address_change':
+          data = { ...data, ...formData.address };
+          break;
+        case 'add_mortgagee':
+        case 'remove_mortgagee':
+          data = { ...data, ...formData.mortgagee };
+          break;
+        case 'coverage_change':
+          data = { ...data, ...formData.coverageChange };
+          break;
+        case 'cancel_policy':
+          data = { ...data, ...formData.cancellation };
+          break;
+      }
+
+      const res = await fetch('/api/policy-change', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          policyId: formData.policy?.id,
+          policyNumber: formData.policy?.policyNumber,
+          changeType: formData.changeType,
+          data,
+          assigneeId: selectedAssigneeId,
+          assigneeName: selectedAssigneeName,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        localStorage.removeItem('serviceRequest_draft');
+        alert(`Change request submitted!\n\nID: ${result.changeRequestId}\nAssigned to: ${selectedAssigneeName}\n${result.summary}`);
         router.push('/customers');
       } else {
         setErrors({ submit: result.error || 'Failed to submit request' });
@@ -329,6 +453,14 @@ export function ServiceRequestWizardProvider({ children, prefillPolicyNumber, pr
     validateCurrentStep,
     submitRequest,
     isSubmitting,
+    // Assignee selection
+    showAssigneeModal,
+    setShowAssigneeModal,
+    assigneeId,
+    assigneeName,
+    handleAssigneeSelect,
+    openAssigneeModal,
+    submitWithAssignee,
   };
 
   return (

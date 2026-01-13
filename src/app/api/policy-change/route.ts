@@ -68,6 +68,8 @@ interface PolicyChangeRequest {
   effectiveDate: string;
   data: Record<string, any>;
   notes?: string;
+  assigneeId?: number;
+  assigneeName?: string;
 }
 
 // =============================================================================
@@ -201,7 +203,8 @@ export async function POST(request: NextRequest) {
       const categoryId = CHANGE_TYPE_TO_CATEGORY[body.changeType] || 115762;
       const priorityId = body.changeType === 'cancel_policy' ? PRIORITY_IDS.urgent : PRIORITY_IDS.standard;
 
-      // Build Zapier payload
+      // Build Zapier payload - use provided assignee or default
+      const assigneeId = body.assigneeId || DEFAULT_CSR_ID;
       const zapierPayload = {
         Name: effectiveName,
         Email: effectiveEmail,
@@ -212,7 +215,7 @@ export async function POST(request: NextRequest) {
         "Due After Days": body.changeType === 'cancel_policy' ? 0 : 1,
         "Category Id": categoryId,
         "Priority Id": priorityId,
-        "Csr Id": DEFAULT_CSR_ID,
+        "Csr Id": assigneeId,
       };
 
       console.log('[PolicyChange] Sending to Zapier:', {

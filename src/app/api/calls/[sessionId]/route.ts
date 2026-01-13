@@ -240,6 +240,9 @@ export async function PATCH(
     // END - End the call using 3CX Call Control API
     // ========================================================================
     if (action === "end" || body.status === "completed") {
+      let threecxDropped = false;
+      let threecxError: string | null = null;
+
       // Try to actually drop the call via 3CX if we have an external call ID
       if (externalCallId && agentExtension) {
         console.log(`[Calls] Ending call ${call.id} via 3CX Call Control API (3CX ID: ${externalCallId}, ext: ${agentExtension})`);
@@ -249,19 +252,44 @@ export async function PATCH(
 
         if (threecxClient) {
           try {
-            const dropSuccess = await threecxClient.dropCall(externalCallId, agentExtension);
-            console.log(`[Calls] dropCall result: ${dropSuccess}`);
+            threecxDropped = await threecxClient.dropCall(externalCallId, agentExtension);
+            console.log(`[Calls] dropCall result: ${threecxDropped}`);
+            if (!threecxDropped) {
+              threecxError = "No active call found on extension (call may have already ended)";
+            }
           } catch (err: any) {
+            threecxError = err.message;
             console.error("[Calls] 3CX drop call error:", err.message);
           }
+        } else {
+          threecxError = "3CX client not available";
         }
       } else {
-        console.log(`[Calls] Cannot drop call - missing externalCallId (${externalCallId}) or extension (${agentExtension})`);
+        threecxError = `Missing externalCallId (${externalCallId}) or extension (${agentExtension})`;
+        console.log(`[Calls] Cannot drop call - ${threecxError}`);
       }
 
       updates.status = "completed";
       updates.endedAt = new Date();
-      console.log(`[Calls] Marking call ${call.id} as completed (sessionId: ${sessionId})`);
+      console.log(`[Calls] Marking call ${call.id} as completed (sessionId: ${sessionId}, 3cxDropped: ${threecxDropped})`);
+
+      // Update database
+      await db
+        .update(calls)
+        .set(updates)
+        .where(eq(calls.id, call.id));
+
+      return NextResponse.json({
+        success: true,
+        message: threecxDropped ? "Call ended" : "Call marked as ended (phone may need manual hangup)",
+        threecxDropped,
+        threecxError,
+        call: {
+          id: call.id,
+          status: "completed",
+          endedAt: updates.endedAt,
+        },
+      });
     } else if (body.status) {
       updates.status = body.status;
     }

@@ -6,7 +6,7 @@ import { getThreeCXClient } from "@/lib/api/threecx";
 import { getVoIPToolsRelayClient } from "@/lib/api/voiptools-relay";
 import { db } from "@/db";
 import { users, customers, calls } from "@/db/schema";
-import { eq, and, or, ilike } from "drizzle-orm";
+import { eq, and, or, ilike, desc } from "drizzle-orm";
 
 // Normalize phone number for lookup
 function normalizePhone(phone: string): string {
@@ -218,8 +218,22 @@ export async function GET(request: NextRequest) {
             const customerPhone = call.Direction === "inbound" ? call.From : call.To;
             const customer = await findCustomerByPhone(customerPhone, tenantId);
 
+            // IMPORTANT: Look up database call by externalCallId to get the correct UUID
+            // Without this, we'd return the 3CX CallId which breaks call control
+            let dbSessionId = call.SessionId;
+            if (!dbSessionId && call.CallId) {
+              const dbCall = await db
+                .select({ id: calls.id })
+                .from(calls)
+                .where(eq(calls.externalCallId, call.CallId))
+                .orderBy(desc(calls.startedAt))
+                .limit(1)
+                .then(r => r[0]);
+              dbSessionId = dbCall?.id || call.CallId;
+            }
+
             return {
-              sessionId: call.SessionId || call.CallId,
+              sessionId: dbSessionId,
               callId: call.CallId,
               direction: call.Direction.toLowerCase() as "inbound" | "outbound",
               phoneNumber: customerPhone,

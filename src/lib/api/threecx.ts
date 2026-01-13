@@ -341,12 +341,16 @@ export class ThreeCXClient {
 
     // If callId provided, try to match it
     if (callId) {
+      const callIdStr = String(callId);
       const match = info.participants.find(p =>
-        p.callid === callId || p.id === callId || String(p.callid) === String(callId)
+        String(p.callid) === callIdStr ||
+        String(p.id) === callIdStr ||
+        p.callid === callId ||
+        p.id === callId
       );
       if (match) {
         console.log(`[3CX] Found participant ${match.id} for callId ${callId}`);
-        return match.id;
+        return String(match.id);
       }
       console.log(`[3CX] No exact match for callId ${callId}, using first participant`);
     }
@@ -354,7 +358,7 @@ export class ThreeCXClient {
     // Return first participant if no specific match
     const first = info.participants[0];
     console.log(`[3CX] Using first participant ${first.id} (callid: ${first.callid})`);
-    return first.id;
+    return String(first.id);
   }
 
   /**

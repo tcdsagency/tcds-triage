@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import CallPopup from "@/components/features/CallPopup";
 
 interface UserInfo {
@@ -30,6 +31,7 @@ interface CallContextType {
   activeCall: ActiveCall | null;
   isPopupVisible: boolean;
   isPopupMinimized: boolean;
+  isOnCallPage: boolean;
   myExtension: string | null;
   myUserInfo: UserInfo | null;
   usersByExtension: Map<string, UserInfo>;
@@ -37,6 +39,7 @@ interface CallContextType {
   closePopup: () => void;
   minimizePopup: () => void;
   restorePopup: () => void;
+  navigateToCall: (sessionId: string) => void;
 }
 
 const CallContext = createContext<CallContextType | null>(null);
@@ -54,6 +57,9 @@ interface CallProviderProps {
 }
 
 export function CallProvider({ children }: CallProviderProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [isPopupVisible, setIsPopupVisible] = useState(false);
   const [isPopupMinimized, setIsPopupMinimized] = useState(false);
@@ -67,6 +73,9 @@ export function CallProvider({ children }: CallProviderProps) {
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const newCallPollRef = useRef<NodeJS.Timeout | null>(null);
   const notOnCallCountRef = useRef<number>(0); // Debounce counter for presence-based call end detection
+
+  // Check if user is on the full-page call screen
+  const isOnCallPage = pathname?.startsWith('/calls/active/') ?? false;
 
   // Keep activeCallRef in sync
   useEffect(() => {
@@ -438,7 +447,10 @@ export function CallProvider({ children }: CallProviderProps) {
         setActiveCall(newCall);
         setIsPopupVisible(true);
         setIsPopupMinimized(false);
-        console.log("[CallProvider] Auto-opened popup for call:", newCall.sessionId, "extension:", callExtension);
+        console.log("[CallProvider] New call detected:", newCall.sessionId, "extension:", callExtension);
+
+        // Navigate to full-page call screen (default behavior)
+        router.push(`/calls/active/${newCall.sessionId}`);
         break;
       }
 
@@ -625,12 +637,18 @@ export function CallProvider({ children }: CallProviderProps) {
     setIsPopupMinimized(false);
   }, []);
 
+  // Navigate to the full-page call screen
+  const navigateToCall = useCallback((sessionId: string) => {
+    router.push(`/calls/active/${sessionId}`);
+  }, [router]);
+
   return (
     <CallContext.Provider
       value={{
         activeCall,
         isPopupVisible,
         isPopupMinimized,
+        isOnCallPage,
         myExtension,
         myUserInfo,
         usersByExtension,
@@ -638,37 +656,33 @@ export function CallProvider({ children }: CallProviderProps) {
         closePopup,
         minimizePopup,
         restorePopup,
+        navigateToCall,
       }}
     >
       {children}
 
-      {/* Global Call Popup */}
-      {activeCall && isPopupVisible && (
-        <CallPopup
-          sessionId={activeCall.sessionId}
-          phoneNumber={activeCall.phoneNumber}
-          direction={activeCall.direction}
-          isVisible={isPopupVisible && !isPopupMinimized}
-          onClose={closePopup}
-          onMinimize={minimizePopup}
-          startTime={activeCall.startTime}
-          callStatus={activeCall.status}
-          callerUser={activeCall.callerUser}
-          calleeUser={activeCall.calleeUser}
-        />
-      )}
+      {/*
+        Call UI Logic:
+        - When on /calls/active/[sessionId]: Full-page handles everything (no popup/bar)
+        - When NOT on call page but have active call: Show mini bar only
+        - Clicking mini bar navigates back to full-page call screen
+      */}
 
-      {/* Minimized Call Bar */}
-      {activeCall && isPopupVisible && isPopupMinimized && (
+      {/* Minimized Call Bar - Shows when user navigates away from call page */}
+      {activeCall && isPopupVisible && !isOnCallPage && (
         <div
-          onClick={restorePopup}
+          onClick={() => navigateToCall(activeCall.sessionId)}
           className="fixed bottom-4 right-4 bg-gray-900 text-white rounded-lg shadow-xl p-3 cursor-pointer hover:bg-gray-800 z-50"
         >
           <div className="flex items-center gap-3">
             <span className="text-green-400 animate-pulse">📞</span>
             <div>
               <div className="font-medium">{activeCall.phoneNumber}</div>
-              <div className="text-xs text-gray-400">{activeCall.status}</div>
+              <div className="text-xs text-gray-400">
+                {activeCall.status === "connected" || activeCall.status === "ringing"
+                  ? "Active Call - Click to return"
+                  : activeCall.status}
+              </div>
             </div>
             <button
               onClick={(e) => {
@@ -676,6 +690,7 @@ export function CallProvider({ children }: CallProviderProps) {
                 closePopup();
               }}
               className="ml-2 p-1 hover:bg-gray-700 rounded"
+              title="End call session"
             >
               ✕
             </button>
