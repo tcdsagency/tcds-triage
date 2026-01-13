@@ -9,8 +9,15 @@ if (!connectionString) {
   throw new Error('DATABASE_URL environment variable is not set. Please configure your database connection.');
 }
 
-// Disable prefetch as Supabase has its own connection pooler
-const client = postgres(connectionString, { prepare: false });
+// Serverless-optimized connection settings for Supabase
+// - prepare: false - required for Supabase transaction pooler
+// - max: 1 - limit connections per serverless function instance
+// - idle_timeout: 20 - close idle connections quickly
+const client = postgres(connectionString, {
+  prepare: false,
+  max: 1,
+  idle_timeout: 20,
+});
 
 export const db = drizzle(client, { schema });
 

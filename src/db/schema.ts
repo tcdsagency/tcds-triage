@@ -1013,6 +1013,80 @@ export const historicalTranscripts = pgTable('historical_transcripts', {
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CUSTOMER INTELLIGENCE - AI-learned facts from calls, notes, interactions
+// Captures personality, family, interests, preferences over time
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const customerIntelCategoryEnum = pgEnum('customer_intel_category', [
+  'family',           // spouse, kids, parents, relatives
+  'occupation',       // job, employer, industry
+  'life_event',       // marriage, baby, retirement, move
+  'vehicle',          // cars mentioned
+  'property',         // homes, rentals mentioned
+  'interest',         // hobbies, sports teams, pets
+  'preference',       // communication style, insurance preferences
+  'personality',      // personality traits, communication style
+  'concern',          // insurance concerns, worries
+  'plan',             // future plans mentioned
+  'other'             // miscellaneous
+]);
+
+export const customerIntel = pgTable('customer_intel', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  customerId: uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+
+  // The intel
+  category: customerIntelCategoryEnum('category').notNull(),
+  fact: text('fact').notNull(),                    // "Has daughter named Emma, age 5"
+  keywords: jsonb('keywords').$type<string[]>(),   // ["daughter", "Emma", "5 years old"]
+  confidence: decimal('confidence', { precision: 3, scale: 2 }).default('0.8'), // AI confidence
+
+  // Source tracking
+  sourceType: varchar('source_type', { length: 50 }).notNull(), // 'call_transcript', 'note', 'import'
+  sourceId: varchar('source_id', { length: 100 }),              // ID of source record
+  sourceDate: timestamp('source_date'),                          // When was this said
+
+  // Lifecycle
+  isActive: boolean('is_active').default(true),     // Can be invalidated if info changes
+  lastVerifiedAt: timestamp('last_verified_at'),    // Last time this was confirmed
+  expiresAt: timestamp('expires_at'),               // Some facts expire (e.g., "planning vacation next month")
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('customer_intel_customer_idx').on(table.customerId),
+  index('customer_intel_category_idx').on(table.customerId, table.category),
+]);
+
+// Personality profile (aggregated from intel)
+export const customerPersonality = pgTable('customer_personality', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  customerId: uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }).unique(),
+
+  // DISC-style personality traits (0-100 scale)
+  dominance: integer('dominance'),              // Direct, decisive, results-oriented
+  influence: integer('influence'),              // Enthusiastic, optimistic, collaborative
+  steadiness: integer('steadiness'),            // Supportive, sincere, stable
+  conscientiousness: integer('conscientiousness'), // Analytical, systematic, careful
+
+  // Communication preferences
+  preferredContactMethod: varchar('preferred_contact_method', { length: 20 }), // phone, email, text
+  communicationStyle: varchar('communication_style', { length: 50 }), // brief, detailed, friendly, formal
+  bestTimeToCall: varchar('best_time_to_call', { length: 50 }),
+
+  // Summary
+  aiPersonalitySummary: text('ai_personality_summary'),
+  analysisCallCount: integer('analysis_call_count').default(0), // How many calls analyzed
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('customer_personality_customer_idx').on(table.customerId),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TRIAGE QUEUE
 // ═══════════════════════════════════════════════════════════════════════════
 

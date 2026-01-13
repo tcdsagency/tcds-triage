@@ -45,7 +45,7 @@ export default function MySettingsPage() {
   });
   
   const [preferences, setPreferences] = useState({
-    theme: "dark",
+    theme: "light",
     defaultView: "dashboard",
     autoRefresh: true,
     soundAlerts: true,
@@ -67,6 +67,13 @@ export default function MySettingsPage() {
             extension: data.user.extension || "",
             avatarUrl: data.user.avatarUrl || "",
           });
+          // Load preferences from database
+          if (data.user.preferences) {
+            setPreferences(prev => ({
+              ...prev,
+              theme: data.user.preferences.theme || "light",
+            }));
+          }
         }
       } catch (error) {
         console.error("Failed to fetch profile:", error);
@@ -90,11 +97,20 @@ export default function MySettingsPage() {
           phone: profile.phone,
           extension: profile.extension,
           avatarUrl: profile.avatarUrl || null,
+          preferences: {
+            theme: preferences.theme,
+          },
         }),
       });
       const data = await res.json();
       if (data.success) {
         toast.success("Settings saved successfully");
+        // Apply theme change to document
+        if (preferences.theme === "dark") {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
       } else {
         toast.error(data.error || "Failed to save settings");
       }
