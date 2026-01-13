@@ -36,6 +36,13 @@ interface PendingItem {
 
   // Metadata
   handledBy: string | null;
+  handledByAgent: {
+    id: string;
+    name: string;
+    avatar: string | null;
+    extension: string | null;
+    initials: string;
+  } | null;
   timestamp: string;
   ageMinutes: number;
 
@@ -142,15 +149,31 @@ export async function GET(request: NextRequest) {
         .orderBy(desc(wrapupDrafts.createdAt))
         .limit(limit);
 
-      // Get agent names for wrapups
+      // Get agent details for wrapups
       const agentIds = wrapups.map(w => w.agentId).filter(Boolean) as string[];
       const agents = agentIds.length > 0
         ? await db
-            .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+            .select({
+              id: users.id,
+              firstName: users.firstName,
+              lastName: users.lastName,
+              avatarUrl: users.avatarUrl,
+              extension: users.extension,
+            })
             .from(users)
             .where(inArray(users.id, agentIds))
         : [];
-      const agentMap = new Map(agents.map(a => [a.id, `${a.firstName} ${a.lastName}`.trim()]));
+      const agentMap = new Map(agents.map(a => {
+        const name = `${a.firstName} ${a.lastName}`.trim();
+        const initials = `${a.firstName?.[0] || ''}${a.lastName?.[0] || ''}`.toUpperCase();
+        return [a.id, {
+          id: a.id,
+          name,
+          avatar: a.avatarUrl,
+          extension: a.extension,
+          initials,
+        }];
+      }));
 
       for (const w of wrapups) {
         const extraction = w.aiExtraction as any || {};
@@ -197,7 +220,8 @@ export async function GET(request: NextRequest) {
           requestType: w.requestType || extraction.serviceRequestType || null,
           actionItems: extraction.actionItems || [],
           policies: extraction.extractedData?.policyNumber ? [extraction.extractedData.policyNumber] : [],
-          handledBy: w.agentId ? agentMap.get(w.agentId) || null : null,
+          handledBy: w.agentId ? agentMap.get(w.agentId)?.name || null : null,
+          handledByAgent: w.agentId ? agentMap.get(w.agentId) || null : null,
           timestamp: w.createdAt.toISOString(),
           ageMinutes,
           trestleData: trestle.person ? {
@@ -324,6 +348,7 @@ export async function GET(request: NextRequest) {
           actionItems: [],
           policies: [],
           handledBy: null,
+          handledByAgent: null,
           timestamp: firstMsg.createdAt.toISOString(),
           ageMinutes,
           trestleData: null,
