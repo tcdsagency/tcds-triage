@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { calls, pendingVmEvents, pendingTranscriptJobs } from "@/db/schema";
+import { calls, pendingVmEvents, pendingTranscriptJobs, users } from "@/db/schema";
 import { eq, lt } from "drizzle-orm";
 
 // =============================================================================
@@ -199,10 +199,21 @@ export async function POST(request: NextRequest) {
 
     switch (eventType) {
       case "transcription_started": {
-        // Try to find the call by threeCxCallId
+        // Try to find the call by threeCxCallId or vmSessionId
         let existingCall = null;
 
-        if (threeCxCallId) {
+        // First try by VM session ID
+        if (sessionId) {
+          const [bySession] = await db
+            .select({ id: calls.id })
+            .from(calls)
+            .where(eq(calls.vmSessionId, sessionId))
+            .limit(1);
+          if (bySession) existingCall = bySession;
+        }
+
+        // Then try by threeCxCallId
+        if (!existingCall && threeCxCallId) {
           const [found] = await db
             .select({ id: calls.id })
             .from(calls)
@@ -212,18 +223,33 @@ export async function POST(request: NextRequest) {
         }
 
         if (existingCall) {
-          // Update call with VM Bridge session info
+          // Look up agent by extension if we have it
+          let agentId: string | null = null;
+          if (extension) {
+            const [agent] = await db
+              .select({ id: users.id })
+              .from(users)
+              .where(eq(users.extension, extension))
+              .limit(1);
+            agentId = agent?.id || null;
+          }
+
+          // Update call with VM Bridge session info AND agent
+          const isOutbound = direction === "outbound";
           await db
             .update(calls)
             .set({
               vmSessionId: sessionId,
-              externalNumber: externalNumber,
+              externalNumber: externalNumber || undefined,
               transcriptionStatus: "active",
+              agentId: agentId || undefined,
+              direction: direction ? (isOutbound ? "outbound" : "inbound") : undefined,
+              fromNumber: externalNumber && !isOutbound ? externalNumber : undefined,
               updatedAt: new Date(),
             })
             .where(eq(calls.id, existingCall.id));
 
-          console.log(`[VM Events] Linked VM session ${sessionId} to call ${existingCall.id}`);
+          console.log(`[VM Events] Linked VM session ${sessionId} to call ${existingCall.id}, agent=${agentId}`);
 
           // Notify realtime
           await notifyRealtimeServer({
@@ -232,18 +258,66 @@ export async function POST(request: NextRequest) {
             vmSessionId: sessionId,
           });
         } else {
-          // Call not found yet - store pending event for race condition handling
-          console.warn(`[VM Events] Call not found for 3CX ID ${threeCxCallId} - storing pending event`);
+          // No existing call - CREATE one for screen pop
+          // This ensures the call shows up immediately in the UI
+          const tenantId = process.env.DEFAULT_TENANT_ID;
 
-          if (threeCxCallId) {
-            await db.insert(pendingVmEvents).values({
-              threecxCallId: threeCxCallId,
-              sessionId: sessionId,
-              externalNumber: externalNumber || null,
-              direction: direction || null,
-              extension: extension || null,
-              expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 min expiry
+          if (tenantId && extension) {
+            console.log(`[VM Events] Creating call for transcription: ext=${extension} session=${sessionId}`);
+
+            // Look up agent by extension
+            const [agent] = await db
+              .select({ id: users.id })
+              .from(users)
+              .where(eq(users.extension, extension))
+              .limit(1);
+
+            const isOutbound = direction === "outbound";
+            const [newCall] = await db
+              .insert(calls)
+              .values({
+                tenantId,
+                vmSessionId: sessionId,
+                externalCallId: threeCxCallId || null,
+                fromNumber: isOutbound ? extension : (externalNumber || "Unknown"),
+                toNumber: isOutbound ? (externalNumber || "Unknown") : extension,
+                externalNumber: externalNumber || null,
+                direction: isOutbound ? "outbound" : "inbound",
+                status: "in_progress",
+                transcriptionStatus: "active",
+                agentId: agent?.id || null,
+                startedAt: new Date(),
+                answeredAt: new Date(),
+              })
+              .returning();
+
+            console.log(`[VM Events] Created call ${newCall.id} for ext=${extension} agent=${agent?.id || 'none'}`);
+
+            // Notify realtime for screen pop - use call_ringing to trigger popup
+            await notifyRealtimeServer({
+              type: "call_ringing",
+              callId: newCall.id,
+              sessionId: newCall.id,
+              vmSessionId: sessionId,
+              extension,
+              direction: newCall.direction,
+              externalNumber,
+              fromNumber: newCall.fromNumber,
+              toNumber: newCall.toNumber,
             });
+          } else {
+            // Store pending event as fallback
+            console.warn(`[VM Events] Cannot create call - missing tenant or extension`);
+            if (threeCxCallId) {
+              await db.insert(pendingVmEvents).values({
+                threecxCallId: threeCxCallId,
+                sessionId: sessionId,
+                externalNumber: externalNumber || null,
+                direction: direction || null,
+                extension: extension || null,
+                expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+              });
+            }
           }
         }
         break;
