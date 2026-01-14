@@ -72,6 +72,18 @@ function normalizePhone(phone: string): string {
   return phone;
 }
 
+// Timeout wrapper for external API calls to prevent hanging
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T
+): Promise<T> {
+  const timeout = new Promise<T>((resolve) =>
+    setTimeout(() => resolve(fallback), timeoutMs)
+  );
+  return Promise.race([promise, timeout]);
+}
+
 // =============================================================================
 // AFTER-HOURS DUPLICATE CHECK
 // Check if there's already an after-hours triage item or message for this phone
@@ -807,21 +819,25 @@ export async function POST(request: NextRequest) {
       console.log("[Call-Completed] Saved transcript from Zapier payload");
     }
 
-    // Fallback: fetch from MSSQL if no transcript yet
+    // Fallback: fetch from MSSQL if no transcript yet (with 10s timeout)
     if (!transcript && body.callId) {
       try {
         const mssqlClient = await getMSSQLTranscriptsClient();
         if (mssqlClient) {
-          const transcriptData = await mssqlClient.getTranscriptById(body.callId);
+          const transcriptData = await withTimeout(
+            mssqlClient.getTranscriptById(body.callId),
+            10000, // 10 second timeout
+            null
+          );
           if (transcriptData?.transcript) {
             transcript = transcriptData.transcript;
             transcriptSource = "mssql";
 
-            // Update call with transcript
-            await db
-              .update(calls)
+            // Update call with transcript (non-blocking)
+            db.update(calls)
               .set({ transcription: transcript })
-              .where(eq(calls.id, call.id));
+              .where(eq(calls.id, call.id))
+              .catch(err => console.error("[Call-Completed] Failed to save transcript:", err));
             console.log("[Call-Completed] Fetched transcript from MSSQL");
           }
         }
@@ -832,10 +848,17 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Call-Completed] Transcript source: ${transcriptSource}, length: ${transcript.length}`);
 
-    // 3. Run AI analysis
+    // 3. Run AI analysis (with 25s timeout to avoid Zapier timeout)
     let analysis: AIAnalysis | null = null;
     if (transcript && transcript.length > 50) {
-      analysis = await analyzeTranscript(transcript, body.duration || 0);
+      analysis = await withTimeout(
+        analyzeTranscript(transcript, body.duration || 0),
+        25000, // 25 second timeout for AI
+        null
+      );
+      if (!analysis) {
+        console.log("[Call-Completed] AI analysis timed out or failed");
+      }
 
       if (analysis) {
         // Update call with AI analysis
@@ -943,20 +966,28 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Only do AgencyZoom phone lookup if no screen pop match
+      // Only do AgencyZoom phone lookup if no screen pop match (with 15s timeout)
       if (customerMatchStatus === "unmatched") {
         try {
           const azClient = await getAgencyZoomClient();
           if (azClient && phoneForLookup) {
-            // First search customers
-            azMatches = await azClient.findCustomersByPhone(phoneForLookup, 5);
+            // First search customers (with timeout)
+            azMatches = await withTimeout(
+              azClient.findCustomersByPhone(phoneForLookup, 5),
+              15000,
+              []
+            );
             console.log(`[Call-Completed] AgencyZoom customer lookup for ${phoneForLookup}: ${azMatches.length} matches`);
 
-          // If no customers found, search leads
+          // If no customers found, search leads (with timeout)
           if (azMatches.length === 0) {
             try {
               const normalizedPhone = phoneForLookup.replace(/\D/g, "");
-              const leadsResult = await azClient.getLeads({ searchText: normalizedPhone, limit: 5 });
+              const leadsResult = await withTimeout(
+                azClient.getLeads({ searchText: normalizedPhone, limit: 5 }),
+                10000,
+                { data: [] as AgencyZoomLead[], total: 0 }
+              );
               azLeadMatches = leadsResult.data;
               console.log(`[Call-Completed] AgencyZoom lead lookup for ${phoneForLookup}: ${azLeadMatches.length} matches`);
               matchType = azLeadMatches.length > 0 ? "lead" : "none";
@@ -996,25 +1027,26 @@ export async function POST(request: NextRequest) {
         }
       } // end if (customerMatchStatus === "unmatched") - AgencyZoom lookup block
 
-      // 4.2 Trestle IQ lookup for unmatched calls
+      // 4.2 Trestle IQ lookup for unmatched calls (with 10s timeout)
       if (customerMatchStatus === "unmatched") {
-        // Trestle IQ lookup for unmatched calls
-        if (phoneForLookup) {
+        if (phoneForLookup && trestleIQClient) {
           try {
-            if (trestleIQClient) {
-              const trestleResult = await trestleIQClient.reversePhone(phoneForLookup);
-              if (trestleResult) {
-                trestleData = {
-                  phoneNumber: trestleResult.phoneNumber,
-                  lineType: trestleResult.lineType,
-                  carrier: trestleResult.carrier,
-                  person: trestleResult.person,
-                  address: trestleResult.address,
-                  emails: trestleResult.emails,
-                  confidence: trestleResult.confidence,
-                };
-                console.log(`[Call-Completed] Trestle lookup: ${trestleResult.person?.name || "No name found"}`);
-              }
+            const trestleResult = await withTimeout(
+              trestleIQClient.reversePhone(phoneForLookup),
+              10000,
+              null
+            );
+            if (trestleResult) {
+              trestleData = {
+                phoneNumber: trestleResult.phoneNumber,
+                lineType: trestleResult.lineType,
+                carrier: trestleResult.carrier,
+                person: trestleResult.person,
+                address: trestleResult.address,
+                emails: trestleResult.emails,
+                confidence: trestleResult.confidence,
+              };
+              console.log(`[Call-Completed] Trestle lookup: ${trestleResult.person?.name || "No name found"}`);
             }
           } catch (error) {
             console.error("[Call-Completed] Trestle lookup error:", error);
