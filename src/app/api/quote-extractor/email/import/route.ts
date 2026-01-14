@@ -45,7 +45,7 @@ interface ExtractedQuoteData {
 // PDF Text Extraction using unpdf (serverless-compatible)
 async function extractTextFromPDF(pdfBuffer: ArrayBuffer): Promise<string> {
   try {
-    const { text: textPages } = await extractText(Buffer.from(pdfBuffer));
+    const { text: textPages } = await extractText(new Uint8Array(pdfBuffer));
     const text = Array.isArray(textPages) ? textPages.join("\n") : String(textPages);
     if (text && text.length > 50) {
       return text;

@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       console.log("[Invoice] Processing PDF file:", file.name);
 
       // Extract text from PDF using unpdf (works in serverless/Vercel)
-      const { text: pdfTextPages } = await extractText(buffer);
+      const { text: pdfTextPages } = await extractText(new Uint8Array(buffer));
       const pdfText = Array.isArray(pdfTextPages) ? pdfTextPages.join("\n") : String(pdfTextPages);
 
       if (!pdfText || pdfText.trim().length < 50) {
