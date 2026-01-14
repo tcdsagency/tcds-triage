@@ -14,6 +14,10 @@ import {
   Trash2,
   Pencil,
   X,
+  Upload,
+  Download,
+  AlertCircle,
+  CheckCircle,
 } from "lucide-react";
 
 // Types
@@ -46,6 +50,63 @@ interface Broker {
 }
 
 type TabType = "carriers" | "brokers";
+
+interface ImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+// CSV Parser - handles quoted fields and commas within quotes
+function parseCSV(text: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) return [];
+
+  // Parse header
+  const headers = parseCSVLine(lines[0]).map((h) =>
+    h.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")
+  );
+
+  // Parse rows
+  const records: Record<string, string>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    const record: Record<string, string> = {};
+    headers.forEach((header, idx) => {
+      record[header] = values[idx]?.trim() || "";
+    });
+    // Skip empty rows
+    if (Object.values(record).some((v) => v)) {
+      records.push(record);
+    }
+  }
+  return records;
+}
+
+function parseCSVLine(line: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  values.push(current);
+  return values;
+}
 
 // Modal Component
 function Modal({
@@ -348,6 +409,11 @@ export default function CarriersBrokersPage() {
   const [editingCarrier, setEditingCarrier] = useState<Carrier | null>(null);
   const [editingBroker, setEditingBroker] = useState<Broker | null>(null);
 
+  // Import state
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
   // Fetch carriers
   const fetchCarriers = useCallback(async () => {
     try {
@@ -469,6 +535,73 @@ export default function CarriersBrokersPage() {
     }
   };
 
+  // Handle CSV import
+  const handleImport = async (file: File) => {
+    setImporting(true);
+    setImportResult(null);
+
+    try {
+      const text = await file.text();
+      const records = parseCSV(text);
+
+      if (records.length === 0) {
+        setImportResult({ imported: 0, skipped: 0, errors: ["No valid records found in CSV"] });
+        setImporting(false);
+        return;
+      }
+
+      const endpoint = activeTab === "carriers" ? "/api/agency-carriers/import" : "/api/es-brokers/import";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ records }),
+      });
+
+      const data = await res.json();
+      setImportResult({
+        imported: data.imported || 0,
+        skipped: data.skipped || 0,
+        errors: data.errors || [],
+      });
+
+      // Refresh data
+      if (activeTab === "carriers") {
+        fetchCarriers();
+      } else {
+        fetchBrokers();
+      }
+    } catch (error) {
+      console.error("Import failed:", error);
+      setImportResult({ imported: 0, skipped: 0, errors: ["Failed to process file"] });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // Download CSV template
+  const downloadTemplate = () => {
+    let csv: string;
+    let filename: string;
+
+    if (activeTab === "carriers") {
+      csv = "name,products,newBusinessCommission,renewalCommission,agencyCode,agencySupportPhone,website,marketingRepName,marketingRepEmail,marketingRepPhone\n";
+      csv += "Example Carrier,\"Auto, Home, Umbrella\",15%,12%,ABC123,800-555-1234,https://example.com,John Smith,john@example.com,555-123-4567\n";
+      filename = "carriers_template.csv";
+    } else {
+      csv = "name,contactName,email,phone,website,notes\n";
+      csv += "Example Broker,Jane Doe,jane@example.com,555-987-6543,https://example.com,Specializes in coastal properties\n";
+      filename = "brokers_template.csv";
+    }
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -479,17 +612,29 @@ export default function CarriersBrokersPage() {
             Manage your appointed carriers and E&S brokers
           </p>
         </div>
-        <button
-          onClick={() => {
-            setEditingCarrier(null);
-            setEditingBroker(null);
-            setIsModalOpen(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          <Plus className="w-4 h-4" />
-          Add {activeTab === "carriers" ? "Carrier" : "Broker"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setImportResult(null);
+              setIsImportModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <Upload className="w-4 h-4" />
+            Import CSV
+          </button>
+          <button
+            onClick={() => {
+              setEditingCarrier(null);
+              setEditingBroker(null);
+              setIsModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Plus className="w-4 h-4" />
+            Add {activeTab === "carriers" ? "Carrier" : "Broker"}
+          </button>
+        </div>
       </div>
 
       {/* Search and Filters */}
@@ -784,6 +929,122 @@ export default function CarriersBrokersPage() {
             }}
           />
         )}
+      </Modal>
+
+      {/* Import Modal */}
+      <Modal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        title={`Import ${activeTab === "carriers" ? "Carriers" : "E&S Brokers"} from CSV`}
+      >
+        <div className="space-y-4">
+          {!importResult ? (
+            <>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Upload a CSV file to import {activeTab === "carriers" ? "carriers" : "brokers"} in bulk.
+              </p>
+
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6">
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImport(file);
+                  }}
+                  className="hidden"
+                  id="csv-upload"
+                  disabled={importing}
+                />
+                <label
+                  htmlFor="csv-upload"
+                  className="flex flex-col items-center cursor-pointer"
+                >
+                  {importing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2" />
+                      <span className="text-sm text-gray-500">Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-8 h-8 text-gray-400 mb-2" />
+                      <span className="text-sm font-medium">Click to upload CSV</span>
+                      <span className="text-xs text-gray-500 mt-1">or drag and drop</span>
+                    </>
+                  )}
+                </label>
+              </div>
+
+              <button
+                onClick={downloadTemplate}
+                className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
+              >
+                <Download className="w-4 h-4" />
+                Download CSV template
+              </button>
+
+              <div className="text-xs text-gray-500 space-y-1">
+                <p className="font-medium">Required columns:</p>
+                {activeTab === "carriers" ? (
+                  <p>name</p>
+                ) : (
+                  <p>name</p>
+                )}
+                <p className="font-medium mt-2">Optional columns:</p>
+                {activeTab === "carriers" ? (
+                  <p>products, newBusinessCommission, renewalCommission, agencyCode, agencySupportPhone, website, marketingRepName, marketingRepEmail, marketingRepPhone</p>
+                ) : (
+                  <p>contactName, email, phone, website, notes</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {importResult.imported > 0 && (
+                  <div className="flex items-center gap-2 text-green-600">
+                    <CheckCircle className="w-5 h-5" />
+                    <span>{importResult.imported} records imported successfully</span>
+                  </div>
+                )}
+                {importResult.skipped > 0 && (
+                  <div className="flex items-center gap-2 text-yellow-600">
+                    <AlertCircle className="w-5 h-5" />
+                    <span>{importResult.skipped} records skipped</span>
+                  </div>
+                )}
+                {importResult.errors.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-sm font-medium text-red-600 mb-2">Errors:</p>
+                    <div className="max-h-40 overflow-y-auto text-xs text-red-600 bg-red-50 dark:bg-red-900/20 rounded p-2 space-y-1">
+                      {importResult.errors.slice(0, 10).map((err, i) => (
+                        <p key={i}>{err}</p>
+                      ))}
+                      {importResult.errors.length > 10 && (
+                        <p className="font-medium">...and {importResult.errors.length - 10} more errors</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
+                <button
+                  onClick={() => setImportResult(null)}
+                  className="px-4 py-2 rounded-lg border hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  Import More
+                </button>
+                <button
+                  onClick={() => setIsImportModalOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Done
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );
