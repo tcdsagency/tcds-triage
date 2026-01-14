@@ -24,6 +24,9 @@ export interface PolicyNotice {
   policyId?: string | null;
   title: string;
   description?: string | null;
+  // Document (PDF from carrier)
+  documentUrl?: string | null;
+  documentFileName?: string | null;
   amountDue?: string | null;
   dueDate?: string | null;
   gracePeriodEnd?: string | null;
@@ -208,7 +211,24 @@ export default function PolicyNoticeCard({ notice, isSelected, onSelect, onActio
       )}
 
       <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700">
-        <span className="text-xs text-gray-400 dark:text-gray-500">{formatDate(notice.noticeDate || notice.createdAt)}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400 dark:text-gray-500">{formatDate(notice.noticeDate || notice.createdAt)}</span>
+          {notice.documentUrl && (
+            <a
+              href={notice.documentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
+              title={notice.documentFileName || 'View Document'}
+            >
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+              </svg>
+              PDF
+            </a>
+          )}
+        </div>
 
         <div className="flex items-center gap-1">
           {notice.reviewStatus === 'pending' && onAction && (

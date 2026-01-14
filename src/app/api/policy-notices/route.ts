@@ -89,6 +89,8 @@ export async function GET(request: NextRequest) {
         policyId: policyNotices.policyId,
         title: policyNotices.title,
         description: policyNotices.description,
+        documentUrl: policyNotices.documentUrl,
+        documentFileName: policyNotices.documentFileName,
         amountDue: policyNotices.amountDue,
         dueDate: policyNotices.dueDate,
         gracePeriodEnd: policyNotices.gracePeriodEnd,
