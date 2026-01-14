@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { calls, customers, wrapupDrafts, activities, users, matchSuggestions } from "@/db/schema";
+import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, triageItems, messages } from "@/db/schema";
 import { eq, or, ilike, and, gte, lte, desc, isNotNull } from "drizzle-orm";
 import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
@@ -70,6 +70,86 @@ function normalizePhone(phone: string): string {
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   return phone;
+}
+
+// =============================================================================
+// AFTER-HOURS DUPLICATE CHECK
+// Check if there's already an after-hours triage item or message for this phone
+// This prevents duplicates when both email webhook and call-completed fire
+// =============================================================================
+
+interface AfterHoursMatch {
+  found: boolean;
+  triageItemId?: string;
+  messageId?: string;
+}
+
+async function checkExistingAfterHoursEntry(
+  tenantId: string,
+  phone: string
+): Promise<AfterHoursMatch> {
+  if (!phone) return { found: false };
+
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+
+  if (normalizedPhone.length < 10) return { found: false };
+
+  // First check for existing triage item (from after-hours-email webhook)
+  const [existingTriage] = await db
+    .select({ id: triageItems.id, messageId: triageItems.messageId })
+    .from(triageItems)
+    .leftJoin(messages, eq(triageItems.messageId, messages.id))
+    .where(
+      and(
+        eq(triageItems.tenantId, tenantId),
+        eq(triageItems.type, "after_hours"),
+        gte(triageItems.createdAt, oneHourAgo),
+        or(
+          ilike(messages.fromNumber, `%${normalizedPhone}`),
+          ilike(messages.fromNumber, `+1${normalizedPhone}`)
+        )
+      )
+    )
+    .orderBy(desc(triageItems.createdAt))
+    .limit(1);
+
+  if (existingTriage) {
+    console.log(`[Call-Completed] Found existing after-hours triage item ${existingTriage.id} for phone ${phone}`);
+    return {
+      found: true,
+      triageItemId: existingTriage.id,
+      messageId: existingTriage.messageId || undefined,
+    };
+  }
+
+  // Also check for orphaned after-hours messages (without triage item)
+  const [existingMessage] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.tenantId, tenantId),
+        eq(messages.isAfterHours, true),
+        gte(messages.createdAt, oneHourAgo),
+        or(
+          ilike(messages.fromNumber, `%${normalizedPhone}`),
+          ilike(messages.fromNumber, `+1${normalizedPhone}`)
+        )
+      )
+    )
+    .orderBy(desc(messages.createdAt))
+    .limit(1);
+
+  if (existingMessage) {
+    console.log(`[Call-Completed] Found existing after-hours message ${existingMessage.id} for phone ${phone}`);
+    return {
+      found: true,
+      messageId: existingMessage.id,
+    };
+  }
+
+  return { found: false };
 }
 
 // =============================================================================
@@ -815,6 +895,8 @@ export async function POST(request: NextRequest) {
     let customerMatchStatus: "matched" | "multiple_matches" | "unmatched" = "unmatched";
     let matchedAzCustomerId: string | null = null;
     let trestleData: Record<string, unknown> | null = null;
+    let mergedWithAfterHours = false;
+    let mergedTriageItemId: string | undefined;
 
     // Create wrapup for calls with analysis OR hangups (for QA review)
     if (analysis || isHangup) {
@@ -969,8 +1051,59 @@ export async function POST(request: NextRequest) {
         // Check if this is an after-hours call (from disposition set during call creation)
         const isAfterHoursCall = call.disposition === "after_hours";
 
+        // =========================================================================
+        // AFTER-HOURS DUPLICATE PREVENTION
+        // Check if there's already a triage item from after-hours-email webhook
+        // If so, link the call instead of creating duplicate wrapupDraft
+        // =========================================================================
         if (isAfterHoursCall) {
-          console.log("[Call-Completed] 📞 Creating wrapup for AFTER-HOURS call - will be marked for special handling");
+          console.log("[Call-Completed] 📞 After-hours call detected - checking for existing triage item...");
+
+          const existingAfterHours = await checkExistingAfterHoursEntry(tenantId, phoneForLookup);
+
+          if (existingAfterHours.found && existingAfterHours.triageItemId) {
+            // Found existing triage item - link call and update with transcript/summary
+            console.log(`[Call-Completed] 📞 Linking call to existing triage item ${existingAfterHours.triageItemId}`);
+
+            await tx
+              .update(triageItems)
+              .set({
+                callId: call.id,
+                aiSummary: analysis?.summary || undefined,
+                updatedAt: new Date(),
+              })
+              .where(eq(triageItems.id, existingAfterHours.triageItemId));
+
+            // Also update the linked message if it exists (append transcript to body)
+            if (existingAfterHours.messageId && transcript) {
+              const [existingMessage] = await tx
+                .select({ body: messages.body })
+                .from(messages)
+                .where(eq(messages.id, existingAfterHours.messageId))
+                .limit(1);
+
+              if (existingMessage) {
+                await tx
+                  .update(messages)
+                  .set({
+                    body: `${existingMessage.body || ''}\n\n--- Call Transcript ---\n${transcript}`,
+                  })
+                  .where(eq(messages.id, existingAfterHours.messageId));
+              }
+            }
+
+            console.log(`[Call-Completed] 📞 Merged call ${call.id} with existing after-hours entry - NO duplicate wrapup created`);
+
+            // Return early - don't create wrapupDraft
+            return {
+              wrapup: null,
+              suggestionCount: 0,
+              mergedWithExisting: true,
+              triageItemId: existingAfterHours.triageItemId,
+            };
+          }
+
+          console.log("[Call-Completed] 📞 No existing triage item found - creating wrapup for after-hours call");
         }
 
         // Look up agent name from users table using agentId or extension
@@ -1119,13 +1252,20 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        return { wrapup, suggestionCount };
+        return { wrapup, suggestionCount, mergedWithExisting: false };
       });
 
-      wrapupId = txResult.wrapup.id;
-      console.log(`[Call-Completed] Created wrap-up draft: ${wrapupId} (matchStatus: ${customerMatchStatus}${shouldAutoVoid ? ", auto-voided: " + hangupReason : ""})`);
-      if (txResult.suggestionCount > 0) {
-        console.log(`[Call-Completed] Stored ${txResult.suggestionCount} match suggestions (${azMatches.length} customers, ${azLeadMatches.length} leads)`);
+      // Handle the case where we merged with an existing after-hours triage item
+      if (txResult.mergedWithExisting) {
+        mergedWithAfterHours = true;
+        mergedTriageItemId = txResult.triageItemId;
+        console.log(`[Call-Completed] ✅ Merged with existing after-hours triage item ${mergedTriageItemId} - no duplicate wrapup created`);
+      } else if (txResult.wrapup) {
+        wrapupId = txResult.wrapup.id;
+        console.log(`[Call-Completed] Created wrap-up draft: ${wrapupId} (matchStatus: ${customerMatchStatus}${shouldAutoVoid ? ", auto-voided: " + hangupReason : ""})`);
+        if (txResult.suggestionCount > 0) {
+          console.log(`[Call-Completed] Stored ${txResult.suggestionCount} match suggestions (${azMatches.length} customers, ${azLeadMatches.length} leads)`);
+        }
       }
 
       // Note: Triage items removed - wrapup_drafts is the single source of truth
@@ -1174,6 +1314,8 @@ export async function POST(request: NextRequest) {
       matchMethod: matchResult.method,
       matchConfidence: matchResult.confidence,
       merged: matchStatus === "matched",
+      mergedWithAfterHours,
+      triageItemId: mergedTriageItemId,
       hasTranscript: !!transcript,
       transcriptSource,
       transcriptLength: transcript.length,

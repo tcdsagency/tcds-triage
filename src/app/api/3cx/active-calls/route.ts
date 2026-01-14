@@ -91,10 +91,12 @@ export async function GET(request: NextRequest) {
           .select({
             id: calls.id,
             externalCallId: calls.externalCallId,
-            direction: calls.directionLive,
+            directionLive: calls.directionLive,
+            direction: calls.direction,
             status: calls.status,
             fromNumber: calls.fromNumber,
             toNumber: calls.toNumber,
+            externalNumber: calls.externalNumber,
             customerId: calls.customerId,
             startedAt: calls.startedAt,
             customerFirstName: customers.firstName,
@@ -136,14 +138,16 @@ export async function GET(request: NextRequest) {
           }
 
           // Active call confirmed - return with full info
-          const phoneNumber = activeCall.direction === "inbound"
-            ? activeCall.fromNumber
-            : activeCall.toNumber;
+          // Use directionLive if set, otherwise fall back to direction
+          const callDirection = activeCall.directionLive || activeCall.direction || "inbound";
+          // Use externalNumber if set, otherwise derive from direction
+          const phoneNumber = activeCall.externalNumber ||
+            (callDirection === "inbound" ? activeCall.fromNumber : activeCall.toNumber);
           const customerName = activeCall.customerFirstName && activeCall.customerLastName
             ? `${activeCall.customerFirstName} ${activeCall.customerLastName}`
             : null;
 
-          console.log(`[Active Calls] Found active call in DB: ${activeCall.id} - ${phoneNumber}`);
+          console.log(`[Active Calls] Found active call in DB: ${activeCall.id} - ${phoneNumber} (${callDirection})`);
 
           return NextResponse.json({
             success: true,
@@ -151,7 +155,7 @@ export async function GET(request: NextRequest) {
             calls: [{
               sessionId: activeCall.id,
               callId: activeCall.externalCallId,
-              direction: activeCall.direction?.toLowerCase() as "inbound" | "outbound",
+              direction: callDirection.toLowerCase() as "inbound" | "outbound",
               phoneNumber: phoneNumber || "Unknown",
               extension,
               status: activeCall.status,

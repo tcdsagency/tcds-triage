@@ -277,11 +277,11 @@ export function CallProvider({ children }: CallProviderProps) {
             if (myPresence && myPresence.status !== 'on_call' && activeCallRef.current?.status !== "ended") {
               // Presence shows NOT on call - increment counter (debounce to avoid false positives)
               notOnCallCountRef.current++;
-              console.log(`[CallProvider] Presence shows ${myPresence.status}, not-on-call count: ${notOnCallCountRef.current}/3`);
+              console.log(`[CallProvider] Presence shows ${myPresence.status}, not-on-call count: ${notOnCallCountRef.current}/2`);
 
-              // Require 3 consecutive "not on call" checks before marking call as ended
+              // Require 2 consecutive "not on call" checks before marking call as ended
               // This prevents premature popup closure due to VoIPTools presence lag
-              if (notOnCallCountRef.current >= 3) {
+              if (notOnCallCountRef.current >= 2) {
                 console.log(`[CallProvider] Confirmed call ended after ${notOnCallCountRef.current} consecutive presence checks`);
                 setActiveCall(prev => prev ? { ...prev, status: "ended" } : null);
                 notOnCallCountRef.current = 0; // Reset counter
@@ -347,8 +347,8 @@ export function CallProvider({ children }: CallProviderProps) {
       }
     };
 
-    // Start polling every 5 seconds (faster since we're relying on this)
-    pollIntervalRef.current = setInterval(checkCallStatus, 5000);
+    // Start polling every 3 seconds (faster since we're relying on this)
+    pollIntervalRef.current = setInterval(checkCallStatus, 3000);
 
     // Also check immediately
     checkCallStatus();
