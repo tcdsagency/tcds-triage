@@ -205,9 +205,13 @@ export async function POST(request: NextRequest) {
     const hsPolicyId = payload["Management System Fields Policy Id"] ||
                        payload["managementSystemFields"]?.["Management System Fields Policy Id"] || null;
 
-    // Document URL
+    // Document (PDF from carrier)
     const documentUrl = payload["Insured Copy Document Url"] ||
-                        payload["insuredCopyDocument"]?.["Insured Copy Document Url"] || null;
+                        payload["insuredCopyDocument"]?.["Insured Copy Document Url"] ||
+                        payload["insuredCopyDocument"]?.["url"] || null;
+    const documentFileName = payload["Insured Copy Document File Name"] ||
+                             payload["insuredCopyDocument"]?.["Insured Copy Document File Name"] ||
+                             payload["insuredCopyDocument"]?.["fileName"] || null;
 
     // Validate required fields
     if (!noticeTypeRaw) {
@@ -315,6 +319,8 @@ export async function POST(request: NextRequest) {
         policyId: matchedPolicyId,
         title,
         description,
+        documentUrl,
+        documentFileName,
         amountDue: amountDue ? amountDue.toString().replace(/[^0-9.]/g, '') : null,
         dueDate,
         gracePeriodEnd: effectiveDate || null, // Effective date of cancellation as grace period end

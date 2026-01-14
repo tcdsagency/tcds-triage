@@ -216,11 +216,15 @@ export class RiskMonitorScheduler {
         });
       }
 
-      // IMPORTANT: If we have no real data from either source, skip this property
-      // Do NOT create alerts based on no data - that leads to false positives
+      // If no data from either source, still mark as checked but don't create alerts
       if (!rprData && !mmiData) {
-        await this.logEvent("no_data", policy.id, "No data from RPR or MMI - skipping to prevent false alerts");
+        await this.logEvent("no_data", policy.id, "No data from RPR or MMI - marking checked, no alert");
         result.newStatus = policy.currentStatus ?? "unknown";
+        // Still update lastCheckedAt so we don't keep retrying this property
+        await db
+          .update(riskMonitorPolicies)
+          .set({ lastCheckedAt: new Date(), updatedAt: new Date() })
+          .where(eq(riskMonitorPolicies.id, policy.id));
         return result;
       }
 

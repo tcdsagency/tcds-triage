@@ -316,6 +316,8 @@ export async function POST(request: NextRequest) {
           policyId,
           title: notice.title,
           description: notice.description,
+          documentUrl: notice.documentUrl,
+          documentFileName: notice.documentFileName,
           amountDue: notice.amountDue,
           dueDate: notice.dueDate,
           gracePeriodEnd: notice.gracePeriodEnd,
