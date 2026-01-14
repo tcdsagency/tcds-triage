@@ -165,6 +165,29 @@ async function resolveCallId(sessionId: string): Promise<string | null> {
       console.log(`[Transcript] Linked VM session ${sessionId} to call ${call.id}`);
       return call.id;
     }
+
+    // 6. No call exists at all - AUTO-CREATE one for this session
+    // This handles the case where VM Bridge starts transcribing before any webhook creates the call
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (tenantId) {
+      console.log(`[Transcript] Auto-creating call for VM session ${sessionId}`);
+      const [newCall] = await db
+        .insert(calls)
+        .values({
+          tenantId,
+          vmSessionId: sessionId,
+          fromNumber: 'Unknown',
+          toNumber: 'Unknown',
+          direction: 'inbound',
+          status: 'in_progress',
+          transcriptionStatus: 'active',
+          startedAt: new Date(),
+          answeredAt: new Date(),
+        })
+        .returning();
+      console.log(`[Transcript] Auto-created call ${newCall.id} for session ${sessionId}`);
+      return newCall.id;
+    }
   }
 
   console.warn(`[Transcript] Could not resolve session: ${sessionId}`);
