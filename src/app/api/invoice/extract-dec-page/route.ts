@@ -1,22 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-
-// Parse PDF using pdf-parse v2 API
-// This uses the getText() method which extracts text without canvas/DOMMatrix
-async function parsePDF(buffer: Buffer): Promise<{ text: string }> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { PDFParse } = require("pdf-parse");
-
-  // Convert Buffer to Uint8Array and wrap in options object as required by pdf-parse v2
-  const uint8Array = new Uint8Array(buffer);
-
-  const parser = new PDFParse({ data: uint8Array });
-  await parser.load();
-  const text = await parser.getText();
-  parser.destroy();
-
-  return { text };
-}
+import { extractText } from "unpdf";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -58,13 +42,13 @@ export async function POST(request: NextRequest) {
 
     let response;
 
-    // Handle PDFs - extract text first, then send to GPT
+    // Handle PDFs - extract text using unpdf (serverless-compatible)
     if (mimeType === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf")) {
       console.log("[Invoice] Processing PDF file:", file.name);
 
-      // Extract text from PDF
-      const pdfData = await parsePDF(buffer);
-      const pdfText = pdfData.text;
+      // Extract text from PDF using unpdf (works in serverless/Vercel)
+      const { text: pdfTextPages } = await extractText(buffer);
+      const pdfText = Array.isArray(pdfTextPages) ? pdfTextPages.join("\n") : String(pdfTextPages);
 
       if (!pdfText || pdfText.trim().length < 50) {
         return NextResponse.json(
@@ -89,7 +73,7 @@ export async function POST(request: NextRequest) {
         temperature: 0,
       });
     }
-    // Handle images - use GPT-4 Vision
+    // Handle images - use GPT-4o Vision
     else if (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimeType)) {
       console.log("[Invoice] Processing image file:", file.name);
 

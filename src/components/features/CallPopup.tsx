@@ -12,6 +12,7 @@ import { MergedProfile } from "@/types/customer-profile";
 import { Playbook, AgentSuggestion, TelemetryFeedback } from "@/lib/agent-assist/types";
 import { AgentAvatar } from "@/components/ui/agent-avatar";
 import { AgencyZoomButton, getAgencyZoomUrl } from "@/components/ui/agencyzoom-link";
+import { HawkSoftButton } from "@/components/ui/hawksoft-link";
 import { CanopyConnectSMS } from "@/components/CanopyConnectSMS";
 
 // =============================================================================
@@ -1338,6 +1339,13 @@ export default function CallPopup({
                 {customerLookup?.agencyzoomId && (
                   <AgencyZoomButton
                     href={getAgencyZoomUrl(customerLookup.agencyzoomId, "customer")}
+                    variant="outline"
+                    size="sm"
+                  />
+                )}
+                {customerLookup?.hawksoftId && (
+                  <HawkSoftButton
+                    clientCode={customerLookup.hawksoftId}
                     variant="outline"
                     size="sm"
                   />
