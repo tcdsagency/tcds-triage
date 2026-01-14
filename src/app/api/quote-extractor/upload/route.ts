@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { quoteDocuments } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { extractText } from "unpdf";
 
 // =============================================================================
 // TYPES
@@ -50,15 +51,15 @@ interface ExtractedQuoteData {
 // =============================================================================
 
 async function extractTextFromPDF(pdfBuffer: ArrayBuffer): Promise<string> {
-  // Use pdf-parse library if available, otherwise use basic extraction
+  // Use unpdf library (serverless-compatible, no canvas/DOMMatrix required)
   try {
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
-    const result = await parser.getText();
-    await parser.destroy();
-    return result.text || "";
+    const { text: textPages } = await extractText(Buffer.from(pdfBuffer));
+    const text = Array.isArray(textPages) ? textPages.join("\n") : String(textPages);
+    if (text && text.length > 50) {
+      return text;
+    }
   } catch (err) {
-    console.warn("[Quote Extractor] pdf-parse not available, using fallback", err);
+    console.warn("[Quote Extractor] unpdf extraction failed, using fallback", err);
   }
 
   // Fallback: Extract text using basic PDF string parsing

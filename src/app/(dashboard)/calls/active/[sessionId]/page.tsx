@@ -13,6 +13,7 @@ import { MergedProfile } from "@/types/customer-profile";
 import { Playbook, AgentSuggestion, TelemetryFeedback } from "@/lib/agent-assist/types";
 import { AgentAvatar } from "@/components/ui/agent-avatar";
 import { AgencyZoomButton, getAgencyZoomUrl } from "@/components/ui/agencyzoom-link";
+import { HawkSoftButton } from "@/components/ui/hawksoft-link";
 import { CanopyConnectSMS } from "@/components/CanopyConnectSMS";
 import { useCall } from "@/components/providers/CallProvider";
 
@@ -1137,6 +1138,14 @@ export default function ActiveCallPage() {
                     className="w-full justify-center"
                   />
                 )}
+                {customerLookup?.hawksoftId && (
+                  <HawkSoftButton
+                    clientCode={customerLookup.hawksoftId}
+                    variant="default"
+                    size="md"
+                    className="w-full justify-center"
+                  />
+                )}
 
                 <button
                   onClick={openCustomerProfile}
@@ -1293,6 +1302,13 @@ export default function ActiveCallPage() {
           {customerLookup?.agencyzoomId && (
             <AgencyZoomButton
               href={getAgencyZoomUrl(customerLookup.agencyzoomId, "customer")}
+              variant="outline"
+              size="md"
+            />
+          )}
+          {customerLookup?.hawksoftId && (
+            <HawkSoftButton
+              clientCode={customerLookup.hawksoftId}
               variant="outline"
               size="md"
             />

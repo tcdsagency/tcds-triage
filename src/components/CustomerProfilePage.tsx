@@ -544,6 +544,17 @@ export default function CustomerProfilePage() {
                       AgencyZoom
                     </a>
                   )}
+
+                  {/* HawkSoft link */}
+                  {profile.hawksoftClientNumber && (
+                    <a
+                      href={`hs://${profile.hawksoftClientNumber}`}
+                      className="flex items-center gap-1 text-sm text-[#0066CC] hover:text-[#004C99] hover:underline"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      HawkSoft
+                    </a>
+                  )}
                 </div>
               </div>
             </div>

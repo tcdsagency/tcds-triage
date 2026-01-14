@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { quoteDocuments } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { extractText } from "unpdf";
 
 interface ExtractedQuoteData {
   carrierName?: string;
@@ -41,16 +42,16 @@ interface ExtractedQuoteData {
   }>;
 }
 
-// PDF Text Extraction (same as upload route)
+// PDF Text Extraction using unpdf (serverless-compatible)
 async function extractTextFromPDF(pdfBuffer: ArrayBuffer): Promise<string> {
   try {
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
-    const result = await parser.getText();
-    await parser.destroy();
-    return result.text || "";
+    const { text: textPages } = await extractText(Buffer.from(pdfBuffer));
+    const text = Array.isArray(textPages) ? textPages.join("\n") : String(textPages);
+    if (text && text.length > 50) {
+      return text;
+    }
   } catch (err) {
-    console.warn("[Quote Extractor] pdf-parse not available, using fallback", err);
+    console.warn("[Quote Extractor] unpdf extraction failed, using fallback", err);
   }
 
   // Fallback extraction
