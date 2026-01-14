@@ -18,6 +18,10 @@ import {
   Check,
   FileText,
   Clock,
+  Upload,
+  Download,
+  AlertCircle,
+  CheckCircle,
 } from "lucide-react";
 
 // Types
@@ -59,6 +63,60 @@ const LIEN_HOLDER_TYPES = [
   { value: "mortgage_company", label: "Mortgage Company", icon: Home },
   { value: "other", label: "Other", icon: Building },
 ];
+
+interface ImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+// CSV Parser - handles quoted fields and commas within quotes
+function parseCSV(text: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) return [];
+
+  const headers = parseCSVLine(lines[0]).map((h) =>
+    h.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")
+  );
+
+  const records: Record<string, string>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    const record: Record<string, string> = {};
+    headers.forEach((header, idx) => {
+      record[header] = values[idx]?.trim() || "";
+    });
+    if (Object.values(record).some((v) => v)) {
+      records.push(record);
+    }
+  }
+  return records;
+}
+
+function parseCSVLine(line: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  values.push(current);
+  return values;
+}
 
 // Modal Component
 function Modal({
@@ -416,6 +474,11 @@ export default function LienHoldersPage() {
   const [editingLienHolder, setEditingLienHolder] = useState<LienHolder | null>(null);
   const [editingClause, setEditingClause] = useState<MortgageeClause | null>(null);
 
+  // Import state
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
   // Fetch lien holders
   const fetchLienHolders = useCallback(async () => {
     try {
@@ -560,6 +623,73 @@ export default function LienHoldersPage() {
     }
   };
 
+  // Handle CSV import
+  const handleImport = async (file: File) => {
+    setImporting(true);
+    setImportResult(null);
+
+    try {
+      const text = await file.text();
+      const records = parseCSV(text);
+
+      if (records.length === 0) {
+        setImportResult({ imported: 0, skipped: 0, errors: ["No valid records found in CSV"] });
+        setImporting(false);
+        return;
+      }
+
+      const endpoint = activeTab === "lienholders" ? "/api/lien-holders/import" : "/api/mortgagee-clauses/import";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ records }),
+      });
+
+      const data = await res.json();
+      setImportResult({
+        imported: data.imported || 0,
+        skipped: data.skipped || 0,
+        errors: data.errors || [],
+      });
+
+      // Refresh data
+      if (activeTab === "lienholders") {
+        fetchLienHolders();
+      } else {
+        fetchClauses();
+      }
+    } catch (error) {
+      console.error("Import failed:", error);
+      setImportResult({ imported: 0, skipped: 0, errors: ["Failed to process file"] });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // Download CSV template
+  const downloadTemplate = () => {
+    let csv: string;
+    let filename: string;
+
+    if (activeTab === "lienholders") {
+      csv = "name,type,address1,address2,city,state,zipCode,phone,fax,email,notes\n";
+      csv += "Chase Bank,bank,\"123 Main St\",\"Suite 100\",Dallas,TX,75201,800-555-1234,800-555-1235,info@chase.com,Main branch\n";
+      filename = "lien_holders_template.csv";
+    } else {
+      csv = "displayName,clauseText,policyTypes\n";
+      csv += "\"Chase Mortgage - Standard\",\"Chase Home Finance LLC, Its Successors and/or Assigns, ISAOA ATIMA, 123 Main St, Dallas TX 75201\",\"Home, Flood\"\n";
+      filename = "mortgagee_clauses_template.csv";
+    }
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // Format date
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return null;
@@ -580,17 +710,29 @@ export default function LienHoldersPage() {
             Manage mortgage companies, banks, and auto finance lienholders
           </p>
         </div>
-        <button
-          onClick={() => {
-            setEditingLienHolder(null);
-            setEditingClause(null);
-            setIsModalOpen(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          <Plus className="w-4 h-4" />
-          Add {activeTab === "lienholders" ? "Lien Holder" : "Clause"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setImportResult(null);
+              setIsImportModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <Upload className="w-4 h-4" />
+            Import CSV
+          </button>
+          <button
+            onClick={() => {
+              setEditingLienHolder(null);
+              setEditingClause(null);
+              setIsModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Plus className="w-4 h-4" />
+            Add {activeTab === "lienholders" ? "Lien Holder" : "Clause"}
+          </button>
+        </div>
       </div>
 
       {/* Search and Filters */}
@@ -880,6 +1022,122 @@ export default function LienHoldersPage() {
             }}
           />
         )}
+      </Modal>
+
+      {/* Import Modal */}
+      <Modal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        title={`Import ${activeTab === "lienholders" ? "Lien Holders" : "Mortgagee Clauses"} from CSV`}
+      >
+        <div className="space-y-4">
+          {!importResult ? (
+            <>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Upload a CSV file to import {activeTab === "lienholders" ? "lien holders" : "mortgagee clauses"} in bulk.
+              </p>
+
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6">
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImport(file);
+                  }}
+                  className="hidden"
+                  id="csv-upload-lien"
+                  disabled={importing}
+                />
+                <label
+                  htmlFor="csv-upload-lien"
+                  className="flex flex-col items-center cursor-pointer"
+                >
+                  {importing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2" />
+                      <span className="text-sm text-gray-500">Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-8 h-8 text-gray-400 mb-2" />
+                      <span className="text-sm font-medium">Click to upload CSV</span>
+                      <span className="text-xs text-gray-500 mt-1">or drag and drop</span>
+                    </>
+                  )}
+                </label>
+              </div>
+
+              <button
+                onClick={downloadTemplate}
+                className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
+              >
+                <Download className="w-4 h-4" />
+                Download CSV template
+              </button>
+
+              <div className="text-xs text-gray-500 space-y-1">
+                <p className="font-medium">Required columns:</p>
+                {activeTab === "lienholders" ? (
+                  <p>name, address1, city, state, zipCode</p>
+                ) : (
+                  <p>displayName, clauseText</p>
+                )}
+                <p className="font-medium mt-2">Optional columns:</p>
+                {activeTab === "lienholders" ? (
+                  <p>type (bank, credit_union, finance_company, mortgage_company, other), address2, phone, fax, email, notes</p>
+                ) : (
+                  <p>policyTypes (comma-separated: Home, Auto, Flood)</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {importResult.imported > 0 && (
+                  <div className="flex items-center gap-2 text-green-600">
+                    <CheckCircle className="w-5 h-5" />
+                    <span>{importResult.imported} records imported successfully</span>
+                  </div>
+                )}
+                {importResult.skipped > 0 && (
+                  <div className="flex items-center gap-2 text-yellow-600">
+                    <AlertCircle className="w-5 h-5" />
+                    <span>{importResult.skipped} records skipped</span>
+                  </div>
+                )}
+                {importResult.errors.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-sm font-medium text-red-600 mb-2">Errors:</p>
+                    <div className="max-h-40 overflow-y-auto text-xs text-red-600 bg-red-50 dark:bg-red-900/20 rounded p-2 space-y-1">
+                      {importResult.errors.slice(0, 10).map((err, i) => (
+                        <p key={i}>{err}</p>
+                      ))}
+                      {importResult.errors.length > 10 && (
+                        <p className="font-medium">...and {importResult.errors.length - 10} more errors</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
+                <button
+                  onClick={() => setImportResult(null)}
+                  className="px-4 py-2 rounded-lg border hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  Import More
+                </button>
+                <button
+                  onClick={() => setIsImportModalOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Done
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );

@@ -1008,6 +1008,39 @@ export const pendingVmEvents = pgTable('pending_vm_events', {
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
+// PENDING TRANSCRIPT JOBS - Queue for SQL Server transcript polling
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const pendingTranscriptJobs = pgTable('pending_transcript_jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+  callId: uuid('call_id').references(() => calls.id, { onDelete: 'cascade' }),
+
+  // Call identification for SQL Server lookup
+  callerNumber: varchar('caller_number', { length: 20 }),
+  agentExtension: varchar('agent_extension', { length: 10 }),
+  callStartedAt: timestamp('call_started_at').notNull(),
+  callEndedAt: timestamp('call_ended_at').notNull(),
+
+  // Job status
+  status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, completed, failed
+  attemptCount: integer('attempt_count').default(0),
+  nextAttemptAt: timestamp('next_attempt_at').defaultNow(),
+  lastAttemptAt: timestamp('last_attempt_at'),
+
+  // Results
+  sqlRecordId: integer('sql_record_id'),
+  error: text('error'),
+
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  completedAt: timestamp('completed_at'),
+  failedAt: timestamp('failed_at'),
+}, (table) => [
+  index('pending_transcript_jobs_status_idx').on(table.status, table.nextAttemptAt),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
 // HISTORICAL TRANSCRIPTS - Imported legacy call transcripts for AI Deep Think
 // ═══════════════════════════════════════════════════════════════════════════
 

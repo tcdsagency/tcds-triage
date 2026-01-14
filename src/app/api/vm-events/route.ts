@@ -7,9 +7,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { calls, customers, liveTranscriptSegments, pendingVmEvents } from "@/db/schema";
+import { calls, pendingVmEvents, pendingTranscriptJobs } from "@/db/schema";
 import { eq, lt } from "drizzle-orm";
-import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 
 // =============================================================================
 // Types
@@ -97,221 +96,49 @@ async function notifyRealtimeServer(event: Record<string, any>) {
 }
 
 // =============================================================================
-// AI Summary Generation
+// Queue Transcript Job for SQL Server Polling
 // =============================================================================
+// Instead of processing live transcript immediately, we queue a job to poll
+// SQL Server (source of truth) for the authoritative transcript.
 
-async function generateAISummary(callId: string) {
-  console.log(`[VM Events] Generating AI summary for call ${callId}`);
-
-  // Fetch all transcript segments
-  const segments = await db
-    .select({
-      speaker: liveTranscriptSegments.speaker,
-      text: liveTranscriptSegments.text,
-      sequenceNumber: liveTranscriptSegments.sequenceNumber,
-    })
-    .from(liveTranscriptSegments)
-    .where(eq(liveTranscriptSegments.callId, callId))
-    .orderBy(liveTranscriptSegments.sequenceNumber);
-
-  if (segments.length === 0) {
-    console.log(`[VM Events] No segments for call ${callId}`);
-    return;
-  }
-
-  // Build transcript text
-  const transcript = segments
-    .map(s => `${s.speaker.toUpperCase()}: ${s.text}`)
-    .join("\n");
-
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) {
-    console.warn("[VM Events] OPENAI_API_KEY not configured - skipping AI summary");
-    return;
-  }
+async function queueTranscriptJob(
+  callId: string,
+  tenantId: string | null,
+  callerNumber: string | null,
+  agentExtension: string | null,
+  callStartedAt: Date,
+  callEndedAt: Date
+) {
+  console.log(`[VM Events] Queuing transcript job for call ${callId}`);
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openaiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are an insurance call analyst. Analyze this call transcript and provide:
-1. A brief summary (2-3 sentences)
-2. Action items (as JSON array of strings)
-3. Overall sentiment (positive/neutral/negative)
-4. Key topics discussed (as JSON array of strings)
+    // Initial delay of 30 seconds to let SQL Server catch up
+    const initialDelay = 30;
+    const nextAttemptAt = new Date(Date.now() + initialDelay * 1000);
 
-Respond in this exact JSON format:
-{
-  "summary": "...",
-  "actionItems": ["...", "..."],
-  "sentiment": "positive|neutral|negative",
-  "topics": ["...", "..."]
-}`,
-          },
-          {
-            role: "user",
-            content: transcript,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 500,
-      }),
+    await db.insert(pendingTranscriptJobs).values({
+      tenantId: tenantId,
+      callId: callId,
+      callerNumber: callerNumber,
+      agentExtension: agentExtension,
+      callStartedAt: callStartedAt,
+      callEndedAt: callEndedAt,
+      status: "pending",
+      attemptCount: 0,
+      nextAttemptAt: nextAttemptAt,
     });
 
-    const result = await response.json();
-    const content = result.choices?.[0]?.message?.content;
+    console.log(`[VM Events] Transcript job queued for call ${callId} - first attempt at ${nextAttemptAt.toISOString()}`);
 
-    if (content) {
-      // Parse JSON with error handling
-      let analysis;
-      try {
-        // Clean potential markdown code blocks from response
-        const cleanContent = content.replace(/```json\n?|\n?```/g, '').trim();
-        analysis = JSON.parse(cleanContent);
-      } catch (parseError) {
-        console.error(`[VM Events] Failed to parse AI response as JSON:`, content);
-        // Fallback: create basic analysis from raw content
-        analysis = {
-          summary: content.substring(0, 500),
-          actionItems: [],
-          sentiment: "neutral",
-          topics: [],
-        };
-      }
-
-      await db
-        .update(calls)
-        .set({
-          aiSummary: analysis.summary,
-          aiActionItems: analysis.actionItems || [],
-          aiSentiment: { overall: analysis.sentiment || "neutral", score: 0, timeline: [] },
-          aiTopics: analysis.topics || [],
-          updatedAt: new Date(),
-        })
-        .where(eq(calls.id, callId));
-
-      console.log(`[VM Events] AI summary generated for call ${callId}`);
-
-      // Broadcast AI analysis to realtime subscribers
-      await notifyRealtimeServer({
-        type: "ai_summary_ready",
-        sessionId: callId,
-        summary: analysis.summary,
-        sentiment: analysis.sentiment,
-        actionItems: analysis.actionItems,
-        topics: analysis.topics,
-      });
-
-      // Trigger AgencyZoom writeback (async)
-      writeToAgencyZoom(callId, analysis).catch(err =>
-        console.error(`[VM Events] AgencyZoom writeback failed:`, err.message)
-      );
-    }
+    // Notify UI that transcript processing is pending
+    await notifyRealtimeServer({
+      type: "transcript_processing",
+      sessionId: callId,
+      status: "pending",
+      message: "Waiting for SQL Server transcript...",
+    });
   } catch (error) {
-    console.error(`[VM Events] AI summary error:`, error);
-  }
-}
-
-// =============================================================================
-// AgencyZoom Writeback
-// =============================================================================
-
-async function writeToAgencyZoom(callId: string, analysis: any) {
-  // Check if AgencyZoom credentials are configured
-  const hasCredentials = process.env.AGENCYZOOM_API_USERNAME && process.env.AGENCYZOOM_API_PASSWORD;
-  if (!hasCredentials) {
-    console.log("[VM Events] AgencyZoom credentials not configured - skipping writeback");
-    return;
-  }
-
-  // Get call with customer info
-  const [call] = await db
-    .select({
-      id: calls.id,
-      direction: calls.direction,
-      durationSeconds: calls.durationSeconds,
-      customerId: calls.customerId,
-    })
-    .from(calls)
-    .where(eq(calls.id, callId))
-    .limit(1);
-
-  if (!call?.customerId) {
-    console.log(`[VM Events] No customer linked to call ${callId}`);
-    return;
-  }
-
-  // Get customer's AgencyZoom ID
-  const [customer] = await db
-    .select({
-      agencyzoomId: customers.agencyzoomId,
-      firstName: customers.firstName,
-      lastName: customers.lastName,
-    })
-    .from(customers)
-    .where(eq(customers.id, call.customerId))
-    .limit(1);
-
-  if (!customer?.agencyzoomId) {
-    console.log(`[VM Events] Customer ${call.customerId} has no AgencyZoom ID`);
-    return;
-  }
-
-  const durationMin = Math.floor((call.durationSeconds || 0) / 60);
-  const durationSec = (call.durationSeconds || 0) % 60;
-
-  const actionItemsList = (analysis.actionItems || []).length > 0
-    ? `\n\nAction Items:\n${analysis.actionItems.map((item: string) => `- ${item}`).join("\n")}`
-    : "";
-
-  const topicsList = (analysis.topics || []).length > 0
-    ? `\n\nTopics: ${analysis.topics.join(", ")}`
-    : "";
-
-  const noteContent = `Call Summary (${call.direction === "inbound" ? "Inbound" : "Outbound"})
-Duration: ${durationMin}m ${durationSec}s
-Sentiment: ${analysis.sentiment || "neutral"}
-
-${analysis.summary || "No summary available."}${actionItemsList}${topicsList}
-
-— Auto-generated by TCDS Triage`;
-
-  try {
-    // Use the existing AgencyZoom client with proper auth
-    const azClient = getAgencyZoomClient();
-    const azId = parseInt(customer.agencyzoomId, 10);
-
-    if (isNaN(azId)) {
-      console.error(`[VM Events] Invalid AgencyZoom ID: ${customer.agencyzoomId}`);
-      return;
-    }
-
-    const result = await azClient.addNote(azId, noteContent);
-
-    if (result.success) {
-      await db
-        .update(calls)
-        .set({
-          agencyzoomNoteId: result.id ? String(result.id) : null,
-          agencyzoomSyncedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(calls.id, callId));
-
-      console.log(`[VM Events] AgencyZoom note created for call ${callId} (note ID: ${result.id})`);
-    } else {
-      console.error(`[VM Events] AgencyZoom addNote failed for call ${callId}`);
-    }
-  } catch (error) {
-    console.error(`[VM Events] AgencyZoom error:`, error);
+    console.error(`[VM Events] Failed to queue transcript job:`, error);
   }
 }
 
@@ -470,9 +297,18 @@ export async function POST(request: NextRequest) {
             segments,
           });
 
-          // Trigger AI summary generation (async)
-          generateAISummary(call.id).catch(err =>
-            console.error(`[VM Events] AI summary failed:`, err.message)
+          // Queue transcript job to poll SQL Server (source of truth)
+          // The transcript worker will fetch the authoritative transcript from
+          // 3CX Recording Manager SQL Server and run AI extraction on that.
+          queueTranscriptJob(
+            call.id,
+            call.tenantId,
+            externalNumber || null,
+            extension || null,
+            call.createdAt || new Date(),
+            new Date()
+          ).catch(err =>
+            console.error(`[VM Events] Failed to queue transcript job:`, err.message)
           );
         } else {
           console.warn(`[VM Events] Call not found for session ${sessionId} or 3CX ID ${threeCxCallId}`);
