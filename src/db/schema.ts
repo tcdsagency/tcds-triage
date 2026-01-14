@@ -3894,3 +3894,193 @@ export const canopyConnectPullsRelations = relations(canopyConnectPulls, ({ one 
   }),
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENCY CARRIERS (Appointed Carriers)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const agencyCarriers = pgTable('agency_carriers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Basic info
+  name: text('name').notNull(),
+  website: text('website'),
+  products: text('products'), // Comma-separated: "Auto, Home, Umbrella"
+
+  // Commission rates
+  newBusinessCommission: text('new_business_commission'),
+  renewalCommission: text('renewal_commission'),
+
+  // Agency relationship
+  agencySupportPhone: text('agency_support_phone'),
+  agencyCode: text('agency_code'),
+
+  // Marketing rep contact
+  marketingRepName: text('marketing_rep_name'),
+  marketingRepEmail: text('marketing_rep_email'),
+  marketingRepPhone: text('marketing_rep_phone'),
+
+  // Preferences
+  isFavorite: boolean('is_favorite').default(false),
+
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('agency_carriers_tenant_idx').on(table.tenantId),
+  favoriteIdx: index('agency_carriers_favorite_idx').on(table.tenantId, table.isFavorite),
+  nameIdx: index('agency_carriers_name_idx').on(table.name),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// E&S BROKERS (Excess & Surplus Lines)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const esBrokers = pgTable('es_brokers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Basic info
+  name: text('name').notNull(),
+  contactName: text('contact_name'),
+  email: text('email'),
+  phone: text('phone'),
+  website: text('website'),
+  notes: text('notes'),
+
+  // Preferences
+  isFavorite: boolean('is_favorite').default(false),
+
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('es_brokers_tenant_idx').on(table.tenantId),
+  favoriteIdx: index('es_brokers_favorite_idx').on(table.tenantId, table.isFavorite),
+  nameIdx: index('es_brokers_name_idx').on(table.name),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIEN HOLDERS (Mortgagees/Lienholders)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const lienHolders = pgTable('lien_holders', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Basic info
+  name: text('name').notNull(),
+  type: text('type'), // bank, credit_union, finance_company, mortgage_company, other
+
+  // Address
+  address1: text('address1').notNull(),
+  address2: text('address2'),
+  city: text('city').notNull(),
+  state: text('state').notNull(),
+  zipCode: text('zip_code').notNull(),
+
+  // Contact
+  phone: text('phone'),
+  fax: text('fax'),
+  email: text('email'),
+  notes: text('notes'),
+
+  // Preferences
+  isFavorite: boolean('is_favorite').default(false),
+  lastUsedAt: timestamp('last_used_at'),
+
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('lien_holders_tenant_idx').on(table.tenantId),
+  typeIdx: index('lien_holders_type_idx').on(table.tenantId, table.type),
+  favoriteIdx: index('lien_holders_favorite_idx').on(table.tenantId, table.isFavorite),
+  nameIdx: index('lien_holders_name_idx').on(table.name),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MORTGAGEE CLAUSES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const mortgageeClauses = pgTable('mortgagee_clauses', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  lienHolderId: uuid('lien_holder_id').references(() => lienHolders.id, { onDelete: 'set null' }),
+
+  // Clause details
+  displayName: text('display_name').notNull(),
+  clauseText: text('clause_text').notNull(),
+  policyTypes: jsonb('policy_types').$type<string[]>(), // ["Home", "Auto", "Condo"]
+  isActive: boolean('is_active').default(true),
+
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('mortgagee_clauses_tenant_idx').on(table.tenantId),
+  lienHolderIdx: index('mortgagee_clauses_lien_holder_idx').on(table.lienHolderId),
+  activeIdx: index('mortgagee_clauses_active_idx').on(table.tenantId, table.isActive),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CARRIER PHONE ASSIST (Phone Tree Database)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const carrierPhoneAssist = pgTable('carrier_phone_assist', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Basic info
+  name: text('name').notNull(),
+  carrierType: text('carrier_type'), // standard, preferred, surplus, specialty
+
+  // Phone numbers
+  primaryPhone: text('primary_phone'),
+  underwritingPhone: text('underwriting_phone'),
+  claimsPhone: text('claims_phone'),
+  billingPhone: text('billing_phone'),
+
+  // URLs
+  websiteUrl: text('website_url'),
+  agentPortalUrl: text('agent_portal_url'),
+
+  // Agency info
+  agencyCode: text('agency_code'),
+
+  // Phone tree navigation
+  phoneTreeMaps: jsonb('phone_tree_maps').$type<{label: string, sequence: string}[]>(),
+  departments: jsonb('departments').$type<{name: string, extension: string}[]>(),
+
+  // Notes
+  tipsNotes: text('tips_notes'),
+
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('carrier_phone_assist_tenant_idx').on(table.tenantId),
+  nameIdx: index('carrier_phone_assist_name_idx').on(table.name),
+  typeIdx: index('carrier_phone_assist_type_idx').on(table.carrierType),
+}));
+
+// Relations for new tables
+export const mortgageeClausesRelations = relations(mortgageeClauses, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [mortgageeClauses.tenantId],
+    references: [tenants.id],
+  }),
+  lienHolder: one(lienHolders, {
+    fields: [mortgageeClauses.lienHolderId],
+    references: [lienHolders.id],
+  }),
+}));
+
+export const lienHoldersRelations = relations(lienHolders, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [lienHolders.tenantId],
+    references: [tenants.id],
+  }),
+  clauses: many(mortgageeClauses),
+}));
+

@@ -33,6 +33,7 @@ import {
   Link2,
   Moon,
   Cake,
+  Landmark,
 } from 'lucide-react';
 
 // Map routes to feature permission keys (must match keys in feature-permissions.ts)
@@ -118,6 +119,8 @@ const toolsNav = [
   { name: 'Reviews', href: '/reviews', icon: Star },
   { name: 'Risk Monitor', href: '/risk-monitor', icon: ShieldAlert },
   { name: 'Mortgagee Payments', href: '/mortgagee-payments', icon: CreditCard },
+  { name: 'Carriers & Brokers', href: '/carriers-brokers', icon: Building2 },
+  { name: 'Lien Holders', href: '/lien-holders', icon: Landmark },
   // { name: 'Reports', href: '/reports', icon: BarChart3 }, // Temporarily disabled
 ];
 
