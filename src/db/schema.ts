@@ -888,7 +888,9 @@ export const calls = pgTable('calls', {
   
   // External Reference
   externalCallId: varchar('external_call_id', { length: 100 }), // Twilio/3CX ID
+  vmSessionId: varchar('vm_session_id', { length: 100 }), // VM Bridge session ID
   extension: varchar('extension', { length: 10 }), // Agent extension for call correlation
+  externalNumber: varchar('external_number', { length: 20 }), // Frozen external party number
 
   // Transcription Status
   transcriptionStatus: varchar('transcription_status', { length: 20 }).$type<'pending' | 'starting' | 'active' | 'failed' | 'completed'>(),
@@ -922,6 +924,8 @@ export const calls = pgTable('calls', {
     score: number;
     timeline: Array<{ time: number; score: number }>;
   }>(),
+  aiActionItems: jsonb('ai_action_items').$type<string[]>().default([]),
+  aiTopics: jsonb('ai_topics').$type<string[]>().default([]),
   predictedReason: varchar('predicted_reason', { length: 100 }),
   detectedEntities: jsonb('detected_entities').$type<Array<{
     type: 'vin' | 'policy_number' | 'date' | 'address' | 'phone' | 'email' | 'money';
@@ -929,6 +933,10 @@ export const calls = pgTable('calls', {
     confidence: number;
   }>>(),
   qualityScore: decimal('quality_score', { precision: 3, scale: 2 }),
+
+  // AgencyZoom Sync
+  agencyzoomNoteId: varchar('agencyzoom_note_id', { length: 100 }),
+  agencyzoomSyncedAt: timestamp('agencyzoom_synced_at'),
   
   // Notes
   notes: text('notes'),
@@ -968,10 +976,35 @@ export const liveTranscriptSegments = pgTable('live_transcript_segments', {
   // Status
   isFinal: boolean('is_final').default(true),
 
+  // Real-time analysis
+  sentiment: varchar('sentiment', { length: 20 }).$type<'positive' | 'neutral' | 'negative'>(),
+  entities: jsonb('entities').$type<Array<{
+    type: 'VIN' | 'POLICY_NUMBER' | 'PHONE' | 'DATE' | 'MONEY' | 'ADDRESS';
+    value: string;
+    confidence: number;
+  }>>(),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => [
   index('live_segments_call_idx').on(table.callId),
   index('live_segments_seq_idx').on(table.callId, table.sequenceNumber),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PENDING VM EVENTS - Race condition handling for VM Bridge events
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const pendingVmEvents = pgTable('pending_vm_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  threecxCallId: varchar('threecx_call_id', { length: 100 }).notNull(),
+  sessionId: varchar('session_id', { length: 100 }).notNull(),
+  externalNumber: varchar('external_number', { length: 20 }),
+  direction: varchar('direction', { length: 10 }),
+  extension: varchar('extension', { length: 10 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  expiresAt: timestamp('expires_at').defaultNow().notNull(),
+}, (table) => [
+  index('pending_vm_events_threecx_idx').on(table.threecxCallId),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════

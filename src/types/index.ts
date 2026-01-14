@@ -8,6 +8,7 @@ import type {
   drivers,
   properties,
   calls,
+  liveTranscriptSegments,
   wrapupDrafts,
   quotes,
   messages,
@@ -17,6 +18,7 @@ import type {
   userTrainingProgress,
   knowledgeArticles,
   syncLogs,
+  pendingVmEvents,
 } from '@/db/schema';
 
 // Inferred types from schema
@@ -44,6 +46,9 @@ export type NewProperty = typeof properties.$inferInsert;
 export type Call = typeof calls.$inferSelect;
 export type NewCall = typeof calls.$inferInsert;
 
+export type LiveTranscriptSegment = typeof liveTranscriptSegments.$inferSelect;
+export type NewLiveTranscriptSegment = typeof liveTranscriptSegments.$inferInsert;
+
 export type WrapupDraft = typeof wrapupDrafts.$inferSelect;
 export type NewWrapupDraft = typeof wrapupDrafts.$inferInsert;
 
@@ -70,6 +75,9 @@ export type NewKnowledgeArticle = typeof knowledgeArticles.$inferInsert;
 
 export type SyncLog = typeof syncLogs.$inferSelect;
 export type NewSyncLog = typeof syncLogs.$inferInsert;
+
+export type PendingVmEvent = typeof pendingVmEvents.$inferSelect;
+export type NewPendingVmEvent = typeof pendingVmEvents.$inferInsert;
 
 // Enum types
 export type UserRole = 'owner' | 'admin' | 'supervisor' | 'agent' | 'trainee';
@@ -172,7 +180,7 @@ export interface AISummary {
 }
 
 export interface AIEntityDetection {
-  type: 'vin' | 'policy_number' | 'date' | 'address' | 'phone' | 'email' | 'money';
+  type: 'VIN' | 'POLICY_NUMBER' | 'DATE' | 'ADDRESS' | 'PHONE' | 'EMAIL' | 'MONEY';
   value: string;
   confidence: number;
   context?: string;
@@ -184,6 +192,90 @@ export interface TranscriptionSegment {
   speaker: 'agent' | 'customer';
   text: string;
   confidence: number;
+}
+
+// Live transcript segment with entities and sentiment
+export interface LiveSegmentWithAnalysis {
+  id: string;
+  callId: string;
+  speaker: 'agent' | 'customer' | 'system';
+  text: string;
+  confidence: number;
+  sequenceNumber: number;
+  timestamp: string;
+  isFinal: boolean;
+  sentiment?: 'positive' | 'neutral' | 'negative';
+  entities?: Array<{
+    type: 'VIN' | 'POLICY_NUMBER' | 'PHONE' | 'DATE' | 'MONEY' | 'ADDRESS';
+    value: string;
+    confidence: number;
+  }>;
+}
+
+// VM Bridge event types
+export interface VMBridgeEvent {
+  event: 'transcription_started' | 'call_ended' | 'transcription_failed';
+  sessionId: string;
+  threeCxCallId?: string;
+  extension?: string;
+  direction?: 'inbound' | 'outbound';
+  externalNumber?: string;
+  duration?: number;
+  segments?: number;
+  reason?: string;
+  timestamp?: number;
+}
+
+// Call with full analysis
+export interface CallWithAnalysis extends Call {
+  customer?: Customer;
+  agent?: User;
+  liveSegments?: LiveSegmentWithAnalysis[];
+  aiAnalysis?: {
+    summary: string;
+    actionItems: string[];
+    sentiment: 'positive' | 'neutral' | 'negative';
+    topics: string[];
+  };
+}
+
+// Active call for UI
+export interface ActiveCall {
+  id: string;
+  sessionId: string;
+  phoneNumber: string;
+  direction: 'inbound' | 'outbound';
+  status: 'ringing' | 'connected' | 'on_hold' | 'ended';
+  startedAt: string;
+  customerId?: string;
+  customerName?: string;
+  extension?: string;
+  predictedReason?: string | null;
+  transcriptionActive?: boolean;
+  segmentCount?: number;
+}
+
+// Realtime events
+export interface RealtimeCallEvent {
+  type: 'call_ringing' | 'call_started' | 'call_updated' | 'call_ended' | 'transcript_segment' | 'sentiment_alert' | 'entities_detected' | 'ai_summary_ready' | 'transcription_started';
+  sessionId: string;
+  phoneNumber?: string;
+  direction?: 'inbound' | 'outbound';
+  status?: string;
+  customerId?: string;
+  customerName?: string;
+  extension?: string;
+  predictedReason?: string | null;
+  speaker?: string;
+  text?: string;
+  confidence?: number;
+  sequenceNumber?: number;
+  sentiment?: 'positive' | 'neutral' | 'negative';
+  entities?: Array<{ type: string; value: string; confidence: number }>;
+  // AI summary fields
+  summary?: string;
+  actionItems?: string[];
+  topics?: string[];
 }
 
 // Life Insurance Types

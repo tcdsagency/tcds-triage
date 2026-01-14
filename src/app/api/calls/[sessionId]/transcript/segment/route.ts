@@ -7,17 +7,183 @@ import { calls, liveTranscriptSegments } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
+// =============================================================================
+// Entity Detection - Extract structured data from transcript text
+// =============================================================================
+
+type EntityType = 'VIN' | 'POLICY_NUMBER' | 'PHONE' | 'DATE' | 'MONEY' | 'ADDRESS';
+
+interface DetectedEntity {
+  type: EntityType;
+  value: string;
+  confidence: number;
+}
+
+function detectEntities(text: string): DetectedEntity[] {
+  const entities: DetectedEntity[] = [];
+
+  // VIN detection (17 alphanumeric, no I, O, Q)
+  const vinRegex = /\b[A-HJ-NPR-Z0-9]{17}\b/gi;
+  const vins = text.match(vinRegex);
+  if (vins) {
+    vins.forEach(vin => entities.push({ type: 'VIN', value: vin.toUpperCase(), confidence: 0.9 }));
+  }
+
+  // Policy number patterns (common formats)
+  const policyRegex = /\b(POL|AUTO|HOME|UMB)?[-\s]?(\d{6,12})\b/gi;
+  const policies = text.match(policyRegex);
+  if (policies) {
+    policies.forEach(p => entities.push({ type: 'POLICY_NUMBER', value: p, confidence: 0.7 }));
+  }
+
+  // Phone numbers
+  const phoneRegex = /\b(\+?1?[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b/g;
+  const phones = text.match(phoneRegex);
+  if (phones) {
+    phones.forEach(p => entities.push({ type: 'PHONE', value: p.replace(/\D/g, ''), confidence: 0.85 }));
+  }
+
+  // Dates (various formats)
+  const dateRegex = /\b(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12][0-9]|3[01])[\/\-](\d{2,4})\b/g;
+  const dates = text.match(dateRegex);
+  if (dates) {
+    dates.forEach(d => entities.push({ type: 'DATE', value: d, confidence: 0.8 }));
+  }
+
+  // Dollar amounts
+  const moneyRegex = /\$[\d,]+\.?\d{0,2}/g;
+  const amounts = text.match(moneyRegex);
+  if (amounts) {
+    amounts.forEach(a => entities.push({ type: 'MONEY', value: a, confidence: 0.9 }));
+  }
+
+  // Addresses (basic detection)
+  const addressRegex = /\b\d{1,5}\s+[\w\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|way|court|ct|circle|cir)\b/gi;
+  const addresses = text.match(addressRegex);
+  if (addresses) {
+    addresses.forEach(a => entities.push({ type: 'ADDRESS', value: a, confidence: 0.6 }));
+  }
+
+  return entities;
+}
+
+// =============================================================================
+// Sentiment Detection - Simple keyword-based sentiment analysis
+// =============================================================================
+
+function detectSentiment(text: string): 'positive' | 'neutral' | 'negative' {
+  const lowerText = text.toLowerCase();
+
+  const positiveWords = ['thank', 'great', 'appreciate', 'happy', 'excellent', 'perfect', 'wonderful', 'love', 'amazing', 'helpful'];
+  const negativeWords = ['angry', 'upset', 'frustrated', 'terrible', 'horrible', 'worst', 'hate', 'ridiculous', 'unacceptable', 'disappointed', 'annoyed'];
+
+  let score = 0;
+  positiveWords.forEach(w => { if (lowerText.includes(w)) score++; });
+  negativeWords.forEach(w => { if (lowerText.includes(w)) score--; });
+
+  if (score > 0) return 'positive';
+  if (score < 0) return 'negative';
+  return 'neutral';
+}
+
+// =============================================================================
+// Session Resolution - Find call by various ID formats
+// =============================================================================
+
+async function resolveCallId(sessionId: string): Promise<string | null> {
+  const isValidUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+  // 1. Try as direct UUID (call.id)
+  if (isValidUUID(sessionId)) {
+    const [call] = await db
+      .select({ id: calls.id })
+      .from(calls)
+      .where(eq(calls.id, sessionId))
+      .limit(1);
+    if (call) return call.id;
+  }
+
+  // 2. Try as VM Bridge session ID (most reliable for VM Bridge)
+  if (sessionId.startsWith('sess_')) {
+    const [call] = await db
+      .select({ id: calls.id })
+      .from(calls)
+      .where(eq(calls.vmSessionId, sessionId))
+      .limit(1);
+    if (call) {
+      console.log(`[Transcript] Resolved vmSessionId ${sessionId} to call ${call.id}`);
+      return call.id;
+    }
+  }
+
+  // 3. Try as external call ID (3CX call ID)
+  const [byExternal] = await db
+    .select({ id: calls.id })
+    .from(calls)
+    .where(eq(calls.externalCallId, sessionId))
+    .limit(1);
+  if (byExternal) {
+    console.log(`[Transcript] Resolved externalCallId ${sessionId} to call ${byExternal.id}`);
+    return byExternal.id;
+  }
+
+  // 4. Drachtio fallback - find most recent active call (last resort)
+  if (sessionId.startsWith('drachtio-')) {
+    console.log(`[Transcript] Drachtio fallback ID: ${sessionId}, finding active call...`);
+    const [call] = await db
+      .select({ id: calls.id })
+      .from(calls)
+      .where(eq(calls.status, 'in_progress'))
+      .orderBy(sql`${calls.startedAt} DESC`)
+      .limit(1);
+    if (call) {
+      console.log(`[Transcript] Mapped drachtio ID to active call: ${call.id}`);
+      return call.id;
+    }
+  }
+
+  // 5. sess_ without vmSessionId match - find most recent active call (fallback)
+  if (sessionId.startsWith('sess_')) {
+    console.log(`[Transcript] VM Bridge session ${sessionId} not linked, finding active call...`);
+    const [call] = await db
+      .select({ id: calls.id, status: calls.status })
+      .from(calls)
+      .where(sql`${calls.status} IN ('in_progress', 'ringing')`)
+      .orderBy(sql`${calls.startedAt} DESC`)
+      .limit(1);
+    if (call) {
+      // Link this session to the call for future lookups
+      await db
+        .update(calls)
+        .set({
+          vmSessionId: sessionId,
+          status: 'in_progress',
+          answeredAt: call.status === 'ringing' ? new Date() : undefined,
+          updatedAt: new Date(),
+        })
+        .where(eq(calls.id, call.id));
+      console.log(`[Transcript] Linked VM session ${sessionId} to call ${call.id}`);
+      return call.id;
+    }
+  }
+
+  console.warn(`[Transcript] Could not resolve session: ${sessionId}`);
+  return null;
+}
+
 // Push transcript segment to realtime WebSocket server
 async function pushToRealtimeServer(event: {
   type: string;
   sessionId: string;
-  speaker: string;
-  text: string;
-  confidence: number;
-  timestamp: string;
-  sequenceNumber: number;
-  segmentId: string;
-  isFinal: boolean;
+  speaker?: string;
+  text?: string;
+  confidence?: number;
+  timestamp?: string;
+  sequenceNumber?: number;
+  segmentId?: string;
+  isFinal?: boolean;
+  sentiment?: 'positive' | 'neutral' | 'negative';
+  entities?: Array<{ type: string; value: string; confidence: number }>;
 }) {
   const realtimeUrl = process.env.REALTIME_SERVER_URL || "https://realtime.tcdsagency.com";
 
@@ -104,75 +270,10 @@ export async function POST(
       );
     }
 
-    // Helper to check if string is a valid UUID
-    const isValidUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    // Resolve session ID to call UUID using proper chain
+    const callId = await resolveCallId(sessionId);
 
-    // Validate call exists (sessionId is the call ID)
-    let call = null;
-
-    // Only query by ID if it's a valid UUID (otherwise Postgres throws)
-    if (isValidUUID(sessionId)) {
-      call = await db
-        .select()
-        .from(calls)
-        .where(eq(calls.id, sessionId))
-        .limit(1)
-        .then(r => r[0]);
-    }
-
-    if (!call) {
-      // Try by externalCallId (string field, any format OK)
-      call = await db
-        .select()
-        .from(calls)
-        .where(eq(calls.externalCallId, sessionId))
-        .limit(1)
-        .then(r => r[0]);
-    }
-
-    // If sessionId is a drachtio fallback (drachtio-EXT-timestamp), find most recent active call
-    if (!call && sessionId.startsWith("drachtio-")) {
-      console.log(`[Transcript] Drachtio fallback ID detected: ${sessionId}, finding active call...`);
-      // Find the most recent in_progress call
-      call = await db
-        .select()
-        .from(calls)
-        .where(eq(calls.status, "in_progress"))
-        .orderBy(sql`${calls.startedAt} DESC`)
-        .limit(1)
-        .then(r => r[0]);
-
-      if (call) {
-        console.log(`[Transcript] Mapped drachtio ID to active call: ${call.id}`);
-      }
-    }
-
-    // If sessionId is a VM Bridge session (sess_UUID), find most recent active call
-    if (!call && sessionId.startsWith("sess_")) {
-      console.log(`[Transcript] VM Bridge session ID detected: ${sessionId}, finding active call...`);
-      // Find the most recent in_progress or ringing call
-      call = await db
-        .select()
-        .from(calls)
-        .where(sql`${calls.status} IN ('in_progress', 'ringing')`)
-        .orderBy(sql`${calls.startedAt} DESC`)
-        .limit(1)
-        .then(r => r[0]);
-
-      if (call) {
-        console.log(`[Transcript] Mapped VM Bridge session to active call: ${call.id} (status: ${call.status})`);
-        // Update status to in_progress if it was ringing
-        if (call.status === "ringing") {
-          await db
-            .update(calls)
-            .set({ status: "in_progress", answeredAt: new Date() })
-            .where(eq(calls.id, call.id));
-          console.log(`[Transcript] Updated call ${call.id} status to in_progress`);
-        }
-      }
-    }
-
-    if (!call) {
+    if (!callId) {
       console.warn(`[Transcript] Call not found for sessionId: ${sessionId}`);
       return NextResponse.json(
         { error: "Call not found" },
@@ -180,7 +281,9 @@ export async function POST(
       );
     }
 
-    const callId = call.id;
+    // Detect entities and sentiment in the transcript text
+    const entities = detectEntities(body.text);
+    const sentiment = detectSentiment(body.text);
 
     // Get next sequence number
     const countResult = await db
@@ -191,7 +294,7 @@ export async function POST(
     const sequenceNumber = (countResult[0]?.count || 0) + 1;
     const now = new Date();
 
-    // Store segment in database
+    // Store segment in database with entities and sentiment
     const [segment] = await db
       .insert(liveTranscriptSegments)
       .values({
@@ -203,17 +306,19 @@ export async function POST(
         timestamp: body.timestamp ? new Date(body.timestamp) : now,
         sequenceNumber,
         isFinal: body.isFinal ?? true,
+        sentiment,
+        entities: entities.length > 0 ? entities : null,
       })
       .returning();
 
-    console.log(`[Transcript] Segment ${sequenceNumber} stored for call ${callId}: "${body.text.substring(0, 50)}..."`);
+    console.log(`[Transcript] Segment ${sequenceNumber} stored for call ${callId}: "${body.text.substring(0, 50)}..." [${sentiment}]`);
 
     // Update segment count on the call record for tracking
     await db
       .update(calls)
       .set({
         transcriptionSegmentCount: sequenceNumber,
-        transcriptionStatus: "active", // Confirm transcription is active
+        transcriptionStatus: "active",
         updatedAt: new Date(),
       })
       .where(eq(calls.id, callId));
@@ -229,12 +334,37 @@ export async function POST(
       sequenceNumber,
       segmentId: segment.id,
       isFinal: body.isFinal ?? true,
+      sentiment,
+      entities: entities.length > 0 ? entities : undefined,
     });
+
+    // If negative sentiment detected, send alert
+    if (sentiment === 'negative') {
+      pushToRealtimeServer({
+        type: "sentiment_alert",
+        sessionId: callId,
+        sentiment: 'negative',
+        text: body.text.substring(0, 100),
+        sequenceNumber,
+      });
+    }
+
+    // If entities detected, broadcast for UI highlighting
+    if (entities.length > 0) {
+      pushToRealtimeServer({
+        type: "entities_detected",
+        sessionId: callId,
+        entities,
+        sequenceNumber,
+      });
+    }
 
     return NextResponse.json({
       success: true,
       segmentId: segment.id,
       sequenceNumber,
+      sentiment,
+      entitiesDetected: entities.length,
     });
   } catch (error) {
     console.error("[Transcript] Segment error:", error);
@@ -304,6 +434,8 @@ export async function GET(
         timestamp: s.timestamp,
         sequenceNumber: s.sequenceNumber,
         isFinal: s.isFinal,
+        sentiment: s.sentiment,
+        entities: s.entities,
       })),
       total: segments.length,
     });

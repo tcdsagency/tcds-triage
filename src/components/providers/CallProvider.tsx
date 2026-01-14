@@ -22,6 +22,7 @@ interface ActiveCall {
   startTime: number;
   customerId?: string;
   extension?: string;
+  predictedReason?: string | null; // AI-predicted reason for the call
   // User info for caller/callee when extension matches a user
   callerUser?: UserInfo;
   calleeUser?: UserInfo;
@@ -423,6 +424,7 @@ export function CallProvider({ children }: CallProviderProps) {
           startTime: Date.now(),
           customerId: data.customerId,
           extension: callExtension,
+          predictedReason: data.predictedReason || null, // AI-predicted call reason
         };
 
         // Look up user info for caller/callee extensions
