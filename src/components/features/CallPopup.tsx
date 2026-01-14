@@ -38,6 +38,7 @@ interface CallPopupProps {
   callStatus?: "ringing" | "connected" | "on_hold" | "wrap_up" | "ended";
   callerUser?: UserInfo;
   calleeUser?: UserInfo;
+  predictedReason?: string | null;
 }
 
 interface CustomerLookup {
@@ -111,7 +112,8 @@ export default function CallPopup({
   startTime,
   callStatus: externalCallStatus,
   callerUser,
-  calleeUser
+  calleeUser,
+  predictedReason
 }: CallPopupProps) {
   // UI State
   const [isMinimized, setIsMinimized] = useState(false);
@@ -916,6 +918,15 @@ export default function CallPopup({
                 </span>
               )}
             </div>
+            {/* Predicted Call Reason */}
+            {predictedReason && (
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-yellow-400 text-sm">💡</span>
+                <span className="text-xs text-yellow-300 bg-yellow-900/30 px-2 py-0.5 rounded">
+                  Likely: {predictedReason}
+                </span>
+              </div>
+            )}
             <div className="text-xs text-gray-400 flex items-center gap-2">
               <span>{formatDuration(callDuration)}</span>
               <span className={cn(

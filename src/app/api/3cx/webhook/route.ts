@@ -7,8 +7,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { calls, customers, users } from "@/db/schema";
-import { eq, or, ilike, sql, and } from "drizzle-orm";
+import { calls, customers, users, pendingVmEvents } from "@/db/schema";
+import { eq, or, ilike, sql, and, gte, desc } from "drizzle-orm";
 import { VMBridgeClient, getVMBridgeClient } from "@/lib/api/vm-bridge";
 
 // Verify webhook authentication
@@ -86,6 +86,103 @@ async function findAgentByExtension(extension: string, tenantId: string) {
   return agent || null;
 }
 
+// Predict call reason based on customer data
+async function predictCallReason(customerId: string | undefined, tenantId: string): Promise<string | null> {
+  if (!customerId) return null;
+
+  const predictions: string[] = [];
+
+  try {
+    // Check for upcoming renewals (next 30 days)
+    // Note: This queries policies_cache if it exists
+    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const now = new Date();
+
+    const renewals = await db.execute(sql`
+      SELECT policy_number, line_of_business, expiration_date
+      FROM policies_cache
+      WHERE customer_id = ${customerId}
+        AND expiration_date >= ${now}
+        AND expiration_date <= ${thirtyDaysFromNow}
+      LIMIT 1
+    `).catch(() => [] as any[]);
+
+    const renewalRows = Array.isArray(renewals) ? renewals : [];
+    if (renewalRows.length > 0) {
+      const renewal = renewalRows[0] as any;
+      const days = Math.ceil((new Date(renewal.expiration_date).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+      predictions.push(`${renewal.line_of_business || 'Policy'} renewal in ${days} days`);
+    }
+
+    // Check for open claims
+    const claims = await db.execute(sql`
+      SELECT id, claim_number
+      FROM claims_cache
+      WHERE customer_id = ${customerId}
+        AND status = 'open'
+      LIMIT 1
+    `).catch(() => [] as any[]);
+
+    const claimRows = Array.isArray(claims) ? claims : [];
+    if (claimRows.length > 0) {
+      predictions.push('Open claim follow-up');
+    }
+
+    // Check for recent calls from this customer (repeat caller)
+    const recentCalls = await db
+      .select({ id: calls.id })
+      .from(calls)
+      .where(and(
+        eq(calls.customerId, customerId),
+        gte(calls.startedAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+      ))
+      .limit(3);
+
+    if (recentCalls.length >= 2) {
+      predictions.push('Repeat caller this week');
+    }
+
+  } catch (error) {
+    console.error('[3CX Webhook] Error predicting call reason:', error);
+  }
+
+  return predictions.length > 0 ? predictions[0] : null;
+}
+
+// Check for pending VM Bridge events (race condition handling)
+async function checkPendingVmEvents(externalCallId: string, callId: string): Promise<void> {
+  try {
+    const [pendingEvent] = await db
+      .select()
+      .from(pendingVmEvents)
+      .where(eq(pendingVmEvents.threecxCallId, externalCallId))
+      .limit(1);
+
+    if (pendingEvent) {
+      console.log(`[3CX Webhook] Found pending VM event for call ${callId}, linking session ${pendingEvent.sessionId}`);
+
+      // Update call with VM session info
+      await db
+        .update(calls)
+        .set({
+          vmSessionId: pendingEvent.sessionId,
+          externalNumber: pendingEvent.externalNumber,
+          updatedAt: new Date(),
+        })
+        .where(eq(calls.id, callId));
+
+      // Delete pending event
+      await db
+        .delete(pendingVmEvents)
+        .where(eq(pendingVmEvents.id, pendingEvent.id));
+
+      console.log(`[3CX Webhook] Linked VM session and cleaned up pending event`);
+    }
+  } catch (error) {
+    console.error('[3CX Webhook] Error checking pending VM events:', error);
+  }
+}
+
 // Notify real-time server to broadcast event to CallProvider
 async function notifyRealtimeServer(event: {
   type: string;
@@ -96,6 +193,7 @@ async function notifyRealtimeServer(event: {
   customerName?: string;
   extension?: string;
   status?: string;
+  predictedReason?: string | null;
 }) {
   const realtimeUrl = process.env.REALTIME_SERVER_URL || "https://realtime.tcdsagency.com";
 
@@ -275,7 +373,10 @@ export async function POST(request: NextRequest) {
         const customer = customerPhone ? await findCustomerByPhone(customerPhone, tenantId) : null;
         const agent = extension ? await findAgentByExtension(extension, tenantId) : null;
 
-        // Create or update call record
+        // Predict call reason based on customer data
+        const predictedReason = await predictCallReason(customer?.id, tenantId);
+
+        // Create call record (simple insert - no upsert since no unique constraint)
         const [call] = await db
           .insert(calls)
           .values({
@@ -286,19 +387,17 @@ export async function POST(request: NextRequest) {
             status: "ringing",
             fromNumber: normalizePhone(fromNumber),
             toNumber: normalizePhone(toNumber),
+            externalNumber: customerPhone ? normalizePhone(customerPhone) : null,
             customerId: customer?.id,
             agentId: agent?.id,
+            extension,
+            predictedReason,
             startedAt: new Date(),
           })
-          .onConflictDoUpdate({
-            target: calls.externalCallId,
-            set: {
-              status: "ringing",
-              customerId: customer?.id,
-              agentId: agent?.id,
-            },
-          })
           .returning();
+
+        // Check for pending VM Bridge events (race condition handling)
+        await checkPendingVmEvents(callId, call.id);
 
         console.log(`[3CX Webhook] Created call record: ${call.id}`);
 
@@ -311,6 +410,7 @@ export async function POST(request: NextRequest) {
           customerId: customer?.id,
           customerName: customer ? `${customer.firstName} ${customer.lastName}`.trim() : undefined,
           extension,
+          predictedReason,
         });
 
         // Note: Transcription is started on call_answered, not call_ringing
@@ -321,6 +421,7 @@ export async function POST(request: NextRequest) {
           callId: call.id,
           event: "call_ringing",
           customer: customer ? { id: customer.id, name: `${customer.firstName} ${customer.lastName}` } : null,
+          predictedReason,
         });
       }
 
