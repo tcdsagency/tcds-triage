@@ -21,6 +21,7 @@ interface ActiveCall {
   status: "ringing" | "connected" | "on_hold" | "wrap_up" | "ended";
   startTime: number;
   customerId?: string;
+  customerName?: string; // For displaying in incoming call toast
   extension?: string;
   predictedReason?: string | null; // AI-predicted reason for the call
   // User info for caller/callee when extension matches a user
@@ -82,6 +83,28 @@ export function CallProvider({ children }: CallProviderProps) {
   useEffect(() => {
     activeCallRef.current = activeCall;
   }, [activeCall]);
+
+  // Lookup customer by phone number for incoming call display
+  const lookupCustomerByPhone = useCallback(async (phoneNumber: string): Promise<{ id: string; name: string } | null> => {
+    if (!phoneNumber || phoneNumber === "Unknown") return null;
+
+    try {
+      const res = await fetch(`/api/customers/search?phone=${encodeURIComponent(phoneNumber)}&limit=1`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.customers?.[0]) {
+          const c = data.customers[0];
+          return {
+            id: c.id,
+            name: `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.businessName || 'Customer',
+          };
+        }
+      }
+    } catch (err) {
+      console.error(`[CallProvider] Failed to lookup customer for phone ${phoneNumber}:`, err);
+    }
+    return null;
+  }, []);
 
   // Lookup user by extension and cache it
   const lookupUserByExtension = useCallback(async (extension: string): Promise<UserInfo | null> => {
@@ -397,11 +420,17 @@ export function CallProvider({ children }: CallProviderProps) {
 
         // DEDUPLICATION: Check if we already have an active call for this session
         if (currentCall && currentCall.sessionId === data.sessionId) {
-          // Same session - just update status if needed (ringing -> connected)
+          // Same session - check if transitioning from ringing to connected
           const newStatus = data.type === "call_ringing" ? "ringing" : "connected";
           if (currentCall.status !== newStatus) {
             console.log(`[CallProvider] Updating existing call ${data.sessionId} status: ${currentCall.status} -> ${newStatus}`);
             setActiveCall(prev => prev ? { ...prev, status: newStatus } : null);
+
+            // If transitioning from ringing to connected, navigate to full screen
+            if (currentCall.status === "ringing" && newStatus === "connected") {
+              console.log("[CallProvider] Call answered - navigating to full screen");
+              router.push(`/calls/active/${data.sessionId}`);
+            }
           } else {
             console.log(`[CallProvider] Ignoring duplicate ${data.type} for session ${data.sessionId}`);
           }
@@ -414,18 +443,34 @@ export function CallProvider({ children }: CallProviderProps) {
           closeTimeoutRef.current = null;
         }
 
+        // Determine if this is a ringing or already answered call
+        const isRinging = data.type === "call_ringing";
+
         // New call - create ActiveCall object
         const newCall: ActiveCall = {
           sessionId: data.sessionId,
           externalCallId: data.callId || data.externalCallId, // Store 3CX call ID for matching
           phoneNumber: data.phoneNumber || data.callerNumber || "Unknown",
           direction: data.direction || "inbound",
-          status: data.type === "call_ringing" ? "ringing" : "connected",
+          status: isRinging ? "ringing" : "connected",
           startTime: Date.now(),
           customerId: data.customerId,
+          customerName: data.customerName, // May be provided by webhook
           extension: callExtension,
           predictedReason: data.predictedReason || null, // AI-predicted call reason
         };
+
+        // Look up customer info for incoming call toast (async, don't block)
+        if (!newCall.customerName && newCall.phoneNumber !== "Unknown") {
+          lookupCustomerByPhone(newCall.phoneNumber).then(customer => {
+            if (customer) {
+              setActiveCall(prev => prev?.sessionId === newCall.sessionId
+                ? { ...prev, customerId: customer.id, customerName: customer.name }
+                : prev
+              );
+            }
+          });
+        }
 
         // Look up user info for caller/callee extensions
         if (data.callerExtension) {
@@ -449,10 +494,16 @@ export function CallProvider({ children }: CallProviderProps) {
         setActiveCall(newCall);
         setIsPopupVisible(true);
         setIsPopupMinimized(false);
-        console.log("[CallProvider] New call detected:", newCall.sessionId, "extension:", callExtension);
+        console.log("[CallProvider] New call detected:", newCall.sessionId, "status:", newCall.status);
 
-        // Navigate to full-page call screen (default behavior)
-        router.push(`/calls/active/${newCall.sessionId}`);
+        // Only navigate to full screen if call is already answered (not ringing)
+        // For ringing calls, we show the incoming call toast instead
+        if (!isRinging) {
+          console.log("[CallProvider] Call already connected - navigating to full screen");
+          router.push(`/calls/active/${newCall.sessionId}`);
+        } else {
+          console.log("[CallProvider] Call ringing - showing incoming call toast");
+        }
         break;
       }
 
@@ -485,10 +536,8 @@ export function CallProvider({ children }: CallProviderProps) {
         );
 
         if (matchesSession) {
-          console.log(`[CallProvider] Call ended - session ${data.sessionId}, matched to ${currentCall.sessionId}`);
-          setActiveCall((prev) =>
-            prev ? { ...prev, status: "ended" } : null
-          );
+          const wasRinging = currentCall.status === "ringing";
+          console.log(`[CallProvider] Call ended - session ${data.sessionId}, matched to ${currentCall.sessionId}, wasRinging=${wasRinging}`);
 
           // Clear polling since we got the event
           if (pollIntervalRef.current) {
@@ -496,15 +545,26 @@ export function CallProvider({ children }: CallProviderProps) {
             pollIntervalRef.current = null;
           }
 
-          // Keep popup visible for wrap-up, auto-close after 30s
-          // Store timeout ref so we can cancel if a new call comes in
-          if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
-          closeTimeoutRef.current = setTimeout(() => {
-            console.log(`[CallProvider] Auto-closing popup after call ended`);
+          if (wasRinging) {
+            // Call ended while ringing (missed) - close toast immediately
+            console.log(`[CallProvider] Missed call - closing toast immediately`);
             setIsPopupVisible(false);
             setActiveCall(null);
-            closeTimeoutRef.current = null;
-          }, 30000);
+          } else {
+            // Call was connected - keep popup for wrap-up
+            setActiveCall((prev) =>
+              prev ? { ...prev, status: "ended" } : null
+            );
+
+            // Auto-close after 30s
+            if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+            closeTimeoutRef.current = setTimeout(() => {
+              console.log(`[CallProvider] Auto-closing popup after call ended`);
+              setIsPopupVisible(false);
+              setActiveCall(null);
+              closeTimeoutRef.current = null;
+            }, 30000);
+          }
         } else {
           console.log(`[CallProvider] Ignoring call_ended - no match`, {
             eventSessionId: data.sessionId,
@@ -520,9 +580,10 @@ export function CallProvider({ children }: CallProviderProps) {
         break;
       }
     }
-  }, [lookupUserByExtension, usersByExtension]);
+  }, [lookupUserByExtension, lookupCustomerByPhone, usersByExtension, router]);
 
   // Poll for NEW incoming calls when no active call (fallback for WebSocket)
+  // Uses /api/calls/detect which creates calls from VoIPTools presence
   useEffect(() => {
     const currentExt = myExtensionRef.current;
 
@@ -537,24 +598,22 @@ export function CallProvider({ children }: CallProviderProps) {
 
     const pollForNewCalls = async () => {
       try {
-        const res = await fetch(`/api/3cx/active-calls?extension=${currentExt}`);
+        // Use the new detect endpoint which handles call creation
+        const res = await fetch(`/api/calls/detect?extension=${currentExt}`);
         if (!res.ok) return;
 
         const data = await res.json();
-        if (data.hasActiveCall && data.calls?.length > 0) {
-          const call = data.calls[0];
+        if (data.success && data.isOnCall && data.call) {
+          const call = data.call;
 
-          // Skip if it's a placeholder from VoIPTools presence
-          if (call.sessionId?.startsWith('voip_')) return;
+          console.log(`[CallProvider] Detect found call: ${call.sessionId} (source: ${call.source})`);
 
-          console.log('[CallProvider] Polling detected new call:', call.sessionId);
-
-          // Trigger call event
+          // Trigger call event to show screen pop
           handleCallEvent({
             type: call.status === 'ringing' ? 'call_ringing' : 'call_started',
             sessionId: call.sessionId,
-            phoneNumber: call.phoneNumber,
-            direction: call.direction,
+            phoneNumber: call.phoneNumber || "Unknown",
+            direction: call.direction || "inbound",
             extension: currentExt,
             customerId: call.customerId,
           });
@@ -665,13 +724,75 @@ export function CallProvider({ children }: CallProviderProps) {
 
       {/*
         Call UI Logic:
-        - When on /calls/active/[sessionId]: Full-page handles everything (no popup/bar)
-        - When NOT on call page but have active call: Show mini bar only
-        - Clicking mini bar navigates back to full-page call screen
+        - Ringing: Show incoming call toast with customer info
+        - Answered but not on call page: Show mini bar
+        - On /calls/active/[sessionId]: Full-page handles everything
       */}
 
-      {/* Minimized Call Bar - Shows when user navigates away from call page */}
-      {activeCall && isPopupVisible && !isOnCallPage && (
+      {/* Incoming Call Toast - Shows when call is ringing */}
+      {activeCall && isPopupVisible && activeCall.status === "ringing" && (
+        <div className="fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 z-50 w-80 animate-in slide-in-from-bottom-4 duration-300">
+          <div className="flex items-start gap-3">
+            {/* Pulsing phone icon */}
+            <div className="flex-shrink-0 w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+              <span className="text-2xl animate-pulse">📞</span>
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-green-600 dark:text-green-400 uppercase tracking-wide mb-1">
+                Incoming Call
+              </div>
+
+              {/* Customer/Caller info */}
+              {activeCall.customerName ? (
+                <>
+                  <div className="font-semibold text-gray-900 dark:text-white truncate">
+                    {activeCall.customerName}
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    {activeCall.phoneNumber}
+                  </div>
+                </>
+              ) : (
+                <div className="font-semibold text-gray-900 dark:text-white">
+                  {activeCall.phoneNumber}
+                </div>
+              )}
+
+              {/* Direction badge */}
+              <div className="mt-2 inline-flex items-center text-xs text-gray-500 dark:text-gray-400">
+                <span className="mr-1">{activeCall.direction === "inbound" ? "↓" : "↑"}</span>
+                {activeCall.direction === "inbound" ? "Inbound" : "Outbound"}
+              </div>
+            </div>
+
+            {/* Dismiss button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                closePopup();
+              }}
+              className="flex-shrink-0 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded"
+              title="Dismiss"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Action button - Go to call screen */}
+          <button
+            onClick={() => navigateToCall(activeCall.sessionId)}
+            className="mt-3 w-full py-2 px-4 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            View Call
+          </button>
+        </div>
+      )}
+
+      {/* Minimized Call Bar - Shows when user navigates away from active call page */}
+      {activeCall && isPopupVisible && activeCall.status !== "ringing" && !isOnCallPage && (
         <div
           onClick={() => navigateToCall(activeCall.sessionId)}
           className="fixed bottom-4 right-4 bg-gray-900 text-white rounded-lg shadow-xl p-3 cursor-pointer hover:bg-gray-800 z-50"
@@ -679,9 +800,9 @@ export function CallProvider({ children }: CallProviderProps) {
           <div className="flex items-center gap-3">
             <span className="text-green-400 animate-pulse">📞</span>
             <div>
-              <div className="font-medium">{activeCall.phoneNumber}</div>
+              <div className="font-medium">{activeCall.customerName || activeCall.phoneNumber}</div>
               <div className="text-xs text-gray-400">
-                {activeCall.status === "connected" || activeCall.status === "ringing"
+                {activeCall.status === "connected"
                   ? "Active Call - Click to return"
                   : activeCall.status}
               </div>
