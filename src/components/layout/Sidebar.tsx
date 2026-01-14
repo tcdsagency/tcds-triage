@@ -34,6 +34,7 @@ import {
   Moon,
   Cake,
   Landmark,
+  Plane,
 } from 'lucide-react';
 
 // Map routes to feature permission keys (must match keys in feature-permissions.ts)
@@ -114,6 +115,7 @@ const toolsNav = [
   { name: 'Quotes', href: '/quotes', icon: FileText },
   { name: 'Quote Extractor', href: '/quote-extractor', icon: FileSearch },
   { name: 'Canopy Connect', href: '/canopy-connect', icon: Link2 },
+  { name: 'Travelers App', href: '/travelers-application', icon: Plane },
   { name: 'Properties', href: '/properties', icon: Home },
   { name: 'Invoice', href: '/invoice', icon: Receipt },
   { name: 'Reviews', href: '/reviews', icon: Star },
