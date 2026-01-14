@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       .from(wrapupDrafts)
       .leftJoin(calls, eq(wrapupDrafts.callId, calls.id))
       .where(and(...filters))
-      .orderBy(desc(wrapupDrafts.createdAt))
+      .orderBy(desc(calls.startedAt), desc(wrapupDrafts.createdAt))
       .limit(limit);
 
     // Transform to expected shape
