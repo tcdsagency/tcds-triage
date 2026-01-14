@@ -7,10 +7,10 @@ async function parsePDF(buffer: Buffer): Promise<{ text: string }> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PDFParse } = require("pdf-parse");
 
-  // Convert Buffer to Uint8Array as required by pdf-parse v2
+  // Convert Buffer to Uint8Array and wrap in options object as required by pdf-parse v2
   const uint8Array = new Uint8Array(buffer);
 
-  const parser = new PDFParse(uint8Array);
+  const parser = new PDFParse({ data: uint8Array });
   await parser.load();
   const text = await parser.getText();
   parser.destroy();
