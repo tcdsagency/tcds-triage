@@ -39,9 +39,13 @@ export async function GET(request: NextRequest) {
           id: riskMonitorPolicies.id,
           policyNumber: riskMonitorPolicies.policyNumber,
           contactName: riskMonitorPolicies.contactName,
+          contactEmail: riskMonitorPolicies.contactEmail,
+          contactPhone: riskMonitorPolicies.contactPhone,
           addressLine1: riskMonitorPolicies.addressLine1,
           city: riskMonitorPolicies.city,
           state: riskMonitorPolicies.state,
+          zipCode: riskMonitorPolicies.zipCode,
+          listingPrice: riskMonitorPolicies.listingPrice,
         },
       })
       .from(riskMonitorAlerts)

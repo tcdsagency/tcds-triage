@@ -76,13 +76,21 @@ export async function GET(request: NextRequest) {
         )
       );
 
-    // Get recent alerts (last 7 days)
+    // Get recent alerts (last 7 days) with policy info
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const recentAlerts = await db
-      .select()
+    const recentAlertsWithPolicy = await db
+      .select({
+        alert: riskMonitorAlerts,
+        policy: {
+          id: riskMonitorPolicies.id,
+          policyNumber: riskMonitorPolicies.policyNumber,
+          contactName: riskMonitorPolicies.contactName,
+        },
+      })
       .from(riskMonitorAlerts)
+      .leftJoin(riskMonitorPolicies, eq(riskMonitorAlerts.policyId, riskMonitorPolicies.id))
       .where(
         and(
           eq(riskMonitorAlerts.tenantId, tenantId),
@@ -91,6 +99,12 @@ export async function GET(request: NextRequest) {
       )
       .orderBy(desc(riskMonitorAlerts.createdAt))
       .limit(5);
+
+    // Format recent alerts with policy data included
+    const recentAlerts = recentAlertsWithPolicy.map((r) => ({
+      ...r.alert,
+      policy: r.policy,
+    }));
 
     // Get last run info
     const [lastRun] = await db

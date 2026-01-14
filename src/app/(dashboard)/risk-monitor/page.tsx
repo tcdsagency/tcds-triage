@@ -21,6 +21,11 @@ import {
   Eye,
   Play,
   Droplets,
+  Phone,
+  Mail,
+  MapPin,
+  DollarSign,
+  User,
 } from 'lucide-react';
 import { FloodZoneBadge, FloodRisk } from '@/components/ui/flood-zone-indicator';
 
@@ -46,8 +51,14 @@ interface Alert {
   policy?: {
     id: string;
     policyNumber: string;
-    customerName: string;
-    propertyAddress: string;
+    contactName: string;
+    contactEmail?: string;
+    contactPhone?: string;
+    addressLine1: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+    listingPrice?: number;
   };
 }
 
@@ -725,70 +736,143 @@ export default function RiskMonitorPage() {
 function DashboardTab({ stats, onViewAlert }: { stats: Stats | null; onViewAlert: (id: string) => void }) {
   if (!stats) return null;
 
+  // Calculate some derived insights
+  const totalAtRisk = (stats.policies.byStatus.active || 0) + (stats.policies.byStatus.pending || 0);
+  const atRiskPercentage = stats.policies.total > 0
+    ? Math.round((totalAtRisk / stats.policies.total) * 100)
+    : 0;
+
   return (
     <div className="space-y-6">
-      {/* Stats Cards */}
+      {/* Stats Cards - Enhanced with insights */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Total Properties</p>
               <p className="text-2xl font-semibold text-gray-900">{stats.policies.total}</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {stats.policies.byStatus.off_market || 0} off market
+              </p>
             </div>
-            <Building2 className="h-8 w-8 text-gray-400" />
+            <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center">
+              <Building2 className="h-6 w-6 text-gray-500" />
+            </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+
+        <div className="bg-white rounded-lg border border-l-4 border-l-blue-500 border-gray-200 p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Active Listings</p>
-              <p className="text-2xl font-semibold text-yellow-600">{stats.policies.byStatus.active || 0}</p>
+              <p className="text-2xl font-semibold text-blue-600">{stats.policies.byStatus.active || 0}</p>
+              <p className="text-xs text-blue-600 mt-1">
+                Monitor for changes
+              </p>
             </div>
-            <Home className="h-8 w-8 text-yellow-400" />
+            <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
+              <Home className="h-6 w-6 text-blue-600" />
+            </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+
+        <div className="bg-white rounded-lg border border-l-4 border-l-amber-500 border-gray-200 p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Pending Sales</p>
-              <p className="text-2xl font-semibold text-orange-600">{stats.policies.byStatus.pending || 0}</p>
+              <p className="text-2xl font-semibold text-amber-600">{stats.policies.byStatus.pending || 0}</p>
+              <p className="text-xs text-amber-600 mt-1">
+                Needs attention
+              </p>
             </div>
-            <Clock className="h-8 w-8 text-orange-400" />
+            <div className="h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center">
+              <Clock className="h-6 w-6 text-amber-600" />
+            </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+
+        <div className="bg-white rounded-lg border border-l-4 border-l-red-500 border-gray-200 p-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">Unresolved Alerts</p>
               <p className="text-2xl font-semibold text-red-600">{stats.alerts.unresolved}</p>
+              <p className="text-xs text-red-600 mt-1">
+                {stats.alerts.byStatus?.new || 0} new
+              </p>
             </div>
-            <AlertTriangle className="h-8 w-8 text-red-400" />
+            <div className="h-12 w-12 rounded-full bg-red-100 flex items-center justify-center">
+              <AlertTriangle className="h-6 w-6 text-red-600" />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Recent Alerts */}
+      {/* At-Risk Summary */}
+      {totalAtRisk > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">
+                {totalAtRisk} {totalAtRisk === 1 ? 'property' : 'properties'} at risk ({atRiskPercentage}% of portfolio)
+              </p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                Properties with active listings or pending sales may need policy review
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recent Alerts - Enhanced with customer info */}
       <div className="bg-white rounded-lg border border-gray-200">
-        <div className="px-4 py-3 border-b border-gray-200">
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-900">Recent Alerts</h3>
+          {stats.alerts.recent.length > 0 && (
+            <button
+              onClick={() => onViewAlert('')}
+              className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+            >
+              View All
+            </button>
+          )}
         </div>
         <div className="divide-y divide-gray-100">
           {stats.alerts.recent.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-gray-500">
-              No recent alerts
+            <div className="px-4 py-8 text-center">
+              <Shield className="mx-auto h-10 w-10 text-gray-300" />
+              <p className="mt-2 text-sm text-gray-500">No recent alerts</p>
+              <p className="text-xs text-gray-400">Properties are being monitored</p>
             </div>
           ) : (
             stats.alerts.recent.map((alert) => (
-              <div key={alert.id} className="px-4 py-3 flex items-center justify-between hover:bg-gray-50">
-                <div className="flex items-center gap-3">
-                  <AlertTriangle className={`h-5 w-5 ${alert.priority === '1' ? 'text-red-500' : alert.priority === '2' ? 'text-orange-500' : 'text-yellow-500'}`} />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{alert.title}</p>
-                    <p className="text-xs text-gray-500">{new Date(alert.createdAt).toLocaleDateString()}</p>
+              <div
+                key={alert.id}
+                className={`px-4 py-3 flex items-center justify-between hover:bg-gray-50 border-l-4 ${
+                  alert.priority === '1' ? 'border-l-red-500' :
+                  alert.priority === '2' ? 'border-l-amber-500' :
+                  'border-l-blue-500'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <User className="h-8 w-8 p-1.5 bg-gray-100 rounded-full text-gray-500 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {alert.policy?.contactName || 'Unknown Customer'}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">{alert.title}</p>
+                    <p className="text-xs text-gray-400">
+                      {new Date(alert.createdAt).toLocaleDateString()} • {alert.policy?.policyNumber || 'N/A'}
+                    </p>
                   </div>
                 </div>
-                <span className={`px-2 py-1 text-xs font-medium rounded-full ${alert.status === 'new' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
-                  {alert.status}
+                <span className={`px-2 py-1 text-xs font-medium rounded-full flex-shrink-0 ml-2 ${
+                  alert.status === 'new' ? 'bg-red-100 text-red-700' :
+                  alert.status === 'acknowledged' ? 'bg-yellow-100 text-yellow-700' :
+                  alert.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                  'bg-gray-100 text-gray-700'
+                }`}>
+                  {alert.status.replace('_', ' ')}
                 </span>
               </div>
             ))
@@ -802,7 +886,8 @@ function DashboardTab({ stats, onViewAlert }: { stats: Stats | null; onViewAlert
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
             <p className="text-gray-500">Status</p>
-            <p className={`font-medium ${stats.scheduler.enabled ? 'text-green-600' : 'text-gray-600'}`}>
+            <p className={`font-medium flex items-center gap-1.5 ${stats.scheduler.enabled ? 'text-green-600' : 'text-gray-600'}`}>
+              <span className={`h-2 w-2 rounded-full ${stats.scheduler.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
               {stats.scheduler.enabled ? 'Enabled' : 'Disabled'}
             </p>
           </div>
@@ -818,7 +903,9 @@ function DashboardTab({ stats, onViewAlert }: { stats: Stats | null; onViewAlert
           </div>
           <div>
             <p className="text-gray-500">Needs Check</p>
-            <p className="font-medium text-gray-900">{stats.policies.needsCheck}</p>
+            <p className={`font-medium ${stats.policies.needsCheck > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
+              {stats.policies.needsCheck}
+            </p>
           </div>
         </div>
       </div>
@@ -841,10 +928,57 @@ function AlertsTab({
 }) {
   const statuses = ['', 'new', 'acknowledged', 'in_progress', 'resolved', 'dismissed'];
 
+  // Format phone number for display
+  const formatPhone = (phone: string) => {
+    const cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length === 10) {
+      return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+    }
+    return phone;
+  };
+
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  // Get priority border color
+  const getPriorityBorderColor = (priority: string) => {
+    switch (priority) {
+      case '1':
+        return 'border-l-red-500'; // High - Urgent (sold)
+      case '2':
+        return 'border-l-amber-500'; // Medium - Needs attention (pending)
+      case '3':
+        return 'border-l-blue-500'; // Low - Monitor (active listing)
+      default:
+        return 'border-l-gray-300';
+    }
+  };
+
+  // Get priority label
+  const getPriorityLabel = (priority: string) => {
+    switch (priority) {
+      case '1':
+        return { label: 'Urgent', color: 'bg-red-100 text-red-700' };
+      case '2':
+        return { label: 'High', color: 'bg-amber-100 text-amber-700' };
+      case '3':
+        return { label: 'Medium', color: 'bg-blue-100 text-blue-700' };
+      default:
+        return { label: 'Low', color: 'bg-gray-100 text-gray-700' };
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {statuses.map((status) => (
           <button
             key={status}
@@ -862,82 +996,151 @@ function AlertsTab({
       </div>
 
       {/* Alerts List */}
-      <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+      <div className="space-y-3">
         {alerts.length === 0 ? (
-          <div className="px-4 py-12 text-center">
+          <div className="bg-white rounded-lg border border-gray-200 px-4 py-12 text-center">
             <Shield className="mx-auto h-12 w-12 text-gray-300" />
             <p className="mt-2 text-sm text-gray-500">No alerts found</p>
           </div>
         ) : (
-          alerts.map((alert) => (
-            <div key={alert.id} className="px-4 py-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className={`h-5 w-5 mt-0.5 ${
-                    alert.priority === '1' ? 'text-red-500' :
-                    alert.priority === '2' ? 'text-orange-500' :
-                    'text-yellow-500'
-                  }`} />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{alert.title}</p>
-                    <p className="mt-1 text-sm text-gray-500">{alert.description}</p>
-                    {alert.policy && (
-                      <p className="mt-1 text-xs text-gray-400">
-                        {alert.policy.customerName} • {alert.policy.policyNumber}
+          alerts.map((alert) => {
+            const priorityInfo = getPriorityLabel(alert.priority);
+            return (
+              <div
+                key={alert.id}
+                className={`bg-white rounded-lg border border-gray-200 border-l-4 ${getPriorityBorderColor(alert.priority)} overflow-hidden`}
+              >
+                {/* Header with customer name and status */}
+                <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <User className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="font-semibold text-gray-900">
+                        {alert.policy?.contactName || 'Unknown Customer'}
                       </p>
-                    )}
-                    <p className="mt-1 text-xs text-gray-400">
-                      Detected: {new Date(alert.createdAt).toLocaleString()}
-                    </p>
+                      <p className="text-xs text-gray-500">
+                        Policy: {alert.policy?.policyNumber || 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${priorityInfo.color}`}>
+                      {priorityInfo.label}
+                    </span>
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                      alert.status === 'new' ? 'bg-red-100 text-red-700' :
+                      alert.status === 'acknowledged' ? 'bg-yellow-100 text-yellow-700' :
+                      alert.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                      alert.status === 'resolved' ? 'bg-green-100 text-green-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {alert.status.replace('_', ' ')}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    alert.status === 'new' ? 'bg-red-100 text-red-700' :
-                    alert.status === 'acknowledged' ? 'bg-yellow-100 text-yellow-700' :
-                    alert.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
-                    alert.status === 'resolved' ? 'bg-green-100 text-green-700' :
-                    'bg-gray-100 text-gray-700'
-                  }`}>
-                    {alert.status}
-                  </span>
+
+                {/* Alert content */}
+                <div className="px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className={`h-5 w-5 mt-0.5 flex-shrink-0 ${
+                      alert.priority === '1' ? 'text-red-500' :
+                      alert.priority === '2' ? 'text-amber-500' :
+                      'text-blue-500'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{alert.title}</p>
+                      <p className="mt-1 text-sm text-gray-600">{alert.description}</p>
+
+                      {/* Property info */}
+                      {alert.policy && (
+                        <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
+                          <div className="flex items-center gap-1.5 text-gray-600">
+                            <MapPin className="h-4 w-4 text-gray-400" />
+                            <span>
+                              {alert.policy.addressLine1}
+                              {alert.policy.city && `, ${alert.policy.city}`}
+                              {alert.policy.state && `, ${alert.policy.state}`}
+                              {alert.policy.zipCode && ` ${alert.policy.zipCode}`}
+                            </span>
+                          </div>
+                          {alert.policy.listingPrice && alert.policy.listingPrice > 0 && (
+                            <div className="flex items-center gap-1.5 text-gray-600">
+                              <DollarSign className="h-4 w-4 text-gray-400" />
+                              <span className="font-medium">{formatCurrency(alert.policy.listingPrice)}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <p className="mt-2 text-xs text-gray-400">
+                        Detected: {new Date(alert.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Actions Footer */}
+                <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                  {/* Contact buttons */}
+                  <div className="flex items-center gap-2">
+                    {alert.policy?.contactPhone && (
+                      <a
+                        href={`tel:${alert.policy.contactPhone}`}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-100 rounded-lg hover:bg-emerald-200 transition-colors"
+                      >
+                        <Phone className="h-3.5 w-3.5" />
+                        {formatPhone(alert.policy.contactPhone)}
+                      </a>
+                    )}
+                    {alert.policy?.contactEmail && (
+                      <a
+                        href={`mailto:${alert.policy.contactEmail}?subject=Regarding Your Property at ${alert.policy?.addressLine1 || ''}`}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                        Email
+                      </a>
+                    )}
+                  </div>
+
+                  {/* Status actions */}
+                  {alert.status !== 'resolved' && alert.status !== 'dismissed' && (
+                    <div className="flex items-center gap-2">
+                      {alert.status === 'new' && (
+                        <button
+                          onClick={() => onAction([alert.id], 'acknowledge')}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                        >
+                          <Eye className="h-3.5 w-3.5" /> Acknowledge
+                        </button>
+                      )}
+                      {(alert.status === 'new' || alert.status === 'acknowledged') && (
+                        <button
+                          onClick={() => onAction([alert.id], 'start')}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-50"
+                        >
+                          <Play className="h-3.5 w-3.5" /> Working
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onAction([alert.id], 'resolve')}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+                      >
+                        <Check className="h-3.5 w-3.5" /> Resolve
+                      </button>
+                      <button
+                        onClick={() => onAction([alert.id], 'dismiss')}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800"
+                        title="Dismiss as false positive"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
-              {/* Actions */}
-              {alert.status !== 'resolved' && alert.status !== 'dismissed' && (
-                <div className="mt-3 flex items-center gap-2">
-                  {alert.status === 'new' && (
-                    <button
-                      onClick={() => onAction([alert.id], 'acknowledge')}
-                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
-                    >
-                      <Eye className="h-3 w-3" /> Acknowledge
-                    </button>
-                  )}
-                  {(alert.status === 'new' || alert.status === 'acknowledged') && (
-                    <button
-                      onClick={() => onAction([alert.id], 'start')}
-                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 rounded hover:bg-blue-200"
-                    >
-                      <Play className="h-3 w-3" /> Start Work
-                    </button>
-                  )}
-                  <button
-                    onClick={() => onAction([alert.id], 'resolve')}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200"
-                  >
-                    <Check className="h-3 w-3" /> Resolve
-                  </button>
-                  <button
-                    onClick={() => onAction([alert.id], 'dismiss')}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
-                  >
-                    <X className="h-3 w-3" /> Dismiss
-                  </button>
-                </div>
-              )}
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

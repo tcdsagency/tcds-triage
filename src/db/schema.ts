@@ -3657,6 +3657,10 @@ export const policyNotices = pgTable('policy_notices', {
   title: text('title').notNull(),
   description: text('description'),
 
+  // Document - PDF from carrier
+  documentUrl: text('document_url'), // URL to the insured copy document (PDF)
+  documentFileName: varchar('document_file_name', { length: 255 }), // Original filename
+
   // Billing-specific Fields
   amountDue: decimal('amount_due', { precision: 12, scale: 2 }),
   dueDate: date('due_date'),

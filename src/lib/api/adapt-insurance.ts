@@ -125,6 +125,8 @@ export interface NormalizedNotice {
   lineOfBusiness: string;
   title: string;
   description?: string;
+  documentUrl?: string;       // URL to PDF document from carrier
+  documentFileName?: string;  // Original filename of the document
   amountDue?: string;
   dueDate?: string;
   gracePeriodEnd?: string;
@@ -355,6 +357,8 @@ export class AdaptInsuranceClient {
       lineOfBusiness: notice.policy.lineOfBusiness,
       title,
       description,
+      documentUrl: notice.insuredCopyDocument?.url,
+      documentFileName: notice.insuredCopyDocument?.fileName,
       amountDue: notice.amountDue || notice.totalOwed || undefined,
       dueDate: notice.dueDate,
       noticeDate: new Date(dateStr),
@@ -401,6 +405,8 @@ export class AdaptInsuranceClient {
       lineOfBusiness: notice.policy.lineOfBusiness,
       title,
       description,
+      documentUrl: notice.insuredCopyDocument?.url,
+      documentFileName: notice.insuredCopyDocument?.fileName,
       dueDate: notice.transactionEffectiveDate,
       noticeDate: new Date(notice.noticeDate),
       rawPayload: notice as unknown as Record<string, unknown>,
@@ -463,6 +469,8 @@ export class AdaptInsuranceClient {
       lineOfBusiness: notice.policy.lineOfBusiness,
       title,
       description,
+      documentUrl: notice.insuredCopyDocument?.url,
+      documentFileName: notice.insuredCopyDocument?.fileName,
       claimNumber: notice.externalId,
       claimDate: notice.lossDate,
       claimStatus: notice.status,
