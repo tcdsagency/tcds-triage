@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { policyNotices, customers, policies } from "@/db/schema";
-import { eq, and, ilike, or, sum } from "drizzle-orm";
+import { eq, and, ilike, or, sum, ne, inArray } from "drizzle-orm";
 import {
   getAdaptInsuranceClient,
   getMockNotices,
@@ -22,6 +22,61 @@ import {
 } from "@/lib/api/adapt-insurance";
 import { calculatePriorityScore } from "@/lib/utils/priority-scoring";
 import { generateDonnaContext } from "@/lib/api/donna-context";
+
+// =============================================================================
+// RECONCILIATION RULES
+// =============================================================================
+// When certain notices arrive, they resolve/supersede previous notices:
+// - CANCEL_RESCIND → Closes PENDING_CANCELLATION (carrier reversed the cancellation)
+// - REINSTATEMENT → Closes LAPSE_NOTICE (policy was reinstated)
+// - RENEWAL → Closes PENDING_CANCELLATION and NON_RENEWAL (customer renewed/paid)
+
+const RECONCILIATION_MAP: Record<string, string[]> = {
+  'Cancellation Rescinded': ['Pending Cancellation - Non-Payment'],
+  'Policy Reinstatement': ['Policy Lapse Notice'],
+  'Policy Renewal': ['Pending Cancellation - Non-Payment', 'Policy Non-Renewal'],
+};
+
+/**
+ * Reconcile related notices when a resolving notice arrives.
+ * Marks superseded notices as "reviewed" with action "auto_reconciled".
+ */
+async function reconcileRelatedNotices(
+  tenantId: string,
+  policyNumber: string,
+  newNoticeTitle: string
+): Promise<number> {
+  const titlesToClose = RECONCILIATION_MAP[newNoticeTitle];
+  if (!titlesToClose || !policyNumber) return 0;
+
+  // Find and update pending notices with matching policy number
+  const updated = await db
+    .update(policyNotices)
+    .set({
+      reviewStatus: 'reviewed',
+      actionTaken: 'auto_reconciled',
+      actionDetails: `Automatically closed by: ${newNoticeTitle}`,
+      actionedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(policyNotices.tenantId, tenantId),
+        eq(policyNotices.policyNumber, policyNumber),
+        eq(policyNotices.reviewStatus, 'pending'),
+        inArray(policyNotices.title, titlesToClose)
+      )
+    )
+    .returning({ id: policyNotices.id });
+
+  if (updated.length > 0) {
+    console.log(
+      `[PolicyNotices Sync] Reconciled ${updated.length} notice(s) for policy ${policyNumber} due to: ${newNoticeTitle}`
+    );
+  }
+
+  return updated.length;
+}
 
 // =============================================================================
 // POST - Sync Notices from Adapt API
@@ -79,6 +134,7 @@ export async function POST(request: NextRequest) {
       created: 0,
       skipped: 0,
       matched: 0,
+      reconciled: 0, // Count of notices auto-closed by reconciliation
       errors: 0,
     };
     const errorDetails: { id: string; error: string }[] = [];
@@ -277,6 +333,14 @@ export async function POST(request: NextRequest) {
         });
 
         results.created++;
+
+        // Reconcile related notices (e.g., rescission closes pending cancellation)
+        const reconciledCount = await reconcileRelatedNotices(
+          tenantId,
+          notice.policyNumber,
+          notice.title
+        );
+        results.reconciled += reconciledCount;
       } catch (noticeError) {
         const errorMsg = noticeError instanceof Error ? noticeError.message : String(noticeError);
         console.error(
