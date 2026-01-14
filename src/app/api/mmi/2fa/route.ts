@@ -66,38 +66,54 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
   try {
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     const response = await fetch(`${TOKEN_SERVICE_URL}/health`, {
       headers: {
         Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
       },
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
 
     if (!response.ok) {
-      return NextResponse.json(
-        { error: "Token service unavailable" },
-        { status: 503 }
-      );
+      return NextResponse.json({
+        success: false,
+        tokenServiceHealthy: false,
+        error: "Token service unavailable",
+        mmiToken: { hasToken: false },
+        pending2FA: { count: 0, sessionIds: [] },
+      });
     }
 
     const health = await response.json();
 
     // Also check for pending 2FA sessions
-    const statusResponse = await fetch(`${TOKEN_SERVICE_URL}/tokens/mmi/2fa/status`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
-        "Content-Type": "application/json",
-      },
-      body: "{}",
-    });
+    const statusController = new AbortController();
+    const statusTimeoutId = setTimeout(() => statusController.abort(), 5000);
 
     let pendingSessions = 0;
     let sessionIds: string[] = [];
 
-    if (statusResponse.ok) {
-      const status = await statusResponse.json();
-      pendingSessions = status.pending_sessions || 0;
-      sessionIds = status.session_ids || [];
+    try {
+      const statusResponse = await fetch(`${TOKEN_SERVICE_URL}/tokens/mmi/2fa/status`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+        signal: statusController.signal,
+      }).finally(() => clearTimeout(statusTimeoutId));
+
+      if (statusResponse.ok) {
+        const status = await statusResponse.json();
+        pendingSessions = status.pending_sessions || 0;
+        sessionIds = status.session_ids || [];
+      }
+    } catch {
+      // Status check failed - continue with default values
     }
 
     return NextResponse.json({
@@ -113,11 +129,15 @@ export async function GET() {
         sessionIds,
       },
     });
-  } catch (error) {
-    console.error("[MMI-2FA] Status check error:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to check status" },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    // Return graceful response instead of 500 error
+    const isTimeout = error?.name === "AbortError";
+    return NextResponse.json({
+      success: false,
+      tokenServiceHealthy: false,
+      error: isTimeout ? "Token service timeout" : "Token service unavailable",
+      mmiToken: { hasToken: false },
+      pending2FA: { count: 0, sessionIds: [] },
+    });
   }
 }
