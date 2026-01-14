@@ -215,7 +215,7 @@ export default function PolicyNoticeCard({ notice, isSelected, onSelect, onActio
           <span className="text-xs text-gray-400 dark:text-gray-500">{formatDate(notice.noticeDate || notice.createdAt)}</span>
           {notice.documentUrl && (
             <a
-              href={notice.documentUrl}
+              href={`/api/policy-notices/${notice.id}/document`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
