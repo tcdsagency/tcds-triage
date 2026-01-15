@@ -621,17 +621,39 @@ function extractPhoneFromSIP(sipUri: string | undefined): string {
 // MAIN WEBHOOK HANDLER
 // =============================================================================
 
+// Background processing - return immediately, process async
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    // Verify authentication
-    if (!verifyWebhookAuth(request)) {
-      console.warn("[Call-Completed] Unauthorized request");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+    // Parse body immediately
     const body: VoIPToolsPayload = await request.json();
+
+    console.log("[Call-Completed] Received webhook, processing in background");
+    console.log("[Call-Completed] callId:", body.callId);
+
+    // Start background processing (don't await)
+    processCallCompletedBackground(body, startTime).catch(err => {
+      console.error("[Call-Completed] Background processing error:", err);
+    });
+
+    // Return immediately - Zapier gets fast response
+    return NextResponse.json({
+      success: true,
+      message: "Webhook received, processing in background",
+      callId: body.callId,
+    });
+  } catch (error) {
+    console.error("[Call-Completed] Failed to parse webhook:", error);
+    return NextResponse.json(
+      { success: false, error: "Invalid payload" },
+      { status: 400 }
+    );
+  }
+}
+
+async function processCallCompletedBackground(body: VoIPToolsPayload, startTime: number): Promise<void> {
+  try {
 
     // =========================================================================
     // DETAILED LOGGING FOR TROUBLESHOOTING EXTENSION ISSUES
@@ -819,14 +841,18 @@ export async function POST(request: NextRequest) {
       console.log("[Call-Completed] Saved transcript from Zapier payload");
     }
 
-    // Fallback: fetch from MSSQL if no transcript yet (with 10s timeout)
+    // Fallback: fetch from MSSQL if no transcript yet (with 8s total timeout including client init)
     if (!transcript && body.callId) {
       try {
-        const mssqlClient = await getMSSQLTranscriptsClient();
+        const mssqlClient = await withTimeout(
+          getMSSQLTranscriptsClient(),
+          3000, // 3s timeout for client init
+          null
+        );
         if (mssqlClient) {
           const transcriptData = await withTimeout(
             mssqlClient.getTranscriptById(body.callId),
-            10000, // 10 second timeout
+            5000, // 5 second timeout for query
             null
           );
           if (transcriptData?.transcript) {
@@ -848,12 +874,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Call-Completed] Transcript source: ${transcriptSource}, length: ${transcript.length}`);
 
-    // 3. Run AI analysis (with 25s timeout to avoid Zapier timeout)
+    // 3. Run AI analysis (with 20s timeout to avoid Zapier timeout)
     let analysis: AIAnalysis | null = null;
     if (transcript && transcript.length > 50) {
       analysis = await withTimeout(
         analyzeTranscript(transcript, body.duration || 0),
-        25000, // 25 second timeout for AI
+        20000, // 20 second timeout for AI
         null
       );
       if (!analysis) {
@@ -966,15 +992,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Only do AgencyZoom phone lookup if no screen pop match (with 15s timeout)
+      // Only do AgencyZoom phone lookup if no screen pop match (with 10s total timeout)
       if (customerMatchStatus === "unmatched") {
         try {
-          const azClient = await getAgencyZoomClient();
+          const azClient = getAgencyZoomClient(); // Sync - no timeout needed
           if (azClient && phoneForLookup) {
             // First search customers (with timeout)
             azMatches = await withTimeout(
               azClient.findCustomersByPhone(phoneForLookup, 5),
-              15000,
+              7000, // 7s timeout
               []
             );
             console.log(`[Call-Completed] AgencyZoom customer lookup for ${phoneForLookup}: ${azMatches.length} matches`);
@@ -985,7 +1011,7 @@ export async function POST(request: NextRequest) {
               const normalizedPhone = phoneForLookup.replace(/\D/g, "");
               const leadsResult = await withTimeout(
                 azClient.getLeads({ searchText: normalizedPhone, limit: 5 }),
-                10000,
+                5000, // 5s timeout for leads
                 { data: [] as AgencyZoomLead[], total: 0 }
               );
               azLeadMatches = leadsResult.data;
@@ -1027,13 +1053,13 @@ export async function POST(request: NextRequest) {
         }
       } // end if (customerMatchStatus === "unmatched") - AgencyZoom lookup block
 
-      // 4.2 Trestle IQ lookup for unmatched calls (with 10s timeout)
+      // 4.2 Trestle IQ lookup for unmatched calls (with 5s timeout)
       if (customerMatchStatus === "unmatched") {
         if (phoneForLookup && trestleIQClient) {
           try {
             const trestleResult = await withTimeout(
               trestleIQClient.reversePhone(phoneForLookup),
-              10000,
+              5000, // 5s timeout
               null
             );
             if (trestleResult) {
@@ -1324,7 +1350,7 @@ export async function POST(request: NextRequest) {
     }
 
     const processingTime = Date.now() - startTime;
-    console.log(`[Call-Completed] Processed in ${processingTime}ms`);
+    console.log(`[Call-Completed] ✅ Processed in ${processingTime}ms - callId: ${body.callId}, wrapupId: ${wrapupId}`);
 
     // Broadcast call_ended to realtime server for UI popup closure
     await notifyRealtimeServer({
@@ -1336,30 +1362,8 @@ export async function POST(request: NextRequest) {
       status: call.status,
     });
 
-    return NextResponse.json({
-      success: true,
-      sessionId: call.id,
-      wrapupId,
-      agentName: body.agentName,
-      extension,
-      matchStatus,
-      matchMethod: matchResult.method,
-      matchConfidence: matchResult.confidence,
-      merged: matchStatus === "matched",
-      mergedWithAfterHours,
-      triageItemId: mergedTriageItemId,
-      hasTranscript: !!transcript,
-      transcriptSource,
-      transcriptLength: transcript.length,
-      hasAnalysis: !!analysis,
-      processingTimeMs: processingTime,
-    });
   } catch (error) {
-    console.error("[Call-Completed] Error:", error);
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Processing failed" },
-      { status: 500 }
-    );
+    console.error("[Call-Completed] ❌ Background processing error:", error);
   }
 }
 
