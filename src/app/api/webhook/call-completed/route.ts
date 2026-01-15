@@ -1183,7 +1183,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
           customerName: matchedCustomerName || analysis?.extractedData?.customerName || trestlePersonName,
           customerPhone: phoneForLookup,
           customerEmail: analysis?.extractedData?.email || (trestleEmails && trestleEmails.length > 0 ? trestleEmails[0] : undefined),
-          requestType: isAfterHoursCall ? "after_hours" : (analysis?.callType || hangupReason),
+          requestType: analysis?.serviceRequestType || analysis?.callType || (isAfterHoursCall ? "after_hours" : hangupReason),
           status: wrapupStatus,
           matchStatus: customerMatchStatus,
           trestleData: trestleData,
