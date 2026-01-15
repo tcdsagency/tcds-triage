@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
       })
       .from(messages)
       .where(and(...conditions))
-      .orderBy(desc(messages.createdAt))
+      .orderBy(desc(sql`COALESCE(${messages.sentAt}, ${messages.createdAt})`))
       .limit(limit)
       .offset(offset);
 

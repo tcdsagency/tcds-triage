@@ -77,6 +77,9 @@ const formatPhone = (phone: string) => {
   return phone;
 };
 
+// Helper to get the effective timestamp (sentAt if available, otherwise createdAt)
+const getMessageTime = (msg: SMSMessage): string => msg.sentAt || msg.createdAt;
+
 // Group messages by phone number into conversations
 const groupIntoConversations = (messages: SMSMessage[]): Conversation[] => {
   const convMap = new Map<string, Conversation>();
@@ -85,6 +88,7 @@ const groupIntoConversations = (messages: SMSMessage[]): Conversation[] => {
     // Use the other party's phone number as the conversation key
     const phone = msg.direction === 'inbound' ? msg.fromNumber : msg.toNumber;
     const normalizedPhone = phone.replace(/\D/g, '');
+    const msgTime = getMessageTime(msg);
 
     if (!convMap.has(normalizedPhone)) {
       // Treat "undefined undefined" as null (legacy data cleanup)
@@ -100,7 +104,7 @@ const groupIntoConversations = (messages: SMSMessage[]): Conversation[] => {
           type: (msg.contactType as 'customer' | 'lead') || 'lead',
         },
         lastMessage: msg.body,
-        lastMessageTime: msg.createdAt,
+        lastMessageTime: msgTime,
         unreadCount: 0,
         messages: [],
       });
@@ -115,16 +119,16 @@ const groupIntoConversations = (messages: SMSMessage[]): Conversation[] => {
     }
 
     // Update last message if newer
-    if (new Date(msg.createdAt) > new Date(conv.lastMessageTime)) {
+    if (new Date(msgTime) > new Date(conv.lastMessageTime)) {
       conv.lastMessage = msg.body;
-      conv.lastMessageTime = msg.createdAt;
+      conv.lastMessageTime = msgTime;
     }
   });
 
-  // Sort messages within each conversation
+  // Sort messages within each conversation by actual sent time
   convMap.forEach((conv) => {
     conv.messages.sort((a, b) =>
-      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      new Date(getMessageTime(a)).getTime() - new Date(getMessageTime(b)).getTime()
     );
   });
 
@@ -607,7 +611,7 @@ export default function MessagesPage() {
                     "flex items-center justify-end gap-1 mt-1",
                     msg.direction === "outbound" ? "text-emerald-200" : "text-gray-400"
                   )}>
-                    <span className="text-xs">{formatMessageTime(msg.createdAt)}</span>
+                    <span className="text-xs">{formatMessageTime(getMessageTime(msg))}</span>
                     {getStatusIcon(msg)}
                   </div>
                   {/* Acknowledgement info for inbound messages */}
