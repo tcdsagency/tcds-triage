@@ -1750,6 +1750,23 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   isAutoVoided: boolean('is_auto_voided').default(false),
   autoVoidReason: text('auto_void_reason'), // 'short_call', 'hangup', etc.
 
+  // Completion tracking (new triage UI)
+  completionAction: text('completion_action'), // 'posted', 'ticket', 'lead', 'deleted', 'skipped'
+  editedSummary: text('edited_summary'), // User-edited summary before posting
+
+  // Deletion tracking
+  deleteReason: text('delete_reason'), // 'spam', 'wrong_number', 'duplicate', 'test_call', 'no_action_needed', 'other'
+  deleteNotes: text('delete_notes'),
+  deletedById: uuid('deleted_by_id').references(() => users.id),
+  deletedAt: timestamp('deleted_at'),
+
+  // Ticket/Lead creation tracking
+  ticketType: text('ticket_type'),
+  ticketAssignedToId: uuid('ticket_assigned_to_id').references(() => users.id),
+  leadType: text('lead_type'),
+  leadAssignedToId: uuid('lead_assigned_to_id').references(() => users.id),
+  agencyzoomLeadId: text('agencyzoom_lead_id'),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   completedAt: timestamp('completed_at'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
