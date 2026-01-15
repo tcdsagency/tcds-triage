@@ -816,37 +816,100 @@ a=sendrecv
 });
 
 // ============================================================================
-// 3CX WEBSOCKET SHADOW LISTENER
+// 3CX WEBSOCKET SHADOW LISTENER (with OAuth2 Authentication)
 // ============================================================================
 
 let threecxWs = null;
 let threecxConnected = false;
 let threecxReconnectAttempts = 0;
+let threecxAccessToken = null;
+let threecxTokenExpiry = 0;
+let threecxTokenRefreshTimer = null;
 
-function connectThreeCxWebSocket() {
-  if (process.env.THREECX_ENABLED !== 'true') {
-    console.log('[3CX WS] Disabled');
+// Fetch OAuth2 access token from 3CX
+async function getThreeCxAccessToken() {
+  const baseUrl = process.env.THREECX_BASE_URL || 'https://tcds.al.3cx.us';
+  const clientId = process.env.THREECX_CLIENT_ID;
+  const clientSecret = process.env.THREECX_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    console.error('[3CX Auth] Missing THREECX_CLIENT_ID or THREECX_CLIENT_SECRET');
+    return null;
+  }
+
+  try {
+    const tokenUrl = `${baseUrl}/connect/token`;
+    console.log(`[3CX Auth] Fetching token from ${tokenUrl}...`);
+
+    const response = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials'
+      })
+    });
+
+    if (!response.ok) {
+      console.error(`[3CX Auth] Token request failed: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    threecxAccessToken = data.access_token;
+    threecxTokenExpiry = Date.now() + (data.expires_in * 1000) - 10000; // Refresh 10s before expiry
+
+    console.log(`[3CX Auth] ✅ Token obtained, expires in ${data.expires_in}s`);
+
+    // Schedule token refresh
+    if (threecxTokenRefreshTimer) clearTimeout(threecxTokenRefreshTimer);
+    const refreshIn = Math.max((data.expires_in - 15) * 1000, 30000); // Refresh 15s before expiry, min 30s
+    threecxTokenRefreshTimer = setTimeout(refreshThreeCxToken, refreshIn);
+
+    return threecxAccessToken;
+  } catch (error) {
+    console.error('[3CX Auth] Token fetch error:', error.message);
+    return null;
+  }
+}
+
+// Refresh token and reconnect WebSocket if needed
+async function refreshThreeCxToken() {
+  console.log('[3CX Auth] Refreshing token...');
+  const newToken = await getThreeCxAccessToken();
+
+  if (newToken && threecxConnected) {
+    // Token refreshed, WebSocket should still work
+    console.log('[3CX Auth] Token refreshed, WebSocket still connected');
+  } else if (newToken && !threecxConnected) {
+    // Token refreshed, try to reconnect
+    console.log('[3CX Auth] Token refreshed, attempting WebSocket reconnect...');
+    connectThreeCxWebSocketWithToken();
+  }
+}
+
+// Connect to 3CX WebSocket using the access token
+function connectThreeCxWebSocketWithToken() {
+  if (!threecxAccessToken) {
+    console.error('[3CX WS] No access token available');
     return;
   }
 
-  if (!process.env.THREECX_BASE_URL || !process.env.THREECX_API_KEY) {
-    console.log('[3CX WS] Missing THREECX_BASE_URL or THREECX_API_KEY');
-    return;
-  }
-
-  const wsUrl = process.env.THREECX_BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://') + '/callcontrol/ws';
+  const baseUrl = process.env.THREECX_BASE_URL || 'https://tcds.al.3cx.us';
+  const wsUrl = baseUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/callcontrol/ws';
 
   console.log(`[3CX WS] Connecting to ${wsUrl}...`);
 
   threecxWs = new WebSocket(wsUrl, {
-    headers: { 'Authorization': `Bearer ${process.env.THREECX_API_KEY}` },
+    headers: { 'Authorization': `Bearer ${threecxAccessToken}` },
     rejectUnauthorized: true,
   });
 
   threecxWs.on('open', () => {
     console.log('[3CX WS] ✅ Connected');
     threecxConnected = true;
-    threecxReconnectAttempts = 0; // Reset on successful connection
+    threecxReconnectAttempts = 0;
   });
 
   threecxWs.on('message', (data) => {
@@ -856,7 +919,7 @@ function connectThreeCxWebSocket() {
   threecxWs.on('close', () => {
     threecxConnected = false;
     threecxReconnectAttempts++;
-    const delay = Math.min(5000 * Math.pow(2, threecxReconnectAttempts - 1), 60000); // 5s, 10s, 20s, 40s, 60s max
+    const delay = Math.min(5000 * Math.pow(2, threecxReconnectAttempts - 1), 60000);
     console.log(`[3CX WS] Disconnected, reconnecting in ${delay/1000}s (attempt ${threecxReconnectAttempts})...`);
     setTimeout(connectThreeCxWebSocket, delay);
   });
@@ -864,6 +927,25 @@ function connectThreeCxWebSocket() {
   threecxWs.on('error', (err) => {
     console.error('[3CX WS] Error:', err.message);
   });
+}
+
+// Main entry point for 3CX WebSocket connection
+async function connectThreeCxWebSocket() {
+  if (process.env.THREECX_ENABLED !== 'true') {
+    console.log('[3CX WS] Disabled (set THREECX_ENABLED=true to enable)');
+    return;
+  }
+
+  // Get access token first
+  const token = await getThreeCxAccessToken();
+  if (!token) {
+    console.error('[3CX WS] Failed to get access token, retrying in 30s...');
+    setTimeout(connectThreeCxWebSocket, 30000);
+    return;
+  }
+
+  // Connect WebSocket with token
+  connectThreeCxWebSocketWithToken();
 }
 
 function handleThreeCxEvent(raw) {

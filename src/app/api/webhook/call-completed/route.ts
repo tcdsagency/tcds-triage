@@ -10,7 +10,7 @@
 // 6. Post notes to AgencyZoom CRM
 // 7. Log for E&O compliance
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/db";
 import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, triageItems, messages } from "@/db/schema";
 import { eq, or, ilike, and, gte, lte, desc, isNotNull } from "drizzle-orm";
@@ -629,15 +629,20 @@ export async function POST(request: NextRequest) {
     // Parse body immediately
     const body: VoIPToolsPayload = await request.json();
 
-    console.log("[Call-Completed] Received webhook, processing in background");
+    console.log("[Call-Completed] Received webhook, processing with after()");
     console.log("[Call-Completed] callId:", body.callId);
 
-    // Start background processing (don't await)
-    processCallCompletedBackground(body, startTime).catch(err => {
-      console.error("[Call-Completed] Background processing error:", err);
+    // Use Next.js after() to process in background while keeping function alive
+    after(async () => {
+      try {
+        await processCallCompletedBackground(body, startTime);
+      } catch (err) {
+        console.error("[Call-Completed] Background processing error:", err);
+      }
     });
 
     // Return immediately - Zapier gets fast response
+    // after() ensures the function stays alive to complete processing
     return NextResponse.json({
       success: true,
       message: "Webhook received, processing in background",
