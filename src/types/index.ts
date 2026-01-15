@@ -106,6 +106,49 @@ export type PolicyStatus = 'active' | 'pending' | 'cancelled' | 'expired' | 'non
 export type MessageType = 'sms' | 'mms' | 'email';
 export type MessageDirection = 'inbound' | 'outbound';
 
+// Wrapup completion types
+export type WrapupCompletionAction = 'posted' | 'ticket' | 'lead' | 'deleted' | 'skipped';
+export type WrapupDeleteReason = 'spam' | 'wrong_number' | 'duplicate' | 'test_call' | 'no_action_needed' | 'other';
+export type WrapupTicketType = 'service_request' | 'policy_change' | 'billing' | 'claims' | 'general';
+export type WrapupLeadType = 'new_business' | 'cross_sell' | 'referral' | 'requote';
+
+// Wrapup action payloads
+export interface WrapupPostNotePayload {
+  action: 'post_note';
+  editedSummary?: string;
+}
+
+export interface WrapupCreateTicketPayload {
+  action: 'create_ticket';
+  ticketType: WrapupTicketType;
+  assignedToId: string;
+  editedSummary?: string;
+}
+
+export interface WrapupCreateLeadPayload {
+  action: 'create_lead';
+  leadType: WrapupLeadType;
+  assignedToId: string;
+  editedSummary?: string;
+}
+
+export interface WrapupDeletePayload {
+  action: 'delete';
+  deleteReason: WrapupDeleteReason;
+  deleteNotes?: string;
+}
+
+export interface WrapupSkipPayload {
+  action: 'skip';
+}
+
+export type WrapupActionPayload =
+  | WrapupPostNotePayload
+  | WrapupCreateTicketPayload
+  | WrapupCreateLeadPayload
+  | WrapupDeletePayload
+  | WrapupSkipPayload;
+
 // API Response types
 export interface ApiResponse<T> {
   data?: T;
@@ -144,7 +187,13 @@ export interface QuoteWithRelations extends Quote {
 
 // Wrapup draft with relations
 export interface WrapupDraftWithRelations extends WrapupDraft {
-  call?: Call;
+  call?: Call & {
+    transcription?: string;
+  };
+  agent?: User;
+  deletedBy?: User;
+  ticketAssignedTo?: User;
+  leadAssignedTo?: User;
 }
 
 // Session user (from Supabase + our users table)

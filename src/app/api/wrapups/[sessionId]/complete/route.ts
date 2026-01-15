@@ -13,9 +13,10 @@ import { addToRetryQueue } from "@/lib/api/retry-queue";
 // =============================================================================
 
 interface CompleteRequest {
-  action: "note" | "ticket" | "lead" | "skip";
+  action: "note" | "ticket" | "lead" | "skip" | "delete";
   customerId?: string; // AgencyZoom customer ID to use (for match selection)
-  noteContent?: string; // Override AI summary
+  noteContent?: string; // Override AI summary (legacy)
+  editedSummary?: string; // User-edited summary
   reviewerId?: string; // ID of the user who reviewed this wrapup
   ticketDetails?: {
     subject: string;
@@ -24,6 +25,9 @@ interface CompleteRequest {
     pipelineId?: number;
     stageId?: number;
     assigneeId?: number;
+    // New required fields for UI
+    ticketType?: "service_request" | "policy_change" | "billing" | "claims" | "general";
+    assignedToId?: string; // Internal user ID
   };
   leadDetails?: {
     firstName: string;
@@ -33,7 +37,13 @@ interface CompleteRequest {
     source?: string;
     pipelineId?: number;
     stageId?: number;
+    // New required fields for UI
+    leadType?: "new_business" | "cross_sell" | "referral" | "requote";
+    assignedToId?: string; // Internal user ID
   };
+  // New delete action fields
+  deleteReason?: "spam" | "wrong_number" | "duplicate" | "test_call" | "no_action_needed" | "other";
+  deleteNotes?: string;
 }
 
 // =============================================================================
@@ -158,6 +168,7 @@ export async function POST(
           status: "completed",
           reviewerDecision: "skipped",
           outcome: "skipped",
+          completionAction: "skipped",
           completedAt: new Date(),
           reviewerId: body.reviewerId || null,
           reviewedAt: new Date(),
@@ -168,6 +179,40 @@ export async function POST(
         success: true,
         action: "skip",
         message: "Wrapup skipped",
+      });
+    }
+
+    // Handle delete action
+    if (body.action === "delete") {
+      if (!body.deleteReason) {
+        return NextResponse.json(
+          { error: "Delete reason is required" },
+          { status: 400 }
+        );
+      }
+
+      await db
+        .update(wrapupDrafts)
+        .set({
+          status: "completed",
+          reviewerDecision: "deleted",
+          outcome: "deleted",
+          completionAction: "deleted",
+          deleteReason: body.deleteReason,
+          deleteNotes: body.deleteNotes || null,
+          deletedById: body.reviewerId || null,
+          deletedAt: new Date(),
+          completedAt: new Date(),
+          reviewerId: body.reviewerId || null,
+          reviewedAt: new Date(),
+        })
+        .where(eq(wrapupDrafts.id, wrapupId));
+
+      return NextResponse.json({
+        success: true,
+        action: "delete",
+        message: "Wrapup deleted",
+        deleteReason: body.deleteReason,
       });
     }
 
@@ -216,7 +261,9 @@ export async function POST(
           );
         }
 
-        const noteText = formatCallNote(wrapup, body.noteContent);
+        // Use edited summary if provided, fall back to noteContent (legacy)
+        const summaryToUse = body.editedSummary || body.noteContent;
+        const noteText = formatCallNote(wrapup, summaryToUse);
 
         try {
           const noteResult = await azClient.addNote(customerId, noteText);
@@ -229,13 +276,15 @@ export async function POST(
               customerId,
             };
 
-            // Update wrapup
+            // Update wrapup with new tracking fields
             await db
               .update(wrapupDrafts)
               .set({
                 status: "completed",
                 reviewerDecision: "approved",
                 outcome: "note_posted",
+                completionAction: "posted",
+                editedSummary: body.editedSummary || null,
                 agencyzoomNoteId: noteResult.id?.toString(),
                 completedAt: new Date(),
                 reviewerId: body.reviewerId || null,
@@ -315,8 +364,24 @@ export async function POST(
           );
         }
 
+        // Validate required fields for new UI
+        if (!body.ticketDetails?.ticketType) {
+          return NextResponse.json(
+            { error: "Ticket type is required" },
+            { status: 400 }
+          );
+        }
+
+        if (!body.ticketDetails?.assignedToId) {
+          return NextResponse.json(
+            { error: "Assigned user is required" },
+            { status: 400 }
+          );
+        }
+
         // Step 1: Create note first (call documentation)
-        const ticketNoteText = formatCallNote(wrapup, body.noteContent);
+        const summaryForTicket = body.editedSummary || body.noteContent;
+        const ticketNoteText = formatCallNote(wrapup, summaryForTicket);
         let noteId: number | undefined;
         try {
           const noteResult = await azClient.addNote(customerId, ticketNoteText);
@@ -385,6 +450,10 @@ export async function POST(
                 status: "completed",
                 reviewerDecision: "approved",
                 outcome: "ticket_created",
+                completionAction: "ticket",
+                editedSummary: body.editedSummary || null,
+                ticketType: body.ticketDetails?.ticketType || null,
+                ticketAssignedToId: body.ticketDetails?.assignedToId || null,
                 agencyzoomNoteId: noteId?.toString(),
                 agencyzoomTicketId: ticketResult.serviceTicketId?.toString(),
                 completedAt: new Date(),
@@ -444,15 +513,34 @@ export async function POST(
       }
 
       case "lead": {
+        // Validate required fields for new UI
+        if (!body.leadDetails?.leadType) {
+          return NextResponse.json(
+            { error: "Lead type is required" },
+            { status: 400 }
+          );
+        }
+
+        // Store assignedToId before we potentially overwrite leadDetails
+        const leadAssignedToId = body.leadDetails?.assignedToId;
+        const leadType = body.leadDetails?.leadType;
+
+        if (!leadAssignedToId) {
+          return NextResponse.json(
+            { error: "Assigned user is required" },
+            { status: 400 }
+          );
+        }
+
         if (!body.leadDetails?.firstName || !body.leadDetails?.lastName) {
           // Try to extract from wrapup
           const trestleData = wrapup.trestleData as { person?: { firstName?: string; lastName?: string } } | null;
-          if (!body.leadDetails) {
-            body.leadDetails = {
-              firstName: trestleData?.person?.firstName || wrapup.customerName?.split(" ")[0] || "Unknown",
-              lastName: trestleData?.person?.lastName || wrapup.customerName?.split(" ").slice(1).join(" ") || "Caller",
-            };
-          }
+          body.leadDetails = {
+            firstName: body.leadDetails?.firstName || trestleData?.person?.firstName || wrapup.customerName?.split(" ")[0] || "Unknown",
+            lastName: body.leadDetails?.lastName || trestleData?.person?.lastName || wrapup.customerName?.split(" ").slice(1).join(" ") || "Caller",
+            leadType: leadType || "new_business",
+            assignedToId: leadAssignedToId,
+          };
         }
 
         const leadPayload = {
@@ -481,6 +569,11 @@ export async function POST(
                 status: "completed",
                 reviewerDecision: "approved",
                 outcome: "lead_created",
+                completionAction: "lead",
+                editedSummary: body.editedSummary || null,
+                leadType: body.leadDetails?.leadType || null,
+                leadAssignedToId: body.leadDetails?.assignedToId || null,
+                agencyzoomLeadId: leadResult.leadId?.toString(),
                 completedAt: new Date(),
                 reviewerId: body.reviewerId || null,
                 reviewedAt: new Date(),
@@ -489,7 +582,8 @@ export async function POST(
 
             // Also post a note to the new lead
             if (leadResult.leadId) {
-              const leadNoteText = formatCallNote(wrapup, body.noteContent);
+              const summaryForLead = body.editedSummary || body.noteContent;
+              const leadNoteText = formatCallNote(wrapup, summaryForLead);
               try {
                 await azClient.addLeadNote(leadResult.leadId, leadNoteText);
               } catch (noteError) {
@@ -627,7 +721,7 @@ export async function GET(
       wrapupId,
       matchStatus: wrapup.matchStatus,
       canComplete: true,
-      availableActions: ["note", "ticket", "lead", "skip"],
+      availableActions: ["note", "ticket", "lead", "skip", "delete"],
       matchSuggestions: suggestions,
       customerHint: wrapup.trestleData
         ? {
