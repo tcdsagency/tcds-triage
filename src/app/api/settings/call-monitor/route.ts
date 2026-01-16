@@ -399,6 +399,41 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      // Clear all active/ringing calls (reset to start fresh)
+      case "clear_all_active_calls": {
+        // Mark all ringing calls as missed
+        const ringingResult = await db.execute(sql`
+          UPDATE calls
+          SET status = 'missed',
+              disposition = 'abandoned',
+              ended_at = NOW()
+          WHERE tenant_id = ${DEFAULT_TENANT_ID}
+            AND status = 'ringing'
+          RETURNING id
+        `);
+
+        // Mark all in_progress calls as completed
+        const inProgressResult = await db.execute(sql`
+          UPDATE calls
+          SET status = 'completed',
+              ended_at = NOW()
+          WHERE tenant_id = ${DEFAULT_TENANT_ID}
+            AND status = 'in_progress'
+          RETURNING id
+        `);
+
+        const ringingCleared = (ringingResult as any[]).length;
+        const inProgressCleared = (inProgressResult as any[]).length;
+        const total = ringingCleared + inProgressCleared;
+
+        return NextResponse.json({
+          success: true,
+          message: `Cleared ${total} calls (${ringingCleared} ringing → missed, ${inProgressCleared} in_progress → completed)`,
+          ringingCleared,
+          inProgressCleared,
+        });
+      }
+
       // Auto-link orphaned triage items by matching phone/time
       case "auto_link_triage": {
         if (!id) {
