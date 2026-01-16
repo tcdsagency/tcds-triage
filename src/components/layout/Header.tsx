@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Bell, Search, Menu, LogOut, User, MessageSquare, Check, ExternalLink, Wifi, WifiOff, Users, FileText, Phone, Loader2 } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { useSMSStream } from '@/hooks/useSMSStream';
+import { useUser } from '@/hooks/useUser';
 import { NotificationBell } from '@/components/features/NotificationBell';
 import { useRealtimeNotifications } from '@/components/providers/NotificationProvider';
 
@@ -39,26 +40,12 @@ export function Header({ user }: HeaderProps) {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const supabase = createClient();
 
-  // Fetch user profile
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const res = await fetch('/api/auth/me');
-        const data = await res.json();
-        if (data.success && data.user) {
-          setUserProfile(data.user);
-        }
-      } catch (err) {
-        console.error('Error fetching user profile:', err);
-      }
-    };
-    fetchProfile();
-  }, []);
+  // Use shared user hook (cached, deduplicates requests)
+  const { user: userProfile } = useUser();
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 

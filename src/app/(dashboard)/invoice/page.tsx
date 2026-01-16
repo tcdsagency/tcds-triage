@@ -479,7 +479,7 @@ export default function InvoiceGeneratorPage() {
         color: darkColor,
       });
       y -= 14;
-      page.drawText("123 Insurance Way", {
+      page.drawText("PO BOX 1283", {
         x: 50,
         y,
         size: 11,
@@ -487,7 +487,7 @@ export default function InvoiceGeneratorPage() {
         color: darkColor,
       });
       y -= 14;
-      page.drawText("Tampa, FL 33601", {
+      page.drawText("Pinson, AL 35126", {
         x: 50,
         y,
         size: 11,

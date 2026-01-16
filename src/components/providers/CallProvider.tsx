@@ -274,7 +274,7 @@ export function CallProvider({ children }: CallProviderProps) {
     };
   }, []);
 
-  // Polling fallback: Check call status AND presence every 5 seconds
+  // Polling fallback: Check call status AND presence every 10 seconds
   // Since webhooks aren't reliable, we use presence as source of truth
   useEffect(() => {
     if (!activeCall || activeCall.status === "ended") {
@@ -370,8 +370,8 @@ export function CallProvider({ children }: CallProviderProps) {
       }
     };
 
-    // Start polling every 3 seconds (faster since we're relying on this)
-    pollIntervalRef.current = setInterval(checkCallStatus, 3000);
+    // Start polling every 10 seconds (reduced from 3s for performance)
+    pollIntervalRef.current = setInterval(checkCallStatus, 10000);
 
     // Also check immediately
     checkCallStatus();
@@ -623,9 +623,9 @@ export function CallProvider({ children }: CallProviderProps) {
       }
     };
 
-    // Poll every 3 seconds for new calls
+    // Poll every 10 seconds for new calls (reduced from 3s for performance)
     pollForNewCalls(); // Check immediately
-    newCallPollRef.current = setInterval(pollForNewCalls, 3000);
+    newCallPollRef.current = setInterval(pollForNewCalls, 10000);
 
     return () => {
       if (newCallPollRef.current) {

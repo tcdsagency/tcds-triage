@@ -45,6 +45,11 @@ export async function GET() {
         firstName: authUser.email?.split("@")[0],
         lastName: null,
       },
+    }, {
+      headers: {
+        // Cache for 60 seconds - user data doesn't change frequently
+        'Cache-Control': 'private, max-age=60, stale-while-revalidate=30',
+      },
     });
   } catch (error) {
     console.error("[Auth Me] Error:", error);

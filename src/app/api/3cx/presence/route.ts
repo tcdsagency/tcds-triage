@@ -109,6 +109,11 @@ export async function GET(request: NextRequest) {
           connected: true,
           source: "voiptools",
           team: teamMembers,
+        }, {
+          headers: {
+            // Cache presence for 10 seconds - status changes frequently
+            'Cache-Control': 'public, max-age=10, stale-while-revalidate=5',
+          },
         });
       } catch (voipError) {
         console.error("VoIPTools API error:", voipError);
@@ -150,6 +155,10 @@ export async function GET(request: NextRequest) {
           connected: true,
           source: "threecx",
           team: teamMembers,
+        }, {
+          headers: {
+            'Cache-Control': 'public, max-age=10, stale-while-revalidate=5',
+          },
         });
       } catch (apiError) {
         console.error("3CX API error:", apiError);
@@ -189,6 +198,10 @@ export async function GET(request: NextRequest) {
           { id: "3", name: "Emily Davis", extension: "103", status: "dnd", statusText: "Do Not Disturb" },
           { id: "4", name: "James Wilson", extension: "104", status: "away", statusText: "Away" },
         ] as TeamMember[],
+      }, {
+        headers: {
+          'Cache-Control': 'public, max-age=10, stale-while-revalidate=5',
+        },
       });
     }
 
@@ -196,6 +209,10 @@ export async function GET(request: NextRequest) {
       success: true,
       connected: false,
       team: mockTeam,
+    }, {
+      headers: {
+        'Cache-Control': 'public, max-age=10, stale-while-revalidate=5',
+      },
     });
   } catch (error) {
     console.error("Error fetching 3CX presence:", error);
