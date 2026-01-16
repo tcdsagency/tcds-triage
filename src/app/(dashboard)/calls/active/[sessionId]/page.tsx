@@ -247,6 +247,31 @@ export default function ActiveCallPage() {
   }, [effectiveCallStatus]);
 
   // =========================================================================
+  // Poll call status (fallback for reliable call end detection)
+  // =========================================================================
+  useEffect(() => {
+    if (effectiveCallStatus === "ended" || effectiveCallStatus === "completed") return;
+
+    const pollStatus = async () => {
+      try {
+        const res = await fetch(`/api/calls/${sessionId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.call?.status === "completed" || data.call?.status === "missed" || data.call?.endedAt) {
+            console.log(`[ActiveCallPage] DB shows call ended: ${data.call.status}`);
+            setCallData(prev => prev ? { ...prev, status: "completed" } : null);
+          }
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+    };
+
+    const interval = setInterval(pollStatus, 3000);
+    return () => clearInterval(interval);
+  }, [sessionId, effectiveCallStatus]);
+
+  // =========================================================================
   // Customer lookup
   // =========================================================================
   useEffect(() => {

@@ -290,54 +290,7 @@ export function CallProvider({ children }: CallProviderProps) {
       const currentExt = myExtensionRef.current;
 
       try {
-        // Check presence API - this is the source of truth for whether agent is on a call
-        if (currentExt) {
-          const presenceRes = await fetch('/api/3cx/presence');
-          if (presenceRes.ok) {
-            const presenceData = await presenceRes.json();
-            const myPresence = presenceData.team?.find((t: any) => t.extension === currentExt);
-
-            if (myPresence && myPresence.status !== 'on_call' && activeCallRef.current?.status !== "ended") {
-              // Presence shows NOT on call - increment counter (debounce to avoid false positives)
-              notOnCallCountRef.current++;
-              console.log(`[CallProvider] Presence shows ${myPresence.status}, not-on-call count: ${notOnCallCountRef.current}/2`);
-
-              // Require 2 consecutive "not on call" checks before marking call as ended
-              // This prevents premature popup closure due to VoIPTools presence lag
-              if (notOnCallCountRef.current >= 2) {
-                console.log(`[CallProvider] Confirmed call ended after ${notOnCallCountRef.current} consecutive presence checks`);
-                setActiveCall(prev => prev ? { ...prev, status: "ended" } : null);
-                notOnCallCountRef.current = 0; // Reset counter
-
-                // Also update the call in the database
-                try {
-                  await fetch(`/api/calls/${activeCall.sessionId}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'end' }),
-                  });
-                } catch (e) {
-                  console.error('[CallProvider] Failed to update call status:', e);
-                }
-
-                // Auto-close after 30 seconds for wrap-up
-                if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
-                closeTimeoutRef.current = setTimeout(() => {
-                  console.log(`[CallProvider] Auto-closing popup after presence detected end`);
-                  setIsPopupVisible(false);
-                  setActiveCall(null);
-                  closeTimeoutRef.current = null;
-                }, 30000);
-                return;
-              }
-            } else if (myPresence && myPresence.status === 'on_call') {
-              // Reset counter when presence confirms on_call
-              notOnCallCountRef.current = 0;
-            }
-          }
-        }
-
-        // Also check DB status as secondary source
+        // Check DB status FIRST - this is updated by call_ended webhook
         const res = await fetch(`/api/calls/${activeCall.sessionId}`);
         if (res.ok) {
           const data = await res.json();
@@ -364,14 +317,59 @@ export function CallProvider({ children }: CallProviderProps) {
           console.log(`[CallProvider] Call ${activeCall.sessionId} not found, closing popup`);
           setIsPopupVisible(false);
           setActiveCall(null);
+          return;
+        }
+
+        // Fallback: Check presence API if DB doesn't show ended
+        if (currentExt && activeCallRef.current?.status !== "ended") {
+          const presenceRes = await fetch('/api/3cx/presence');
+          if (presenceRes.ok) {
+            const presenceData = await presenceRes.json();
+            const myPresence = presenceData.team?.find((t: any) => t.extension === currentExt);
+
+            if (myPresence && myPresence.status !== 'on_call') {
+              // Presence shows NOT on call - increment counter for debounce
+              notOnCallCountRef.current++;
+              console.log(`[CallProvider] Presence shows ${myPresence.status}, count: ${notOnCallCountRef.current}/2`);
+
+              // Require 2 consecutive checks before marking ended (prevents false positives)
+              if (notOnCallCountRef.current >= 2) {
+                console.log(`[CallProvider] Confirmed via presence - call ended`);
+                setActiveCall(prev => prev ? { ...prev, status: "ended" } : null);
+                notOnCallCountRef.current = 0;
+
+                // Update DB
+                try {
+                  await fetch(`/api/calls/${activeCall.sessionId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'end' }),
+                  });
+                } catch (e) {
+                  console.error('[CallProvider] Failed to update call status:', e);
+                }
+
+                // Auto-close after 30 seconds
+                if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+                closeTimeoutRef.current = setTimeout(() => {
+                  console.log(`[CallProvider] Auto-closing popup after presence end`);
+                  setIsPopupVisible(false);
+                  setActiveCall(null);
+                  closeTimeoutRef.current = null;
+                }, 30000);
+              }
+            } else if (myPresence && myPresence.status === 'on_call') {
+              notOnCallCountRef.current = 0; // Reset counter
+            }
+          }
         }
       } catch (e) {
         console.error("[CallProvider] Polling error:", e);
       }
     };
 
-    // Start polling every 10 seconds (reduced from 3s for performance)
-    pollIntervalRef.current = setInterval(checkCallStatus, 10000);
+    // Start polling every 3 seconds for responsive call end detection
+    pollIntervalRef.current = setInterval(checkCallStatus, 3000);
 
     // Also check immediately
     checkCallStatus();
@@ -623,9 +621,9 @@ export function CallProvider({ children }: CallProviderProps) {
       }
     };
 
-    // Poll every 10 seconds for new calls (reduced from 3s for performance)
+    // Poll for new calls
     pollForNewCalls(); // Check immediately
-    newCallPollRef.current = setInterval(pollForNewCalls, 10000);
+    newCallPollRef.current = setInterval(pollForNewCalls, 5000); // Poll every 5s
 
     return () => {
       if (newCallPollRef.current) {
