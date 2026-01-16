@@ -329,17 +329,43 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
         duration: transcript.duration,
       });
 
-      // Update wrapup draft with SQL transcript data
+      // Create or update wrapup draft with SQL transcript data
       if (job.callId) {
+        // Get call details for wrapup creation
+        const [callDetails] = await db
+          .select({
+            tenantId: calls.tenantId,
+            direction: calls.direction,
+            agentId: calls.agentId,
+            fromNumber: calls.fromNumber,
+            toNumber: calls.toNumber,
+            externalNumber: calls.externalNumber,
+          })
+          .from(calls)
+          .where(eq(calls.id, job.callId))
+          .limit(1);
+
+        const callDirection = direction || callDetails?.direction || "inbound";
+        const customerPhone = callDirection === "inbound"
+          ? (callDetails?.externalNumber || callDetails?.fromNumber || job.callerNumber)
+          : (callDetails?.externalNumber || callDetails?.toNumber);
+
+        // Use upsert to create if not exists, update if exists
         await db
-          .update(wrapupDrafts)
-          .set({
+          .insert(wrapupDrafts)
+          .values({
+            tenantId: callDetails?.tenantId || job.tenantId || process.env.DEFAULT_TENANT_ID!,
+            callId: job.callId,
             status: "pending_review",
             summary: aiResult.summary,
             customerName: aiResult.customerName,
+            customerPhone: customerPhone || null,
             policyNumbers: aiResult.policyNumbers,
             insuranceType: aiResult.insuranceType,
             requestType: aiResult.requestType,
+            direction: (callDirection === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
+            agentExtension: job.agentExtension || null,
+            matchStatus: "unmatched", // Will be updated during review
             aiExtraction: {
               ...aiResult,
               transcriptSource: "mssql",
@@ -347,15 +373,34 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
             },
             aiProcessingStatus: "completed",
             aiProcessedAt: new Date(),
-            direction: direction,
-            updatedAt: new Date(),
           })
-          .where(eq(wrapupDrafts.callId, job.callId));
+          .onConflictDoUpdate({
+            target: wrapupDrafts.callId,
+            set: {
+              status: "pending_review",
+              summary: aiResult.summary,
+              customerName: aiResult.customerName,
+              policyNumbers: aiResult.policyNumbers,
+              insuranceType: aiResult.insuranceType,
+              requestType: aiResult.requestType,
+              aiExtraction: {
+                ...aiResult,
+                transcriptSource: "mssql",
+                sqlRecordId: transcript.id,
+              },
+              aiProcessingStatus: "completed",
+              aiProcessedAt: new Date(),
+              direction: (callDirection === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
+              updatedAt: new Date(),
+            },
+          });
 
-        // Update call with corrected direction and AI results
+        // Update call with transcript, corrected direction and AI results
         await db
           .update(calls)
           .set({
+            transcription: transcript.transcript, // Store the actual transcript
+            transcriptionStatus: "completed",
             directionFinal: direction as "inbound" | "outbound",
             aiSummary: aiResult.summary,
             aiActionItems: aiResult.actionItems,
@@ -405,17 +450,48 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
           })
           .where(eq(pendingTranscriptJobs.id, job.id));
 
-        // Update wrapup draft - mark for manual review since no transcript available
+        // Create or update wrapup draft - mark for manual review since no transcript available
         if (job.callId) {
-          await db
-            .update(wrapupDrafts)
-            .set({
-              status: "pending_review",
-              aiProcessingStatus: "failed",
-              summary: "No transcript available from SQL Server - requires manual review.",
-              updatedAt: new Date(),
+          // Get call details
+          const [callDetails] = await db
+            .select({
+              tenantId: calls.tenantId,
+              direction: calls.direction,
+              fromNumber: calls.fromNumber,
+              toNumber: calls.toNumber,
+              externalNumber: calls.externalNumber,
             })
-            .where(eq(wrapupDrafts.callId, job.callId));
+            .from(calls)
+            .where(eq(calls.id, job.callId))
+            .limit(1);
+
+          const callDirection = callDetails?.direction || "inbound";
+          const customerPhone = callDirection === "inbound"
+            ? (callDetails?.externalNumber || callDetails?.fromNumber || job.callerNumber)
+            : (callDetails?.externalNumber || callDetails?.toNumber);
+
+          await db
+            .insert(wrapupDrafts)
+            .values({
+              tenantId: callDetails?.tenantId || job.tenantId || process.env.DEFAULT_TENANT_ID!,
+              callId: job.callId,
+              status: "pending_review",
+              summary: "No transcript available from SQL Server - requires manual review.",
+              customerPhone: customerPhone || null,
+              direction: (callDirection === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
+              agentExtension: job.agentExtension || null,
+              matchStatus: "unmatched",
+              aiProcessingStatus: "failed",
+            })
+            .onConflictDoUpdate({
+              target: wrapupDrafts.callId,
+              set: {
+                status: "pending_review",
+                aiProcessingStatus: "failed",
+                summary: "No transcript available from SQL Server - requires manual review.",
+                updatedAt: new Date(),
+              },
+            });
         }
 
         return { success: false, error: "Max attempts reached" };
