@@ -459,7 +459,10 @@ function startTokenRefreshService() {
 // VOIPTOOLS CALL LOOKUP
 // ============================================================================
 
-async function getVoipToolsCallId(token, extension, isRetry = false) {
+// Helper to delay execution
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function getVoipToolsCallIdOnce(token, extension, isRetry = false) {
   try {
     const response = await axios.get(`${voipToolsBaseUrl}/api/GetActiveConnection/1`, {
       headers: {
@@ -482,18 +485,38 @@ async function getVoipToolsCallId(token, extension, isRetry = false) {
       return call.callID;
     }
 
-    console.log(`[VoIPTools] No call found for ext=${extension}`);
     return null;
 
   } catch (err) {
     if (err.response?.status === 401 && !isRetry) {
       console.log('[VoIPTools] 401, refreshing token...');
       const newToken = await getVoipToolsToken(true);
-      return getVoipToolsCallId(newToken, extension, true);
+      return getVoipToolsCallIdOnce(newToken, extension, true);
     }
     console.error('[VoIPTools] GetActiveConnection failed:', err.message);
     return null;
   }
+}
+
+// Retry wrapper - handles race condition where 3CX WebSocket fires before VoIPTools registers the call
+async function getVoipToolsCallId(token, extension, maxRetries = 4, retryDelayMs = 1000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const callId = await getVoipToolsCallIdOnce(token, extension);
+    if (callId) {
+      if (attempt > 1) {
+        console.log(`[VoIPTools] Found call on attempt ${attempt} for ext=${extension}`);
+      }
+      return callId;
+    }
+
+    if (attempt < maxRetries) {
+      console.log(`[VoIPTools] No call for ext=${extension}, retrying in ${retryDelayMs}ms (attempt ${attempt}/${maxRetries})`);
+      await delay(retryDelayMs);
+    }
+  }
+
+  console.log(`[VoIPTools] No call found for ext=${extension} after ${maxRetries} attempts`);
+  return null;
 }
 
 // ============================================================================
