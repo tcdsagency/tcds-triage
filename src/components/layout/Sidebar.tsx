@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
+import { useUser } from '@/hooks/useUser';
 import { hasSupervisorAccess, hasAgencySettingsAccess } from '@/lib/permissions';
 import { hasFeatureAccess, getDefaultPermissions } from '@/lib/feature-permissions';
 import {
@@ -186,25 +187,12 @@ function NavSection({ title, items, className }: { title?: string; items: NavIte
 }
 
 export function Sidebar() {
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | undefined>(undefined);
-  const [featurePermissions, setFeaturePermissions] = useState<Record<string, boolean> | null>(null);
+  // Use shared user hook (cached, deduplicates requests)
+  const { user } = useUser();
 
-  useEffect(() => {
-    // Fetch current user info for role-based and feature-based access
-    fetch('/api/auth/me')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.user) {
-          setUserEmail(data.user.email?.toLowerCase() || null);
-          setUserRole(data.user.role);
-          setFeaturePermissions(data.user.featurePermissions || null);
-        }
-      })
-      .catch(() => {
-        // Ignore errors - default to no special access
-      });
-  }, []);
+  const userEmail = user?.email?.toLowerCase() || null;
+  const userRole = user?.role;
+  const featurePermissions = user?.featurePermissions as unknown as Record<string, boolean> | null;
 
   const canAccessSupervisor = hasSupervisorAccess(userEmail);
   const canAccessAgencySettings = hasAgencySettingsAccess(userEmail);
