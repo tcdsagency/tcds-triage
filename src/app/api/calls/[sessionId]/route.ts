@@ -11,7 +11,7 @@ import { getThreeCXClient } from "@/lib/api/threecx";
 const isValidUUID = (str: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
-// Look up call by sessionId (UUID or externalCallId)
+// Look up call by sessionId (UUID, vmSessionId, or externalCallId)
 async function findCall(sessionId: string) {
   let call = null;
 
@@ -21,6 +21,16 @@ async function findCall(sessionId: string) {
       .select()
       .from(calls)
       .where(eq(calls.id, sessionId))
+      .limit(1)
+      .then(r => r[0]);
+  }
+
+  // Try by vmSessionId (sess_xxx format from VM bridge)
+  if (!call && sessionId.startsWith('sess_')) {
+    call = await db
+      .select()
+      .from(calls)
+      .where(eq(calls.vmSessionId, sessionId))
       .limit(1)
       .then(r => r[0]);
   }
