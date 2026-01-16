@@ -8,6 +8,7 @@ import {
   Bell,
   Shield,
   Server,
+  AlertTriangle,
   ChevronRight,
 } from "lucide-react";
 
@@ -40,6 +41,13 @@ const settingsSections = [
     href: "/settings/bridge",
     icon: Server,
     color: "bg-cyan-100 text-cyan-600",
+  },
+  {
+    title: "Call Monitor",
+    description: "Check for call discrepancies and webhook issues",
+    href: "/settings/call-monitor",
+    icon: AlertTriangle,
+    color: "bg-orange-100 text-orange-600",
   },
   {
     title: "Notifications",
