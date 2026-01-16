@@ -7,7 +7,7 @@ import {
   Link2,
   Bell,
   Shield,
-  Palette,
+  Server,
   ChevronRight,
 } from "lucide-react";
 
@@ -33,6 +33,13 @@ const settingsSections = [
     icon: Link2,
     color: "bg-green-100 text-green-600",
     badge: "API Keys",
+  },
+  {
+    title: "VM Bridge",
+    description: "Monitor 3CX bridge status and WebSocket connection",
+    href: "/settings/bridge",
+    icon: Server,
+    color: "bg-cyan-100 text-cyan-600",
   },
   {
     title: "Notifications",
