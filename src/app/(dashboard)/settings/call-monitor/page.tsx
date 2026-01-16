@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Link2,
   Wrench,
+  Trash2,
 } from 'lucide-react';
 
 interface CallMonitorData {
@@ -200,6 +201,18 @@ export default function CallMonitorPage() {
           <Button variant="outline" onClick={fetchData} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              if (confirm('Clear all active calls? This will mark ringing calls as missed and in-progress calls as completed.')) {
+                handleFix('clear_all_active_calls', {});
+              }
+            }}
+            disabled={fixing === 'clear_all_active_calls-all'}
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Clear All Calls
           </Button>
         </div>
       </div>
