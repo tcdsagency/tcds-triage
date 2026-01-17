@@ -3,7 +3,7 @@
 // Base URL: https://api.mmi.run/api/v2
 
 // Token service configuration
-const TOKEN_SERVICE_URL = process.env.TOKEN_SERVICE_URL || "http://34.145.14.37:8899";
+const TOKEN_SERVICE_URL = process.env.TOKEN_SERVICE_URL || "http://75.37.55.209:3000/token";
 const TOKEN_SERVICE_SECRET = process.env.TOKEN_SERVICE_SECRET || "tcds_token_service_2025";
 
 // 2FA callback - set by the app to handle 2FA prompts

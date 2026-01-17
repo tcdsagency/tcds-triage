@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
   // Test token service connectivity
   try {
-    const tokenServiceUrl = process.env.TOKEN_SERVICE_URL || "http://34.145.14.37:8899";
+    const tokenServiceUrl = process.env.TOKEN_SERVICE_URL || "http://75.37.55.209:3000/token";
     const tokenServiceSecret = process.env.TOKEN_SERVICE_SECRET || "tcds_token_service_2025";
 
     console.log("[Test] Testing token service connectivity...");
