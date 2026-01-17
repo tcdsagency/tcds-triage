@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-const BRIDGE_URL = process.env.VM_BRIDGE_URL || 'http://34.145.14.37:3000';
+const BRIDGE_URL = process.env.VM_BRIDGE_URL || 'http://34.30.92.41:3000';
 const BRIDGE_SECRET = process.env.VM_BRIDGE_SECRET || 'tcds-bridge-restart-2024';
 
 export async function POST() {
