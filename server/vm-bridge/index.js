@@ -990,20 +990,58 @@ function handleThreeCxEvent(raw) {
     const event = msg.event || msg;
     const eventType = event.event_type ?? event.EventType;
 
-    // Skip subscription responses (event_type 4 is RequestResponse)
+    // Handle RequestResponse (event_type 4)
     if (eventType === 4) {
-      console.log('[3CX WS] Subscription response received');
+      const attachedData = event.attached_data || event.AttachedData || {};
+      const requestId = attachedData.RequestID || '';
+
+      // Skip subscription responses
+      if (requestId === 'tcds-call-tracking') {
+        console.log('[3CX WS] Subscription response received');
+        return;
+      }
+
+      // Handle participant detail responses
+      if (requestId.startsWith('fetch-') && attachedData.Response) {
+        const participant = attachedData.Response;
+        const path = attachedData.Path || '';
+        console.log(`[3CX WS] Got participant details: status=${participant.status} callid=${participant.callid}`);
+
+        // Process as a normal event
+        const normalizedEvent = {
+          EventType: 0,
+          Entity: path,
+          AttachedData: { Response: participant },
+        };
+
+        const parsed = parseThreeCxEvent(normalizedEvent);
+        if (parsed) {
+          console.log(`[3CX WS] ${parsed.type}: ext=${parsed.extension} callId=${parsed.callId}`);
+          if (process.env.AUTO_TRANSCRIPTION_ENABLED === 'true') {
+            handleAutoTranscription(parsed);
+          }
+        }
+      }
       return;
     }
 
-    // Only process call state events (event_type 5 = StateUpdate)
-    if (eventType !== 5 && eventType !== 0 && eventType !== 1) return;
+    // Only process call state events (event_type 0 = Update, 1 = Remove)
+    if (eventType !== 0 && eventType !== 1) return;
+
+    const entity = event.entity || event.Entity || '';
+    const attachedData = event.attached_data || event.AttachedData;
+
+    // If no attached data, fetch participant details via WebSocket request
+    if (!attachedData && entity.includes('/participants/')) {
+      fetchParticipantDetails(entity);
+      return;
+    }
 
     // Normalize event structure
     const normalizedEvent = {
-      EventType: eventType === 5 ? 0 : eventType,  // Map StateUpdate to Update
-      Entity: event.entity || event.Entity,
-      AttachedData: event.attached_data || event.AttachedData,
+      EventType: eventType,
+      Entity: entity,
+      AttachedData: attachedData,
     };
 
     const parsed = parseThreeCxEvent(normalizedEvent);
@@ -1025,6 +1063,19 @@ function handleThreeCxEvent(raw) {
   } catch (err) {
     console.error('[3CX WS] Parse error:', err.message);
   }
+}
+
+// Fetch participant details when event has no attached_data
+function fetchParticipantDetails(entityPath) {
+  if (!threecxWs || !threecxConnected) return;
+
+  const requestId = `fetch-${Date.now()}`;
+  console.log(`[3CX WS] Fetching details for ${entityPath}`);
+
+  threecxWs.send(JSON.stringify({
+    RequestID: requestId,
+    Path: entityPath
+  }));
 }
 
 function parseThreeCxEvent(event) {
