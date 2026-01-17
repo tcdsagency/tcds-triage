@@ -1247,8 +1247,10 @@ async function notifyVercel(event, data) {
   const webhookUrl = process.env.VERCEL_WEBHOOK_URL || process.env.TRANSCRIPT_WEBHOOK_URL;
   if (!webhookUrl) return;
 
+  console.log(`[Notify] Sending: ${event} to ${webhookUrl}/api/vm-events`);
+
   try {
-    await axios.post(`${webhookUrl}/api/vm-events`, {
+    const response = await axios.post(`${webhookUrl}/api/vm-events`, {
       event,
       timestamp: Date.now(),
       ...data,
@@ -1257,11 +1259,11 @@ async function notifyVercel(event, data) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.VM_API_SECRET}`,
       },
-      timeout: 5000,
+      timeout: 15000,
     });
-    console.log(`[Notify] Sent: ${event}`);
+    console.log(`[Notify] Sent: ${event} (${response.status})`);
   } catch (err) {
-    console.error(`[Notify] Failed:`, err.message);
+    console.error(`[Notify] Failed: ${event}`, err.message);
   }
 }
 
