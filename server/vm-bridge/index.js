@@ -933,6 +933,14 @@ function connectThreeCxWebSocketWithToken() {
     console.log('[3CX WS] ✅ Connected');
     threecxConnected = true;
     threecxReconnectAttempts = 0;
+
+    // Subscribe to call control events
+    const subscribeMsg = JSON.stringify({
+      RequestID: 'tcds-call-tracking',
+      Path: '/callcontrol'
+    });
+    threecxWs.send(subscribeMsg);
+    console.log('[3CX WS] Subscribed to /callcontrol events');
   });
 
   threecxWs.on('message', (data) => {
@@ -973,10 +981,32 @@ async function connectThreeCxWebSocket() {
 
 function handleThreeCxEvent(raw) {
   try {
-    const event = JSON.parse(raw);
-    if (event.EventType === undefined) return;
+    const msg = JSON.parse(raw);
 
-    const parsed = parseThreeCxEvent(event);
+    // Log all messages for debugging
+    console.log('[3CX WS] Message:', JSON.stringify(msg).slice(0, 500));
+
+    // 3CX wraps events in { sequence, event: { event_type, entity, attached_data } }
+    const event = msg.event || msg;
+    const eventType = event.event_type ?? event.EventType;
+
+    // Skip subscription responses (event_type 4 is RequestResponse)
+    if (eventType === 4) {
+      console.log('[3CX WS] Subscription response received');
+      return;
+    }
+
+    // Only process call state events (event_type 5 = StateUpdate)
+    if (eventType !== 5 && eventType !== 0 && eventType !== 1) return;
+
+    // Normalize event structure
+    const normalizedEvent = {
+      EventType: eventType === 5 ? 0 : eventType,  // Map StateUpdate to Update
+      Entity: event.entity || event.Entity,
+      AttachedData: event.attached_data || event.AttachedData,
+    };
+
+    const parsed = parseThreeCxEvent(normalizedEvent);
     if (!parsed) return;
 
     // Log shadow event
@@ -998,19 +1028,23 @@ function handleThreeCxEvent(raw) {
 }
 
 function parseThreeCxEvent(event) {
-  const entity = event.Entity || '';
-  const data = event.AttachedData?.Response;
+  const entity = event.Entity || event.entity || '';
+  const attachedData = event.AttachedData || event.attached_data || {};
+  const data = attachedData.Response || attachedData.response || attachedData;
   if (!data) return null;
 
   const parts = entity.split('/').filter(Boolean);
   if (parts[0] !== 'callcontrol') return null;
 
   const extension = parts[1];
-  const participant = data;
+  const participant = Array.isArray(data) ? data[0] : data;
+
+  if (!participant) return null;
 
   let type = 'unknown';
+  const status = participant.status || participant.Status;
   if (event.EventType === 0) {
-    switch (participant.status) {
+    switch (status) {
       case 'Ringing': type = 'ringing'; break;
       case 'Connected': type = 'answered'; break;
       case 'Dialing': type = 'dialing'; break;
@@ -1021,17 +1055,20 @@ function parseThreeCxEvent(event) {
   }
 
   let direction = 'inbound';
-  if (participant.party_did) direction = 'inbound';
-  else if (participant.status === 'Dialing') direction = 'outbound';
-  else if (participant.party_dn_type === 'External' && participant.originated_by_dn) direction = 'outbound';
+  const partyDid = participant.party_did || participant.PartyDid;
+  const partyDnType = participant.party_dn_type || participant.PartyDnType;
+  const originatedByDn = participant.originated_by_dn || participant.OriginatedByDn;
+  if (partyDid) direction = 'inbound';
+  else if (status === 'Dialing') direction = 'outbound';
+  else if (partyDnType === 'External' && originatedByDn) direction = 'outbound';
 
   return {
     type,
     extension,
-    callId: participant.callid,
-    callerNumber: participant.party_caller_id,
-    callerName: participant.party_caller_name,
-    did: participant.party_did,
+    callId: participant.callid || participant.CallId,
+    callerNumber: participant.party_caller_id || participant.PartyCallerId,
+    callerName: participant.party_caller_name || participant.PartyCallerName,
+    did: partyDid,
     direction,
     timestamp: Date.now(),
   };
