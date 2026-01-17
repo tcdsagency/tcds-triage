@@ -27,7 +27,8 @@ async function notifyRealtimeServer(event: {
   extension?: string;
   status?: string;
 }) {
-  const realtimeUrl = process.env.REALTIME_SERVER_URL || "https://realtime.tcdsagency.com";
+  const realtimeUrl = process.env.REALTIME_SERVER_URL;
+  if (!realtimeUrl) return; // Skip if no realtime server configured
 
   try {
     console.log(`[Call-Started] Broadcasting to realtime server: ${event.type}`);

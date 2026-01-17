@@ -112,7 +112,11 @@ export function useCallWebSocket(sessionId: string, enabled: boolean = true) {
     const connectWebSocket = () => {
       try {
         // Connect to the real-time server on Google VM (SSL via nginx)
-        const wsUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL || 'wss://realtime.tcdsagency.com/ws/calls';
+        const wsUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL;
+        if (!wsUrl) {
+          console.log("[useCallWebSocket] No realtime server configured, using polling only");
+          return;
+        }
 
         console.log(`[useCallWebSocket] Connecting to ${wsUrl} for session ${sessionId}`);
         
