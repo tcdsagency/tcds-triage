@@ -33,7 +33,8 @@ const AGENCY_MAIN_NUMBER = "2058475616"; // +1 (205) 847-5616
 // =============================================================================
 
 async function notifyRealtimeServer(event: Record<string, unknown>) {
-  const realtimeUrl = process.env.REALTIME_SERVER_URL || "https://realtime.tcdsagency.com";
+  const realtimeUrl = process.env.REALTIME_SERVER_URL;
+  if (!realtimeUrl) return; // Skip if no realtime server configured
 
   try {
     await fetch(`${realtimeUrl}/api/broadcast`, {

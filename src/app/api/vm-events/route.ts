@@ -75,7 +75,8 @@ function validateAuth(request: NextRequest): boolean {
 // =============================================================================
 
 async function notifyRealtimeServer(event: Record<string, any>) {
-  const realtimeUrl = process.env.REALTIME_SERVER_URL || "https://realtime.tcdsagency.com";
+  const realtimeUrl = process.env.REALTIME_SERVER_URL;
+  if (!realtimeUrl) return; // Skip if no realtime server configured
 
   try {
     const response = await fetch(`${realtimeUrl}/api/broadcast`, {

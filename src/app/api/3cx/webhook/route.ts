@@ -195,7 +195,8 @@ async function notifyRealtimeServer(event: {
   status?: string;
   predictedReason?: string | null;
 }) {
-  const realtimeUrl = process.env.REALTIME_SERVER_URL || "https://realtime.tcdsagency.com";
+  const realtimeUrl = process.env.REALTIME_SERVER_URL;
+  if (!realtimeUrl) return; // Skip if no realtime server configured
 
   try {
     // POST to real-time server's HTTP API to broadcast via WebSocket
