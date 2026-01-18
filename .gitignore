@@ -33,3 +33,4 @@ yarn-error.log*
 .env.vercel-check
 .env.vercel.production
 .env.prod
+worker/ecosystem.config.js
