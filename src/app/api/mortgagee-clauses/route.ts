@@ -107,6 +107,10 @@ export async function POST(request: NextRequest) {
         clauseText: body.clauseText,
         policyTypes: body.policyTypes || null,
         isActive: body.isActive !== false,
+        uploadWebsite: body.uploadWebsite || null,
+        phone: body.phone || null,
+        fax: body.fax || null,
+        notes: body.notes || null,
       })
       .returning();
 
