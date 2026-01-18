@@ -256,3 +256,64 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+// =============================================================================
+// DELETE - Clear auto-voided items or all completed items
+// =============================================================================
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (!tenantId) {
+      return NextResponse.json({ success: false, error: "Tenant not configured" }, { status: 500 });
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+    const filter = searchParams.get("filter"); // 'auto_voided', 'all'
+
+    let conditions = and(
+      eq(wrapupDrafts.tenantId, tenantId),
+      eq(wrapupDrafts.status, "completed")
+    );
+
+    // Only clear auto-voided by default unless 'all' is specified
+    if (filter === 'auto_voided' || !filter) {
+      conditions = and(conditions, eq(wrapupDrafts.isAutoVoided, true));
+    }
+
+    // Get count before delete
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(wrapupDrafts)
+      .where(conditions);
+
+    const count = Number(countResult[0]?.count || 0);
+
+    if (count === 0) {
+      return NextResponse.json({
+        success: true,
+        message: "No items to clear",
+        deleted: 0,
+      });
+    }
+
+    // Delete the items
+    await db
+      .delete(wrapupDrafts)
+      .where(conditions);
+
+    console.log(`[Reviewed Items] Deleted ${count} ${filter === 'all' ? 'completed' : 'auto-voided'} items`);
+
+    return NextResponse.json({
+      success: true,
+      message: `Cleared ${count} ${filter === 'all' ? 'completed' : 'auto-voided'} items`,
+      deleted: count,
+    });
+  } catch (error) {
+    console.error("[Reviewed Items] DELETE Error:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to clear items" },
+      { status: 500 }
+    );
+  }
+}
