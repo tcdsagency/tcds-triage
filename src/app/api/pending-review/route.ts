@@ -475,3 +475,79 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+// =============================================================================
+// DELETE - Clear all pending items (wrapups and messages)
+// =============================================================================
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (!tenantId) {
+      return NextResponse.json({ success: false, error: "Tenant not configured" }, { status: 500 });
+    }
+
+    let deletedWrapups = 0;
+    let deletedMessages = 0;
+
+    // Delete pending wrapups
+    const wrapupCountResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(wrapupDrafts)
+      .where(and(
+        eq(wrapupDrafts.tenantId, tenantId),
+        eq(wrapupDrafts.status, "pending_review")
+      ));
+
+    deletedWrapups = Number(wrapupCountResult[0]?.count || 0);
+
+    if (deletedWrapups > 0) {
+      await db
+        .delete(wrapupDrafts)
+        .where(and(
+          eq(wrapupDrafts.tenantId, tenantId),
+          eq(wrapupDrafts.status, "pending_review")
+        ));
+    }
+
+    // Delete pending messages (unread inbound)
+    const messageCountResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(messages)
+      .where(and(
+        eq(messages.tenantId, tenantId),
+        eq(messages.direction, "inbound"),
+        eq(messages.isRead, false)
+      ));
+
+    deletedMessages = Number(messageCountResult[0]?.count || 0);
+
+    if (deletedMessages > 0) {
+      await db
+        .delete(messages)
+        .where(and(
+          eq(messages.tenantId, tenantId),
+          eq(messages.direction, "inbound"),
+          eq(messages.isRead, false)
+        ));
+    }
+
+    console.log(`[Pending Review] Cleared ${deletedWrapups} wrapups and ${deletedMessages} messages`);
+
+    return NextResponse.json({
+      success: true,
+      message: `Cleared ${deletedWrapups + deletedMessages} pending items`,
+      deleted: {
+        wrapups: deletedWrapups,
+        messages: deletedMessages,
+        total: deletedWrapups + deletedMessages,
+      },
+    });
+  } catch (error) {
+    console.error("[Pending Review] DELETE Error:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to clear pending items" },
+      { status: 500 }
+    );
+  }
+}
