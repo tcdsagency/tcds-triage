@@ -12,8 +12,8 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/db";
-import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, triageItems, messages } from "@/db/schema";
-import { eq, or, ilike, and, gte, lte, desc, isNotNull } from "drizzle-orm";
+import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, triageItems, messages, liveTranscriptSegments } from "@/db/schema";
+import { eq, or, ilike, and, gte, lte, desc, isNotNull, asc } from "drizzle-orm";
 import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
 import { trestleIQClient } from "@/lib/api/trestleiq";
@@ -856,6 +856,33 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         }
       } catch (error) {
         console.error("[Call-Completed] MSSQL fetch error:", error);
+      }
+    }
+
+    // Fallback: fetch from live_transcript_segments (Deepgram real-time) if still no transcript
+    if (!transcript && call.id) {
+      try {
+        const segments = await db
+          .select({ speaker: liveTranscriptSegments.speaker, text: liveTranscriptSegments.text })
+          .from(liveTranscriptSegments)
+          .where(eq(liveTranscriptSegments.callId, call.id))
+          .orderBy(asc(liveTranscriptSegments.sequenceNumber));
+
+        if (segments.length > 0) {
+          transcript = segments
+            .map(s => `${s.speaker === 'agent' ? 'Agent' : 'Customer'}: ${s.text}`)
+            .join('\n');
+          transcriptSource = "live_deepgram";
+
+          // Update call with transcript (non-blocking)
+          db.update(calls)
+            .set({ transcription: transcript })
+            .where(eq(calls.id, call.id))
+            .catch(err => console.error("[Call-Completed] Failed to save live transcript:", err));
+          console.log(`[Call-Completed] Assembled transcript from ${segments.length} live segments`);
+        }
+      } catch (error) {
+        console.error("[Call-Completed] Live transcript segments fetch error:", error);
       }
     }
 
