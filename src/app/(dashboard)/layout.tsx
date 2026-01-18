@@ -7,6 +7,7 @@ import { NotificationProvider } from '@/components/providers/NotificationProvide
 import { TwoFAProvider } from '@/components/TwoFAProvider';
 import { TwoFASetup } from '@/components/providers/TwoFASetup';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
+import { KeyboardShortcutsProvider } from '@/components/providers/KeyboardShortcutsProvider';
 
 export default async function DashboardLayout({
   children,
@@ -27,13 +28,15 @@ export default async function DashboardLayout({
           <TwoFAProvider>
             <TwoFASetup />
             <CallProvider>
-              <Sidebar />
-              <div className="lg:pl-64">
-                <Header user={user} />
-                <main className="py-6 px-4 sm:px-6 lg:px-8">
-                  {children}
-                </main>
-              </div>
+              <KeyboardShortcutsProvider>
+                <Sidebar />
+                <div className="lg:pl-64">
+                  <Header user={user} />
+                  <main className="py-6 px-4 sm:px-6 lg:px-8">
+                    {children}
+                  </main>
+                </div>
+              </KeyboardShortcutsProvider>
             </CallProvider>
           </TwoFAProvider>
         </NotificationProvider>
