@@ -517,7 +517,7 @@ export async function DELETE(request: NextRequest) {
       .where(and(
         eq(messages.tenantId, tenantId),
         eq(messages.direction, "inbound"),
-        eq(messages.isRead, false)
+        eq(messages.isAcknowledged, false)
       ));
 
     deletedMessages = Number(messageCountResult[0]?.count || 0);
@@ -528,7 +528,7 @@ export async function DELETE(request: NextRequest) {
         .where(and(
           eq(messages.tenantId, tenantId),
           eq(messages.direction, "inbound"),
-          eq(messages.isRead, false)
+          eq(messages.isAcknowledged, false)
         ));
     }
 
