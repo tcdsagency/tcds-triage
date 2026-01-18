@@ -1,11 +1,18 @@
 'use client';
 
+/**
+ * Bridge Status Component
+ * =======================
+ * Displays VM Bridge health status and allows restart.
+ * Used in Agency Settings page.
+ */
+
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RefreshCw, Server, Wifi, Phone, Activity } from 'lucide-react';
 
 interface BridgeHealth {
   success: boolean;
@@ -20,7 +27,7 @@ interface BridgeHealth {
   } | null;
 }
 
-export default function BridgeSettingsPage() {
+export function BridgeStatus() {
   const [health, setHealth] = useState<BridgeHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [restarting, setRestarting] = useState(false);
@@ -74,44 +81,38 @@ export default function BridgeSettingsPage() {
   const threecxConnected = health?.data?.threecx?.connected ?? false;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-1">
-            <Link href="/agency-settings" className="hover:text-gray-700 dark:hover:text-gray-200">
-              Agency Settings
-            </Link>
-            <span>/</span>
-            <span>VM Bridge</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             VM Bridge Status
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Monitor the 3CX transcription bridge and WebSocket connection
           </p>
         </div>
         <Button
           variant="outline"
+          size="sm"
           onClick={fetchHealth}
           disabled={loading}
         >
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
+          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-2 gap-4">
         {/* Bridge Status */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-900 dark:text-white">Bridge Status</h3>
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Server className="w-4 h-4 text-gray-500" />
+              <span className="font-medium text-gray-900 dark:text-white text-sm">Bridge</span>
+            </div>
             {loading ? (
-              <Skeleton className="h-6 w-16" />
+              <Skeleton className="h-5 w-16" />
             ) : (
               <Badge variant={isOnline ? 'default' : 'destructive'}>
                 {isOnline ? 'Online' : 'Offline'}
@@ -121,20 +122,23 @@ export default function BridgeSettingsPage() {
           {loading ? (
             <Skeleton className="h-4 w-32" />
           ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               {isOnline
                 ? 'Bridge is running and responding'
-                : health?.message || 'Unable to connect to bridge'}
+                : health?.message || 'Unable to connect'}
             </p>
           )}
         </div>
 
         {/* 3CX WebSocket */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-900 dark:text-white">3CX WebSocket</h3>
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Wifi className="w-4 h-4 text-gray-500" />
+              <span className="font-medium text-gray-900 dark:text-white text-sm">3CX WebSocket</span>
+            </div>
             {loading ? (
-              <Skeleton className="h-6 w-24" />
+              <Skeleton className="h-5 w-20" />
             ) : (
               <Badge variant={threecxConnected ? 'default' : 'secondary'}>
                 {threecxConnected ? 'Connected' : 'Disconnected'}
@@ -142,55 +146,61 @@ export default function BridgeSettingsPage() {
             )}
           </div>
           {loading ? (
-            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-4 w-36" />
           ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               {threecxConnected
-                ? 'Receiving call events from 3CX'
-                : 'Not receiving call events'}
+                ? 'Receiving call events'
+                : 'Not receiving events'}
             </p>
           )}
         </div>
 
         {/* SIP Registrations */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-900 dark:text-white">SIP Registrations</h3>
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Phone className="w-4 h-4 text-gray-500" />
+              <span className="font-medium text-gray-900 dark:text-white text-sm">SIP Registrations</span>
+            </div>
             {loading ? (
-              <Skeleton className="h-8 w-12" />
+              <Skeleton className="h-6 w-10" />
             ) : (
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+              <span className="text-xl font-bold text-gray-900 dark:text-white">
                 {health?.data?.registrations ?? 0}
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Virtual extensions registered for transcription
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Virtual extensions registered
           </p>
         </div>
 
         {/* Active Sessions */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-900 dark:text-white">Active Sessions</h3>
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-gray-500" />
+              <span className="font-medium text-gray-900 dark:text-white text-sm">Active Sessions</span>
+            </div>
             {loading ? (
-              <Skeleton className="h-8 w-12" />
+              <Skeleton className="h-6 w-10" />
             ) : (
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+              <span className="text-xl font-bold text-gray-900 dark:text-white">
                 {health?.data?.sessions?.active ?? 0}
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             {health?.data?.sessions?.streaming ?? 0} streaming, {health?.data?.sessions?.total ?? 0} total
           </p>
         </div>
       </div>
 
-      {/* Auto-Transcription Extensions */}
+      {/* Monitored Extensions */}
       {health?.data?.autoTranscription && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
-          <h3 className="font-semibold text-gray-900 dark:text-white mb-3">
+        <div>
+          <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
             Monitored Extensions
           </h3>
           <div className="flex flex-wrap gap-2">
@@ -211,40 +221,35 @@ export default function BridgeSettingsPage() {
 
       {/* Last Updated */}
       {health?.data?.timestamp && (
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
           Last updated: {new Date(health.data.timestamp).toLocaleString()}
         </p>
       )}
 
       {/* Restart Section */}
-      <div className="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800 p-6">
-        <h3 className="font-semibold text-red-900 dark:text-red-200 mb-2">
+      <div className="bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 p-4">
+        <h3 className="font-medium text-red-900 dark:text-red-200 mb-1 text-sm">
           Danger Zone
         </h3>
-        <p className="text-sm text-red-700 dark:text-red-300 mb-4">
-          Restart the VM bridge if it&apos;s not responding or experiencing issues.
-          Active calls may be interrupted.
+        <p className="text-xs text-red-700 dark:text-red-300 mb-3">
+          Restart the bridge if experiencing issues. Active calls may be interrupted.
         </p>
 
         {!showRestartConfirm ? (
           <Button
             variant="destructive"
+            size="sm"
             onClick={() => setShowRestartConfirm(true)}
             disabled={restarting}
           >
             {restarting ? (
               <>
-                <svg className="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                 Restarting...
               </>
             ) : (
               <>
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
+                <RefreshCw className="w-4 h-4 mr-2" />
                 Restart Bridge
               </>
             )}
@@ -274,3 +279,5 @@ export default function BridgeSettingsPage() {
     </div>
   );
 }
+
+export default BridgeStatus;
