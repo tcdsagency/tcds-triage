@@ -24,7 +24,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { pipelineId, stageId, existingLeadId, existingCustomerId } = body;
+    const { pipelineId, stageId, agentId, existingLeadId, existingCustomerId } = body;
 
     if (!pipelineId || !stageId) {
       return NextResponse.json(
@@ -78,6 +78,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         pipelineId: parseInt(pipelineId),
         stageId: parseInt(stageId),
         source: "Quote Extractor",
+        agentId: agentId ? parseInt(agentId) : undefined,
       });
 
       if (!leadResult.success || !leadResult.leadId) {

@@ -136,9 +136,12 @@ export default function QuoteExtractorPage() {
   // Post to AZ state
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [pipelinesLoading, setPipelinesLoading] = useState(false);
+  const [agents, setAgents] = useState<{ id: string; name: string; agencyzoomId: string }[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(false);
   const [showPostModal, setShowPostModal] = useState(false);
   const [selectedPipeline, setSelectedPipeline] = useState<string>("");
   const [selectedStage, setSelectedStage] = useState<string>("");
+  const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
 
@@ -188,6 +191,29 @@ export default function QuoteExtractorPage() {
       console.error("Load pipelines error:", error);
     } finally {
       setPipelinesLoading(false);
+    }
+  }, []);
+
+  const loadAgents = useCallback(async () => {
+    setAgentsLoading(true);
+    try {
+      const res = await fetch("/api/users?active=true");
+      const data = await res.json();
+      if (data.success) {
+        // Filter to users with AgencyZoom IDs (can be assigned leads)
+        const azUsers = data.users
+          .filter((u: any) => u.agencyzoomId)
+          .map((u: any) => ({
+            id: u.id,
+            name: `${u.firstName} ${u.lastName}`,
+            agencyzoomId: u.agencyzoomId,
+          }));
+        setAgents(azUsers);
+      }
+    } catch (error) {
+      console.error("Load agents error:", error);
+    } finally {
+      setAgentsLoading(false);
     }
   }, []);
 
@@ -387,8 +413,12 @@ export default function QuoteExtractorPage() {
     if (pipelines.length === 0) {
       loadPipelines();
     }
+    if (agents.length === 0) {
+      loadAgents();
+    }
     setShowPostModal(true);
     setPostError(null);
+    setSelectedAgent("");
   };
 
   const handlePostToAZ = async () => {
@@ -400,6 +430,7 @@ export default function QuoteExtractorPage() {
     try {
       const pipeline = pipelines.find((p) => p.id.toString() === selectedPipeline);
       const stage = pipeline?.stages.find((s) => s.id.toString() === selectedStage);
+      const agent = agents.find((a) => a.id === selectedAgent);
 
       const res = await fetch(`/api/quote-extractor/documents/${selectedDoc.id}/post-to-az`, {
         method: "POST",
@@ -408,6 +439,7 @@ export default function QuoteExtractorPage() {
           pipelineId: selectedPipeline,
           stageId: selectedStage,
           stageName: stage?.name,
+          agentId: agent?.agencyzoomId || undefined,
         }),
       });
 
@@ -1148,6 +1180,26 @@ export default function QuoteExtractorPage() {
                   </select>
                 </div>
               )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assign To
+                </label>
+                <select
+                  value={selectedAgent}
+                  onChange={(e) => setSelectedAgent(e.target.value)}
+                  disabled={agentsLoading}
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="">Unassigned</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Optional - leave blank for unassigned</p>
+              </div>
             </div>
 
             <div className="p-4 border-t flex gap-2">
