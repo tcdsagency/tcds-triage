@@ -724,6 +724,19 @@ export default function ActiveCallPage() {
     }
   }, [showWrapUp, wrapupData, wrapupLoading, fetchWrapupData]);
 
+  // Auto-poll for transcript/processing when in pending state
+  useEffect(() => {
+    if (!showWrapUp) return;
+    if (wrapupStatus !== "pending_transcript" && wrapupStatus !== "pending_processing") return;
+
+    const pollInterval = setInterval(() => {
+      console.log(`[Wrapup] Polling for transcript (status: ${wrapupStatus})...`);
+      fetchWrapupData();
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [showWrapUp, wrapupStatus, fetchWrapupData]);
+
   // =========================================================================
   // Helpers
   // =========================================================================
@@ -1382,8 +1395,58 @@ export default function ActiveCallPage() {
                 </h3>
 
                 {wrapupLoading ? (
-                  <div className="bg-blue-50 rounded-lg p-4">
-                    Loading wrap-up data...
+                  <div className="bg-blue-50 rounded-lg p-4 flex items-center gap-3">
+                    <span className="animate-spin text-xl">🔄</span>
+                    <span className="text-blue-700">Loading wrap-up data...</span>
+                  </div>
+                ) : wrapupStatus === "pending_transcript" ? (
+                  <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="animate-pulse">⏳</span>
+                        <span className="font-medium text-amber-800">Waiting for Transcript</span>
+                      </div>
+                      <span className="text-xs text-amber-600 flex items-center gap-1">
+                        <span className="animate-spin">↻</span> Auto-checking...
+                      </span>
+                    </div>
+                    <p className="text-sm text-amber-700">
+                      The call transcript is being fetched from the phone system.
+                      This will update automatically when ready.
+                    </p>
+                  </div>
+                ) : wrapupStatus === "pending_processing" ? (
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="animate-pulse">🤖</span>
+                        <span className="font-medium text-blue-800">AI Processing</span>
+                      </div>
+                      <span className="text-xs text-blue-600 flex items-center gap-1">
+                        <span className="animate-spin">↻</span> Auto-checking...
+                      </span>
+                    </div>
+                    <p className="text-sm text-blue-700">
+                      The transcript is being analyzed by AI. The summary will appear automatically.
+                    </p>
+                  </div>
+                ) : wrapupStatus === "error" ? (
+                  <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span>⚠️</span>
+                        <span className="font-medium text-red-800">Failed to Load Summary</span>
+                      </div>
+                      <button
+                        onClick={fetchWrapupData}
+                        className="text-xs text-red-600 hover:text-red-800 flex items-center gap-1"
+                      >
+                        <span>↻</span> Try Again
+                      </button>
+                    </div>
+                    <p className="text-sm text-red-700">
+                      Could not load the AI summary. You can still enter notes manually below.
+                    </p>
                   </div>
                 ) : wrapupData ? (
                   <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
@@ -1406,7 +1469,7 @@ export default function ActiveCallPage() {
                 ) : (
                   <div className="bg-gray-50 rounded-lg p-4 border">
                     <p className="text-sm text-gray-600">
-                      No AI summary available yet.
+                      No AI summary available yet. You can write notes manually below.
                     </p>
                   </div>
                 )}
