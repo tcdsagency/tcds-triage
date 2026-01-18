@@ -79,6 +79,54 @@ const CLIENT_LEVEL_CONFIG: Record<string, { label: string; emoji: string; color:
 };
 
 // =============================================================================
+// COLLAPSIBLE SECTION COMPONENT
+// =============================================================================
+
+interface CollapsibleSectionProps {
+  title: string;
+  icon: string;
+  badge?: string;
+  defaultExpanded?: boolean;
+  headerClassName?: string;
+  children: React.ReactNode;
+}
+
+function CollapsibleSection({
+  title,
+  icon,
+  badge,
+  defaultExpanded = false,
+  headerClassName,
+  children,
+}: CollapsibleSectionProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  return (
+    <div className="mb-4">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={cn(
+          "w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg transition-colors",
+          headerClassName || "bg-gray-50 hover:bg-gray-100"
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <span>{icon}</span>
+          <span className="text-sm font-semibold">{title}</span>
+          {badge && (
+            <span className="text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
+              {badge}
+            </span>
+          )}
+        </div>
+        <span className="text-gray-500 text-sm">{isExpanded ? '▲' : '▼'}</span>
+      </button>
+      {isExpanded && <div className="mt-2">{children}</div>}
+    </div>
+  );
+}
+
+// =============================================================================
 // COMPONENT
 // =============================================================================
 
@@ -1020,137 +1068,146 @@ export default function ActiveCallPage() {
                 )}
               </div>
 
-              {/* Personalization Section */}
+              {/* Personalization Section - Collapsible */}
               {aiOverview && (aiOverview.lastInteraction || (aiOverview.lifeEvents && aiOverview.lifeEvents.length > 0)) && (
-                <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-4 mb-6 border border-amber-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg">Personal Touch</span>
-                  </div>
-
-                  {aiOverview.lastInteraction && (
-                    <div className="mb-3 pb-3 border-b border-amber-200">
-                      <div className="text-xs text-amber-700 font-medium mb-2">Last Contact:</div>
-                      <div className="text-sm text-gray-800 font-medium">
-                        {new Date(aiOverview.lastInteraction.date).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                        {aiOverview.lastInteraction.agentName && (
-                          <span className="text-gray-500 font-normal"> by {aiOverview.lastInteraction.agentName}</span>
-                        )}
+                <CollapsibleSection
+                  title="Personal Touch"
+                  icon="💛"
+                  badge={aiOverview.lifeEvents?.length ? `${aiOverview.lifeEvents.length} events` : undefined}
+                  defaultExpanded={false}
+                  headerClassName="bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 border border-amber-200"
+                >
+                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-4 border border-amber-200">
+                    {aiOverview.lastInteraction && (
+                      <div className="mb-3 pb-3 border-b border-amber-200">
+                        <div className="text-xs text-amber-700 font-medium mb-2">Last Contact:</div>
+                        <div className="text-sm text-gray-800 font-medium">
+                          {new Date(aiOverview.lastInteraction.date).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                          {aiOverview.lastInteraction.agentName && (
+                            <span className="text-gray-500 font-normal"> by {aiOverview.lastInteraction.agentName}</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {aiOverview.lastInteraction.summary}
+                        </p>
                       </div>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {aiOverview.lastInteraction.summary}
-                      </p>
-                    </div>
-                  )}
+                    )}
 
-                  {aiOverview.lifeEvents && aiOverview.lifeEvents.length > 0 && (
-                    <div>
-                      <div className="text-xs text-amber-700 font-medium mb-2">Life Events to Mention:</div>
-                      <div className="space-y-2">
-                        {aiOverview.lifeEvents.slice(0, 3).map((event, i) => (
-                          <div key={i} className="bg-white/60 rounded p-3 border border-amber-100">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span>{event.icon}</span>
-                              <span className="font-medium text-gray-800">{event.event}</span>
+                    {aiOverview.lifeEvents && aiOverview.lifeEvents.length > 0 && (
+                      <div>
+                        <div className="text-xs text-amber-700 font-medium mb-2">Life Events to Mention:</div>
+                        <div className="space-y-2">
+                          {aiOverview.lifeEvents.slice(0, 3).map((event, i) => (
+                            <div key={i} className="bg-white/60 rounded p-3 border border-amber-100">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span>{event.icon}</span>
+                                <span className="font-medium text-gray-800">{event.event}</span>
+                              </div>
+                              <p className="text-sm text-amber-700 italic pl-6">
+                                "{event.followUpQuestion}"
+                              </p>
                             </div>
-                            <p className="text-sm text-amber-700 italic pl-6">
-                              "{event.followUpQuestion}"
-                            </p>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                </CollapsibleSection>
               )}
 
-              {/* Deep Think Section */}
+              {/* Deep Think Section - Collapsible */}
               {deepThinkLoading && (
-                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-4 mb-6 border border-purple-200">
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-4 mb-4 border border-purple-200">
                   <div className="flex items-center gap-2">
-                    <span className="animate-pulse">AI Deep Think analyzing past calls...</span>
+                    <span className="animate-pulse">🧠 AI Deep Think analyzing past calls...</span>
                   </div>
                 </div>
               )}
 
               {deepThinkData?.foundData && deepThinkData.insights && (
-                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-4 mb-6 border border-purple-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg">AI Deep Think</span>
-                    <span className="text-sm bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
-                      {deepThinkData.insights.transcriptsAnalyzed} calls
-                    </span>
-                  </div>
+                <CollapsibleSection
+                  title="AI Deep Think"
+                  icon="🧠"
+                  badge={`${deepThinkData.insights.transcriptsAnalyzed} calls`}
+                  defaultExpanded={false}
+                  headerClassName="bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border border-purple-200"
+                >
+                  <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-4 border border-purple-200">
+                    <div className="text-sm text-purple-700 font-medium mb-3">
+                      Found data from {deepThinkData.insights.dateRange.oldest} - {deepThinkData.insights.dateRange.newest}
+                    </div>
 
-                  <div className="text-sm text-purple-700 font-medium mb-3">
-                    Found data from {deepThinkData.insights.dateRange.oldest} - {deepThinkData.insights.dateRange.newest}
-                  </div>
-
-                  {deepThinkData.insights.keyTopics.length > 0 && (
-                    <div className="mb-3">
-                      <div className="text-xs text-purple-700 font-medium mb-2">Topics discussed:</div>
-                      <div className="flex flex-wrap gap-2">
-                        {deepThinkData.insights.keyTopics.slice(0, 5).map((topic, i) => (
-                          <span key={i} className="text-sm bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                            {topic}
-                          </span>
-                        ))}
+                    {deepThinkData.insights.keyTopics.length > 0 && (
+                      <div className="mb-3">
+                        <div className="text-xs text-purple-700 font-medium mb-2">Topics discussed:</div>
+                        <div className="flex flex-wrap gap-2">
+                          {deepThinkData.insights.keyTopics.slice(0, 5).map((topic, i) => (
+                            <span key={i} className="text-sm bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                              {topic}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {deepThinkData.insights.suggestedTalkingPoints.length > 0 && (
-                    <div className="border-t border-purple-200 pt-3 mt-3">
-                      <div className="text-xs text-purple-700 font-medium mb-2">Suggested talking points:</div>
-                      <ul className="space-y-1">
-                        {deepThinkData.insights.suggestedTalkingPoints.slice(0, 3).map((point, i) => (
-                          <li key={i} className="text-sm text-gray-700 italic">
-                            "{point}"
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
+                    {deepThinkData.insights.suggestedTalkingPoints.length > 0 && (
+                      <div className="border-t border-purple-200 pt-3 mt-3">
+                        <div className="text-xs text-purple-700 font-medium mb-2">Suggested talking points:</div>
+                        <ul className="space-y-1">
+                          {deepThinkData.insights.suggestedTalkingPoints.slice(0, 3).map((point, i) => (
+                            <li key={i} className="text-sm text-gray-700 italic">
+                              "{point}"
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </CollapsibleSection>
               )}
 
-              {/* AI Insights */}
+              {/* AI Insights - Collapsible */}
               {aiOverview && (
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 mb-6 border border-blue-100">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg">AI Insights</span>
+                <CollapsibleSection
+                  title="AI Insights"
+                  icon="✨"
+                  badge={aiOverview.coverageGaps?.length ? `${aiOverview.coverageGaps.length} gaps` : undefined}
+                  defaultExpanded={true}
+                  headerClassName="bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border border-blue-100"
+                >
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+                    <p className="text-sm text-gray-700 mb-4">{aiOverview.summary}</p>
+
+                    {aiOverview.agentTips && aiOverview.agentTips.length > 0 && (
+                      <div className="mb-3">
+                        <div className="text-xs font-medium text-blue-700 mb-2">Tips</div>
+                        <ul className="space-y-1">
+                          {aiOverview.agentTips.slice(0, 3).map((tip, i) => (
+                            <li key={i} className="text-sm text-gray-600">
+                              {tip}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {aiOverview.coverageGaps && aiOverview.coverageGaps.length > 0 && (
+                      <div className="mb-3">
+                        <div className="text-xs font-medium text-amber-700 mb-2">Coverage Gaps</div>
+                        <ul className="space-y-1">
+                          {aiOverview.coverageGaps.slice(0, 2).map((gap, i) => (
+                            <li key={i} className="text-sm text-gray-600">
+                              {gap.recommendation}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
-
-                  <p className="text-sm text-gray-700 mb-4">{aiOverview.summary}</p>
-
-                  {aiOverview.agentTips && aiOverview.agentTips.length > 0 && (
-                    <div className="mb-3">
-                      <div className="text-xs font-medium text-blue-700 mb-2">Tips</div>
-                      <ul className="space-y-1">
-                        {aiOverview.agentTips.slice(0, 3).map((tip, i) => (
-                          <li key={i} className="text-sm text-gray-600">
-                            {tip}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {aiOverview.coverageGaps && aiOverview.coverageGaps.length > 0 && (
-                    <div className="mb-3">
-                      <div className="text-xs font-medium text-amber-700 mb-2">Coverage Gaps</div>
-                      <ul className="space-y-1">
-                        {aiOverview.coverageGaps.slice(0, 2).map((gap, i) => (
-                          <li key={i} className="text-sm text-gray-600">
-                            {gap.recommendation}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
+                </CollapsibleSection>
               )}
 
               {/* Policies */}

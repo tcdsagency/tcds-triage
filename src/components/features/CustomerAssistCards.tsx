@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { MergedProfile, Policy, Activity, getPolicyTypeEmoji } from "@/types/customer-profile";
 
 interface CustomerAssistCardsProps {
   profile: MergedProfile;
   className?: string;
+  defaultExpanded?: boolean;
 }
 
 interface RenewalInfo {
@@ -282,7 +283,10 @@ function RecommendationsCard({ profile }: { profile: MergedProfile }) {
 export default function CustomerAssistCards({
   profile,
   className,
+  defaultExpanded = false,
 }: CustomerAssistCardsProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
   const upcomingRenewals = useMemo(
     () => getUpcomingRenewals(profile.policies || []),
     [profile.policies]
@@ -302,20 +306,78 @@ export default function CustomerAssistCards({
 
   if (!hasContent) return null;
 
-  return (
-    <div className={cn("space-y-3", className)}>
-      <div className="flex items-center gap-2 px-1">
-        <span className="text-xs font-semibold text-gray-500 uppercase">
-          Agent Assist
-        </span>
-        <div className="flex-1 border-t border-gray-200" />
-      </div>
+  // Count items for badge
+  const itemCount = upcomingRenewals.length +
+    significantActivities.length +
+    (profile.donnaData?.activities?.filter(a => a.priority === "high" || a.type === "task")?.length || 0) +
+    (profile.donnaData?.recommendations?.length || 0);
 
-      {/* Priority order: Renewals > Open Tickets > Recommendations > Recent Activity */}
-      <RenewalCard renewals={upcomingRenewals} />
-      <OpenTicketsCard profile={profile} />
-      <RecommendationsCard profile={profile} />
-      <RecentActivityCard activities={significantActivities} />
+  // Check for urgent items
+  const hasUrgent = upcomingRenewals.some(r => r.urgency === "urgent") ||
+    profile.donnaData?.activities?.some(a => a.priority === "high");
+
+  return (
+    <div className={cn("space-y-2", className)}>
+      {/* Collapsible Header */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={cn(
+          "w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg transition-colors",
+          hasUrgent
+            ? "bg-amber-50 hover:bg-amber-100"
+            : "bg-gray-50 hover:bg-gray-100"
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <span className={hasUrgent ? "text-amber-600" : "text-gray-600"}>📊</span>
+          <span className={cn(
+            "text-sm font-semibold",
+            hasUrgent ? "text-amber-800" : "text-gray-700"
+          )}>
+            Agent Assist
+          </span>
+          <span className={cn(
+            "text-xs px-1.5 py-0.5 rounded-full",
+            hasUrgent
+              ? "bg-amber-200 text-amber-700"
+              : "bg-gray-200 text-gray-600"
+          )}>
+            {itemCount}
+          </span>
+          {hasUrgent && !isExpanded && (
+            <span className="text-xs text-amber-600 animate-pulse">Urgent items</span>
+          )}
+        </div>
+        <span className={cn(
+          "text-sm",
+          hasUrgent ? "text-amber-600" : "text-gray-500"
+        )}>
+          {isExpanded ? '▲' : '▼'}
+        </span>
+      </button>
+
+      {/* Collapsed Summary */}
+      {!isExpanded && (
+        <div className="px-3 py-2 bg-gray-50 rounded-lg text-xs text-gray-600">
+          {upcomingRenewals.length > 0 && (
+            <span className="mr-2">📅 {upcomingRenewals.length} renewal{upcomingRenewals.length > 1 ? 's' : ''}</span>
+          )}
+          {significantActivities.length > 0 && (
+            <span>📊 Recent activity</span>
+          )}
+        </div>
+      )}
+
+      {/* Expanded Content */}
+      {isExpanded && (
+        <div className="space-y-3">
+          {/* Priority order: Renewals > Open Tickets > Recommendations > Recent Activity */}
+          <RenewalCard renewals={upcomingRenewals} />
+          <OpenTicketsCard profile={profile} />
+          <RecommendationsCard profile={profile} />
+          <RecentActivityCard activities={significantActivities} />
+        </div>
+      )}
     </div>
   );
 }
