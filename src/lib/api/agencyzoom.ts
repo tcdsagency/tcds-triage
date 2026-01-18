@@ -684,7 +684,16 @@ export class AgencyZoomClient {
   // --------------------------------------------------------------------------
 
   /**
-   * Get pipelines
+   * Get lead/sales pipelines
+   * GET /v1/api/leads/pipelines
+   */
+  async getLeadPipelines(): Promise<any[]> {
+    const result = await this.request<{ pipelines: any[] }>('/v1/api/leads/pipelines');
+    return result.pipelines || [];
+  }
+
+  /**
+   * Get pipelines (deprecated - use getLeadPipelines or getServiceTicketPipelines)
    * GET /v1/api/pipelines
    */
   async getPipelines(): Promise<any[]> {

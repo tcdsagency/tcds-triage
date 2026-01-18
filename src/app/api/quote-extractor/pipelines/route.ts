@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
     }
 
     const azClient = getAgencyZoomClient();
-    // Use service ticket pipelines - the /v1/api/pipelines endpoint returns 404
-    const pipelinesList = await azClient.getServiceTicketPipelines();
+    // Use lead pipelines for quote extraction workflow
+    const pipelinesList = await azClient.getLeadPipelines();
 
     if (!pipelinesList || pipelinesList.length === 0) {
       return NextResponse.json({
