@@ -418,11 +418,18 @@ export function CallProvider({ children }: CallProviderProps) {
 
         // DEDUPLICATION: Check if we already have an active call for this session
         if (currentCall && currentCall.sessionId === data.sessionId) {
-          // Same session - check if transitioning from ringing to connected
+          // Same session - check for updates
           const newStatus = data.type === "call_ringing" ? "ringing" : "connected";
-          if (currentCall.status !== newStatus) {
-            console.log(`[CallProvider] Updating existing call ${data.sessionId} status: ${currentCall.status} -> ${newStatus}`);
-            setActiveCall(prev => prev ? { ...prev, status: newStatus } : null);
+          const newPhone = data.phoneNumber || data.callerNumber;
+          const phoneUpdated = newPhone && newPhone !== "Unknown" && currentCall.phoneNumber === "Unknown";
+
+          if (currentCall.status !== newStatus || phoneUpdated) {
+            console.log(`[CallProvider] Updating existing call ${data.sessionId}: status=${newStatus}, phone=${phoneUpdated ? newPhone : 'unchanged'}`);
+            setActiveCall(prev => prev ? {
+              ...prev,
+              status: newStatus,
+              ...(phoneUpdated ? { phoneNumber: newPhone } : {})
+            } : null);
 
             // If transitioning from ringing to connected, navigate to full screen
             if (currentCall.status === "ringing" && newStatus === "connected") {
