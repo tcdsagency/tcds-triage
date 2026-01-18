@@ -68,6 +68,9 @@ export async function PUT(
         marketingRepName: body.marketingRepName,
         marketingRepEmail: body.marketingRepEmail,
         marketingRepPhone: body.marketingRepPhone,
+        portalUrl: body.portalUrl,
+        portalUsername: body.portalUsername,
+        portalPassword: body.portalPassword,
         isFavorite: body.isFavorite,
         updatedAt: new Date(),
       })

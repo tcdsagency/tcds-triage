@@ -91,6 +91,9 @@ export async function POST(request: NextRequest) {
         marketingRepName: body.marketingRepName || null,
         marketingRepEmail: body.marketingRepEmail || null,
         marketingRepPhone: body.marketingRepPhone || null,
+        portalUrl: body.portalUrl || null,
+        portalUsername: body.portalUsername || null,
+        portalPassword: body.portalPassword || null,
         isFavorite: body.isFavorite || false,
       })
       .returning();

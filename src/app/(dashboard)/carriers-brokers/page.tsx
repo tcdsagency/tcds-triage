@@ -18,6 +18,7 @@ import {
   Download,
   AlertCircle,
   CheckCircle,
+  Lock,
 } from "lucide-react";
 
 // Types
@@ -33,6 +34,9 @@ interface Carrier {
   marketingRepName: string | null;
   marketingRepEmail: string | null;
   marketingRepPhone: string | null;
+  portalUrl: string | null;
+  portalUsername: string | null;
+  portalPassword: string | null;
   isFavorite: boolean;
   createdAt: string;
 }
@@ -45,6 +49,9 @@ interface Broker {
   phone: string | null;
   website: string | null;
   notes: string | null;
+  portalUrl: string | null;
+  portalUsername: string | null;
+  portalPassword: string | null;
   isFavorite: boolean;
   createdAt: string;
 }
@@ -158,6 +165,9 @@ function CarrierForm({
     marketingRepName: carrier?.marketingRepName || "",
     marketingRepEmail: carrier?.marketingRepEmail || "",
     marketingRepPhone: carrier?.marketingRepPhone || "",
+    portalUrl: carrier?.portalUrl || "",
+    portalUsername: carrier?.portalUsername || "",
+    portalPassword: carrier?.portalPassword || "",
   });
 
   return (
@@ -273,6 +283,44 @@ function CarrierForm({
           </div>
         </div>
       </div>
+      <div className="border-t pt-4 mt-4">
+        <h4 className="font-medium mb-3 flex items-center gap-2">
+          <Lock className="w-4 h-4" />
+          Shared Portal Login
+        </h4>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Portal URL</label>
+            <input
+              type="url"
+              value={formData.portalUrl}
+              onChange={(e) => setFormData({ ...formData, portalUrl: e.target.value })}
+              placeholder="https://portal.carrier.com"
+              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Username</label>
+              <input
+                type="text"
+                value={formData.portalUsername}
+                onChange={(e) => setFormData({ ...formData, portalUsername: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Password</label>
+              <input
+                type="text"
+                value={formData.portalPassword}
+                onChange={(e) => setFormData({ ...formData, portalPassword: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
       <div className="flex justify-end gap-2 pt-4">
         <button
           type="button"
@@ -309,6 +357,9 @@ function BrokerForm({
     phone: broker?.phone || "",
     website: broker?.website || "",
     notes: broker?.notes || "",
+    portalUrl: broker?.portalUrl || "",
+    portalUsername: broker?.portalUsername || "",
+    portalPassword: broker?.portalPassword || "",
   });
 
   return (
@@ -375,6 +426,44 @@ function BrokerForm({
           rows={3}
           className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
         />
+      </div>
+      <div className="border-t pt-4 mt-4">
+        <h4 className="font-medium mb-3 flex items-center gap-2">
+          <Lock className="w-4 h-4" />
+          Shared Portal Login
+        </h4>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Portal URL</label>
+            <input
+              type="url"
+              value={formData.portalUrl}
+              onChange={(e) => setFormData({ ...formData, portalUrl: e.target.value })}
+              placeholder="https://portal.broker.com"
+              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Username</label>
+              <input
+                type="text"
+                value={formData.portalUsername}
+                onChange={(e) => setFormData({ ...formData, portalUsername: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Password</label>
+              <input
+                type="text"
+                value={formData.portalPassword}
+                onChange={(e) => setFormData({ ...formData, portalPassword: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+              />
+            </div>
+          </div>
+        </div>
       </div>
       <div className="flex justify-end gap-2 pt-4">
         <button
