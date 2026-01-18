@@ -85,6 +85,9 @@ export async function POST(request: NextRequest) {
         phone: body.phone || null,
         website: body.website || null,
         notes: body.notes || null,
+        portalUrl: body.portalUrl || null,
+        portalUsername: body.portalUsername || null,
+        portalPassword: body.portalPassword || null,
         isFavorite: body.isFavorite || false,
       })
       .returning();

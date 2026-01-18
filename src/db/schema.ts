@@ -3974,6 +3974,11 @@ export const agencyCarriers = pgTable('agency_carriers', {
   marketingRepEmail: text('marketing_rep_email'),
   marketingRepPhone: text('marketing_rep_phone'),
 
+  // Shared login credentials
+  portalUrl: text('portal_url'),
+  portalUsername: text('portal_username'),
+  portalPassword: text('portal_password'),
+
   // Preferences
   isFavorite: boolean('is_favorite').default(false),
 
@@ -4001,6 +4006,11 @@ export const esBrokers = pgTable('es_brokers', {
   phone: text('phone'),
   website: text('website'),
   notes: text('notes'),
+
+  // Shared login credentials
+  portalUrl: text('portal_url'),
+  portalUsername: text('portal_username'),
+  portalPassword: text('portal_password'),
 
   // Preferences
   isFavorite: boolean('is_favorite').default(false),
@@ -4122,6 +4132,33 @@ export const carrierPhoneAssist = pgTable('carrier_phone_assist', {
   tenantIdx: index('carrier_phone_assist_tenant_idx').on(table.tenantId),
   nameIdx: index('carrier_phone_assist_name_idx').on(table.name),
   typeIdx: index('carrier_phone_assist_type_idx').on(table.carrierType),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QUICK LINKS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const quickLinks = pgTable('quick_links', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Basic info
+  name: text('name').notNull(),
+  url: text('url').notNull(),
+  description: text('description'),
+  category: text('category'), // carrier, tool, government, reference, other
+
+  // Display
+  sortOrder: integer('sort_order').default(0),
+  isFavorite: boolean('is_favorite').default(false),
+
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('quick_links_tenant_idx').on(table.tenantId),
+  categoryIdx: index('quick_links_category_idx').on(table.tenantId, table.category),
+  favoriteIdx: index('quick_links_favorite_idx').on(table.tenantId, table.isFavorite),
 }));
 
 // Relations for new tables

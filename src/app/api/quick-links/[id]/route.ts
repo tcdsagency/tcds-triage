@@ -1,12 +1,12 @@
-// API Route: /api/es-brokers/[id]
-// Get, update, delete individual broker
+// API Route: /api/quick-links/[id]
+// Get, update, delete individual quick link
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { esBrokers } from "@/db/schema";
+import { quickLinks } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 
-// GET - Get single broker
+// GET - Get single quick link
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -18,30 +18,30 @@ export async function GET(
       return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
     }
 
-    const [broker] = await db
+    const [link] = await db
       .select()
-      .from(esBrokers)
-      .where(and(eq(esBrokers.tenantId, tenantId), eq(esBrokers.id, id)))
+      .from(quickLinks)
+      .where(and(eq(quickLinks.tenantId, tenantId), eq(quickLinks.id, id)))
       .limit(1);
 
-    if (!broker) {
-      return NextResponse.json({ error: "Broker not found" }, { status: 404 });
+    if (!link) {
+      return NextResponse.json({ error: "Quick link not found" }, { status: 404 });
     }
 
     return NextResponse.json({
       success: true,
-      data: broker,
+      data: link,
     });
   } catch (error: unknown) {
-    console.error("[E&S Brokers] Get error:", error);
+    console.error("[Quick Links] Get error:", error);
     return NextResponse.json(
-      { error: "Failed to get broker", details: error instanceof Error ? error.message : "Unknown error" },
+      { error: "Failed to get quick link", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }
 }
 
-// PUT - Update broker
+// PUT - Update quick link
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -56,25 +56,21 @@ export async function PUT(
     const body = await request.json();
 
     const [updated] = await db
-      .update(esBrokers)
+      .update(quickLinks)
       .set({
         name: body.name,
-        contactName: body.contactName,
-        email: body.email,
-        phone: body.phone,
-        website: body.website,
-        notes: body.notes,
-        portalUrl: body.portalUrl,
-        portalUsername: body.portalUsername,
-        portalPassword: body.portalPassword,
+        url: body.url,
+        description: body.description,
+        category: body.category,
+        sortOrder: body.sortOrder,
         isFavorite: body.isFavorite,
         updatedAt: new Date(),
       })
-      .where(and(eq(esBrokers.tenantId, tenantId), eq(esBrokers.id, id)))
+      .where(and(eq(quickLinks.tenantId, tenantId), eq(quickLinks.id, id)))
       .returning();
 
     if (!updated) {
-      return NextResponse.json({ error: "Broker not found" }, { status: 404 });
+      return NextResponse.json({ error: "Quick link not found" }, { status: 404 });
     }
 
     return NextResponse.json({
@@ -82,15 +78,15 @@ export async function PUT(
       data: updated,
     });
   } catch (error: unknown) {
-    console.error("[E&S Brokers] Update error:", error);
+    console.error("[Quick Links] Update error:", error);
     return NextResponse.json(
-      { error: "Failed to update broker", details: error instanceof Error ? error.message : "Unknown error" },
+      { error: "Failed to update quick link", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }
 }
 
-// DELETE - Delete broker
+// DELETE - Delete quick link
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -103,22 +99,22 @@ export async function DELETE(
     }
 
     const [deleted] = await db
-      .delete(esBrokers)
-      .where(and(eq(esBrokers.tenantId, tenantId), eq(esBrokers.id, id)))
-      .returning({ id: esBrokers.id });
+      .delete(quickLinks)
+      .where(and(eq(quickLinks.tenantId, tenantId), eq(quickLinks.id, id)))
+      .returning({ id: quickLinks.id });
 
     if (!deleted) {
-      return NextResponse.json({ error: "Broker not found" }, { status: 404 });
+      return NextResponse.json({ error: "Quick link not found" }, { status: 404 });
     }
 
     return NextResponse.json({
       success: true,
-      message: "Broker deleted",
+      message: "Quick link deleted",
     });
   } catch (error: unknown) {
-    console.error("[E&S Brokers] Delete error:", error);
+    console.error("[Quick Links] Delete error:", error);
     return NextResponse.json(
-      { error: "Failed to delete broker", details: error instanceof Error ? error.message : "Unknown error" },
+      { error: "Failed to delete quick link", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }
