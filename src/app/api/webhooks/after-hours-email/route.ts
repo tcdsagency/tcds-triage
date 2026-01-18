@@ -607,6 +607,7 @@ async function createAfterHoursTriageItem(
       contactType: "customer",
       // Store customer match info if available
       customerId: customerId || undefined,
+      sentAt: new Date(),
     })
     .returning();
 
