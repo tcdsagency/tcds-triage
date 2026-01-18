@@ -101,6 +101,7 @@ export interface PendingItemCardProps {
   item: PendingItem;
   isSelected?: boolean;
   isChecked?: boolean;
+  isFocused?: boolean; // For J/K keyboard navigation
   onSelect?: () => void;
   onCheck?: (checked: boolean) => void;
   onQuickAction?: (action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'void' | 'ncm') => void;
@@ -211,6 +212,7 @@ export default function PendingItemCard({
   item,
   isSelected = false,
   isChecked = false,
+  isFocused = false,
   onSelect,
   onCheck,
   onQuickAction,
@@ -327,7 +329,9 @@ export default function PendingItemCard({
         statusStyle.cardBg,
         isSelected
           ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-lg'
-          : cn(statusStyle.cardBorder, 'hover:shadow-md')
+          : isFocused
+            ? 'border-amber-500 ring-2 ring-amber-500/20 shadow-lg'
+            : cn(statusStyle.cardBorder, 'hover:shadow-md')
       )}
     >
       {/* ===== STATUS HEADER BAR ===== */}

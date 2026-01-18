@@ -94,6 +94,9 @@ export default function PendingReviewPage() {
   const [snoozeUntil, setSnoozeUntil] = useState<Date | null>(null);
   const [showSnoozeModal, setShowSnoozeModal] = useState(false);
 
+  // Track focused item index for J/K navigation
+  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+
   // ==========================================================================
   // DATA FETCHING
   // ==========================================================================
@@ -860,6 +863,127 @@ export default function PendingReviewPage() {
   });
 
   // ==========================================================================
+  // KEYBOARD NAVIGATION (J/K)
+  // ==========================================================================
+
+  // J/K keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Only work in pending view
+      if (mainView !== 'pending') return;
+
+      const itemCount = filteredItems.length;
+      if (itemCount === 0) return;
+
+      // J = Move down
+      if (e.key === 'j' || e.key === 'J') {
+        e.preventDefault();
+        setFocusedIndex(prev => {
+          const next = prev < itemCount - 1 ? prev + 1 : prev;
+          // Select the item when navigating
+          if (filteredItems[next]) {
+            setSelectedItemForReview(filteredItems[next]);
+          }
+          return next;
+        });
+      }
+
+      // K = Move up
+      if (e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        setFocusedIndex(prev => {
+          const next = prev > 0 ? prev - 1 : 0;
+          // Select the item when navigating
+          if (filteredItems[next]) {
+            setSelectedItemForReview(filteredItems[next]);
+          }
+          return next;
+        });
+      }
+
+      // Get current focused item
+      const currentItem = focusedIndex >= 0 ? filteredItems[focusedIndex] : null;
+      if (!currentItem) return;
+
+      // P = Post Note (for matched items)
+      if ((e.key === 'p' || e.key === 'P') && currentItem.matchStatus === 'matched') {
+        e.preventDefault();
+        handleQuickAction(currentItem, 'note');
+      }
+
+      // S = Skip
+      if (e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        handleQuickAction(currentItem, 'skip');
+      }
+
+      // T = Create Ticket/SR (for matched items)
+      if ((e.key === 't' || e.key === 'T') && currentItem.matchStatus === 'matched') {
+        e.preventDefault();
+        handleQuickAction(currentItem, 'ticket');
+      }
+
+      // D = Delete
+      if (e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        setDeleteModalItem(currentItem);
+      }
+
+      // F = Find Match (for unmatched items)
+      if ((e.key === 'f' || e.key === 'F') && currentItem.matchStatus === 'unmatched') {
+        e.preventDefault();
+        setFindMatchItem(currentItem);
+      }
+
+      // N = NCM Queue (for unmatched items)
+      if ((e.key === 'n' || e.key === 'N') && currentItem.matchStatus === 'unmatched') {
+        e.preventDefault();
+        handleQuickAction(currentItem, 'ncm');
+      }
+
+      // Enter = Open review modal
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        setReviewModalItem(currentItem);
+      }
+
+      // Space = Toggle checkbox selection
+      if (e.key === ' ') {
+        e.preventDefault();
+        const isChecked = selectedItems.some(i => i.id === currentItem.id);
+        handleCheckItem(currentItem, !isChecked);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [mainView, filteredItems, focusedIndex, selectedItems, handleQuickAction, handleCheckItem]);
+
+  // Reset focused index when items change
+  useEffect(() => {
+    if (filteredItems.length === 0) {
+      setFocusedIndex(-1);
+    } else if (focusedIndex >= filteredItems.length) {
+      setFocusedIndex(filteredItems.length - 1);
+    }
+  }, [filteredItems.length, focusedIndex]);
+
+  // Update focused index when selectedItemForReview changes externally
+  useEffect(() => {
+    if (selectedItemForReview) {
+      const index = filteredItems.findIndex(item => item.id === selectedItemForReview.id);
+      if (index !== -1 && index !== focusedIndex) {
+        setFocusedIndex(index);
+      }
+    }
+  }, [selectedItemForReview, filteredItems, focusedIndex]);
+
+  // ==========================================================================
   // RENDER
   // ==========================================================================
 
@@ -876,6 +1000,28 @@ export default function PendingReviewPage() {
               ? 'Review calls, messages, and leads awaiting action'
               : 'View completed and auto-voided items'}
           </p>
+          {/* Keyboard shortcuts hint */}
+          {mainView === 'pending' && filteredItems.length > 0 && (
+            <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded font-mono">J</kbd>
+                <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded font-mono">K</kbd>
+                navigate
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded font-mono">P</kbd>
+                post note
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded font-mono">S</kbd>
+                skip
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded font-mono">Enter</kbd>
+                details
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {/* Snooze indicator */}
@@ -984,7 +1130,7 @@ export default function PendingReviewPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <AnimatePresence mode="popLayout">
-            {filteredItems.map((item) => (
+            {filteredItems.map((item, index) => (
               <motion.div
                 key={item.id}
                 layout
@@ -997,6 +1143,7 @@ export default function PendingReviewPage() {
                   item={item}
                   isSelected={selectedItemForReview?.id === item.id}
                   isChecked={selectedItems.some((i) => i.id === item.id)}
+                  isFocused={focusedIndex === index}
                   onSelect={() => handleSelectItem(item)}
                   onCheck={(checked) => handleCheckItem(item, checked)}
                   onQuickAction={(action) => handleQuickAction(item, action)}
