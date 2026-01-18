@@ -1596,6 +1596,24 @@ export default function CallPopup({
                       The transcript is being analyzed by AI. The summary will appear automatically.
                     </p>
                   </div>
+                ) : wrapupStatus === "error" ? (
+                  <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span>⚠️</span>
+                        <span className="font-medium text-red-800">Failed to Load Summary</span>
+                      </div>
+                      <button
+                        onClick={fetchWrapupData}
+                        className="text-xs text-red-600 hover:text-red-800 flex items-center gap-1"
+                      >
+                        <span>↻</span> Try Again
+                      </button>
+                    </div>
+                    <p className="text-sm text-red-700">
+                      Could not load the AI summary. You can still enter notes manually below.
+                    </p>
+                  </div>
                 ) : wrapupData ? (
                   <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
                     {/* Summary */}

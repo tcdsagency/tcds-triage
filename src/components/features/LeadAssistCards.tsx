@@ -8,6 +8,7 @@ interface LeadAssistCardsProps {
   onCreateLead?: () => void;
   onStartQuote?: (quoteType: string) => void;
   className?: string;
+  defaultExpanded?: boolean;
 }
 
 // Lead qualification questions
@@ -274,7 +275,9 @@ export default function LeadAssistCards({
   onCreateLead,
   onStartQuote,
   className,
+  defaultExpanded = false,
 }: LeadAssistCardsProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [checkedQuestions, setCheckedQuestions] = useState<Set<string>>(new Set());
   const [selectedQuoteType, setSelectedQuoteType] = useState<string | null>(null);
 
@@ -296,30 +299,54 @@ export default function LeadAssistCards({
   };
 
   return (
-    <div className={cn("space-y-3", className)}>
-      <div className="flex items-center gap-2 px-1">
-        <span className="text-xs font-semibold text-gray-500 uppercase">
-          New Lead Assist
+    <div className={cn("space-y-2", className)}>
+      {/* Collapsible Header */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-blue-600">📋</span>
+          <span className="text-sm font-semibold text-blue-800">
+            New Lead Assist
+          </span>
+          <span className="text-xs bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full">
+            {checkedQuestions.size}/{QUALIFICATION_QUESTIONS.length}
+          </span>
+        </div>
+        <span className="text-blue-600 text-sm">
+          {isExpanded ? '▲ Collapse' : '▼ Expand'}
         </span>
-        <div className="flex-1 border-t border-gray-200" />
-      </div>
+      </button>
 
-      {/* Qualification Checklist */}
-      <QualificationCard
-        checkedItems={checkedQuestions}
-        onToggle={toggleQuestion}
-      />
+      {/* Collapsed Summary */}
+      {!isExpanded && (
+        <div className="px-3 py-2 bg-gray-50 rounded-lg text-xs text-gray-600">
+          <span>Qualification questions, quote types, and tips for new leads</span>
+        </div>
+      )}
 
-      {/* Quote Type Selection */}
-      <QuoteTypeCard
-        selectedType={selectedQuoteType}
-        onSelect={handleSelectQuoteType}
-      />
+      {/* Expanded Content */}
+      {isExpanded && (
+        <>
+          {/* Qualification Checklist */}
+          <QualificationCard
+            checkedItems={checkedQuestions}
+            onToggle={toggleQuestion}
+          />
 
-      {/* Quick Tips */}
-      <QuickTipsCard />
+          {/* Quote Type Selection */}
+          <QuoteTypeCard
+            selectedType={selectedQuoteType}
+            onSelect={handleSelectQuoteType}
+          />
 
-      {/* Action Buttons */}
+          {/* Quick Tips */}
+          <QuickTipsCard />
+        </>
+      )}
+
+      {/* Action Buttons - Always visible */}
       <div className="flex gap-2">
         <button
           onClick={onCreateLead}
