@@ -13,7 +13,8 @@ export async function GET(request: NextRequest) {
     }
 
     const azClient = getAgencyZoomClient();
-    const pipelinesList = await azClient.getPipelines();
+    // Use service ticket pipelines - the /v1/api/pipelines endpoint returns 404
+    const pipelinesList = await azClient.getServiceTicketPipelines();
 
     if (!pipelinesList || pipelinesList.length === 0) {
       return NextResponse.json({
