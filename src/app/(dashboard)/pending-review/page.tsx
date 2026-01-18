@@ -11,6 +11,7 @@ import CustomerSearchModal from '@/components/features/CustomerSearchModal';
 import ReportIssueModal from '@/components/features/ReportIssueModal';
 import ReviewedItemCard, { ReviewedItemCardSkeleton, type ReviewedItem } from '@/components/features/ReviewedItemCard';
 import AssigneeSelectModal from '@/components/features/AssigneeSelectModal';
+import DeleteModal from '@/components/features/DeleteModal';
 import { hasFeatureAccess } from '@/lib/feature-permissions';
 
 // =============================================================================
@@ -71,6 +72,8 @@ export default function PendingReviewPage() {
   const [assignSRItem, setAssignSRItem] = useState<PendingItem | null>(null);
   const [assignNCMItem, setAssignNCMItem] = useState<PendingItem | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [deleteModalItem, setDeleteModalItem] = useState<PendingItem | null>(null);
+  const [editedSummaries, setEditedSummaries] = useState<Record<string, string>>({});
 
   // Reviewed items state
   const [reviewedItems, setReviewedItems] = useState<ReviewedItem[]>([]);
@@ -422,7 +425,7 @@ export default function PendingReviewPage() {
         if (selectedItemForReview?.id === item.id) {
           setSelectedItemForReview(null);
         }
-        // Show success toast
+        // Show success toast with undo for skip/void
         const actionMessages: Record<string, string> = {
           note: 'Note posted to AgencyZoom',
           ticket: 'Service request created',
@@ -431,7 +434,14 @@ export default function PendingReviewPage() {
           void: 'Item voided',
           ncm: 'Posted to No Customer Match queue',
         };
-        toast.success(actionMessages[action] || 'Action completed');
+        const canUndo = (action === 'skip' || action === 'void') && data.undoToken;
+        toast.success(actionMessages[action] || 'Action completed', {
+          duration: canUndo ? 5000 : 3000,
+          action: canUndo ? {
+            label: 'Undo',
+            onClick: () => handleUndo(item.id, data.undoToken, item.type),
+          } : undefined,
+        });
         setLastError(null);
         // Update counts
         fetchItems();
@@ -672,6 +682,92 @@ export default function PendingReviewPage() {
     }
   };
 
+  // Handle delete with reason
+  const handleDelete = async (item: PendingItem, reason: string, notes?: string) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/pending-review/${item.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: item.type,
+          action: 'delete',
+          deleteReason: reason,
+          deleteNotes: notes,
+          reviewerId: currentUserId,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // Remove item from list
+        setItems((prev) => prev.filter((i) => i.id !== item.id));
+        setSelectedItems((prev) => prev.filter((i) => i.id !== item.id));
+        if (selectedItemForReview?.id === item.id) {
+          setSelectedItemForReview(null);
+        }
+        // Close modal
+        setDeleteModalItem(null);
+        // Show success toast with undo option
+        toast.success('Item deleted', {
+          duration: 5000,
+          action: data.undoToken ? {
+            label: 'Undo',
+            onClick: () => handleUndo(item.id, data.undoToken, item.type),
+          } : undefined,
+        });
+        setLastError(null);
+        // Update counts
+        fetchItems();
+      } else {
+        const errorMsg = data.error || 'Failed to delete item';
+        toast.error(errorMsg);
+        setLastError(errorMsg);
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to delete item';
+      toast.error(errorMsg);
+      setLastError(errorMsg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Handle undo action
+  const handleUndo = async (itemId: string, undoToken: string, itemType: string = 'wrapup') => {
+    try {
+      const res = await fetch(`/api/pending-review/${itemId}/undo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ undoToken, itemType }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Action undone');
+        // Refresh items list
+        fetchItems();
+      } else {
+        toast.error(data.error || 'Undo failed - action may have expired');
+      }
+    } catch (error) {
+      console.error('Undo error:', error);
+      toast.error('Failed to undo action');
+    }
+  };
+
+  // Handle edit summary
+  const handleEditSummary = (itemId: string, newSummary: string) => {
+    setEditedSummaries((prev) => ({ ...prev, [itemId]: newSummary }));
+    // Update the item in the list to reflect the edit
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === itemId ? { ...item, summary: newSummary } : item
+      )
+    );
+  };
+
   const handleBulkAction = async (
     action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'delete'
   ) => {
@@ -862,6 +958,8 @@ export default function PendingReviewPage() {
               onReviewClick={() => setReviewModalItem(item)}
               onFindMatch={() => setFindMatchItem(item)}
               onReportIssue={() => setReportIssueItem(item)}
+              onDelete={() => setDeleteModalItem(item)}
+              onEditSummary={(summary) => handleEditSummary(item.id, summary)}
             />
           ))}
         </div>
@@ -1010,6 +1108,20 @@ export default function PendingReviewPage() {
           onSelect={handleAssignNCM}
           title={`Assign NCM Request for ${assignNCMItem.contactName || assignNCMItem.contactPhone || 'Unknown Caller'}`}
           isLoading={actionLoading}
+        />
+      )}
+
+      {/* Delete Modal */}
+      {deleteModalItem && (
+        <DeleteModal
+          isOpen={!!deleteModalItem}
+          onClose={() => setDeleteModalItem(null)}
+          onConfirm={(reason, notes) => handleDelete(deleteModalItem, reason, notes)}
+          isLoading={actionLoading}
+          itemInfo={{
+            phone: deleteModalItem.contactPhone || 'Unknown',
+            summary: deleteModalItem.summary || '',
+          }}
         />
       )}
 

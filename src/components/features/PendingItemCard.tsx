@@ -1,8 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { cn, formatPhoneNumber } from '@/lib/utils';
 import { getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
+
+// =============================================================================
+// TOOLTIP COMPONENT
+// =============================================================================
+
+function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
+  return (
+    <div className="relative group">
+      {children}
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2
+                      bg-gray-900 text-white text-xs rounded-lg opacity-0
+                      group-hover:opacity-100 transition-opacity whitespace-nowrap
+                      pointer-events-none z-50 max-w-xs text-center">
+        {text}
+        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1
+                        border-4 border-transparent border-t-gray-900" />
+      </div>
+    </div>
+  );
+}
 
 // =============================================================================
 // TYPES
@@ -87,6 +107,8 @@ export interface PendingItemCardProps {
   onReviewClick?: () => void;
   onFindMatch?: () => void;
   onReportIssue?: () => void;
+  onDelete?: () => void;
+  onEditSummary?: (newSummary: string) => void;
 }
 
 // =============================================================================
@@ -195,9 +217,36 @@ export default function PendingItemCard({
   onReviewClick,
   onFindMatch,
   onReportIssue,
+  onDelete,
+  onEditSummary,
 }: PendingItemCardProps) {
   const [showTranscript, setShowTranscript] = useState(false);
   const [showConversation, setShowConversation] = useState(false);
+  const [isEditingSummary, setIsEditingSummary] = useState(false);
+  const [editedSummary, setEditedSummary] = useState(item.summary || '');
+  const [hasBeenEdited, setHasBeenEdited] = useState(false);
+  const summaryTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus textarea when editing starts
+  useEffect(() => {
+    if (isEditingSummary && summaryTextareaRef.current) {
+      summaryTextareaRef.current.focus();
+      summaryTextareaRef.current.select();
+    }
+  }, [isEditingSummary]);
+
+  const handleSaveSummary = () => {
+    if (onEditSummary && editedSummary !== item.summary) {
+      onEditSummary(editedSummary);
+      setHasBeenEdited(true);
+    }
+    setIsEditingSummary(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditedSummary(item.summary || '');
+    setIsEditingSummary(false);
+  };
 
   const statusStyle = STATUS_STYLES[item.matchStatus] || STATUS_STYLES.unmatched;
   const sentimentStyle = item.sentiment ? SENTIMENT_STYLES[item.sentiment] : null;
@@ -421,26 +470,71 @@ export default function PendingItemCard({
           </div>
         </div>
 
-        {/* ===== AI SUMMARY (Prominent) ===== */}
+        {/* ===== AI SUMMARY (Editable) ===== */}
         <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-              {item.type === 'message' ? 'Message' : 'AI Summary'}
-            </span>
-            {item.requestType && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                {item.requestType}
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                {item.type === 'message' ? 'Message' : 'AI Summary'}
               </span>
-            )}
-            {item.messageIds && item.messageIds.length > 1 && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300">
-                {item.messageIds.length} messages
-              </span>
+              {hasBeenEdited && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300 font-medium">
+                  Edited
+                </span>
+              )}
+              {item.requestType && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                  {item.requestType}
+                </span>
+              )}
+              {item.messageIds && item.messageIds.length > 1 && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300">
+                  {item.messageIds.length} messages
+                </span>
+              )}
+            </div>
+            {!isEditingSummary && onEditSummary && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsEditingSummary(true);
+                }}
+                className="text-xs px-2 py-1 rounded text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+              >
+                Edit
+              </button>
             )}
           </div>
-          <p className="text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
-            {item.summary || 'No summary available'}
-          </p>
+
+          {isEditingSummary ? (
+            <div onClick={(e) => e.stopPropagation()}>
+              <textarea
+                ref={summaryTextareaRef}
+                value={editedSummary}
+                onChange={(e) => setEditedSummary(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 text-sm leading-relaxed resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                rows={4}
+              />
+              <div className="flex justify-end gap-2 mt-2">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveSummary}
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+              {hasBeenEdited ? editedSummary : (item.summary || 'No summary available')}
+            </p>
+          )}
         </div>
 
         {/* ===== CONVERSATION THREAD (for SMS with multiple messages or auto-replies) ===== */}
@@ -614,104 +708,120 @@ export default function PendingItemCard({
               const isUnmatched = !isMatched && (item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review' || item.matchStatus === 'after_hours');
 
               return (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {/* MATCHED: Post Note (primary) */}
-                  {isMatched && (
-                    <button
-                      onClick={() => onQuickAction('note')}
-                      className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
-                    >
-                      Post Note
-                    </button>
-                  )}
+                <>
+                  {/* Primary Actions Row */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* MATCHED: Post Note (primary) */}
+                    {isMatched && (
+                      <Tooltip text="Save call summary to customer record in AgencyZoom">
+                        <button
+                          onClick={() => onQuickAction('note')}
+                          className="px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                          Post Note
+                        </button>
+                      </Tooltip>
+                    )}
 
-                  {/* MATCHED: Create SR (primary) */}
-                  {isMatched && (
-                    <button
-                      onClick={() => onQuickAction('ticket')}
-                      className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      Create SR
-                    </button>
-                  )}
+                    {/* MATCHED: Create SR (primary) */}
+                    {isMatched && (
+                      <Tooltip text="Create a service request for follow-up action">
+                        <button
+                          onClick={() => onQuickAction('ticket')}
+                          className="px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          Create SR
+                        </button>
+                      </Tooltip>
+                    )}
 
-                  {/* UNMATCHED: Find Match */}
-                  {isUnmatched && onFindMatch && (
-                    <button
-                      onClick={() => onFindMatch()}
-                      className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      Find Match
-                    </button>
-                  )}
+                    {/* UNMATCHED: Find Match */}
+                    {isUnmatched && onFindMatch && (
+                      <Tooltip text="Search for matching customer in HawkSoft/AgencyZoom">
+                        <button
+                          onClick={() => onFindMatch()}
+                          className="px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          Find Match
+                        </button>
+                      </Tooltip>
+                    )}
 
-                  {/* UNMATCHED: NCM Queue */}
-                  {isUnmatched && (
-                    <button
-                      onClick={() => onQuickAction('ncm')}
-                      className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-orange-600 hover:bg-orange-700 text-white"
-                      title="Post to No Customer Match queue"
-                    >
-                      NCM Queue
-                    </button>
-                  )}
+                    {/* UNMATCHED: NCM Queue */}
+                    {isUnmatched && (
+                      <Tooltip text="Post to No Customer Match queue for processing">
+                        <button
+                          onClick={() => onQuickAction('ncm')}
+                          className="px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-orange-600 hover:bg-orange-700 text-white"
+                        >
+                          NCM Queue
+                        </button>
+                      </Tooltip>
+                    )}
+                  </div>
 
-                  {/* Void - Always available */}
-                  <button
-                    onClick={() => onQuickAction('void')}
-                    className="px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-1.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 border border-red-300 dark:border-red-700"
-                  >
-                    Void
-                  </button>
-                </div>
+                  {/* Secondary Actions Row */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* AgencyZoom Link */}
+                    {isMatched && (
+                      <a
+                        href={getAgencyZoomUrl(
+                          item.agencyzoomCustomerId || item.agencyzoomLeadId || '',
+                          item.agencyzoomCustomerId ? 'customer' : 'lead'
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50"
+                      >
+                        Open in AZ
+                      </a>
+                    )}
+
+                    {/* Acknowledge - For messages */}
+                    {item.type === 'message' && (
+                      <button
+                        onClick={() => onQuickAction('acknowledge')}
+                        className="px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                      >
+                        Acknowledge
+                      </button>
+                    )}
+
+                    {/* Skip */}
+                    <Tooltip text="Mark complete without CRM action (call already handled)">
+                      <button
+                        onClick={() => onQuickAction('skip')}
+                        className="px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                      >
+                        Skip
+                      </button>
+                    </Tooltip>
+
+                    {/* Delete */}
+                    {onDelete && (
+                      <Tooltip text="Remove invalid call from queue (spam, wrong number, etc.)">
+                        <button
+                          onClick={() => onDelete()}
+                          className="px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50"
+                        >
+                          Delete...
+                        </button>
+                      </Tooltip>
+                    )}
+
+                    {/* Report Issue */}
+                    {onReportIssue && (
+                      <button
+                        onClick={() => onReportIssue()}
+                        className="px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50"
+                      >
+                        Report Issue
+                      </button>
+                    )}
+                  </div>
+                </>
               );
             })()}
-
-            {/* Secondary Actions Row */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* AgencyZoom Link - Larger button style */}
-              {(item.agencyzoomCustomerId || item.agencyzoomLeadId) && (
-                <a
-                  href={getAgencyZoomUrl(
-                    item.agencyzoomCustomerId || item.agencyzoomLeadId || '',
-                    item.agencyzoomCustomerId ? 'customer' : 'lead'
-                  )}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
-                >
-                  Open in AgencyZoom
-                </a>
-              )}
-
-              {/* Skip */}
-              <button
-                onClick={() => onQuickAction('skip')}
-                className="px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-              >
-                Skip
-              </button>
-
-              {/* Acknowledge - For messages */}
-              {item.type === 'message' && (
-                <button
-                  onClick={() => onQuickAction('acknowledge')}
-                  className="px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-                >
-                  Acknowledge
-                </button>
-              )}
-
-              {/* Report Issue */}
-              {onReportIssue && (
-                <button
-                  onClick={() => onReportIssue()}
-                  className="px-3 py-2 rounded-lg font-medium text-sm transition-colors bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50"
-                >
-                  Report Issue
-                </button>
-              )}
-            </div>
           </div>
         )}
       </div>
