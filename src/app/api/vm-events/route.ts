@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, pendingVmEvents, pendingTranscriptJobs, users } from "@/db/schema";
-import { eq, lt } from "drizzle-orm";
+import { eq, lt, and, or, gt, desc } from "drizzle-orm";
 
 // =============================================================================
 // Types
@@ -223,18 +223,41 @@ export async function POST(request: NextRequest) {
           existingCall = found;
         }
 
-        if (existingCall) {
-          // Look up agent by extension if we have it
-          let agentId: string | null = null;
-          if (extension) {
-            const [agent] = await db
-              .select({ id: users.id })
-              .from(users)
-              .where(eq(users.extension, extension))
-              .limit(1);
-            agentId = agent?.id || null;
-          }
+        // Look up agent by extension
+        let agentId: string | null = null;
+        if (extension) {
+          const [agent] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.extension, extension))
+            .limit(1);
+          agentId = agent?.id || null;
+        }
 
+        // If no existing call found by vmSessionId/threeCxCallId, also check for
+        // recent calls created by presence detection (which have "Unknown" fromNumber)
+        if (!existingCall && agentId) {
+          const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+          const [presenceCall] = await db
+            .select({ id: calls.id, fromNumber: calls.fromNumber })
+            .from(calls)
+            .where(
+              and(
+                eq(calls.agentId, agentId),
+                or(eq(calls.status, "ringing"), eq(calls.status, "in_progress")),
+                gt(calls.createdAt, twoMinutesAgo)
+              )
+            )
+            .orderBy(desc(calls.createdAt))
+            .limit(1);
+
+          if (presenceCall) {
+            console.log(`[VM Events] Found presence-detected call ${presenceCall.id} for ext=${extension}`);
+            existingCall = presenceCall;
+          }
+        }
+
+        if (existingCall) {
           // Update call with VM Bridge session info AND agent
           const isOutbound = direction === "outbound";
           await db
@@ -245,18 +268,21 @@ export async function POST(request: NextRequest) {
               transcriptionStatus: "active",
               agentId: agentId || undefined,
               direction: direction ? (isOutbound ? "outbound" : "inbound") : undefined,
+              // Update fromNumber if it was "Unknown" (presence-detected)
               fromNumber: externalNumber && !isOutbound ? externalNumber : undefined,
               updatedAt: new Date(),
             })
             .where(eq(calls.id, existingCall.id));
 
-          console.log(`[VM Events] Linked VM session ${sessionId} to call ${existingCall.id}, agent=${agentId}`);
+          console.log(`[VM Events] Linked VM session ${sessionId} to call ${existingCall.id}, agent=${agentId}, updated fromNumber=${externalNumber}`);
 
-          // Notify realtime
+          // Notify realtime with updated caller info to refresh screen pop
           await notifyRealtimeServer({
             type: "transcription_started",
             sessionId: existingCall.id,
             vmSessionId: sessionId,
+            fromNumber: externalNumber,
+            externalNumber: externalNumber,
           });
         } else {
           // No existing call - CREATE one for screen pop
