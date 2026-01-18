@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, CheckCircle, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2, Key, Eye, EyeOff, Zap, Settings2, MessageSquare, Webhook, Copy, Cpu, TrendingUp, DollarSign, BarChart3 } from "lucide-react";
+import { Building2, Users, Link2, Bell, Shield, Database, RefreshCw, Save, Loader2, Check, CheckCircle, AlertCircle, ExternalLink, Clock, Moon, Plus, X, Phone, Mail, Edit2, Trash2, Key, Eye, EyeOff, Zap, Settings2, MessageSquare, Webhook, Copy, Cpu, TrendingUp, DollarSign, BarChart3, Server, Activity } from "lucide-react";
+import { BridgeStatus } from "@/components/features/settings/BridgeStatus";
+import { CallMonitor } from "@/components/features/settings/CallMonitor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -760,6 +762,8 @@ export default function AgencySettingsPage() {
     { id: "templates", label: "SMS Templates", icon: MessageSquare },
     { id: "webhooks", label: "Webhooks", icon: Webhook },
     { id: "apikeys", label: "API Keys", icon: Key },
+    { id: "bridge", label: "VM Bridge", icon: Server },
+    { id: "callmonitor", label: "Call Monitor", icon: Activity },
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "security", label: "Security", icon: Shield },
   ];
@@ -1555,6 +1559,14 @@ export default function AgencySettingsPage() {
                 </div>
               )}
             </div>
+          )}
+
+          {activeTab === "bridge" && (
+            <BridgeStatus />
+          )}
+
+          {activeTab === "callmonitor" && (
+            <CallMonitor />
           )}
 
           {activeTab === "notifications" && (

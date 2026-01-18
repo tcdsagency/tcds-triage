@@ -29,7 +29,7 @@ const ACTION_ITEMS = [
   { id: 'new-quote-auto', label: 'New Auto Quote', icon: '🚗', href: '/quote/new/personal_auto' },
   { id: 'new-quote-home', label: 'New Home Quote', icon: '🏡', href: '/quote/new/homeowners' },
   { id: 'policy-change', label: 'Policy Change Request', icon: '📝', href: '/policy-change' },
-  { id: 'settings', label: 'Settings', icon: '⚙️', href: '/settings' },
+  { id: 'settings', label: 'Agency Settings', icon: '⚙️', href: '/agency-settings' },
 ];
 
 interface CommandPaletteProps {

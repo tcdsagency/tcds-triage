@@ -1,8 +1,14 @@
 'use client';
 
+/**
+ * Call Monitor Component
+ * ======================
+ * Displays call discrepancies and allows fixes.
+ * Used in Agency Settings page.
+ */
+
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -83,7 +89,7 @@ interface CallMonitorData {
   };
 }
 
-export default function CallMonitorPage() {
+export function CallMonitor() {
   const [data, setData] = useState<CallMonitorData | null>(null);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('24h');
@@ -111,7 +117,7 @@ export default function CallMonitorPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 60000); // Refresh every 60 seconds
+    const interval = setInterval(fetchData, 60000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -136,7 +142,7 @@ export default function CallMonitorPage() {
 
       if (result.success) {
         toast.success(result.message);
-        fetchData(); // Refresh data
+        fetchData();
       } else {
         toast.error(result.error || 'Fix failed');
       }
@@ -166,156 +172,149 @@ export default function CallMonitorPage() {
     (data?.stats.staleCallCount || 0);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-1">
-            <Link href="/agency-settings" className="hover:text-gray-700 dark:hover:text-gray-200">
-              Agency Settings
-            </Link>
-            <span>/</span>
-            <span>Call Monitor</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             Call Accountability Monitor
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Detect and fix discrepancies in call processing
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Time Range Selector */}
+        <div className="flex items-center gap-2">
           <select
             value={timeRange}
             onChange={e => {
               setTimeRange(e.target.value);
               setLoading(true);
             }}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm"
           >
             <option value="24h">Last 24 hours</option>
             <option value="7d">Last 7 days</option>
             <option value="30d">Last 30 days</option>
           </select>
-          <Button variant="outline" onClick={fetchData} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              if (confirm('Clear all active calls? This will mark ringing calls as missed and in-progress calls as completed.')) {
-                handleFix('clear_all_active_calls', {});
-              }
-            }}
-            disabled={fixing === 'clear_all_active_calls-all'}
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Clear All Calls
           </Button>
         </div>
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {/* Total Calls */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+      <div className="grid grid-cols-4 gap-3">
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
           <div className="flex items-center justify-between">
-            <Phone className="w-5 h-5 text-blue-500" />
+            <Phone className="w-4 h-4 text-blue-500" />
             {loading ? (
-              <Skeleton className="h-8 w-16" />
+              <Skeleton className="h-6 w-12" />
             ) : (
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+              <span className="text-xl font-bold text-gray-900 dark:text-white">
                 {data?.stats.totalCalls || 0}
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Total Calls</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total Calls</p>
         </div>
 
-        {/* With Transcript */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
           <div className="flex items-center justify-between">
-            <FileText className="w-5 h-5 text-green-500" />
+            <FileText className="w-4 h-4 text-green-500" />
             {loading ? (
-              <Skeleton className="h-8 w-16" />
+              <Skeleton className="h-6 w-12" />
             ) : (
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+              <span className="text-xl font-bold text-gray-900 dark:text-white">
                 {data?.stats.transcribedCalls || 0}
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">With Transcript</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Transcribed</p>
         </div>
 
-        {/* Issues Found */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
           <div className="flex items-center justify-between">
-            <AlertTriangle className={`w-5 h-5 ${totalIssues > 0 ? 'text-amber-500' : 'text-gray-400'}`} />
+            <AlertTriangle className={`w-4 h-4 ${totalIssues > 0 ? 'text-amber-500' : 'text-gray-400'}`} />
             {loading ? (
-              <Skeleton className="h-8 w-16" />
+              <Skeleton className="h-6 w-12" />
             ) : (
-              <span className={`text-2xl font-bold ${totalIssues > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>
+              <span className={`text-xl font-bold ${totalIssues > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>
                 {totalIssues}
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Issues Found</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Issues</p>
         </div>
 
-        {/* Health */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
           <div className="flex items-center justify-between">
             {totalIssues === 0 ? (
-              <CheckCircle className="w-5 h-5 text-green-500" />
+              <CheckCircle className="w-4 h-4 text-green-500" />
             ) : (
-              <Wrench className="w-5 h-5 text-amber-500" />
+              <Wrench className="w-4 h-4 text-amber-500" />
             )}
             {loading ? (
-              <Skeleton className="h-6 w-20" />
+              <Skeleton className="h-5 w-16" />
             ) : (
-              <Badge variant={totalIssues === 0 ? 'default' : 'secondary'}>
-                {totalIssues === 0 ? 'Healthy' : 'Needs Attention'}
+              <Badge variant={totalIssues === 0 ? 'default' : 'secondary'} className="text-xs">
+                {totalIssues === 0 ? 'Healthy' : 'Attention'}
               </Badge>
             )}
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">System Health</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Status</p>
         </div>
       </div>
 
+      {/* Clear All Button */}
+      <div className="flex justify-end">
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => {
+            if (confirm('Clear all active calls? This will mark ringing calls as missed and in-progress calls as completed.')) {
+              handleFix('clear_all_active_calls', {});
+            }
+          }}
+          disabled={fixing === 'clear_all_active_calls-all'}
+        >
+          <Trash2 className="w-4 h-4 mr-2" />
+          Clear All Active Calls
+        </Button>
+      </div>
+
       {/* Discrepancy Sections */}
-      <div className="space-y-4">
-        {/* Unfinished Transcripts (have segments but no final transcript) */}
+      <div className="space-y-3">
+        {/* Unfinished Transcripts */}
         {(data?.discrepancies.unfinishedTranscripts.length || 0) > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="bg-gray-50 dark:bg-gray-900 rounded-lg overflow-hidden">
             <button
               onClick={() => toggleSection('unfinishedTranscripts')}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800"
             >
-              <div className="flex items-center gap-3">
-                <FileText className="w-5 h-5 text-amber-500" />
-                <span className="font-semibold text-gray-900 dark:text-white">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-amber-500" />
+                <span className="font-medium text-gray-900 dark:text-white text-sm">
                   Unfinished Transcripts
                 </span>
-                <Badge variant="secondary">
+                <Badge variant="secondary" className="text-xs">
                   {data?.discrepancies.unfinishedTranscripts.length || 0}
                 </Badge>
               </div>
               {expandedSections.unfinishedTranscripts ? (
-                <ChevronDown className="w-5 h-5 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-gray-400" />
               ) : (
-                <ChevronRight className="w-5 h-5 text-gray-400" />
+                <ChevronRight className="w-4 h-4 text-gray-400" />
               )}
             </button>
 
             {expandedSections.unfinishedTranscripts && (
-              <div className="px-6 pb-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-                  Calls with transcript segments but no compiled transcript
+              <div className="px-4 pb-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Calls with segments but no compiled transcript
                 </p>
                 {(data?.discrepancies.unfinishedTranscripts.length || 0) > 0 && (
-                  <div className="mb-3">
+                  <div className="mb-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -326,16 +325,15 @@ export default function CallMonitorPage() {
                       }
                       disabled={fixing?.startsWith('rebuild_all')}
                     >
-                      <Wrench className="w-4 h-4 mr-2" />
+                      <Wrench className="w-3 h-3 mr-1" />
                       Rebuild All ({data?.discrepancies.unfinishedTranscripts.length})
                     </Button>
                   </div>
                 )}
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-xs">
                     <thead>
                       <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                        <th className="pb-2 font-medium">ID</th>
                         <th className="pb-2 font-medium">From</th>
                         <th className="pb-2 font-medium">Agent</th>
                         <th className="pb-2 font-medium">Time</th>
@@ -344,23 +342,23 @@ export default function CallMonitorPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {data?.discrepancies.unfinishedTranscripts.map(call => (
-                        <tr key={call.id} className="border-b border-gray-100 dark:border-gray-700/50">
-                          <td className="py-2 font-mono text-xs">{call.id.slice(0, 8)}</td>
+                      {data?.discrepancies.unfinishedTranscripts.slice(0, 5).map(call => (
+                        <tr key={call.id} className="border-b border-gray-100 dark:border-gray-800">
                           <td className="py-2">{call.fromNumber}</td>
                           <td className="py-2">{call.agentName || call.extension || '-'}</td>
                           <td className="py-2 text-gray-500">{formatTime(call.createdAt)}</td>
                           <td className="py-2">
-                            <Badge variant="outline">{call.segmentCount} segments</Badge>
+                            <Badge variant="outline" className="text-xs">{call.segmentCount}</Badge>
                           </td>
                           <td className="py-2">
                             <Button
                               size="sm"
                               variant="ghost"
+                              className="h-6 text-xs"
                               onClick={() => handleFix('rebuild_transcript', { id: call.id })}
                               disabled={fixing === `rebuild_transcript-${call.id}`}
                             >
-                              {fixing === `rebuild_transcript-${call.id}` ? 'Rebuilding...' : 'Rebuild'}
+                              {fixing === `rebuild_transcript-${call.id}` ? '...' : 'Rebuild'}
                             </Button>
                           </td>
                         </tr>
@@ -373,39 +371,38 @@ export default function CallMonitorPage() {
           </div>
         )}
 
-        {/* Missing Transcripts (vmSession but no segments) */}
+        {/* Missing Transcripts */}
         {(data?.discrepancies.missingTranscripts.filter(c => c.segmentCount === 0).length || 0) > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="bg-gray-50 dark:bg-gray-900 rounded-lg overflow-hidden">
             <button
               onClick={() => toggleSection('missingTranscripts')}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800"
             >
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-red-500" />
-                <span className="font-semibold text-gray-900 dark:text-white">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-500" />
+                <span className="font-medium text-gray-900 dark:text-white text-sm">
                   Missing Transcripts
                 </span>
-                <Badge variant="destructive">
+                <Badge variant="destructive" className="text-xs">
                   {data?.discrepancies.missingTranscripts.filter(c => c.segmentCount === 0).length || 0}
                 </Badge>
               </div>
               {expandedSections.missingTranscripts ? (
-                <ChevronDown className="w-5 h-5 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-gray-400" />
               ) : (
-                <ChevronRight className="w-5 h-5 text-gray-400" />
+                <ChevronRight className="w-4 h-4 text-gray-400" />
               )}
             </button>
 
             {expandedSections.missingTranscripts && (
-              <div className="px-6 pb-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-                  Calls with VM session but no transcript data (transcription may have failed)
+              <div className="px-4 pb-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Calls with VM session but no transcript data
                 </p>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-xs">
                     <thead>
                       <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                        <th className="pb-2 font-medium">ID</th>
                         <th className="pb-2 font-medium">Direction</th>
                         <th className="pb-2 font-medium">From</th>
                         <th className="pb-2 font-medium">Agent</th>
@@ -416,15 +413,15 @@ export default function CallMonitorPage() {
                     <tbody>
                       {data?.discrepancies.missingTranscripts
                         .filter(c => c.segmentCount === 0)
+                        .slice(0, 5)
                         .map(call => (
-                          <tr key={call.id} className="border-b border-gray-100 dark:border-gray-700/50">
-                            <td className="py-2 font-mono text-xs">{call.id.slice(0, 8)}</td>
+                          <tr key={call.id} className="border-b border-gray-100 dark:border-gray-800">
                             <td className="py-2">{call.direction}</td>
                             <td className="py-2">{call.fromNumber}</td>
                             <td className="py-2">{call.agentName || call.extension || '-'}</td>
                             <td className="py-2 text-gray-500">{formatTime(call.createdAt)}</td>
                             <td className="py-2">
-                              <Badge variant="outline">{call.status}</Badge>
+                              <Badge variant="outline" className="text-xs">{call.status}</Badge>
                             </td>
                           </tr>
                         ))}
@@ -436,63 +433,60 @@ export default function CallMonitorPage() {
           </div>
         )}
 
-        {/* Orphaned After-Hours Triage Items */}
+        {/* Orphaned After-Hours Items */}
         {(data?.discrepancies.orphanedTriageItems.length || 0) > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="bg-gray-50 dark:bg-gray-900 rounded-lg overflow-hidden">
             <button
               onClick={() => toggleSection('orphanedTriage')}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800"
             >
-              <div className="flex items-center gap-3">
-                <MessageSquare className="w-5 h-5 text-purple-500" />
-                <span className="font-semibold text-gray-900 dark:text-white">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-purple-500" />
+                <span className="font-medium text-gray-900 dark:text-white text-sm">
                   Orphaned After-Hours Items
                 </span>
-                <Badge variant="secondary">
+                <Badge variant="secondary" className="text-xs">
                   {data?.discrepancies.orphanedTriageItems.length || 0}
                 </Badge>
               </div>
               {expandedSections.orphanedTriage ? (
-                <ChevronDown className="w-5 h-5 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-gray-400" />
               ) : (
-                <ChevronRight className="w-5 h-5 text-gray-400" />
+                <ChevronRight className="w-4 h-4 text-gray-400" />
               )}
             </button>
 
             {expandedSections.orphanedTriage && (
-              <div className="px-6 pb-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-                  After-hours triage items linked to messages but not calls
+              <div className="px-4 pb-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Triage items linked to messages but not calls
                 </p>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-xs">
                     <thead>
                       <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                         <th className="pb-2 font-medium">Title</th>
                         <th className="pb-2 font-medium">Phone</th>
                         <th className="pb-2 font-medium">Time</th>
-                        <th className="pb-2 font-medium">Status</th>
                         <th className="pb-2 font-medium">Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {data?.discrepancies.orphanedTriageItems.map(item => (
-                        <tr key={item.id} className="border-b border-gray-100 dark:border-gray-700/50">
+                      {data?.discrepancies.orphanedTriageItems.slice(0, 5).map(item => (
+                        <tr key={item.id} className="border-b border-gray-100 dark:border-gray-800">
                           <td className="py-2 font-medium">{item.title}</td>
                           <td className="py-2">{item.messagePhone || '-'}</td>
                           <td className="py-2 text-gray-500">{formatTime(item.createdAt)}</td>
                           <td className="py-2">
-                            <Badge variant="outline">{item.status}</Badge>
-                          </td>
-                          <td className="py-2">
                             <Button
                               size="sm"
                               variant="ghost"
+                              className="h-6 text-xs"
                               onClick={() => handleFix('auto_link_triage', { id: item.id })}
                               disabled={fixing === `auto_link_triage-${item.id}`}
                             >
-                              <Link2 className="w-4 h-4 mr-1" />
-                              {fixing === `auto_link_triage-${item.id}` ? 'Linking...' : 'Auto-Link'}
+                              <Link2 className="w-3 h-3 mr-1" />
+                              {fixing === `auto_link_triage-${item.id}` ? '...' : 'Link'}
                             </Button>
                           </td>
                         </tr>
@@ -507,34 +501,34 @@ export default function CallMonitorPage() {
 
         {/* Stale Calls */}
         {(data?.discrepancies.staleCalls.length || 0) > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="bg-gray-50 dark:bg-gray-900 rounded-lg overflow-hidden">
             <button
               onClick={() => toggleSection('staleCalls')}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800"
             >
-              <div className="flex items-center gap-3">
-                <Clock className="w-5 h-5 text-orange-500" />
-                <span className="font-semibold text-gray-900 dark:text-white">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-orange-500" />
+                <span className="font-medium text-gray-900 dark:text-white text-sm">
                   Stale Calls
                 </span>
-                <Badge variant="secondary">
+                <Badge variant="secondary" className="text-xs">
                   {data?.discrepancies.staleCalls.length || 0}
                 </Badge>
               </div>
               {expandedSections.staleCalls ? (
-                <ChevronDown className="w-5 h-5 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-gray-400" />
               ) : (
-                <ChevronRight className="w-5 h-5 text-gray-400" />
+                <ChevronRight className="w-4 h-4 text-gray-400" />
               )}
             </button>
 
             {expandedSections.staleCalls && (
-              <div className="px-6 pb-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-                  Calls stuck in ringing/in_progress status (webhook failure)
+              <div className="px-4 pb-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Calls stuck in ringing/in_progress status
                 </p>
                 {(data?.discrepancies.staleCalls.length || 0) > 0 && (
-                  <div className="mb-3 flex gap-2">
+                  <div className="mb-2 flex gap-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -547,7 +541,7 @@ export default function CallMonitorPage() {
                       }
                       disabled={fixing?.startsWith('mark_stale_missed')}
                     >
-                      Mark Ringing as Missed
+                      Mark Ringing Missed
                     </Button>
                     <Button
                       size="sm"
@@ -561,15 +555,14 @@ export default function CallMonitorPage() {
                       }
                       disabled={fixing?.startsWith('mark_stale_completed')}
                     >
-                      Mark In Progress as Completed
+                      Mark In-Progress Completed
                     </Button>
                   </div>
                 )}
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-xs">
                     <thead>
                       <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                        <th className="pb-2 font-medium">ID</th>
                         <th className="pb-2 font-medium">From</th>
                         <th className="pb-2 font-medium">Agent</th>
                         <th className="pb-2 font-medium">Status</th>
@@ -578,13 +571,12 @@ export default function CallMonitorPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {data?.discrepancies.staleCalls.map(call => (
-                        <tr key={call.id} className="border-b border-gray-100 dark:border-gray-700/50">
-                          <td className="py-2 font-mono text-xs">{call.id.slice(0, 8)}</td>
+                      {data?.discrepancies.staleCalls.slice(0, 5).map(call => (
+                        <tr key={call.id} className="border-b border-gray-100 dark:border-gray-800">
                           <td className="py-2">{call.fromNumber}</td>
                           <td className="py-2">{call.agentName || call.extension || '-'}</td>
                           <td className="py-2">
-                            <Badge variant={call.status === 'ringing' ? 'destructive' : 'secondary'}>
+                            <Badge variant={call.status === 'ringing' ? 'destructive' : 'secondary'} className="text-xs">
                               {call.status}
                             </Badge>
                           </td>
@@ -595,6 +587,7 @@ export default function CallMonitorPage() {
                             <Button
                               size="sm"
                               variant="ghost"
+                              className="h-6 text-xs"
                               onClick={() =>
                                 handleFix(
                                   call.status === 'ringing' ? 'mark_stale_missed' : 'mark_stale_completed',
@@ -603,7 +596,7 @@ export default function CallMonitorPage() {
                               }
                               disabled={fixing?.includes(call.id)}
                             >
-                              {call.status === 'ringing' ? 'Mark Missed' : 'Mark Completed'}
+                              {call.status === 'ringing' ? 'Miss' : 'Complete'}
                             </Button>
                           </td>
                         </tr>
@@ -618,12 +611,12 @@ export default function CallMonitorPage() {
 
         {/* All Clear */}
         {!loading && totalIssues === 0 && (
-          <div className="bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800 p-6 text-center">
-            <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-            <h3 className="font-semibold text-green-900 dark:text-green-200 mb-1">
+          <div className="bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800 p-4 text-center">
+            <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
+            <h3 className="font-medium text-green-900 dark:text-green-200 text-sm mb-1">
               All Systems Healthy
             </h3>
-            <p className="text-sm text-green-700 dark:text-green-300">
+            <p className="text-xs text-green-700 dark:text-green-300">
               No discrepancies found in the selected time range
             </p>
           </div>
@@ -632,3 +625,5 @@ export default function CallMonitorPage() {
     </div>
   );
 }
+
+export default CallMonitor;
