@@ -695,8 +695,18 @@ export default function ActiveCallPage() {
   const fetchWrapupData = useCallback(async () => {
     setWrapupLoading(true);
     try {
+      console.log(`[Wrapup] Fetching data for session ${sessionId}`);
       const res = await fetch(`/api/wrapups/${sessionId}`);
+
+      // Handle HTTP errors
+      if (!res.ok) {
+        console.error(`[Wrapup] API returned ${res.status}`);
+        setWrapupStatus("error");
+        return;
+      }
+
       const data = await res.json();
+      console.log(`[Wrapup] Response:`, { success: data.success, status: data.status, hasWrapup: data.hasWrapup });
 
       if (data.success) {
         setWrapupStatus(data.status);
@@ -709,9 +719,13 @@ export default function ActiveCallPage() {
             setDraftNotes(data.wrapup.summary);
           }
         }
+      } else {
+        // API returned success: false - set error state
+        console.error(`[Wrapup] API error:`, data.error);
+        setWrapupStatus("error");
       }
     } catch (err) {
-      console.error("Failed to fetch wrapup data:", err);
+      console.error("[Wrapup] Failed to fetch wrapup data:", err);
       setWrapupStatus("error");
     } finally {
       setWrapupLoading(false);
