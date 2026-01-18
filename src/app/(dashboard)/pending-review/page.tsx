@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { AnimatePresence, motion } from 'framer-motion';
 import PendingItemCard, { PendingItemCardSkeleton, type PendingItem } from '@/components/features/PendingItemCard';
 import PendingCountsBar, { type PendingCounts } from '@/components/features/PendingCountsBar';
 import BulkActionBar from '@/components/features/BulkActionBar';
@@ -401,7 +402,32 @@ export default function PendingReviewPage() {
     // Determine if this is a lead (has leadId but no customerId, or contactType is 'lead')
     const isLead = !!item.agencyzoomLeadId && !item.agencyzoomCustomerId;
 
-    setActionLoading(true);
+    // === OPTIMISTIC UI: Update immediately, sync in background ===
+    const actionMessages: Record<string, string> = {
+      note: 'Note posted to AgencyZoom',
+      ticket: 'Service request created',
+      acknowledge: 'Message acknowledged',
+      skip: 'Item skipped',
+      void: 'Item voided',
+      ncm: 'Posted to No Customer Match queue',
+    };
+
+    // 1. Save previous state for potential rollback
+    const previousItems = [...items];
+    const previousSelectedItems = [...selectedItems];
+
+    // 2. Optimistically remove item from list immediately
+    setItems((prev) => prev.filter((i) => i.id !== item.id));
+    setSelectedItems((prev) => prev.filter((i) => i.id !== item.id));
+    if (selectedItemForReview?.id === item.id) {
+      setSelectedItemForReview(null);
+    }
+
+    // 3. Show success toast immediately (optimistic)
+    toast.success(actionMessages[action] || 'Action completed');
+    setLastError(null);
+
+    // 4. Make API call in background
     try {
       const res = await fetch(`/api/pending-review/${item.id}/complete`, {
         method: 'POST',
@@ -419,44 +445,35 @@ export default function PendingReviewPage() {
 
       const data = await res.json();
       if (data.success) {
-        // Remove item from list
-        setItems((prev) => prev.filter((i) => i.id !== item.id));
-        setSelectedItems((prev) => prev.filter((i) => i.id !== item.id));
-        if (selectedItemForReview?.id === item.id) {
-          setSelectedItemForReview(null);
-        }
-        // Show success toast with undo for skip/void
-        const actionMessages: Record<string, string> = {
-          note: 'Note posted to AgencyZoom',
-          ticket: 'Service request created',
-          acknowledge: 'Message acknowledged',
-          skip: 'Item skipped',
-          void: 'Item voided',
-          ncm: 'Posted to No Customer Match queue',
-        };
+        // Success! Show undo option for skip/void
         const canUndo = (action === 'skip' || action === 'void') && data.undoToken;
-        toast.success(actionMessages[action] || 'Action completed', {
-          duration: canUndo ? 5000 : 3000,
-          action: canUndo ? {
-            label: 'Undo',
-            onClick: () => handleUndo(item.id, data.undoToken, item.type),
-          } : undefined,
-        });
-        setLastError(null);
-        // Update counts
+        if (canUndo) {
+          toast.success(`${actionMessages[action]} - Click to undo`, {
+            duration: 5000,
+            action: {
+              label: 'Undo',
+              onClick: () => handleUndo(item.id, data.undoToken, item.type),
+            },
+          });
+        }
+        // Update counts in background (don't block UI)
         fetchItems();
       } else {
+        // 5. REVERT: API failed, restore the item
+        setItems(previousItems);
+        setSelectedItems(previousSelectedItems);
         const errorMsg = data.error || 'Action failed';
         toast.error(errorMsg);
         setLastError(errorMsg);
       }
     } catch (error) {
+      // 5. REVERT: Network error, restore the item
       console.error('Action error:', error);
+      setItems(previousItems);
+      setSelectedItems(previousSelectedItems);
       const errorMsg = error instanceof Error ? error.message : 'Failed to complete action';
       toast.error(errorMsg);
       setLastError(errorMsg);
-    } finally {
-      setActionLoading(false);
     }
   };
 
@@ -682,9 +699,27 @@ export default function PendingReviewPage() {
     }
   };
 
-  // Handle delete with reason
+  // Handle delete with reason - OPTIMISTIC UI
   const handleDelete = async (item: PendingItem, reason: string, notes?: string) => {
-    setActionLoading(true);
+    // === OPTIMISTIC UI: Update immediately, sync in background ===
+
+    // 1. Save previous state for potential rollback
+    const previousItems = [...items];
+    const previousSelectedItems = [...selectedItems];
+
+    // 2. Optimistically remove item from list and close modal immediately
+    setItems((prev) => prev.filter((i) => i.id !== item.id));
+    setSelectedItems((prev) => prev.filter((i) => i.id !== item.id));
+    if (selectedItemForReview?.id === item.id) {
+      setSelectedItemForReview(null);
+    }
+    setDeleteModalItem(null);
+
+    // 3. Show success toast immediately
+    toast.success('Item deleted');
+    setLastError(null);
+
+    // 4. Make API call in background
     try {
       const res = await fetch(`/api/pending-review/${item.id}/complete`, {
         method: 'POST',
@@ -700,37 +735,34 @@ export default function PendingReviewPage() {
 
       const data = await res.json();
       if (data.success) {
-        // Remove item from list
-        setItems((prev) => prev.filter((i) => i.id !== item.id));
-        setSelectedItems((prev) => prev.filter((i) => i.id !== item.id));
-        if (selectedItemForReview?.id === item.id) {
-          setSelectedItemForReview(null);
+        // Success! Show undo option
+        if (data.undoToken) {
+          toast.success('Item deleted - Click to undo', {
+            duration: 5000,
+            action: {
+              label: 'Undo',
+              onClick: () => handleUndo(item.id, data.undoToken, item.type),
+            },
+          });
         }
-        // Close modal
-        setDeleteModalItem(null);
-        // Show success toast with undo option
-        toast.success('Item deleted', {
-          duration: 5000,
-          action: data.undoToken ? {
-            label: 'Undo',
-            onClick: () => handleUndo(item.id, data.undoToken, item.type),
-          } : undefined,
-        });
-        setLastError(null);
-        // Update counts
+        // Update counts in background
         fetchItems();
       } else {
+        // 5. REVERT: API failed, restore the item
+        setItems(previousItems);
+        setSelectedItems(previousSelectedItems);
         const errorMsg = data.error || 'Failed to delete item';
         toast.error(errorMsg);
         setLastError(errorMsg);
       }
     } catch (error) {
+      // 5. REVERT: Network error, restore the item
       console.error('Delete error:', error);
+      setItems(previousItems);
+      setSelectedItems(previousSelectedItems);
       const errorMsg = error instanceof Error ? error.message : 'Failed to delete item';
       toast.error(errorMsg);
       setLastError(errorMsg);
-    } finally {
-      setActionLoading(false);
     }
   };
 
@@ -931,7 +963,12 @@ export default function PendingReviewPage() {
           ))}
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="text-center py-12">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="text-center py-12"
+        >
           <div className="text-6xl mb-4">
             {statusFilter === 'all' ? '✅' : '🔍'}
           </div>
@@ -943,25 +980,35 @@ export default function PendingReviewPage() {
               ? 'No pending items to review. Great work!'
               : `No items with status "${statusFilter.replace('_', ' ')}"`}
           </p>
-        </div>
+        </motion.div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {filteredItems.map((item) => (
-            <PendingItemCard
-              key={item.id}
-              item={item}
-              isSelected={selectedItemForReview?.id === item.id}
-              isChecked={selectedItems.some((i) => i.id === item.id)}
-              onSelect={() => handleSelectItem(item)}
-              onCheck={(checked) => handleCheckItem(item, checked)}
-              onQuickAction={(action) => handleQuickAction(item, action)}
-              onReviewClick={() => setReviewModalItem(item)}
-              onFindMatch={() => setFindMatchItem(item)}
-              onReportIssue={() => setReportIssueItem(item)}
-              onDelete={() => setDeleteModalItem(item)}
-              onEditSummary={(summary) => handleEditSummary(item.id, summary)}
-            />
-          ))}
+          <AnimatePresence mode="popLayout">
+            {filteredItems.map((item) => (
+              <motion.div
+                key={item.id}
+                layout
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, x: 100 }}
+                transition={{ duration: 0.2 }}
+              >
+                <PendingItemCard
+                  item={item}
+                  isSelected={selectedItemForReview?.id === item.id}
+                  isChecked={selectedItems.some((i) => i.id === item.id)}
+                  onSelect={() => handleSelectItem(item)}
+                  onCheck={(checked) => handleCheckItem(item, checked)}
+                  onQuickAction={(action) => handleQuickAction(item, action)}
+                  onReviewClick={() => setReviewModalItem(item)}
+                  onFindMatch={() => setFindMatchItem(item)}
+                  onReportIssue={() => setReportIssueItem(item)}
+                  onDelete={() => setDeleteModalItem(item)}
+                  onEditSummary={(summary) => handleEditSummary(item.id, summary)}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       )}
 
