@@ -231,57 +231,65 @@ async function matchCallSession(
 
   // Try phone number + time window
   // Prefer calls that already have an agentId (came through call-started)
-  const normalizedCaller = normalizePhone(callerNumber);
-  const normalizedCalled = normalizePhone(calledNumber);
+  // Use last 10 digits for flexible matching (handles +1, no prefix, etc.)
+  const callerDigits = callerNumber.replace(/\D/g, "").slice(-10);
+  const calledDigits = calledNumber.replace(/\D/g, "").slice(-10);
 
-  // First try to find a call WITH an agent assigned (from call-started)
-  const [byPhoneWithAgent] = await db
-    .select()
-    .from(calls)
-    .where(
-      and(
-        eq(calls.tenantId, tenantId),
-        gte(calls.startedAt, timeWindowStart),
-        lte(calls.startedAt, timeWindowEnd),
-        isNotNull(calls.agentId), // Prefer calls with agent
-        or(
-          eq(calls.fromNumber, normalizedCaller),
-          eq(calls.toNumber, normalizedCaller),
-          eq(calls.fromNumber, normalizedCalled),
-          eq(calls.toNumber, normalizedCalled)
-        )
-      )
-    )
-    .orderBy(desc(calls.startedAt))
-    .limit(1);
-
-  if (byPhoneWithAgent) {
-    console.log("[Call-Completed] Matched to existing call with agent:", byPhoneWithAgent.id);
-    return { call: byPhoneWithAgent, method: "phone_time", confidence: 0.95 };
+  // Build phone matching conditions using ILIKE for flexible matching
+  const phoneMatchConditions = [];
+  if (callerDigits.length >= 10) {
+    phoneMatchConditions.push(
+      ilike(calls.fromNumber, `%${callerDigits}`),
+      ilike(calls.toNumber, `%${callerDigits}`)
+    );
+  }
+  if (calledDigits.length >= 10) {
+    phoneMatchConditions.push(
+      ilike(calls.fromNumber, `%${calledDigits}`),
+      ilike(calls.toNumber, `%${calledDigits}`)
+    );
   }
 
-  // Fallback: match any call by phone (may not have agent)
-  const [byPhoneTime] = await db
-    .select()
-    .from(calls)
-    .where(
-      and(
-        eq(calls.tenantId, tenantId),
-        gte(calls.startedAt, timeWindowStart),
-        lte(calls.startedAt, timeWindowEnd),
-        or(
-          eq(calls.fromNumber, normalizedCaller),
-          eq(calls.toNumber, normalizedCaller),
-          eq(calls.fromNumber, normalizedCalled),
-          eq(calls.toNumber, normalizedCalled)
+  if (phoneMatchConditions.length > 0) {
+    // First try to find a call WITH an agent assigned (from call-started)
+    const [byPhoneWithAgent] = await db
+      .select()
+      .from(calls)
+      .where(
+        and(
+          eq(calls.tenantId, tenantId),
+          gte(calls.startedAt, timeWindowStart),
+          lte(calls.startedAt, timeWindowEnd),
+          isNotNull(calls.agentId), // Prefer calls with agent
+          or(...phoneMatchConditions)
         )
       )
-    )
-    .orderBy(desc(calls.startedAt))
-    .limit(1);
+      .orderBy(desc(calls.startedAt))
+      .limit(1);
 
-  if (byPhoneTime) {
-    return { call: byPhoneTime, method: "phone_time", confidence: 0.9 };
+    if (byPhoneWithAgent) {
+      console.log("[Call-Completed] Matched to existing call with agent:", byPhoneWithAgent.id);
+      return { call: byPhoneWithAgent, method: "phone_time", confidence: 0.95 };
+    }
+
+    // Fallback: match any call by phone (may not have agent)
+    const [byPhoneTime] = await db
+      .select()
+      .from(calls)
+      .where(
+        and(
+          eq(calls.tenantId, tenantId),
+          gte(calls.startedAt, timeWindowStart),
+          lte(calls.startedAt, timeWindowEnd),
+          or(...phoneMatchConditions)
+        )
+      )
+      .orderBy(desc(calls.startedAt))
+      .limit(1);
+
+    if (byPhoneTime) {
+      return { call: byPhoneTime, method: "phone_time", confidence: 0.9 };
+    }
   }
 
   // Try extension + time window
