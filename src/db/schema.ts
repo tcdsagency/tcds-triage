@@ -1760,6 +1760,10 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   deletedById: uuid('deleted_by_id').references(() => users.id),
   deletedAt: timestamp('deleted_at'),
 
+  // Undo tracking
+  undoToken: text('undo_token'),
+  undoExpiresAt: timestamp('undo_expires_at'),
+
   // Ticket/Lead creation tracking
   ticketType: text('ticket_type'),
   ticketAssignedToId: uuid('ticket_assigned_to_id').references(() => users.id),

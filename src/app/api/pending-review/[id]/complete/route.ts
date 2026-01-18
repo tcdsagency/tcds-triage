@@ -14,7 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 
 interface CompleteRequest {
   itemType: 'wrapup' | 'message' | 'lead';
-  action: 'note' | 'ticket' | 'lead' | 'skip' | 'acknowledge' | 'void' | 'ncm';
+  action: 'note' | 'ticket' | 'lead' | 'skip' | 'acknowledge' | 'void' | 'ncm' | 'delete';
   customerId?: string;
   isLead?: boolean; // true if matched to a lead (not a customer)
   noteContent?: string;
@@ -35,11 +35,22 @@ interface CompleteRequest {
   };
   // For grouped messages - acknowledge all messages from same phone number
   messageIds?: string[];
+  // For delete action
+  deleteReason?: string;
+  deleteNotes?: string;
 }
 
 // NCM (No Customer Match) customer ID in AgencyZoom
 // This is a placeholder customer used for service requests from unknown callers
 const NCM_CUSTOMER_ID = process.env.NCM_CUSTOMER_ID || '0'; // Default to 0 if not set
+
+// Undo token expiration (5 seconds)
+const UNDO_EXPIRATION_MS = 5000;
+
+// Generate a simple undo token
+function generateUndoToken(): string {
+  return `undo_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+}
 
 // Helper to get the current user's database ID from auth session
 async function getCurrentUserId(providedId?: string): Promise<string | null> {
@@ -194,6 +205,7 @@ export async function POST(
       noteId?: number;
       ticketId?: number;
       leadId?: number;
+      undoToken?: string;
     } = { success: false, action: body.action };
 
     // =======================================================================
@@ -211,35 +223,77 @@ export async function POST(
       }
 
       if (body.action === 'skip') {
+        const undoToken = generateUndoToken();
+        const undoExpiresAt = new Date(Date.now() + UNDO_EXPIRATION_MS);
+
         await db
           .update(wrapupDrafts)
           .set({
             status: "completed",
             reviewerDecision: "skipped",
             outcome: "skipped",
+            completionAction: "skipped",
             completedAt: new Date(),
             reviewerId: reviewerId,
             reviewedAt: new Date(),
+            undoToken,
+            undoExpiresAt,
           })
           .where(eq(wrapupDrafts.id, itemId));
 
-        return NextResponse.json({ success: true, action: "skip", message: "Wrapup skipped" });
+        return NextResponse.json({ success: true, action: "skip", message: "Wrapup skipped", undoToken });
       }
 
       if (body.action === 'void') {
+        const undoToken = generateUndoToken();
+        const undoExpiresAt = new Date(Date.now() + UNDO_EXPIRATION_MS);
+
         await db
           .update(wrapupDrafts)
           .set({
             status: "completed",
             reviewerDecision: "voided",
             outcome: "voided",
+            completionAction: "voided",
             completedAt: new Date(),
             reviewerId: reviewerId,
             reviewedAt: new Date(),
+            undoToken,
+            undoExpiresAt,
           })
           .where(eq(wrapupDrafts.id, itemId));
 
-        return NextResponse.json({ success: true, action: "void", message: "Wrapup voided" });
+        return NextResponse.json({ success: true, action: "void", message: "Wrapup voided", undoToken });
+      }
+
+      if (body.action === 'delete') {
+        if (!body.deleteReason) {
+          return NextResponse.json({ error: "Delete reason required" }, { status: 400 });
+        }
+
+        const undoToken = generateUndoToken();
+        const undoExpiresAt = new Date(Date.now() + UNDO_EXPIRATION_MS);
+
+        await db
+          .update(wrapupDrafts)
+          .set({
+            status: "completed",
+            reviewerDecision: "deleted",
+            outcome: "deleted",
+            completionAction: "deleted",
+            completedAt: new Date(),
+            reviewerId: reviewerId,
+            reviewedAt: new Date(),
+            deleteReason: body.deleteReason,
+            deleteNotes: body.deleteNotes || null,
+            deletedById: reviewerId,
+            deletedAt: new Date(),
+            undoToken,
+            undoExpiresAt,
+          })
+          .where(eq(wrapupDrafts.id, itemId));
+
+        return NextResponse.json({ success: true, action: "delete", message: "Item deleted", undoToken });
       }
 
       // Extract IDs and check if it's a lead or customer
