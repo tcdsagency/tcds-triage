@@ -51,6 +51,10 @@ interface MortgageeClause {
   isActive: boolean;
   lienHolderId: string | null;
   lienHolder: { id: string; name: string } | null;
+  uploadWebsite: string | null;
+  phone: string | null;
+  fax: string | null;
+  notes: string | null;
   createdAt: string;
 }
 
@@ -329,6 +333,10 @@ function ClauseForm({
     lienHolderId: clause?.lienHolderId || "",
     policyTypes: clause?.policyTypes || [],
     isActive: clause?.isActive !== false,
+    uploadWebsite: clause?.uploadWebsite || "",
+    phone: clause?.phone || "",
+    fax: clause?.fax || "",
+    notes: clause?.notes || "",
   });
 
   const togglePolicyType = (type: string) => {
@@ -348,6 +356,10 @@ function ClauseForm({
           ...formData,
           lienHolderId: formData.lienHolderId || null,
           policyTypes: formData.policyTypes.length > 0 ? formData.policyTypes : null,
+          uploadWebsite: formData.uploadWebsite || null,
+          phone: formData.phone || null,
+          fax: formData.fax || null,
+          notes: formData.notes || null,
         });
       }}
       className="space-y-4"
@@ -407,6 +419,47 @@ function ClauseForm({
             </button>
           ))}
         </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-1">Upload Website</label>
+        <input
+          type="url"
+          value={formData.uploadWebsite}
+          onChange={(e) => setFormData({ ...formData, uploadWebsite: e.target.value })}
+          placeholder="https://..."
+          className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+        />
+        <p className="text-xs text-gray-500 mt-1">Website URL to upload evidence of insurance</p>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">Phone</label>
+          <input
+            type="text"
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Fax</label>
+          <input
+            type="text"
+            value={formData.fax}
+            onChange={(e) => setFormData({ ...formData, fax: e.target.value })}
+            className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+          />
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-1">Notes</label>
+        <textarea
+          value={formData.notes}
+          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+          rows={2}
+          placeholder="Additional notes about this mortgagee clause..."
+          className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+        />
       </div>
       <div className="flex items-center gap-2">
         <input

@@ -4068,6 +4068,12 @@ export const mortgageeClauses = pgTable('mortgagee_clauses', {
   policyTypes: jsonb('policy_types').$type<string[]>(), // ["Home", "Auto", "Condo"]
   isActive: boolean('is_active').default(true),
 
+  // Contact / Upload info
+  uploadWebsite: text('upload_website'), // Website URL to upload documents
+  phone: text('phone'),
+  fax: text('fax'),
+  notes: text('notes'),
+
   // Timestamps
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

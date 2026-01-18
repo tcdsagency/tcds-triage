@@ -73,6 +73,10 @@ export async function PATCH(
         clauseText: body.clauseText,
         policyTypes: body.policyTypes,
         isActive: body.isActive,
+        uploadWebsite: body.uploadWebsite,
+        phone: body.phone,
+        fax: body.fax,
+        notes: body.notes,
         updatedAt: new Date(),
       })
       .where(and(eq(mortgageeClauses.tenantId, tenantId), eq(mortgageeClauses.id, id)))
