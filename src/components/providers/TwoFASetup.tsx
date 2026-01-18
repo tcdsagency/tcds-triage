@@ -19,6 +19,14 @@ export function TwoFASetup() {
     // This component ensures the context is available and could be
     // extended to poll for pending 2FA sessions if needed.
 
+    // NOTE: 2FA polling disabled - MMI integration requires manual auth
+    // To re-enable: set NEXT_PUBLIC_ENABLE_MMI_2FA_POLLING=true
+    const enablePolling = process.env.NEXT_PUBLIC_ENABLE_MMI_2FA_POLLING === 'true';
+
+    if (!enablePolling) {
+      return; // Don't poll for 2FA sessions
+    }
+
     // Optional: Poll for pending 2FA sessions
     const checkPending2FA = async () => {
       try {
