@@ -82,10 +82,31 @@ interface SmartAction {
   href: string;
 }
 
+interface TrendData {
+  change: number;
+  direction: 'up' | 'down' | 'same';
+}
+
 interface DashboardStats {
-  calls: { total: number; inbound: number; outbound: number };
-  messages: { total: number; inbound: number; outbound: number };
+  calls: {
+    total: number;
+    inbound: number;
+    outbound: number;
+    missed: number;
+    avgDurationSec: number;
+    avgDurationFormatted: string;
+    trend: TrendData;
+  };
+  messages: {
+    total: number;
+    inbound: number;
+    outbound: number;
+    trend: TrendData;
+  };
   pendingReview: number;
+  sparkline?: {
+    calls: Array<{ date: string; value: number }>;
+  };
 }
 
 // =============================================================================
@@ -571,7 +592,7 @@ export default function DashboardPage() {
         {/* ================================================================= */}
         {/* TODAY'S STATS */}
         {/* ================================================================= */}
-        <section className="grid grid-cols-3 gap-4">
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Total Calls */}
           <Link href="/calls">
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-600 transition-all cursor-pointer">
@@ -584,7 +605,20 @@ export default function DashboardPage() {
                   {statsLoading ? (
                     <div className="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
                   ) : (
-                    <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats?.calls.total || 0}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats?.calls.total || 0}</p>
+                      {stats?.calls.trend && stats.calls.trend.direction !== 'same' && (
+                        <span className={cn(
+                          "flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded",
+                          stats.calls.trend.direction === 'up'
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                        )}>
+                          {stats.calls.trend.direction === 'up' ? '↑' : '↓'}
+                          {stats.calls.trend.change}%
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -605,6 +639,33 @@ export default function DashboardPage() {
             </div>
           </Link>
 
+          {/* Avg Call Duration */}
+          <Link href="/calls">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all cursor-pointer">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                  <Calendar className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Avg Duration</p>
+                  {statsLoading ? (
+                    <div className="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+                  ) : (
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white">
+                      {stats?.calls.avgDurationFormatted || '0:00'}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {!statsLoading && (stats?.calls.missed || 0) > 0 && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>{stats?.calls.missed} missed</span>
+                </div>
+              )}
+            </div>
+          </Link>
+
           {/* Total Texts */}
           <Link href="/messages">
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-purple-300 dark:hover:border-purple-600 transition-all cursor-pointer">
@@ -617,7 +678,20 @@ export default function DashboardPage() {
                   {statsLoading ? (
                     <div className="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
                   ) : (
-                    <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats?.messages.total || 0}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats?.messages.total || 0}</p>
+                      {stats?.messages.trend && stats.messages.trend.direction !== 'same' && (
+                        <span className={cn(
+                          "flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded",
+                          stats.messages.trend.direction === 'up'
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                        )}>
+                          {stats.messages.trend.direction === 'up' ? '↑' : '↓'}
+                          {stats.messages.trend.change}%
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -684,6 +758,49 @@ export default function DashboardPage() {
             </div>
           </Link>
         </section>
+
+        {/* ================================================================= */}
+        {/* 7-DAY CALL VOLUME SPARKLINE */}
+        {/* ================================================================= */}
+        {!statsLoading && stats?.sparkline?.calls && stats.sparkline.calls.length > 1 && (
+          <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                7-Day Call Volume
+              </h3>
+              <span className="text-xs text-gray-400">
+                {stats.sparkline.calls.reduce((sum, d) => sum + d.value, 0)} total calls
+              </span>
+            </div>
+            <div className="flex items-end gap-1 h-16">
+              {(() => {
+                const data = stats.sparkline.calls;
+                const max = Math.max(...data.map(d => d.value), 1);
+                return data.map((d, i) => {
+                  const height = (d.value / max) * 100;
+                  const isToday = i === data.length - 1;
+                  return (
+                    <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
+                      <div
+                        className={cn(
+                          "w-full rounded-t transition-all",
+                          isToday
+                            ? "bg-emerald-500 dark:bg-emerald-400"
+                            : "bg-emerald-200 dark:bg-emerald-900/50"
+                        )}
+                        style={{ height: `${Math.max(height, 4)}%` }}
+                        title={`${new Date(d.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}: ${d.value} calls`}
+                      />
+                      <span className="text-[10px] text-gray-400">
+                        {new Date(d.date).toLocaleDateString('en-US', { weekday: 'short' }).charAt(0)}
+                      </span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </section>
+        )}
 
         {/* ================================================================= */}
         {/* NEW QUOTE SECTION */}
