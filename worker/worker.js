@@ -383,78 +383,304 @@ async function runRiskMonitorScan(maxProperties = 50) {
 
     for (const policy of policies) {
       try {
-        // Get RPR token
-        const tokenRes = await fetch(`${tokenServiceUrl}/tokens/rpr`, {
-          headers: { 'Authorization': `Bearer ${tokenServiceSecret}` }
-        });
-        if (!tokenRes.ok) {
-          throw new Error(`Failed to get RPR token: ${tokenRes.status}`);
+        let rprStatus = null;
+        let mmiData = null;
+
+        // =====================================================================
+        // CHECK RPR - Property listing status (active, pending, sold)
+        // Flow: 1. Search address -> get propertyId, 2. Get property details
+        // =====================================================================
+        try {
+          const rprTokenRes = await fetch(`${tokenServiceUrl}/tokens/rpr`, {
+            headers: { 'Authorization': `Bearer ${tokenServiceSecret}` }
+          });
+          if (rprTokenRes.ok) {
+            const { token: rprToken } = await rprTokenRes.json();
+
+            // Step 1: Search for property using location-suggestions API with required parameters
+            const fullAddress = `${policy.address_line1}, ${policy.city}, ${policy.state} ${policy.zip_code}`;
+
+            // Use the correct API endpoint with all required parameters (from src/lib/rpr.ts)
+            const searchUrl = new URL('https://webapi.narrpr.com/misc/location-suggestions');
+            searchUrl.searchParams.append('propertyMode', '1');
+            searchUrl.searchParams.append('userQuery', fullAddress);
+            searchUrl.searchParams.append('category', '1');
+            searchUrl.searchParams.append('getPlacesAreasAndProperties', 'true');
+
+            const searchRes = await fetch(searchUrl.toString(), {
+              headers: {
+                'Authorization': `Bearer ${rprToken}`,
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              },
+            });
+
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              console.log(`[Risk Monitor] RPR search response for ${policy.address_line1}:`, JSON.stringify(searchData).slice(0, 800));
+
+              // Extract property from sections array (RPR returns {sections: [{locations: [...]}]})
+              // Priority: Listing sections first (active MLS data), then address/parcel sections
+              let propertyMatch = null;
+              let propertyId = null;
+              let listingId = null;
+              let isListing = false;
+              let foundStatus = null;
+
+              if (searchData.sections && Array.isArray(searchData.sections)) {
+                // First pass: Look for listing sections (active MLS data has priority)
+                for (const section of searchData.sections) {
+                  const sectionType = (section.sectionType || section.label || '').toLowerCase();
+                  if (sectionType.includes('listing') && section.locations?.length > 0) {
+                    propertyMatch = section.locations[0];
+                    listingId = propertyMatch?.listingId;
+                    propertyId = propertyMatch?.propertyId || listingId;
+                    isListing = true;
+                    foundStatus = propertyMatch?.status;
+                    console.log(`[Risk Monitor] RPR found listing in section: ${section.label || sectionType}`);
+                    break;
+                  }
+                }
+
+                // Second pass: Fall back to address/parcel sections if no listing found
+                if (!propertyId) {
+                  for (const section of searchData.sections) {
+                    if (section.locations?.length > 0) {
+                      propertyMatch = section.locations[0];
+                      propertyId = propertyMatch?.propertyId || propertyMatch?.listingId;
+                      listingId = propertyMatch?.listingId;
+                      isListing = !!listingId;
+                      foundStatus = propertyMatch?.status;
+                      console.log(`[Risk Monitor] RPR found property in section: ${section.label || section.sectionType}`);
+                      break;
+                    }
+                  }
+                }
+              }
+
+              if (propertyMatch) {
+                console.log(`[Risk Monitor] RPR property match:`, JSON.stringify(propertyMatch).slice(0, 300));
+              }
+
+              if (propertyId) {
+                // Step 2: Get property/listing details
+                // Use listings endpoint for active listings, properties endpoint otherwise
+                const detailsEndpoint = isListing
+                  ? `https://webapi.narrpr.com/listings/${listingId || propertyId}/common`
+                  : `https://webapi.narrpr.com/properties/${propertyId}/common`;
+
+                console.log(`[Risk Monitor] RPR fetching details from: ${detailsEndpoint}`);
+                const detailsRes = await fetch(detailsEndpoint, {
+                  headers: {
+                    'Authorization': `Bearer ${rprToken}`,
+                    'Accept': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  },
+                });
+
+                if (detailsRes.ok) {
+                  const details = await detailsRes.json();
+                  console.log(`[Risk Monitor] RPR details response:`, JSON.stringify(details).slice(0, 800));
+
+                  // Determine status from details or search result
+                  const detailStatus = details.searchResult?.status || details.listingStatus || details.status;
+                  if (detailStatus) {
+                    const statusLower = detailStatus.toLowerCase();
+                    if (statusLower === 'active' || statusLower === 'for sale') {
+                      rprStatus = 'active';
+                    } else if (statusLower.includes('pending') || statusLower.includes('contingent')) {
+                      rprStatus = 'pending';
+                    } else if (statusLower === 'sold' || statusLower === 'closed') {
+                      rprStatus = 'sold';
+                    } else {
+                      rprStatus = 'off_market';
+                    }
+                  } else if (isListing) {
+                    // If found via listing search but no explicit status, assume active
+                    rprStatus = 'active';
+                  } else {
+                    rprStatus = 'off_market';
+                  }
+                  console.log(`[Risk Monitor] RPR property ${propertyId} status: ${rprStatus}`);
+                } else {
+                  console.log(`[Risk Monitor] RPR details request failed: ${detailsRes.status}`);
+                  // If details fail but we found the property, use status from search or default
+                  if (foundStatus) {
+                    const statusLower = foundStatus.toLowerCase();
+                    if (statusLower === 'active' || statusLower === 'for sale') {
+                      rprStatus = 'active';
+                    } else if (statusLower.includes('pending')) {
+                      rprStatus = 'pending';
+                    } else if (statusLower === 'sold') {
+                      rprStatus = 'sold';
+                    }
+                  } else if (isListing) {
+                    rprStatus = 'active';
+                  }
+                }
+              } else {
+                console.log(`[Risk Monitor] RPR: No property found for ${policy.address_line1}`);
+              }
+            } else {
+              const errorText = await searchRes.text();
+              console.log(`[Risk Monitor] RPR search failed: ${searchRes.status} - ${errorText.slice(0, 200)}`);
+            }
+          } else {
+            console.log(`[Risk Monitor] RPR token request failed: ${rprTokenRes.status}`);
+          }
+        } catch (rprErr) {
+          console.error(`[Risk Monitor] RPR check failed for ${policy.id}:`, rprErr.message);
         }
-        const { token: rprToken } = await tokenRes.json();
 
-        // Search RPR for property
-        const address = `${policy.address_line1}, ${policy.city}, ${policy.state} ${policy.zip_code}`;
-        const searchRes = await fetch('https://api.narrpr.com/api/property/search', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${rprToken}`,
-          },
-          body: JSON.stringify({ address }),
-        });
+        // Rate limit between API calls
+        await new Promise(r => setTimeout(r, 1000));
 
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          const property = searchData.properties?.[0];
+        // =====================================================================
+        // CHECK MMI - Deed history and listing history
+        // NOTE: Temporarily disabled - MMI requires 2FA and is rate-limited
+        // To re-enable: set ENABLE_MMI=true in environment
+        // =====================================================================
+        // MMI DISABLED - uncomment below to re-enable
+        /*
+        try {
+          console.log(`[Risk Monitor] MMI: Requesting token...`);
+          const mmiTokenRes = await fetch(`${tokenServiceUrl}/tokens/mmi`, {
+            headers: { 'Authorization': `Bearer ${tokenServiceSecret}` }
+          });
+          if (mmiTokenRes.ok) {
+            const mmiTokenData = await mmiTokenRes.json();
+            const mmiToken = mmiTokenData.token;
+            console.log(`[Risk Monitor] MMI: Got token, searching property...`);
 
-          if (property) {
-            const newStatus = property.currentStatus || 'unknown';
-            const oldStatus = policy.current_status;
+            // Step 1: Property search to get DIMPROPERTYADDRESSID
+            const mmiSearchRes = await fetch('https://api.mmi.run/api/v2/property_search', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${mmiToken}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: JSON.stringify({
+                address: policy.address_line1,
+                city: policy.city,
+                state: policy.state,
+                zipcode: policy.zip_code,
+              }),
+            });
 
-            // Check for status change
-            if (oldStatus && newStatus !== oldStatus) {
-              // Determine alert type
-              let alertType = null;
-              if (newStatus === 'active') alertType = 'listing_detected';
-              else if (newStatus === 'pending') alertType = 'pending_sale';
-              else if (newStatus === 'sold') alertType = 'sold';
+            if (mmiSearchRes.ok) {
+              const mmiSearchData = await mmiSearchRes.json();
+              const mmiProperty = mmiSearchData.data?.[0];
 
-              if (alertType) {
-                await pgPool.query(`
-                  INSERT INTO risk_monitor_alerts (
-                    id, tenant_id, policy_id, alert_type, priority, status,
-                    title, description, previous_status, new_status,
-                    data_source, created_at
-                  ) VALUES (
-                    gen_random_uuid(), $1, $2, $3, '3', 'new',
-                    $4, $5, $6, $7, 'rpr', NOW()
-                  )
-                `, [
-                  tenantId,
-                  policy.id,
-                  alertType,
-                  `${alertType === 'listing_detected' ? 'New Listing' : alertType === 'pending_sale' ? 'Pending Sale' : 'Sold'}: ${policy.address_line1}`,
-                  `Property status changed from ${oldStatus} to ${newStatus}`,
-                  oldStatus,
-                  newStatus
-                ]);
-                result.alertsCreated++;
+              if (mmiProperty?.DIMPROPERTYADDRESSID) {
+                // Step 2: Get property history
+                const historyRes = await fetch(`https://api.mmi.run/api/v2/re/property_histories/${mmiProperty.DIMPROPERTYADDRESSID}`, {
+                  headers: {
+                    'Authorization': `Bearer ${mmiToken}`,
+                    'Accept': 'application/json',
+                  },
+                });
+
+                if (historyRes.ok) {
+                  mmiData = await historyRes.json();
+                  console.log(`[Risk Monitor] MMI found history for ${policy.address_line1}`);
+
+                  // Check for recent sales (last 30 days)
+                  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+                  const recentSale = mmiData.deed_history?.find(d => {
+                    const deedDate = new Date(d.DATE);
+                    return deedDate >= thirtyDaysAgo;
+                  });
+
+                  if (recentSale) {
+                    // Create alert for recent sale detected via MMI
+                    await pgPool.query(`
+                      INSERT INTO risk_monitor_alerts (
+                        id, tenant_id, policy_id, alert_type, priority, status,
+                        title, description, previous_status, new_status,
+                        data_source, raw_data, created_at
+                      ) VALUES (
+                        gen_random_uuid(), $1, $2, 'sold', '2', 'new',
+                        $3, $4, $5, 'sold', 'mmi', $6, NOW()
+                      )
+                      ON CONFLICT DO NOTHING
+                    `, [
+                      tenantId,
+                      policy.id,
+                      `Property Sold: ${policy.address_line1}`,
+                      `Sale detected on ${recentSale.DATE}. Price: $${recentSale.SALE_PRICE?.toLocaleString() || 'N/A'}. Buyer: ${recentSale.BUYER || 'N/A'}`,
+                      policy.current_status,
+                      JSON.stringify(recentSale),
+                    ]);
+                    result.alertsCreated++;
+                    console.log(`[Risk Monitor] MMI: Sale alert created for ${policy.address_line1}`);
+                  }
+                }
               }
             }
-
-            // Update policy
-            await pgPool.query(`
-              UPDATE risk_monitor_policies
-              SET current_status = $1, last_checked_at = NOW(), updated_at = NOW()
-              WHERE id = $2
-            `, [newStatus, policy.id]);
+          } else {
+            console.log(`[Risk Monitor] MMI: Token request failed: ${mmiTokenRes.status}`);
           }
+        } catch (mmiErr) {
+          console.error(`[Risk Monitor] MMI check failed for ${policy.id}:`, mmiErr.message);
+        }
+        */
+
+        // =====================================================================
+        // PROCESS RPR STATUS CHANGE
+        // =====================================================================
+        if (rprStatus) {
+          const oldStatus = policy.current_status;
+
+          // Check for status change
+          if (oldStatus && rprStatus !== oldStatus) {
+            let alertType = null;
+            if (rprStatus === 'active' || rprStatus === 'Active') alertType = 'listing_detected';
+            else if (rprStatus === 'pending' || rprStatus === 'Pending') alertType = 'pending_sale';
+            else if (rprStatus === 'sold' || rprStatus === 'Sold') alertType = 'sold';
+
+            if (alertType) {
+              await pgPool.query(`
+                INSERT INTO risk_monitor_alerts (
+                  id, tenant_id, policy_id, alert_type, priority, status,
+                  title, description, previous_status, new_status,
+                  data_source, created_at
+                ) VALUES (
+                  gen_random_uuid(), $1, $2, $3, '3', 'new',
+                  $4, $5, $6, $7, 'rpr', NOW()
+                )
+              `, [
+                tenantId,
+                policy.id,
+                alertType,
+                `${alertType === 'listing_detected' ? 'New Listing' : alertType === 'pending_sale' ? 'Pending Sale' : 'Sold'}: ${policy.address_line1}`,
+                `Property status changed from ${oldStatus} to ${rprStatus}`,
+                oldStatus,
+                rprStatus.toLowerCase(),
+              ]);
+              result.alertsCreated++;
+            }
+          }
+
+          // Update policy with RPR status
+          await pgPool.query(`
+            UPDATE risk_monitor_policies
+            SET current_status = $1, last_checked_at = NOW(), updated_at = NOW()
+            WHERE id = $2
+          `, [rprStatus.toLowerCase(), policy.id]);
+        } else {
+          // No RPR data, just update last_checked_at
+          await pgPool.query(`
+            UPDATE risk_monitor_policies
+            SET last_checked_at = NOW(), updated_at = NOW()
+            WHERE id = $1
+          `, [policy.id]);
         }
 
         result.propertiesChecked++;
 
-        // Rate limit: 1 request per 3 seconds for RPR
-        await new Promise(r => setTimeout(r, 3000));
+        // Rate limit: 2 seconds between properties (for both RPR and MMI)
+        await new Promise(r => setTimeout(r, 2000));
 
       } catch (err) {
         result.errors.push(`Policy ${policy.id}: ${err.message}`);
