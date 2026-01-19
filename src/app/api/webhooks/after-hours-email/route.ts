@@ -1,10 +1,10 @@
 // API Route: /api/webhooks/after-hours-email
 // Receives after-hours email notifications from ReceptionHQ and merges with Twilio transcripts
-// Flow: Email arrives → Parse ReceptionHQ format → Lookup customer → AI merge → Create after-hours message
+// Flow: Email arrives → Parse ReceptionHQ format → Lookup customer → AI merge → Create triage item
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { messages, customers, triageItems } from "@/db/schema";
+import { customers, triageItems } from "@/db/schema";
 import { eq, and, or, gte, desc, ilike } from "drizzle-orm";
 import OpenAI from "openai";
 
@@ -190,7 +190,7 @@ function parseReceptionHQEmail(emailBody: string): ReceptionHQExtraction {
 }
 
 /**
- * Check for duplicate after-hours message (same phone within 1 hour)
+ * Check for duplicate after-hours triage item (same phone within 1 hour)
  */
 async function checkForDuplicate(
   tenantId: string,
@@ -201,21 +201,22 @@ async function checkForDuplicate(
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
   const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
 
+  // Check triage_items for recent after-hours entries with same phone in title
   const existing = await db
-    .select({ id: messages.id, createdAt: messages.createdAt })
-    .from(messages)
+    .select({ id: triageItems.id, createdAt: triageItems.createdAt })
+    .from(triageItems)
     .where(
       and(
-        eq(messages.tenantId, tenantId),
-        eq(messages.isAfterHours, true),
-        gte(messages.createdAt, oneHourAgo),
+        eq(triageItems.tenantId, tenantId),
+        eq(triageItems.type, "after_hours"),
+        gte(triageItems.createdAt, oneHourAgo),
         or(
-          ilike(messages.fromNumber, `%${normalizedPhone}`),
-          ilike(messages.fromNumber, `+1${normalizedPhone}`)
+          ilike(triageItems.title, `%${normalizedPhone}%`),
+          ilike(triageItems.title, `%+1${normalizedPhone}%`)
         )
       )
     )
-    .orderBy(desc(messages.createdAt))
+    .orderBy(desc(triageItems.createdAt))
     .limit(1);
 
   if (existing.length > 0) {
@@ -580,39 +581,12 @@ async function createAfterHoursTriageItem(
   }
   const fullBody = bodyParts.join('') || 'After-hours message received. Callback required.';
 
-  // Determine the called number (which TCDS line was dialed)
-  const calledNumber = parsedData?.calledNumber
-    ? `+1${parsedData.calledNumber}`
-    : process.env.TWILIO_PHONE_NUMBER || "";
-
   // Use parsed urgency or AI-determined urgency
   const isUrgent = parsedData?.isUrgent || mergedContent.urgency === "high";
 
-  // Create an after-hours message for the pending review queue
-  const [message] = await db
-    .insert(messages)
-    .values({
-      tenantId,
-      type: "sms", // Using SMS type for voicemail/after-hours messages
-      direction: "inbound",
-      fromNumber: phone, // Now contains caller's actual phone, not email sender
-      toNumber: calledNumber,
-      body: fullBody,
-      externalId: twilioData?.CallSid || `after_hours_${Date.now()}`,
-      status: "received",
-      isAfterHours: true,
-      isAcknowledged: false,
-      // Use matched customer name or parsed name
-      contactName: customerName || parsedData?.name || emailData.fromName || undefined,
-      contactType: "customer",
-      // Store customer match info if available
-      customerId: customerId || undefined,
-      sentAt: new Date(),
-    })
-    .returning();
-
-  // Also create a triage item for the after-hours queue
-  const displayName = customerName || parsedData?.name || phone;
+  // Create a triage item for the after-hours queue (no longer creates messages table entry)
+  const nameDisplay = customerName || parsedData?.name || "Unknown Caller";
+  const displayTitle = `${nameDisplay} - ${phone}`;
   const [triageItem] = await db
     .insert(triageItems)
     .values({
@@ -620,20 +594,19 @@ async function createAfterHoursTriageItem(
       type: "after_hours",
       status: "pending",
       priority: isUrgent ? "urgent" : "medium",
-      title: displayName,
-      description: parsedData?.reason || emailData.body || "After-hours call received",
+      title: displayTitle,
+      description: fullBody,
       aiSummary: mergedContent.summary,
       aiPriorityReason: isUrgent
         ? `Urgency keywords detected: ${parsedData?.urgencyKeywords?.join(", ")}`
         : undefined,
       customerId: customerId || undefined,
-      messageId: message.id,
       // Set SLA - after-hours items should be addressed within 8 hours (next business day)
       dueAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
     })
     .returning();
 
-  console.log(`[After-Hours] Created after-hours message ${message.id} and triage item ${triageItem.id}`, {
+  console.log(`[After-Hours] Created after-hours triage item ${triageItem.id}`, {
     phone,
     customerName,
     customerId,
@@ -642,7 +615,7 @@ async function createAfterHoursTriageItem(
     urgencyKeywords: parsedData?.urgencyKeywords,
   });
 
-  return message;
+  return triageItem;
 }
 
 // =============================================================================
