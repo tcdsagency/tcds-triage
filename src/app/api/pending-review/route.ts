@@ -1,10 +1,10 @@
 // API Route: /api/pending-review
-// Unified pending items API - consolidates wrapups and messages for intake/service
+// Unified pending items API - consolidates wrapups, messages, and after-hours items
 // NOTE: Leads are NOT included - they belong to the sales workflow (/leads page)
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { wrapupDrafts, messages, users, calls } from "@/db/schema";
+import { wrapupDrafts, messages, users, calls, triageItems, customers } from "@/db/schema";
 import { eq, and, desc, sql, inArray, or } from "drizzle-orm";
 import { createClient } from "@/lib/supabase/server";
 
@@ -113,6 +113,9 @@ interface PendingItem {
     isAutoReply: boolean;
   }[];
   messageIds?: string[]; // All message IDs in this group (for bulk acknowledge)
+
+  // After-hours triage item reference
+  triageItemId?: string;
 }
 
 interface PendingCounts {
@@ -433,6 +436,94 @@ export async function GET(request: NextRequest) {
 
     // NOTE: Leads are NOT included in pending review - they belong to sales workflow
     // Leads are managed separately in /leads page
+
+    // =======================================================================
+    // 3. Fetch After-Hours Triage Items
+    // =======================================================================
+    if (!typeFilter || typeFilter === 'after_hours') {
+      const triageWhereConditions = [
+        eq(triageItems.tenantId, tenantId),
+        eq(triageItems.type, 'after_hours'),
+        eq(triageItems.status, 'pending'),
+      ];
+
+      const afterHoursTriageItems = await db
+        .select({
+          id: triageItems.id,
+          type: triageItems.type,
+          status: triageItems.status,
+          priority: triageItems.priority,
+          title: triageItems.title,
+          description: triageItems.description,
+          aiSummary: triageItems.aiSummary,
+          customerId: triageItems.customerId,
+          messageId: triageItems.messageId,
+          createdAt: triageItems.createdAt,
+        })
+        .from(triageItems)
+        .where(and(...triageWhereConditions))
+        .orderBy(desc(triageItems.createdAt))
+        .limit(limit);
+
+      // Get customer details for triage items
+      const triageCustomerIds = afterHoursTriageItems.map(t => t.customerId).filter(Boolean) as string[];
+      const triageCustomerMap = triageCustomerIds.length > 0
+        ? await db
+            .select({ id: customers.id, firstName: customers.firstName, lastName: customers.lastName, phone: customers.phone })
+            .from(customers)
+            .where(inArray(customers.id, triageCustomerIds))
+            .then(rows => new Map(rows.map(c => [c.id, c])))
+        : new Map();
+
+      // Get linked messages for phone numbers
+      const triageMessageIds = afterHoursTriageItems.map(t => t.messageId).filter(Boolean) as string[];
+      const triageMessageMap = triageMessageIds.length > 0
+        ? await db
+            .select({ id: messages.id, fromNumber: messages.fromNumber, body: messages.body })
+            .from(messages)
+            .where(inArray(messages.id, triageMessageIds))
+            .then(rows => new Map(rows.map(m => [m.id, m])))
+        : new Map();
+
+      for (const t of afterHoursTriageItems) {
+        // Skip if we already have this item from messages (avoid duplicates)
+        const linkedMessage = t.messageId ? triageMessageMap.get(t.messageId) : null;
+        const phone = linkedMessage?.fromNumber || '';
+
+        // Skip if status filter doesn't match
+        if (statusFilter && statusFilter !== 'after_hours') continue;
+
+        const customer = t.customerId ? triageCustomerMap.get(t.customerId) : null;
+        const ageMinutes = Math.floor((now.getTime() - new Date(t.createdAt).getTime()) / 60000);
+
+        items.push({
+          id: t.id,
+          type: 'message', // Treat as message type for UI consistency
+          direction: 'inbound',
+          contactName: t.title || (customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : null),
+          contactPhone: phone.replace('+1', ''),
+          contactEmail: null,
+          contactType: customer ? 'customer' : null,
+          matchStatus: 'after_hours',
+          matchReason: 'After-hours callback required',
+          sentiment: t.priority === 'urgent' ? 'frustrated' : null,
+          isAutoPosted: false,
+          summary: t.aiSummary || t.description || '',
+          requestType: 'After Hours',
+          actionItems: [],
+          policies: [],
+          handledBy: null,
+          handledByAgent: null,
+          timestamp: t.createdAt.toISOString(),
+          ageMinutes,
+          trestleData: null,
+          matchSuggestions: [],
+          agencyzoomCustomerId: customer?.id,
+          // Store the triage item ID for completion
+          triageItemId: t.id,
+        });
+      }
+    }
 
     // =======================================================================
     // Deduplicate items (same phone + similar time = duplicate)
