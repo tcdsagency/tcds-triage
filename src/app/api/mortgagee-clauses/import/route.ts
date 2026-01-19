@@ -63,18 +63,33 @@ export async function POST(request: NextRequest) {
       const notes = toNull(record.notes);
 
       try {
-        await db.insert(mortgageeClauses).values({
+        // Build values object without lienHolderId (it will default to null)
+        // Including it explicitly with null can cause issues with UUID type
+        const insertValues: Record<string, unknown> = {
           tenantId,
           displayName,
           clauseText,
-          policyTypes: policyTypes || null,
-          uploadWebsite,
-          phone,
-          fax,
-          notes,
-          lienHolderId: null,
           isActive: true,
-        });
+        };
+
+        // Only add optional fields if they have values
+        if (policyTypes && policyTypes.length > 0) {
+          insertValues.policyTypes = policyTypes;
+        }
+        if (uploadWebsite) {
+          insertValues.uploadWebsite = uploadWebsite;
+        }
+        if (phone) {
+          insertValues.phone = phone;
+        }
+        if (fax) {
+          insertValues.fax = fax;
+        }
+        if (notes) {
+          insertValues.notes = notes;
+        }
+
+        await db.insert(mortgageeClauses).values(insertValues as typeof mortgageeClauses.$inferInsert);
         results.imported++;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
