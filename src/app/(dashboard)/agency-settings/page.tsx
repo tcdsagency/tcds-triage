@@ -48,12 +48,12 @@ export default function AgencySettingsPage() {
 
   const [agency, setAgency] = useState({
     name: "TCDS Insurance Agency",
-    phone: "(205) 555-0100",
-    email: "info@tcdsagency.com",
-    address: "123 Main Street",
-    city: "Birmingham",
+    phone: "(205) 847-5616",
+    email: "agency@tcdsagency.com",
+    address: "PO BOX 1283",
+    city: "Pinson",
     state: "AL",
-    zip: "35203",
+    zip: "35126",
     website: "https://tcdsagency.com",
   });
   
