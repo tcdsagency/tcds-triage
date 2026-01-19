@@ -38,7 +38,8 @@ import {
   Droplets,
   User,
   Wind,
-  FileWarning
+  FileWarning,
+  BookOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +81,9 @@ import { mapMergedProfileToLifeInsurance, hasLifeInsurance, calculateOpportunity
 import { DonnaInsightsCard } from "@/components/features/DonnaInsightsCard";
 import { MortgageePaymentStatus } from "@/components/features/MortgageePaymentStatus";
 import { CanopyConnectSMS } from "@/components/CanopyConnectSMS";
+import { CoverageScreen } from "@/components/features/coverage";
+import { enrichCoverages, hasCoverageData } from "@/lib/coverage-data";
+import type { Policy as CoveragePolicy } from "@/components/features/coverage";
 
 // =============================================================================
 // ICON MAPPING
@@ -122,6 +126,36 @@ const STATUS_COLORS: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
   non_renewed: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
 };
+
+// =============================================================================
+// COVERAGE SCREEN HELPERS
+// =============================================================================
+
+/**
+ * Transform a policy from the customer profile format to the CoverageScreen format
+ */
+function transformPolicyForCoverageScreen(policy: Policy): CoveragePolicy {
+  // Enrich coverages with detailed agent guidance
+  const enrichedCoverages = enrichCoverages(policy.coverages || []);
+
+  return {
+    policyNumber: policy.policyNumber,
+    carrier: policy.carrier?.name || "Unknown Carrier",
+    effectiveDate: policy.effectiveDate,
+    expirationDate: policy.expirationDate,
+    premium: policy.premium || 0,
+    type: policy.type === "auto" ? "auto" : "home",
+    coverages: enrichedCoverages.length > 0 ? enrichedCoverages : []
+  };
+}
+
+/**
+ * Check if a policy has any coverages with detailed guidance available
+ */
+function policyHasCoverageGuide(policy: Policy): boolean {
+  if (!policy.coverages || policy.coverages.length === 0) return false;
+  return policy.coverages.some(c => hasCoverageData(c.type));
+}
 
 // =============================================================================
 // TABS DEFINITION
@@ -169,7 +203,10 @@ export default function CustomerProfilePage() {
   // AI Overview
   const [aiOverview, setAiOverview] = useState<any>(null);
   const [loadingAiOverview, setLoadingAiOverview] = useState(false);
-  
+
+  // Coverage Guide Modal
+  const [coverageGuidePolicy, setCoverageGuidePolicy] = useState<Policy | null>(null);
+
   // =============================================================================
   // DATA FETCHING
   // =============================================================================
@@ -1061,6 +1098,7 @@ export default function CustomerProfilePage() {
                 policies={profile.policies}
                 expandedPolicies={expandedPolicies}
                 onTogglePolicy={togglePolicy}
+                onOpenCoverageGuide={setCoverageGuidePolicy}
               />
             )}
             
@@ -1152,6 +1190,25 @@ export default function CustomerProfilePage() {
                   </>
                 )}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Coverage Guide Modal */}
+      {coverageGuidePolicy && (
+        <div className="fixed inset-0 z-50 bg-black/50 overflow-y-auto">
+          <div className="min-h-screen px-4 py-8">
+            <div className="relative max-w-6xl mx-auto">
+              <button
+                onClick={() => setCoverageGuidePolicy(null)}
+                className="absolute -top-2 -right-2 z-10 bg-white dark:bg-gray-800 rounded-full p-2 shadow-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <X className="w-6 h-6 text-gray-600 dark:text-gray-400" />
+              </button>
+              <CoverageScreen
+                policy={transformPolicyForCoverageScreen(coverageGuidePolicy)}
+              />
             </div>
           </div>
         </div>
@@ -1437,11 +1494,13 @@ function OverviewTab({
 function PoliciesTab({
   policies,
   expandedPolicies,
-  onTogglePolicy
+  onTogglePolicy,
+  onOpenCoverageGuide
 }: {
   policies: Policy[];
   expandedPolicies: Set<string>;
   onTogglePolicy: (id: string) => void;
+  onOpenCoverageGuide?: (policy: Policy) => void;
 }) {
   if (policies.length === 0) {
     return (
@@ -1481,12 +1540,13 @@ function PoliciesTab({
                 policy={policy}
                 isExpanded={expandedPolicies.has(policy.id)}
                 onToggle={() => onTogglePolicy(policy.id)}
+                onOpenCoverageGuide={onOpenCoverageGuide ? () => onOpenCoverageGuide(policy) : undefined}
               />
             ))}
           </div>
         </div>
       )}
-      
+
       {/* Other Policies */}
       {otherPolicies.length > 0 && (
         <div>
@@ -1500,6 +1560,7 @@ function PoliciesTab({
                 policy={policy}
                 isExpanded={expandedPolicies.has(policy.id)}
                 onToggle={() => onTogglePolicy(policy.id)}
+                onOpenCoverageGuide={onOpenCoverageGuide ? () => onOpenCoverageGuide(policy) : undefined}
               />
             ))}
           </div>
@@ -1512,13 +1573,16 @@ function PoliciesTab({
 function PolicyCard({
   policy,
   isExpanded,
-  onToggle
+  onToggle,
+  onOpenCoverageGuide
 }: {
   policy: Policy;
   isExpanded: boolean;
   onToggle: () => void;
+  onOpenCoverageGuide?: () => void;
 }) {
   const Icon = POLICY_ICONS[policy.type] || Shield;
+  const hasCoverageGuide = policyHasCoverageGuide(policy);
   
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -1596,8 +1660,19 @@ function PolicyCard({
           {/* Coverages */}
           {policy.coverages && policy.coverages.length > 0 && (
             <div className="mb-4">
-              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
-                Coverages
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                  Coverages
+                </div>
+                {hasCoverageGuide && onOpenCoverageGuide && (
+                  <button
+                    onClick={onOpenCoverageGuide}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    Coverage Guide
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 {policy.coverages.map((cov, idx) => (
