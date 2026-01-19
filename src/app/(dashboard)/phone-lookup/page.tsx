@@ -156,7 +156,8 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function StreetViewCard({ address }: { address: { street?: string; city?: string; state?: string; zip?: string } }) {
-  const [imageError, setImageError] = useState(false);
+  const [iframeError, setIframeError] = useState(false);
+  const [viewMode, setViewMode] = useState<'streetview' | 'map'>('streetview');
 
   const fullAddress = [
     address.street,
@@ -170,27 +171,60 @@ function StreetViewCard({ address }: { address: { street?: string; city?: string
   const encodedAddress = encodeURIComponent(fullAddress);
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-  // Google Maps search URL (most reliable way to view address)
+  // Google Maps search URL (for external link)
   const mapsSearchUrl = `https://www.google.com/maps/search/${encodedAddress}`;
+
+  // Interactive Street View embed URL
+  const streetViewEmbedUrl = `https://www.google.com/maps/embed/v1/streetview?key=${apiKey}&location=${encodedAddress}&heading=0&pitch=0&fov=90`;
+
+  // Map view embed URL (fallback if street view not available)
+  const mapEmbedUrl = `https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodedAddress}&zoom=18&maptype=satellite`;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <Eye className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-        <h3 className="font-semibold text-gray-900 dark:text-white">Street View</h3>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Eye className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+          <h3 className="font-semibold text-gray-900 dark:text-white">Street View</h3>
+        </div>
+        {/* View Mode Toggle */}
+        <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+          <button
+            onClick={() => setViewMode('streetview')}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              viewMode === 'streetview'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
+            }`}
+          >
+            Street
+          </button>
+          <button
+            onClick={() => setViewMode('map')}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              viewMode === 'map'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
+            }`}
+          >
+            Satellite
+          </button>
+        </div>
       </div>
 
-      {/* Street View Preview - only show if API key is configured */}
+      {/* Interactive Map/Street View - larger and interactive */}
       <div className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 mb-3">
-        {apiKey && !imageError ? (
-          <img
-            src={`https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${encodedAddress}&key=${apiKey}`}
-            alt={`Street view of ${fullAddress}`}
-            className="w-full h-48 object-cover"
-            onError={() => setImageError(true)}
+        {apiKey && !iframeError ? (
+          <iframe
+            src={viewMode === 'streetview' ? streetViewEmbedUrl : mapEmbedUrl}
+            className="w-full h-80 border-0"
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            onError={() => setIframeError(true)}
           />
         ) : (
-          <div className="w-full h-48 flex items-center justify-center text-gray-400 dark:text-gray-500">
+          <div className="w-full h-80 flex items-center justify-center text-gray-400 dark:text-gray-500">
             <div className="text-center">
               <Map className="w-12 h-12 mx-auto mb-2 opacity-50" />
               <p className="text-sm">Click button below to view in Google Maps</p>
