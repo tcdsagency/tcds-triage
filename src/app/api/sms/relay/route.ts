@@ -163,12 +163,6 @@ export async function POST(request: NextRequest) {
         contactName: contactName,
         contactType: contactType,
         isAcknowledged: true,
-        sentAt: new Date(),
-        metadata: {
-          source: '3cx',
-          agentExtension: body.agentExtension,
-          relayedAt: new Date().toISOString(),
-        },
       });
     } catch (dbError) {
       console.error('[SMS Relay] Failed to store message:', dbError);
