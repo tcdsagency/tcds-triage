@@ -74,18 +74,22 @@ interface ImportResult {
   errors: string[];
 }
 
-// CSV Parser - handles quoted fields and commas within quotes
+// CSV/TSV Parser - handles quoted fields, commas, and tabs
 function parseCSV(text: string): Record<string, string>[] {
   const lines = text.split(/\r?\n/).filter((line) => line.trim());
   if (lines.length < 2) return [];
 
-  const headers = parseCSVLine(lines[0]).map((h) =>
+  // Detect delimiter: if first line has tabs, use tab; otherwise use comma
+  const firstLine = lines[0];
+  const delimiter = firstLine.includes("\t") ? "\t" : ",";
+
+  const headers = parseCSVLine(lines[0], delimiter).map((h) =>
     h.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")
   );
 
   const records: Record<string, string>[] = [];
   for (let i = 1; i < lines.length; i++) {
-    const values = parseCSVLine(lines[i]);
+    const values = parseCSVLine(lines[i], delimiter);
     const record: Record<string, string> = {};
     headers.forEach((header, idx) => {
       record[header] = values[idx]?.trim() || "";
@@ -97,7 +101,7 @@ function parseCSV(text: string): Record<string, string>[] {
   return records;
 }
 
-function parseCSVLine(line: string): string[] {
+function parseCSVLine(line: string, delimiter: string = ","): string[] {
   const values: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -111,7 +115,7 @@ function parseCSVLine(line: string): string[] {
       } else {
         inQuotes = !inQuotes;
       }
-    } else if (char === "," && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       values.push(current);
       current = "";
     } else {
