@@ -98,6 +98,20 @@ interface Policy {
   properties: Property[];
 }
 
+interface CustomerAddress {
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
+  county?: string;
+}
+
+interface UserInfo {
+  firstName: string;
+  lastName: string;
+  avatarUrl: string | null;
+}
+
 interface Customer {
   id: string;
   firstName: string;
@@ -106,13 +120,14 @@ interface Customer {
   email: string | null;
   phone: string | null;
   phoneAlt: string | null;
+  address: CustomerAddress | null;
   isLead: boolean;
   agencyzoomId: string | null;
   hawksoftClientCode: string | null;
   createdAt: string;
   policies: Policy[];
-  producer: { firstName: string; lastName: string } | null;
-  csr: { firstName: string; lastName: string } | null;
+  producer: UserInfo | null;
+  csr: UserInfo | null;
 }
 
 const POLICY_ICONS: Record<PolicyType | 'default', any> = {
@@ -582,6 +597,18 @@ export default function CustomersPage() {
                     <span className="text-gray-900 font-medium">{selectedCustomer.email}</span>
                   </div>
                 )}
+                {selectedCustomer.address && (
+                  <div className="flex items-start gap-3 text-sm">
+                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
+                    <div>
+                      <div className="text-gray-900 font-medium">{selectedCustomer.address.street}</div>
+                      <div className="text-gray-500">
+                        {selectedCustomer.address.city}, {selectedCustomer.address.state} {selectedCustomer.address.zip}
+                        {selectedCustomer.address.county && ` (${selectedCustomer.address.county} County)`}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -593,15 +620,49 @@ export default function CustomersPage() {
               <div className="bg-white rounded-lg border border-gray-200 p-4 grid grid-cols-2 gap-4">
                 <div>
                   <div className="text-xs text-gray-500 mb-1">Producer</div>
-                  <div className="text-sm font-medium text-gray-900">
-                    {selectedCustomer.producer ? `${selectedCustomer.producer.firstName} ${selectedCustomer.producer.lastName}` : 'Unassigned'}
-                  </div>
+                  {selectedCustomer.producer ? (
+                    <div className="flex items-center gap-2">
+                      {selectedCustomer.producer.avatarUrl ? (
+                        <img
+                          src={selectedCustomer.producer.avatarUrl}
+                          alt={`${selectedCustomer.producer.firstName} ${selectedCustomer.producer.lastName}`}
+                          className="w-6 h-6 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-xs font-medium">
+                          {selectedCustomer.producer.firstName[0]}{selectedCustomer.producer.lastName[0]}
+                        </div>
+                      )}
+                      <span className="text-sm font-medium text-gray-900">
+                        {selectedCustomer.producer.firstName} {selectedCustomer.producer.lastName}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-400">Unassigned</div>
+                  )}
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 mb-1">CSR</div>
-                  <div className="text-sm font-medium text-gray-900">
-                    {selectedCustomer.csr ? `${selectedCustomer.csr.firstName} ${selectedCustomer.csr.lastName}` : 'Unassigned'}
-                  </div>
+                  {selectedCustomer.csr ? (
+                    <div className="flex items-center gap-2">
+                      {selectedCustomer.csr.avatarUrl ? (
+                        <img
+                          src={selectedCustomer.csr.avatarUrl}
+                          alt={`${selectedCustomer.csr.firstName} ${selectedCustomer.csr.lastName}`}
+                          className="w-6 h-6 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-medium">
+                          {selectedCustomer.csr.firstName[0]}{selectedCustomer.csr.lastName[0]}
+                        </div>
+                      )}
+                      <span className="text-sm font-medium text-gray-900">
+                        {selectedCustomer.csr.firstName} {selectedCustomer.csr.lastName}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-400">Unassigned</div>
+                  )}
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 mb-1">Policy Count</div>

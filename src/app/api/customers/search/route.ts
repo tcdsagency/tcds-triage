@@ -181,7 +181,7 @@ export async function GET(request: NextRequest) {
         .where(sql`${properties.policyId} IN (${sql.join(policyIds.map(id => sql`${id}`), sql`, `)})`)
       : [];
 
-    // Fetch producer/CSR info
+    // Fetch producer/CSR info (including avatar)
     const userIds = [...new Set([
       ...results.map(r => r.producerId).filter(Boolean),
       ...results.map(r => r.csrId).filter(Boolean),
@@ -191,6 +191,7 @@ export async function GET(request: NextRequest) {
           id: users.id,
           firstName: users.firstName,
           lastName: users.lastName,
+          avatarUrl: users.avatarUrl,
         })
         .from(users)
         .where(sql`${users.id} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`)
@@ -225,24 +226,27 @@ export async function GET(request: NextRequest) {
 
     // Calculate active status dynamically based on status and dates
     const calculateIsActive = (p: any): boolean => {
-      const status = (p.status || '').toLowerCase();
+      const status = (p.status || '').toLowerCase().trim();
       const now = new Date();
       const expirationDate = p.expirationDate ? new Date(p.expirationDate) : null;
 
-      // Replaced policies are ALWAYS inactive
-      if (status.includes('replaced')) return false;
+      // Replaced/rewritten policies are ALWAYS inactive (policy was superseded by another)
+      // HawkSoft statuses: "Replaced", "Replaced: Rewritten", "Replaced:Rewrite", "Rewritten", etc.
+      if (status.includes('replaced') || status.includes('rewritten')) return false;
 
       // Dead file statuses
       if (['deadfiled', 'prospect', 'purge', 'void', 'quote', 'lead', 'rejected', 'archived'].some(s => status.includes(s))) {
         return false;
       }
 
-      // Cancelled/expired
-      if (status === 'cancelled' || status === 'canceled' || status === 'expired' || status === 'non_renewed') {
+      // Cancelled/expired/non-renewed
+      if (status === 'cancelled' || status === 'canceled' || status === 'expired' ||
+          status === 'non_renewed' || status === 'non-renewed' || status === 'nonrenewed') {
         return false;
       }
 
-      // Check expiration for active/renewal/rewrite
+      // "rewrite" (without "replaced") means NEW active policy that replaced another
+      // Check expiration for active/renewal/rewrite/new
       if (status === 'active' || status === 'renewal' || status === 'renew' || status === 'rewrite' || status === 'new') {
         return !expirationDate || expirationDate > now;
       }
@@ -253,11 +257,12 @@ export async function GET(request: NextRequest) {
 
     // Calculate display status
     const getDisplayStatus = (p: any, isActive: boolean): string => {
-      const status = (p.status || '').toLowerCase();
-      if (status.includes('replaced')) return 'replaced';
+      const status = (p.status || '').toLowerCase().trim();
+      // Replaced or rewritten = old superseded policy
+      if (status.includes('replaced') || status.includes('rewritten')) return 'replaced';
       if (status === 'cancelled' || status === 'canceled') return 'cancelled';
+      if (status === 'non_renewed' || status === 'non-renewed' || status === 'nonrenewed') return 'non_renewed';
       if (status === 'expired' || (p.expirationDate && new Date(p.expirationDate) < new Date())) return 'expired';
-      if (status === 'non_renewed') return 'non_renewed';
       if (isActive) return 'active';
       return status || 'unknown';
     };
