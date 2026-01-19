@@ -51,12 +51,22 @@ export async function POST(request: NextRequest) {
         policyTypes = parsed.length > 0 ? parsed : null;
       }
 
+      // Parse optional fields
+      const uploadWebsite = record.uploadWebsite?.trim() || record.upload_website?.trim() || record.website?.trim() || null;
+      const phone = record.phone?.trim() || null;
+      const fax = record.fax?.trim() || null;
+      const notes = record.notes?.trim() || null;
+
       try {
         await db.insert(mortgageeClauses).values({
           tenantId,
           displayName,
           clauseText,
           policyTypes,
+          uploadWebsite,
+          phone,
+          fax,
+          notes,
           lienHolderId: null, // Can be linked later
           isActive: true,
         });
