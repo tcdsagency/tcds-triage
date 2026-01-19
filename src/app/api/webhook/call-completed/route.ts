@@ -16,7 +16,7 @@ import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, tr
 import { eq, or, ilike, and, gte, lte, desc, isNotNull, asc } from "drizzle-orm";
 import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
-import { trestleIQClient } from "@/lib/api/trestleiq";
+import { trestleIQClient, quickLeadCheck } from "@/lib/api/trestleiq";
 import { getServiceRequestTypeId } from "@/lib/constants/agencyzoom";
 
 // =============================================================================
@@ -1071,22 +1071,40 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       if (customerMatchStatus === "unmatched") {
         if (phoneForLookup && trestleIQClient) {
           try {
-            const trestleResult = await withTimeout(
-              trestleIQClient.reversePhone(phoneForLookup),
-              5000, // 5s timeout
-              null
-            );
-            if (trestleResult) {
+            // Run reverse phone and lead quality check in parallel
+            const [trestleResult, leadQuality] = await Promise.all([
+              withTimeout(
+                trestleIQClient.reversePhone(phoneForLookup),
+                5000, // 5s timeout
+                null
+              ),
+              withTimeout(
+                quickLeadCheck(phoneForLookup),
+                3000, // 3s timeout for quick check
+                null
+              ),
+            ]);
+
+            if (trestleResult || leadQuality) {
               trestleData = {
-                phoneNumber: trestleResult.phoneNumber,
-                lineType: trestleResult.lineType,
-                carrier: trestleResult.carrier,
-                person: trestleResult.person,
-                address: trestleResult.address,
-                emails: trestleResult.emails,
-                confidence: trestleResult.confidence,
+                phoneNumber: trestleResult?.phoneNumber || phoneForLookup,
+                lineType: trestleResult?.lineType || leadQuality?.isValid ? 'unknown' : 'unknown',
+                carrier: trestleResult?.carrier,
+                person: trestleResult?.person,
+                address: trestleResult?.address,
+                emails: trestleResult?.emails,
+                confidence: trestleResult?.confidence,
+                // Add lead quality scoring
+                leadQuality: leadQuality ? {
+                  grade: leadQuality.grade,
+                  activityScore: leadQuality.activityScore,
+                  phoneValid: leadQuality.isValid,
+                  phoneLineType: trestleResult?.lineType,
+                  isDisconnected: !leadQuality.isValid || leadQuality.activityScore < 20,
+                  isSpam: false, // Would need separate spam check
+                } : undefined,
               };
-              console.log(`[Call-Completed] Trestle lookup: ${trestleResult.person?.name || "No name found"}`);
+              console.log(`[Call-Completed] Trestle lookup: ${trestleResult?.person?.name || "No name found"}, Lead Grade: ${leadQuality?.grade || "N/A"}`);
             }
           } catch (error) {
             console.error("[Call-Completed] Trestle lookup error:", error);

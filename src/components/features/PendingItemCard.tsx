@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { cn, formatPhoneNumber } from '@/lib/utils';
 import { getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
+import { LeadQualityBadgeCompact } from '@/components/features/LeadQualityBadge';
 
 // =============================================================================
 // TOOLTIP COMPONENT
@@ -69,6 +70,15 @@ export interface PendingItem {
     address?: string;
     email?: string;
     altPhones?: string[];
+    // Lead quality scoring
+    leadQuality?: {
+      grade: 'A' | 'B' | 'C' | 'D' | 'F';
+      activityScore: number;
+      phoneValid?: boolean;
+      phoneLineType?: string;
+      isDisconnected?: boolean;
+      isSpam?: boolean;
+    };
   } | null;
 
   // Match suggestions
@@ -398,6 +408,10 @@ export default function PendingItemCard({
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
               {item.contactPhone && (
                 <span className="font-mono">{item.contactPhone}</span>
+              )}
+              {/* Lead Quality Badge */}
+              {item.trestleData?.leadQuality && (
+                <LeadQualityBadgeCompact data={item.trestleData.leadQuality} />
               )}
               <span className="flex items-center gap-1">
                 {typeConfig.icon} {typeConfig.label}
