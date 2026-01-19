@@ -688,7 +688,22 @@ export async function POST(
 
         // Handle note/ticket actions for after-hours items
         if (body.action === 'note' || body.action === 'ticket' || body.action === 'ncm') {
-          const customerId = body.customerId ? parseInt(body.customerId) : null;
+          // Get customer ID - first from body, then try to look up from triage item's linked customer
+          let customerId = body.customerId ? parseInt(body.customerId) : null;
+
+          // If no customer ID provided and triage item has a linked customer, look up their AgencyZoom ID
+          if (!customerId && triageItem.customerId) {
+            const [linkedCustomer] = await db
+              .select({ agencyzoomId: customers.agencyzoomId })
+              .from(customers)
+              .where(eq(customers.id, triageItem.customerId))
+              .limit(1);
+
+            if (linkedCustomer?.agencyzoomId) {
+              customerId = parseInt(linkedCustomer.agencyzoomId);
+              console.log(`[Complete API] Found linked customer AgencyZoom ID: ${customerId} from triage item`);
+            }
+          }
 
           // Get linked message for phone number
           let linkedMessage = null;
@@ -701,8 +716,15 @@ export async function POST(
             linkedMessage = msg;
           }
 
-          const callerPhone = linkedMessage?.fromNumber?.replace('+1', '') || 'Unknown';
-          const callerName = triageItem.title || linkedMessage?.contactName || 'Unknown Caller';
+          // Extract phone from title (format: "Name - +1XXXXXXXXXX") if no linked message
+          let callerPhone = linkedMessage?.fromNumber?.replace('+1', '') || 'Unknown';
+          if (callerPhone === 'Unknown' && triageItem.title) {
+            const phoneMatch = triageItem.title.match(/\+?1?(\d{10})$/);
+            if (phoneMatch) {
+              callerPhone = phoneMatch[1];
+            }
+          }
+          const callerName = triageItem.title?.replace(/\s*-\s*\+?1?\d{10}$/, '') || linkedMessage?.contactName || 'Unknown Caller';
           const summary = triageItem.aiSummary || triageItem.description || linkedMessage?.body || 'After-hours callback request';
 
           if (body.action === 'note') {

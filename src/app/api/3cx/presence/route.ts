@@ -55,6 +55,9 @@ export async function GET(request: NextRequest) {
   try {
     const tenantId = process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
 
+    console.log(`[Presence] ========== PRESENCE CHECK ==========`);
+    console.log(`[Presence] Timestamp: ${new Date().toISOString()}`);
+
     // Get users from database to populate team
     const teamUsers = await db
       .select({
@@ -69,13 +72,25 @@ export async function GET(request: NextRequest) {
       .from(users)
       .where(eq(users.tenantId, tenantId));
 
+    console.log(`[Presence] Found ${teamUsers.length} team users with extensions:`, teamUsers.filter(u => u.extension).map(u => ({
+      name: `${u.firstName} ${u.lastName}`.trim(),
+      ext: u.extension
+    })));
+
     // Try VoIPTools Relay first (preferred for presence)
     const voiptoolsClient = await getVoIPToolsRelayClient();
+    console.log(`[Presence] VoIPTools client available: ${!!voiptoolsClient}`);
     if (voiptoolsClient) {
       try {
         // Get unique extension numbers from team users
         const extensionList = [...new Set(teamUsers.map(u => u.extension).filter(Boolean))] as string[];
+        console.log(`[Presence] Querying VoIPTools for extensions: ${extensionList.join(', ')}`);
         const presenceData = await voiptoolsClient.getAllPresence(extensionList);
+        console.log(`[Presence] VoIPTools raw response:`, presenceData.map(p => ({
+          ext: p.Extension,
+          status: p.Status,
+          statusText: p.StatusText
+        })));
 
         // Map VoIPTools presence to our format (only users with extensions)
         const teamMembers: TeamMember[] = teamUsers.filter(u => u.extension).map((user) => {
@@ -104,6 +119,13 @@ export async function GET(request: NextRequest) {
           };
         });
 
+        console.log(`[Presence] VoIPTools final mapping:`, teamMembers.map(m => ({
+          name: m.name,
+          ext: m.extension,
+          status: m.status
+        })));
+        console.log(`[Presence] ========================================`);
+
         return NextResponse.json({
           success: true,
           connected: true,
@@ -116,16 +138,22 @@ export async function GET(request: NextRequest) {
           },
         });
       } catch (voipError) {
-        console.error("VoIPTools API error:", voipError);
+        console.error("[Presence] VoIPTools API error:", voipError);
         // Fall through to 3CX Native
       }
     }
 
     // Try 3CX Native API with OAuth2
     const threecxClient = await getThreeCXClient();
+    console.log(`[Presence] 3CX Native client available: ${!!threecxClient}`);
     if (threecxClient) {
       try {
+        console.log(`[Presence] Querying 3CX Native API for presence`);
         const presenceData = await threecxClient.getAllExtensionStatuses();
+        console.log(`[Presence] 3CX Native raw response:`, presenceData.map(p => ({
+          ext: p.Extension || p.Number,
+          status: p.Status || p.PresenceStatus
+        })));
 
         // Map 3CX presence to our format (only users with extensions)
         const teamMembers: TeamMember[] = teamUsers.filter(u => u.extension).map((user) => {
@@ -150,6 +178,13 @@ export async function GET(request: NextRequest) {
           };
         });
 
+        console.log(`[Presence] 3CX Native final mapping:`, teamMembers.map(m => ({
+          name: m.name,
+          ext: m.extension,
+          status: m.status
+        })));
+        console.log(`[Presence] ========================================`);
+
         return NextResponse.json({
           success: true,
           connected: true,
@@ -161,12 +196,13 @@ export async function GET(request: NextRequest) {
           },
         });
       } catch (apiError) {
-        console.error("3CX API error:", apiError);
+        console.error("[Presence] 3CX API error:", apiError);
         // Fall through to mock data
       }
     }
 
     // Return mock/demo data if 3CX not configured or API failed (only users with extensions)
+    console.log(`[Presence] WARNING: No presence source available, returning mock data`);
     const mockTeam: TeamMember[] = teamUsers.filter(u => u.extension).map((user, index) => {
       // Generate varied statuses for demo
       const statuses: { status: PresenceStatus; text: string }[] = [
