@@ -56,9 +56,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const extension = searchParams.get("extension");
 
-    console.log(`[Call Detect] ========== DETECT REQUEST ==========`);
-    console.log(`[Call Detect] Extension: ${extension || 'NOT_PROVIDED'}`);
-
     if (!extension) {
       return NextResponse.json(
         { success: false, error: "Extension required" },
@@ -82,44 +79,29 @@ export async function GET(request: NextRequest) {
       .limit(1);
 
     if (!agent) {
-      console.log(`[Call Detect] WARNING: No agent found in DB for extension ${extension}`);
       return NextResponse.json(
         { success: false, error: "Agent not found for extension" },
         { status: 404 }
       );
     }
-    console.log(`[Call Detect] Found agent: ${agent.firstName} ${agent.lastName} (ID: ${agent.id.substring(0, 8)})`);
-
 
     // Check VoIPTools presence
     const voiptools = await getVoIPToolsRelayClient();
     if (!voiptools) {
-      console.log(`[Call Detect] ERROR: VoIPTools client not available`);
       return NextResponse.json({
         success: false,
         error: "VoIPTools not configured",
       }, { status: 503 });
     }
 
-    console.log(`[Call Detect] Querying VoIPTools presence for extension ${extension}`);
     const presence = await voiptools.getPresence(extension);
     const statusText = presence?.StatusText?.toLowerCase() || "";
-    const status = presence?.Status || "unknown";
-
-    console.log(`[Call Detect] VoIPTools raw response:`, {
-      ext: extension,
-      Status: presence?.Status,
-      StatusText: presence?.StatusText,
-      Extension: presence?.Extension
-    });
 
     // Check for on-call indicators
     const isOnCall = statusText.includes("isincall: true") ||
                      statusText.includes("isincall:true") ||
                      statusText.includes("talking") ||
                      statusText.includes("ringing");
-
-    console.log(`[Call Detect] ext=${extension} status="${status}" statusText="${statusText}" isOnCall=${isOnCall}`);
 
     if (!isOnCall) {
       // Not on a call - check if there's a stale active call in DB
@@ -137,7 +119,6 @@ export async function GET(request: NextRequest) {
 
       if (staleCall) {
         // Mark as completed since VoIPTools says not on call
-        console.log(`[Call Detect] Marking stale call ${staleCall.id} as completed`);
         await db
           .update(calls)
           .set({ status: "completed", endedAt: new Date() })
@@ -181,8 +162,6 @@ export async function GET(request: NextRequest) {
       const phoneNumber = existingCall.externalNumber ||
         (direction === "inbound" ? existingCall.fromNumber : existingCall.toNumber);
 
-      console.log(`[Call Detect] Found existing call ${existingCall.id}`);
-
       return NextResponse.json({
         success: true,
         isOnCall: true,
@@ -202,7 +181,6 @@ export async function GET(request: NextRequest) {
 
     // No existing call in DB - CREATE one to trigger screen pop
     // This handles cases where VM Bridge didn't capture the call
-    console.log(`[Call Detect] Creating call for ext=${extension} (presence-triggered)`);
 
     const [newCall] = await db
       .insert(calls)
@@ -220,13 +198,9 @@ export async function GET(request: NextRequest) {
       })
       .returning();
 
-    console.log(`[Call Detect] Created call ${newCall.id} for presence-detected call`);
-
     // NOTE: Do NOT broadcast call_ringing here - we don't have the phone number yet.
     // The actual call event (from webhook/VM Bridge) will provide the phone number
     // and trigger the proper screen pop. Broadcasting "Unknown" causes double popups.
-
-    console.log(`[Call Detect] ========================================`);
 
     return NextResponse.json({
       success: true,
@@ -245,7 +219,6 @@ export async function GET(request: NextRequest) {
       message: "Call created from presence detection",
     });
   } catch (error) {
-    console.error("[Call Detect] ========== ERROR ==========");
     console.error("[Call Detect] Error:", error);
     return NextResponse.json({
       success: false,

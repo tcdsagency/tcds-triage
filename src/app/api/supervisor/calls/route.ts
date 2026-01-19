@@ -52,9 +52,6 @@ export async function GET(request: NextRequest) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    console.log(`[Supervisor] ========== DASHBOARD REFRESH ==========`);
-    console.log(`[Supervisor] Timestamp: ${new Date().toISOString()}`);
-
     // Get all users with extensions (they handle calls)
     const agents = await db
       .select({
@@ -66,11 +63,6 @@ export async function GET(request: NextRequest) {
       })
       .from(users)
       .where(eq(users.tenantId, tenantId));
-
-    console.log(`[Supervisor] Found ${agents.length} agents:`, agents.map(a => ({
-      name: `${a.firstName} ${a.lastName}`.trim(),
-      extension: a.extension || 'NO_EXT'
-    })));
 
     // Get today's calls
     const todaysCalls = await db
@@ -90,25 +82,16 @@ export async function GET(request: NextRequest) {
       const presenceRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/3cx/presence`);
       if (presenceRes.ok) {
         const presenceData = await presenceRes.json();
-        console.log(`[Supervisor] Presence API source: ${presenceData.source || 'unknown'}, connected: ${presenceData.connected}`);
         if (presenceData.team) {
           presenceData.team.forEach((p: any) => {
             if (p.extension) {
               presenceMap.set(p.extension, p.status);
             }
           });
-          // Log all presence statuses
-          console.log(`[Supervisor] Presence data:`, presenceData.team.map((p: any) => ({
-            name: p.name,
-            ext: p.extension,
-            status: p.status
-          })));
         }
-      } else {
-        console.warn(`[Supervisor] Presence API returned ${presenceRes.status}`);
       }
     } catch (e) {
-      console.log("[Supervisor] Could not fetch presence data:", e);
+      // Presence fetch failed - continue without it
     }
 
     // Calculate agent stats (only for users with extensions - they handle calls)
@@ -192,58 +175,30 @@ export async function GET(request: NextRequest) {
 
     // Get active calls - use presence as source of truth
     // Only show calls where the agent's presence confirms they're on a call
-    console.log(`[Supervisor] Processing ${todaysCalls.length} total calls today`);
-
-    // Log all calls without endedAt for debugging
-    const openCalls = todaysCalls.filter(c => !c.endedAt);
-    console.log(`[Supervisor] Found ${openCalls.length} calls without endedAt:`, openCalls.map(c => {
-      const agent = agents.find(a => a.id === c.agentId);
-      return {
-        id: c.id.substring(0, 8),
-        status: c.status,
-        agentId: c.agentId?.substring(0, 8) || 'NO_AGENT',
-        agentName: agent ? `${agent.firstName} ${agent.lastName}`.trim() : 'UNKNOWN',
-        agentExt: agent?.extension || 'NO_EXT',
-        phone: c.fromNumber || c.toNumber,
-        startedAt: c.startedAt?.toISOString()
-      };
-    }));
-
     const activeCalls: ActiveCall[] = todaysCalls
       .filter((c) => {
         if (c.endedAt) return false;
-        if (!c.startedAt) {
-          console.log(`[Supervisor] Excluding call ${c.id.substring(0, 8)} - no startedAt`);
-          return false;
-        }
+        if (!c.startedAt) return false;
         const startTime = new Date(c.startedAt).getTime();
         // Exclude calls older than 2 hours (definitely stale)
-        if (startTime < twoHoursAgo) {
-          console.log(`[Supervisor] Excluding call ${c.id.substring(0, 8)} - older than 2 hours`);
-          return false;
-        }
+        if (startTime < twoHoursAgo) return false;
 
         // Check presence - if agent shows as available/away/offline, call is stale
         const agent = agents.find((a) => a.id === c.agentId);
         if (agent?.extension) {
           const agentPresence = presenceMap.get(agent.extension);
-          console.log(`[Supervisor] Call ${c.id.substring(0, 8)}: agent ${agent.firstName} (ext ${agent.extension}) presence = ${agentPresence || 'NOT_FOUND'}`);
           if (agentPresence && agentPresence !== "on_call" && agentPresence !== "talking" && agentPresence !== "ringing") {
             // Agent is not on a call per presence - mark this call as ended in background
-            console.log(`[Supervisor] FILTERING OUT call ${c.id.substring(0, 8)} - agent ${agent.extension} presence is ${agentPresence} (not on call)`);
             db.update(calls)
               .set({
                 status: c.status === "ringing" ? "missed" : "completed",
                 endedAt: new Date(),
               })
               .where(eq(calls.id, c.id))
-              .catch((e) => console.error(`Failed to cleanup call ${c.id}:`, e));
+              .catch(() => {}); // Silently fail cleanup
             return false;
           }
-        } else {
-          console.log(`[Supervisor] Call ${c.id.substring(0, 8)}: no agent extension found, agentId=${c.agentId?.substring(0, 8) || 'NONE'}`);
         }
-        console.log(`[Supervisor] KEEPING call ${c.id.substring(0, 8)} as active`);
         return true;
       })
       .map((call) => {
@@ -301,21 +256,6 @@ export async function GET(request: NextRequest) {
       agentsOnline: agentStats.filter((a) => a.status !== "offline").length,
       agentsOnCall: agentStats.filter((a) => a.status === "on_call").length,
     };
-
-    console.log(`[Supervisor] ========== DASHBOARD SUMMARY ==========`);
-    console.log(`[Supervisor] Active calls returned: ${activeCalls.length}`);
-    console.log(`[Supervisor] Agents on call: ${stats.agentsOnCall}`);
-    console.log(`[Supervisor] Total calls today: ${stats.totalCallsToday}`);
-    if (activeCalls.length > 0) {
-      console.log(`[Supervisor] Active call details:`, activeCalls.map(c => ({
-        id: c.id.substring(0, 8),
-        agent: c.agentName,
-        ext: c.agentExtension,
-        phone: c.customerPhone,
-        duration: c.duration
-      })));
-    }
-    console.log(`[Supervisor] ========================================`);
 
     return NextResponse.json({
       success: true,
