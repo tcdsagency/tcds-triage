@@ -38,6 +38,16 @@ export async function POST(request: NextRequest) {
     const formattedPhone = `(${normalized.slice(0, 3)}) ${normalized.slice(3, 6)}-${normalized.slice(6)}`;
 
     console.log(`[Trestle Lookup] Searching: ${formattedPhone}`);
+    console.log(`[Trestle Lookup] API configured: ${trestleIQClient.isConfigured()}`);
+
+    // Check if API is configured
+    if (!trestleIQClient.isConfigured()) {
+      return NextResponse.json({
+        success: false,
+        error: 'Trestle API key not configured. Add TRESTLEIQ_API_KEY to environment variables.',
+        configured: false,
+      }, { status: 503 });
+    }
 
     // Call all Trestle APIs in parallel for speed
     const [reversePhoneResult, callerIdResult, phoneValidationResult, leadQualityResult] =
