@@ -172,6 +172,14 @@ export const FEATURES: FeatureConfig[] = [
     defaultEnabled: true,
     route: '/travelers-application',
   },
+  {
+    key: 'phoneLookup',
+    label: 'Phone Lookup',
+    description: 'Lookup phone number details via Trestle IQ',
+    category: 'tools',
+    defaultEnabled: true,
+    route: '/phone-lookup',
+  },
 
   // =============================================================================
   // ADVANCED - Analytics and monitoring features

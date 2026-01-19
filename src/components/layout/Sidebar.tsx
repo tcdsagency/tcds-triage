@@ -66,6 +66,7 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   // Advanced
   '/competitive-intel': 'competitiveIntel',
   '/risk-monitor': 'riskMonitor',
+  '/phone-lookup': 'phoneLookup',
   '/properties': 'properties',
   '/reports': 'reports',
   '/reviews': 'reviews',
@@ -120,6 +121,7 @@ const toolsNav = [
   { name: 'Coverage Guide', href: '/coverage-demo', icon: BookOpen },
   { name: 'Canopy Connect', href: '/canopy-connect', icon: Link2 },
   { name: 'Travelers App', href: '/travelers-application', icon: Plane },
+  { name: 'Phone Lookup', href: '/phone-lookup', icon: Phone },
   { name: 'Properties', href: '/properties', icon: Home },
   { name: 'Invoice', href: '/invoice', icon: Receipt },
   { name: 'Reviews', href: '/reviews', icon: Star },

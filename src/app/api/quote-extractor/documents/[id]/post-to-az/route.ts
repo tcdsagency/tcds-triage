@@ -82,8 +82,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       });
 
       if (!leadResult.success || !leadResult.leadId) {
+        console.error('[Quote Extractor] Lead creation failed:', leadResult);
         return NextResponse.json(
-          { success: false, error: "Failed to create lead in AgencyZoom" },
+          {
+            success: false,
+            error: leadResult.error || "Failed to create lead in AgencyZoom",
+            details: leadResult
+          },
           { status: 500 }
         );
       }
