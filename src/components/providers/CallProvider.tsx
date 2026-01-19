@@ -613,15 +613,20 @@ export function CallProvider({ children }: CallProviderProps) {
 
           console.log(`[CallProvider] Detect found call: ${call.sessionId} (source: ${call.source})`);
 
-          // Trigger call event to show screen pop
-          handleCallEvent({
-            type: call.status === 'ringing' ? 'call_ringing' : 'call_started',
-            sessionId: call.sessionId,
-            phoneNumber: call.phoneNumber || "Unknown",
-            direction: call.direction || "inbound",
-            extension: currentExt,
-            customerId: call.customerId,
-          });
+          // Only trigger screen pop if we have real phone number data
+          // Presence-created calls with "Unknown" phone should wait for actual call event
+          if (call.phoneNumber && call.phoneNumber !== "Unknown") {
+            handleCallEvent({
+              type: call.status === 'ringing' ? 'call_ringing' : 'call_started',
+              sessionId: call.sessionId,
+              phoneNumber: call.phoneNumber,
+              direction: call.direction || "inbound",
+              extension: currentExt,
+              customerId: call.customerId,
+            });
+          } else {
+            console.log(`[CallProvider] Skipping screen pop for presence-detected call with unknown number`);
+          }
         }
       } catch (e) {
         // Silent fail - polling will retry

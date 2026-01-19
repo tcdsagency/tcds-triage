@@ -206,17 +206,9 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Call Detect] Created call ${newCall.id} for presence-detected call`);
 
-    // Broadcast call_ringing to trigger screen pop
-    await notifyRealtimeServer({
-      type: "call_ringing",
-      callId: newCall.id,
-      sessionId: newCall.id,
-      extension,
-      direction: "inbound",
-      fromNumber: "Unknown",
-      toNumber: extension,
-      source: "presence_detection",
-    });
+    // NOTE: Do NOT broadcast call_ringing here - we don't have the phone number yet.
+    // The actual call event (from webhook/VM Bridge) will provide the phone number
+    // and trigger the proper screen pop. Broadcasting "Unknown" causes double popups.
 
     return NextResponse.json({
       success: true,
