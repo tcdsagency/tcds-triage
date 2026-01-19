@@ -173,6 +173,47 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Check for agents on call (per presence) but without a database call record
+    // This catches calls that didn't trigger webhooks
+    const agentsOnCallPerPresence = agents.filter(a => {
+      if (!a.extension) return false;
+      const status = presenceMap.get(a.extension);
+      return status === "on_call" || status === "talking" || status === "ringing";
+    });
+
+    // Create missing call records for agents on call without DB records
+    for (const agent of agentsOnCallPerPresence) {
+      const hasActiveCall = todaysCalls.some(c =>
+        !c.endedAt && c.agentId === agent.id
+      );
+
+      if (!hasActiveCall) {
+        // Create a call record from presence detection
+        try {
+          const [newCall] = await db
+            .insert(calls)
+            .values({
+              tenantId,
+              direction: "inbound",
+              status: "in_progress",
+              fromNumber: "Unknown",
+              toNumber: agent.extension || "",
+              agentId: agent.id,
+              extension: agent.extension,
+              startedAt: new Date(),
+              answeredAt: new Date(),
+            })
+            .returning();
+
+          // Add to todaysCalls so it shows up
+          todaysCalls.push(newCall);
+          console.log(`[Supervisor] Created call record from presence for ${agent.firstName} ${agent.lastName} (${agent.extension})`);
+        } catch (err) {
+          // Ignore errors - might be race condition
+        }
+      }
+    }
+
     // Get active calls - use presence as source of truth
     // Only show calls where the agent's presence confirms they're on a call
     const activeCalls: ActiveCall[] = todaysCalls
