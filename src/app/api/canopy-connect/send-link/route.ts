@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { canopyConnectPulls, messages } from "@/db/schema";
 import { twilioClient } from "@/lib/twilio";
+import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 import { randomUUID } from "crypto";
 
 export async function POST(request: NextRequest) {
@@ -54,11 +55,23 @@ export async function POST(request: NextRequest) {
     const customerName = firstName ? `Hi ${firstName}! ` : "";
     const smsMessage = `${customerName}TCDS Agency needs to verify your current insurance coverage. Please click the secure link below to connect your insurance account:\n\n${linkUrl}\n\nThis takes about 2 minutes and helps us find you better rates. Reply HELP for assistance.`;
 
-    // Send SMS
-    const smsResult = await twilioClient.sendSMS({
-      to: phone,
-      message: smsMessage,
-    });
+    // Send SMS via AgencyZoom (so it appears in customer conversation history)
+    let smsResult: { success: boolean; messageId?: string; error?: string };
+
+    try {
+      const azClient = getAgencyZoomClient();
+      smsResult = await azClient.sendSMS({
+        phoneNumber: phone,
+        message: smsMessage,
+        contactId: customerId ? parseInt(customerId) : undefined,
+      });
+    } catch (azError) {
+      console.error(`[Canopy SMS] AgencyZoom SMS failed, error:`, azError);
+      smsResult = {
+        success: false,
+        error: azError instanceof Error ? azError.message : 'AgencyZoom SMS failed',
+      };
+    }
 
     if (!smsResult.success) {
       console.error(`[Canopy SMS] SMS send failed: ${smsResult.error}`);
@@ -68,7 +81,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[Canopy SMS] SMS sent to ${phone}, messageId: ${smsResult.messageId}`);
+    console.log(`[Canopy SMS] SMS sent via AgencyZoom to ${phone}, messageId: ${smsResult.messageId}`);
 
     // Store a pending pull record in database (will be updated when webhook arrives)
     let storedPull;

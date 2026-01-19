@@ -18,7 +18,7 @@ interface SendSMSRequest {
   contactId?: string;
   contactName?: string;
   contactType?: "customer" | "lead";
-  method?: "twilio" | "agencyzoom" | "agencyzoom-local"; // Default to twilio
+  method?: "twilio" | "agencyzoom" | "agencyzoom-local"; // Default to agencyzoom
 }
 
 // =============================================================================
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const method = body.method || "twilio";
+    const method = body.method || "agencyzoom";
     let sendResult: { success: boolean; messageId?: string; error?: string };
 
     if (method === "agencyzoom-local") {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { reviewRequests, googleReviews, tenants } from "@/db/schema";
 import { eq, and, lte } from "drizzle-orm";
+import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 
 // =============================================================================
 // POST /api/review-requests/process - Process pending review requests
@@ -155,26 +156,26 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper: Send SMS (placeholder - integrate with real SMS provider)
+// Helper: Send SMS via AgencyZoom API
 async function sendSMS(
   phone: string,
   message: string,
   customerId?: string | null
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  // TODO: Integrate with AgencyZoom Selenium automation or Twilio
-  // For now, simulate success
-  console.log(`[SMS] Would send to ${phone}: ${message}`);
+  try {
+    const azClient = getAgencyZoomClient();
+    const result = await azClient.sendSMS({
+      phoneNumber: phone,
+      message: message,
+      contactId: customerId ? parseInt(customerId) : undefined,
+    });
 
-  // Simulate 95% success rate for demo
-  if (Math.random() > 0.05) {
+    return result;
+  } catch (error) {
+    console.error(`[Review SMS] Failed to send via AgencyZoom:`, error);
     return {
-      success: true,
-      messageId: `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      success: false,
+      error: error instanceof Error ? error.message : 'AgencyZoom SMS failed',
     };
   }
-
-  return {
-    success: false,
-    error: "Simulated delivery failure",
-  };
 }
