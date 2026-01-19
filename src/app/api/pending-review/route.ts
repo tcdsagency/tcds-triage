@@ -78,6 +78,15 @@ interface PendingItem {
     address?: string;
     email?: string;
     altPhones?: string[];
+    // Lead quality scoring
+    leadQuality?: {
+      grade: 'A' | 'B' | 'C' | 'D' | 'F';
+      activityScore: number;
+      phoneValid?: boolean;
+      phoneLineType?: string;
+      isDisconnected?: boolean;
+      isSpam?: boolean;
+    };
   } | null;
 
   // Match info
@@ -272,11 +281,19 @@ export async function GET(request: NextRequest) {
           handledByAgent: w.agentId ? agentMap.get(w.agentId) || null : null,
           timestamp: w.createdAt.toISOString(),
           ageMinutes,
-          trestleData: trestle.person ? {
-            name: trestle.person.name || `${trestle.person.firstName || ''} ${trestle.person.lastName || ''}`.trim(),
+          trestleData: (trestle.person || trestle.leadQuality) ? {
+            name: trestle.person?.name || `${trestle.person?.firstName || ''} ${trestle.person?.lastName || ''}`.trim() || undefined,
             address: trestle.address ? `${trestle.address.street}, ${trestle.address.city}, ${trestle.address.state} ${trestle.address.zip}` : undefined,
             email: trestle.emails?.[0],
             altPhones: trestle.alternatePhones,
+            leadQuality: trestle.leadQuality ? {
+              grade: trestle.leadQuality.grade,
+              activityScore: trestle.leadQuality.activityScore,
+              phoneValid: trestle.leadQuality.phoneValid,
+              phoneLineType: trestle.leadQuality.phoneLineType,
+              isDisconnected: trestle.leadQuality.isDisconnected,
+              isSpam: trestle.leadQuality.isSpam,
+            } : undefined,
           } : null,
           matchSuggestions: [], // Will be populated from matchSuggestions table if needed
           callId: w.callId || undefined,

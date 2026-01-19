@@ -527,3 +527,162 @@ export async function canReceiveSms(phoneNumber: string): Promise<boolean> {
   const validation = await trestleIQClient.validatePhone(phoneNumber);
   return validation?.canReceiveSms ?? true;
 }
+
+// =============================================================================
+// Lead Quality Scoring
+// =============================================================================
+
+export type LeadGrade = 'A' | 'B' | 'C' | 'D' | 'F';
+
+export interface LeadQualityScore {
+  // Overall grade A-F
+  grade: LeadGrade;
+  // Activity score 0-100 (likelihood phone is active/connected)
+  activityScore: number;
+  // Phone validation details
+  phoneValid: boolean;
+  phoneLineType: 'mobile' | 'landline' | 'voip' | 'toll_free' | 'unknown';
+  phoneCarrier?: string;
+  // Risk indicators
+  isDisconnected: boolean;
+  isSpam: boolean;
+  riskScore: number;
+  // Match indicators (if name/email/address provided)
+  nameMatch?: boolean;
+  emailValid?: boolean;
+  addressMatch?: boolean;
+  // Confidence in overall data
+  confidence: number;
+}
+
+/**
+ * Calculate lead grade from activity score and risk factors
+ */
+function calculateGrade(activityScore: number, riskScore: number, isValid: boolean): LeadGrade {
+  if (!isValid || activityScore < 20) return 'F';
+  if (riskScore > 70 || activityScore < 30) return 'D';
+  if (riskScore > 50 || activityScore < 50) return 'C';
+  if (activityScore < 70) return 'B';
+  return 'A';
+}
+
+/**
+ * Get comprehensive lead quality score for a phone number
+ * Combines phone validation + reverse lookup for complete assessment
+ */
+export async function getLeadQualityScore(
+  phoneNumber: string,
+  options?: {
+    name?: string;
+    email?: string;
+    address?: { street?: string; city?: string; state?: string; zip?: string };
+  }
+): Promise<LeadQualityScore | null> {
+  if (!trestleIQClient.isConfigured()) {
+    return null;
+  }
+
+  try {
+    // Get phone validation data (activity score, risk)
+    const validation = await trestleIQClient.validatePhone(phoneNumber);
+
+    // Get caller ID for spam detection
+    const callerId = await trestleIQClient.getCallerId(phoneNumber);
+
+    if (!validation) {
+      return null;
+    }
+
+    // Calculate activity score (inverse of risk, with validation status)
+    // If phone is valid, start at 70. If invalid, start at 20.
+    // Adjust based on risk score.
+    let activityScore = validation.isValid ? 70 : 20;
+
+    // Adjust for risk score (0-100, higher = riskier)
+    const riskScore = validation.riskScore || 0;
+    activityScore -= Math.floor(riskScore * 0.3);
+
+    // Bonus for mobile (more likely to be active)
+    if (validation.isMobile) {
+      activityScore += 15;
+    }
+
+    // Penalty for disposable numbers
+    if (validation.isDisposable) {
+      activityScore -= 30;
+    }
+
+    // Clamp to 0-100
+    activityScore = Math.max(0, Math.min(100, activityScore));
+
+    // Check for spam
+    const isSpam = callerId?.isSpam || (callerId?.spamScore && callerId.spamScore > 70);
+    if (isSpam) {
+      activityScore = Math.max(0, activityScore - 40);
+    }
+
+    // Determine if likely disconnected
+    const isDisconnected = !validation.isValid || activityScore < 20;
+
+    // Calculate overall grade
+    const grade = calculateGrade(activityScore, riskScore, validation.isValid);
+
+    // Calculate confidence based on available data
+    let confidence = validation.isValid ? 60 : 30;
+    if (callerId) confidence += 20;
+    if (options?.name || options?.email) confidence += 10;
+    confidence = Math.min(100, confidence);
+
+    return {
+      grade,
+      activityScore,
+      phoneValid: validation.isValid,
+      phoneLineType: validation.lineType,
+      phoneCarrier: validation.carrier,
+      isDisconnected,
+      isSpam: isSpam || false,
+      riskScore,
+      confidence,
+    };
+  } catch (error) {
+    console.error('getLeadQualityScore error:', error);
+    return null;
+  }
+}
+
+/**
+ * Quick lead quality check - just validates phone
+ * Use when you need fast response and don't need full enrichment
+ */
+export async function quickLeadCheck(phoneNumber: string): Promise<{
+  grade: LeadGrade;
+  activityScore: number;
+  isValid: boolean;
+} | null> {
+  if (!trestleIQClient.isConfigured()) {
+    return null;
+  }
+
+  try {
+    const validation = await trestleIQClient.validatePhone(phoneNumber);
+    if (!validation) return null;
+
+    let activityScore = validation.isValid ? 70 : 20;
+    const riskScore = validation.riskScore || 0;
+    activityScore -= Math.floor(riskScore * 0.3);
+    if (validation.isMobile) activityScore += 15;
+    if (validation.isDisposable) activityScore -= 30;
+    activityScore = Math.max(0, Math.min(100, activityScore));
+
+    const grade = calculateGrade(activityScore, riskScore, validation.isValid);
+
+    return {
+      grade,
+      activityScore,
+      isValid: validation.isValid,
+    };
+  } catch (error) {
+    console.error('quickLeadCheck error:', error);
+    return null;
+  }
+}
