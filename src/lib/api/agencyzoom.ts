@@ -688,8 +688,12 @@ export class AgencyZoomClient {
    * GET /v1/api/leads/pipelines
    */
   async getLeadPipelines(): Promise<any[]> {
-    const result = await this.request<{ pipelines: any[] }>('/v1/api/leads/pipelines');
-    return result.pipelines || [];
+    const result = await this.request<any>('/v1/api/leads/pipelines');
+    // Handle both wrapped { pipelines: [...] } and direct array response
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return result.pipelines || result.data || [];
   }
 
   /**
@@ -697,8 +701,12 @@ export class AgencyZoomClient {
    * GET /v1/api/pipelines
    */
   async getPipelines(): Promise<any[]> {
-    const result = await this.request<{ pipelines: any[] }>('/v1/api/pipelines');
-    return result.pipelines || [];
+    const result = await this.request<any>('/v1/api/pipelines');
+    // Handle both wrapped { pipelines: [...] } and direct array response
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return result.pipelines || result.data || [];
   }
 
   // --------------------------------------------------------------------------
@@ -843,8 +851,12 @@ export class AgencyZoomClient {
    * GET /v1/api/service-tickets/pipelines
    */
   async getServiceTicketPipelines(): Promise<any[]> {
-    const result = await this.request<{ pipelines: any[] }>('/v1/api/service-tickets/pipelines');
-    return result.pipelines || [];
+    const result = await this.request<any>('/v1/api/service-tickets/pipelines');
+    // Handle both wrapped { pipelines: [...] } and direct array response
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return result.pipelines || result.data || [];
   }
 
   // --------------------------------------------------------------------------

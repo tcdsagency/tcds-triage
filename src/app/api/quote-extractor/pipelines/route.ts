@@ -16,7 +16,10 @@ export async function GET(request: NextRequest) {
     // Use lead pipelines for quote extraction workflow
     const pipelinesList = await azClient.getLeadPipelines();
 
+    console.log("[Quote Extractor] Pipelines response:", JSON.stringify(pipelinesList, null, 2));
+
     if (!pipelinesList || pipelinesList.length === 0) {
+      console.warn("[Quote Extractor] No pipelines returned from AgencyZoom");
       return NextResponse.json({
         success: false,
         error: "No pipelines found in AgencyZoom",
