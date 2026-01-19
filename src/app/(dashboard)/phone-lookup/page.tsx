@@ -19,6 +19,8 @@ import {
   MessageSquare,
   Clock,
   Star,
+  Eye,
+  Map,
 } from 'lucide-react';
 
 // =============================================================================
@@ -150,6 +152,83 @@ function CopyButton({ text }: { text: string }) {
         <Copy className="w-4 h-4 text-gray-400" />
       )}
     </button>
+  );
+}
+
+function StreetViewCard({ address }: { address: { street?: string; city?: string; state?: string; zip?: string } }) {
+  const [imageError, setImageError] = useState(false);
+
+  const fullAddress = [
+    address.street,
+    address.city,
+    address.state,
+    address.zip
+  ].filter(Boolean).join(', ');
+
+  if (!fullAddress) return null;
+
+  const encodedAddress = encodeURIComponent(fullAddress);
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+  // Google Maps search URL (most reliable way to view address)
+  const mapsSearchUrl = `https://www.google.com/maps/search/${encodedAddress}`;
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Eye className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+        <h3 className="font-semibold text-gray-900 dark:text-white">Street View</h3>
+      </div>
+
+      {/* Street View Preview - only show if API key is configured */}
+      <div className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 mb-3">
+        {apiKey && !imageError ? (
+          <img
+            src={`https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${encodedAddress}&key=${apiKey}`}
+            alt={`Street view of ${fullAddress}`}
+            className="w-full h-48 object-cover"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <div className="w-full h-48 flex items-center justify-center text-gray-400 dark:text-gray-500">
+            <div className="text-center">
+              <Map className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">Click button below to view in Google Maps</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex gap-2">
+        <a
+          href={mapsSearchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg
+                   hover:bg-blue-700 transition-colors text-sm font-medium"
+        >
+          <Eye className="w-4 h-4" />
+          Open in Google Maps
+        </a>
+        <a
+          href={`https://www.google.com/maps/dir/?api=1&destination=${encodedAddress}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600
+                   text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700
+                   transition-colors text-sm font-medium"
+          title="Get directions"
+        >
+          <ExternalLink className="w-4 h-4" />
+          Directions
+        </a>
+      </div>
+
+      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
+        {fullAddress}
+      </p>
+    </div>
   );
 }
 
@@ -448,6 +527,11 @@ export default function PhoneLookupPage() {
               </div>
             </InfoCard>
           </div>
+
+          {/* Street View Section */}
+          {result.contact.currentAddress && (
+            <StreetViewCard address={result.contact.currentAddress} />
+          )}
 
           {/* Caller ID Section */}
           {result.callerId && (
