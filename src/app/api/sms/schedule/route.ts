@@ -162,6 +162,7 @@ export async function GET(request: NextRequest) {
               phoneNumber: msg.toNumber || "",
               message: msg.body,
               contactId: msg.contactId ? parseInt(msg.contactId) : undefined,
+              contactType: (msg.contactType as 'customer' | 'lead') || 'customer',
             });
           } catch (azError) {
             sendResult = {

@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
         phoneNumber: phone,
         message: smsMessage,
         contactId: customerId ? parseInt(customerId) : undefined,
+        contactType: 'customer',
       });
     } catch (azError) {
       console.error(`[Canopy SMS] AgencyZoom SMS failed, error:`, azError);
