@@ -666,6 +666,122 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
 }
 
 // =============================================================================
+// Poll SQL Server for Missed Calls (catches outbound calls not in webhook flow)
+// =============================================================================
+
+async function pollSQLForMissedCalls(): Promise<{ found: number; processed: number }> {
+  const tenantId = process.env.DEFAULT_TENANT_ID;
+  if (!tenantId) return { found: 0, processed: 0 };
+
+  try {
+    const mssqlClient = await getMSSQLTranscriptsClient();
+    if (!mssqlClient) {
+      console.log("[TranscriptWorker] MSSQL client not available for polling");
+      return { found: 0, processed: 0 };
+    }
+
+    // Get transcripts from the last 2 hours
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const { records } = await mssqlClient.searchTranscripts({
+      startDate: twoHoursAgo,
+      limit: 50,
+    });
+    await mssqlClient.close();
+
+    if (records.length === 0) {
+      return { found: 0, processed: 0 };
+    }
+
+    console.log(`[TranscriptWorker] Found ${records.length} recent SQL transcripts to check`);
+
+    // Get existing wrapups with SQL record IDs
+    const existingWrapups = await db
+      .select({ aiExtraction: wrapupDrafts.aiExtraction })
+      .from(wrapupDrafts)
+      .where(eq(wrapupDrafts.tenantId, tenantId));
+
+    const existingSqlIds = new Set<string>();
+    for (const w of existingWrapups) {
+      const extraction = w.aiExtraction as { sqlRecordId?: string } | null;
+      if (extraction?.sqlRecordId) {
+        existingSqlIds.add(extraction.sqlRecordId);
+      }
+    }
+
+    // Find transcripts without wrapups
+    const missedTranscripts = records.filter(r => !existingSqlIds.has(r.id));
+
+    if (missedTranscripts.length === 0) {
+      return { found: records.length, processed: 0 };
+    }
+
+    console.log(`[TranscriptWorker] Found ${missedTranscripts.length} missed calls to process`);
+
+    let processed = 0;
+    for (const transcript of missedTranscripts) {
+      try {
+        // Determine customer phone based on direction
+        const customerPhone = transcript.direction === "inbound"
+          ? transcript.callerNumber
+          : transcript.calledNumber;
+
+        // Run AI extraction
+        const aiResult = await extractCallDataWithAI(transcript.transcript, {
+          direction: transcript.direction,
+          agentExtension: transcript.extension,
+          callerNumber: transcript.callerNumber,
+          duration: transcript.duration,
+        });
+
+        // Skip hangups
+        if (aiResult.isHangup) {
+          console.log(`[TranscriptWorker] Skipping hangup call from SQL: ${transcript.id}`);
+          continue;
+        }
+
+        // Create wrapup draft (use SQL record ID as pseudo-call ID since no call record exists)
+        const pseudoCallId = `sql_${transcript.id}`;
+        await db
+          .insert(wrapupDrafts)
+          .values({
+            tenantId,
+            callId: pseudoCallId, // Use SQL record ID as pseudo-call ID
+            status: "pending_review",
+            summary: aiResult.summary,
+            customerName: aiResult.customerName,
+            customerPhone: customerPhone || null,
+            policyNumbers: aiResult.policyNumbers,
+            insuranceType: aiResult.insuranceType,
+            requestType: aiResult.requestType,
+            direction: (transcript.direction === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
+            agentExtension: transcript.extension || null,
+            matchStatus: "unmatched",
+            aiExtraction: {
+              ...aiResult,
+              transcriptSource: "mssql_poll",
+              sqlRecordId: transcript.id,
+              polledAt: new Date().toISOString(),
+            },
+            aiProcessingStatus: "completed",
+            aiProcessedAt: new Date(),
+          })
+          .onConflictDoNothing(); // Skip if somehow already exists
+
+        console.log(`[TranscriptWorker] Created wrapup from SQL poll: ${transcript.id} (${transcript.direction})`);
+        processed++;
+      } catch (err) {
+        console.error(`[TranscriptWorker] Error processing SQL transcript ${transcript.id}:`, err);
+      }
+    }
+
+    return { found: records.length, processed };
+  } catch (error) {
+    console.error("[TranscriptWorker] SQL poll error:", error);
+    return { found: 0, processed: 0 };
+  }
+}
+
+// =============================================================================
 // GET - Cron job entry point (triggered by Vercel cron)
 // =============================================================================
 
@@ -680,6 +796,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // First, poll SQL server for any missed calls (outbound calls, etc.)
+    const pollResult = await pollSQLForMissedCalls();
+    console.log(`[TranscriptWorker] SQL poll: found ${pollResult.found}, processed ${pollResult.processed} missed calls`);
+
     // Get pending jobs that are ready to process
     const jobs = await db
       .select()
@@ -698,6 +818,7 @@ export async function GET(request: NextRequest) {
         success: true,
         message: "No pending jobs",
         processed: 0,
+        sqlPoll: pollResult,
       });
     }
 
@@ -720,6 +841,7 @@ export async function GET(request: NextRequest) {
       failed,
       retrying,
       results,
+      sqlPoll: pollResult,
     });
   } catch (error) {
     console.error("[TranscriptWorker] Error:", error);
