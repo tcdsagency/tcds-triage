@@ -51,23 +51,28 @@ export async function POST(request: NextRequest) {
         policyTypes = parsed.length > 0 ? parsed : null;
       }
 
-      // Parse optional fields
-      const uploadWebsite = record.uploadwebsite?.trim() || record.uploadWebsite?.trim() || record.upload_website?.trim() || record.website?.trim() || null;
-      const phone = record.phone?.trim() || null;
-      const fax = record.fax?.trim() || null;
-      const notes = record.notes?.trim() || null;
+      // Parse optional fields - ensure empty strings become null
+      const toNull = (val: string | undefined | null): string | null => {
+        const trimmed = val?.trim();
+        return trimmed && trimmed.length > 0 ? trimmed : null;
+      };
+
+      const uploadWebsite = toNull(record.uploadwebsite) || toNull(record.uploadWebsite) || toNull(record.upload_website) || toNull(record.website);
+      const phone = toNull(record.phone);
+      const fax = toNull(record.fax);
+      const notes = toNull(record.notes);
 
       try {
         await db.insert(mortgageeClauses).values({
           tenantId,
           displayName,
           clauseText,
-          policyTypes,
+          policyTypes: policyTypes || null,
           uploadWebsite,
           phone,
           fax,
           notes,
-          lienHolderId: null, // Can be linked later
+          lienHolderId: null,
           isActive: true,
         });
         results.imported++;
