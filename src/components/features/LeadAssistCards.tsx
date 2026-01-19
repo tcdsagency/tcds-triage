@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+
+const STORAGE_KEY = "leadAssistCards-expanded";
 
 interface LeadAssistCardsProps {
   phoneNumber: string;
@@ -281,6 +283,29 @@ export default function LeadAssistCards({
   const [checkedQuestions, setCheckedQuestions] = useState<Set<string>>(new Set());
   const [selectedQuoteType, setSelectedQuoteType] = useState<string | null>(null);
 
+  // Load saved preference from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved !== null) {
+        setIsExpanded(saved === "true");
+      }
+    } catch {
+      // localStorage may not be available
+    }
+  }, []);
+
+  // Save preference to localStorage when toggled
+  const handleToggleExpanded = () => {
+    const newValue = !isExpanded;
+    setIsExpanded(newValue);
+    try {
+      localStorage.setItem(STORAGE_KEY, String(newValue));
+    } catch {
+      // localStorage may not be available
+    }
+  };
+
   const toggleQuestion = (id: string) => {
     setCheckedQuestions((prev) => {
       const next = new Set(prev);
@@ -302,7 +327,7 @@ export default function LeadAssistCards({
     <div className={cn("space-y-2", className)}>
       {/* Collapsible Header */}
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={handleToggleExpanded}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
       >
         <div className="flex items-center gap-2">
