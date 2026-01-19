@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { calls, users, tenants } from "@/db/schema";
 import { eq, desc, and, gte, sql } from "drizzle-orm";
 import { getThreeCXClient } from "@/lib/api/threecx";
+import { getVMBridgeClient } from "@/lib/api/vm-bridge";
 
 // =============================================================================
 // Types
@@ -208,6 +209,27 @@ export async function GET(request: NextRequest) {
           // Add to todaysCalls so it shows up
           todaysCalls.push(newCall);
           console.log(`[Supervisor] Created call record from presence for ${agent.firstName} ${agent.lastName} (${agent.extension})`);
+
+          // Start VM Bridge transcription for this call
+          if (agent.extension) {
+            try {
+              const vmBridge = await getVMBridgeClient();
+              if (vmBridge) {
+                console.log(`[Supervisor] Starting transcription for presence-detected call ${newCall.id}, ext=${agent.extension}`);
+                const session = await vmBridge.startTranscription(newCall.id, agent.extension);
+                if (session) {
+                  console.log(`[Supervisor] Transcription started: session=${session.sessionId}`);
+                  // Update call with VM session ID
+                  await db
+                    .update(calls)
+                    .set({ vmSessionId: session.sessionId, transcriptionStatus: "active" })
+                    .where(eq(calls.id, newCall.id));
+                }
+              }
+            } catch (transcriptError) {
+              console.error(`[Supervisor] Failed to start transcription:`, transcriptError);
+            }
+          }
         } catch (err) {
           // Ignore errors - might be race condition
         }
