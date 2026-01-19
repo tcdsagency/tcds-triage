@@ -685,10 +685,10 @@ export class AgencyZoomClient {
 
   /**
    * Get lead/sales pipelines
-   * GET /v1/api/leads/pipelines
+   * GET /v1/api/pipelines (leads/pipelines endpoint doesn't exist)
    */
   async getLeadPipelines(): Promise<any[]> {
-    const result = await this.request<any>('/v1/api/leads/pipelines');
+    const result = await this.request<any>('/v1/api/pipelines');
     // Handle both wrapped { pipelines: [...] } and direct array response
     if (Array.isArray(result)) {
       return result;
