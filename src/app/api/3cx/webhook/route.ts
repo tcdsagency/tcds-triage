@@ -337,14 +337,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body: ThreeCXCallEvent = await request.json();
-    console.log("[3CX Webhook] Received event:", JSON.stringify(body, null, 2));
+    // Log key fields for debugging call creation issues
+    const rawDirection = body.direction || body.Direction;
+    console.log(`[3CX Webhook] Event: ${body.event || body.Event || body.type}, Direction: ${rawDirection || 'NOT_SET'}, From: ${body.from || body.From}, To: ${body.to || body.To}`);
 
     const tenantId = process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
 
     // Normalize event fields (3CX uses various naming conventions)
     const eventType = (body.event || body.Event || body.type || "").toLowerCase();
     const callId = body.callId || body.CallId || body.sessionId || body.SessionId || body.id || `call_${Date.now()}`;
-    const direction = (body.direction || body.Direction || "inbound").toLowerCase() as "inbound" | "outbound";
+    const direction = (rawDirection || "inbound").toLowerCase() as "inbound" | "outbound";
     const extension = body.extension || body.Extension || body.ext || body.Ext || "";
 
     // Determine phone numbers based on direction
