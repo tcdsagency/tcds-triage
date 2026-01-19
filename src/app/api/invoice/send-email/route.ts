@@ -58,8 +58,8 @@ export async function POST(request: NextRequest) {
             <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin: 15px 0;">
               <p style="margin: 0; color: #374151;">
                 TCDS Insurance Agency<br>
-                123 Insurance Way<br>
-                Tampa, FL 33601
+                PO BOX 1283<br>
+                Pinson, AL 35126
               </p>
             </div>
 
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
           <div style="background: #1f2937; color: #9ca3af; padding: 20px; text-align: center; font-size: 12px;">
             <p style="margin: 0;">TCDS Insurance Agency</p>
-            <p style="margin: 5px 0 0 0;">Phone: (555) 123-4567 | Email: info@tcdsinsurance.com</p>
+            <p style="margin: 5px 0 0 0;">Phone: (205) 847-5616 | Email: agency@tcdsagency.com</p>
           </div>
         </div>
       `,
