@@ -29,8 +29,8 @@ export async function POST(request: NextRequest) {
       const record = records[i];
       const rowNum = i + 2;
 
-      const displayName = record.displayName?.trim() || record.display_name?.trim() || record.name?.trim();
-      const clauseText = record.clauseText?.trim() || record.clause_text?.trim() || record.clause?.trim() || record.text?.trim();
+      const displayName = record.displayname?.trim() || record.displayName?.trim() || record.display_name?.trim() || record.name?.trim();
+      const clauseText = record.clausetext?.trim() || record.clauseText?.trim() || record.clause_text?.trim() || record.clause?.trim() || record.text?.trim();
 
       if (!displayName) {
         results.errors.push(`Row ${rowNum}: Display name is required`);
@@ -45,14 +45,14 @@ export async function POST(request: NextRequest) {
 
       // Parse policy types (comma-separated)
       let policyTypes: string[] | null = null;
-      const policyTypesRaw = record.policyTypes?.trim() || record.policy_types?.trim() || record.types?.trim();
+      const policyTypesRaw = record.policytypes?.trim() || record.policyTypes?.trim() || record.policy_types?.trim() || record.types?.trim();
       if (policyTypesRaw) {
         const parsed = policyTypesRaw.split(",").map((t: string) => t.trim()).filter(Boolean);
         policyTypes = parsed.length > 0 ? parsed : null;
       }
 
       // Parse optional fields
-      const uploadWebsite = record.uploadWebsite?.trim() || record.upload_website?.trim() || record.website?.trim() || null;
+      const uploadWebsite = record.uploadwebsite?.trim() || record.uploadWebsite?.trim() || record.upload_website?.trim() || record.website?.trim() || null;
       const phone = record.phone?.trim() || null;
       const fax = record.fax?.trim() || null;
       const notes = record.notes?.trim() || null;
