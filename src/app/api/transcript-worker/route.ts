@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { pendingTranscriptJobs, wrapupDrafts, calls, customers, liveTranscriptSegments } from "@/db/schema";
+import { pendingTranscriptJobs, wrapupDrafts, calls, customers, liveTranscriptSegments, users } from "@/db/schema";
 import { eq, lte, and, sql, asc } from "drizzle-orm";
 import { getMSSQLTranscriptsClient, TranscriptRecord } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
@@ -739,13 +739,47 @@ async function pollSQLForMissedCalls(): Promise<{ found: number; processed: numb
           continue;
         }
 
-        // Create wrapup draft (use SQL record ID as pseudo-call ID since no call record exists)
-        const pseudoCallId = `sql_${transcript.id}`;
+        // Look up agent by extension
+        const [agent] = transcript.extension ? await db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.extension, transcript.extension))
+          .limit(1) : [];
+
+        // Create a real call record for this missed call
+        const isOutbound = transcript.direction === "outbound";
+        const [newCall] = await db
+          .insert(calls)
+          .values({
+            tenantId,
+            direction: isOutbound ? "outbound" : "inbound",
+            status: "completed",
+            fromNumber: isOutbound ? transcript.extension : transcript.callerNumber,
+            toNumber: isOutbound ? transcript.calledNumber : transcript.extension,
+            externalNumber: customerPhone,
+            agentId: agent?.id || null,
+            extension: transcript.extension,
+            transcription: transcript.transcript,
+            transcriptionStatus: "completed",
+            startedAt: transcript.recordingDate,
+            answeredAt: transcript.recordingDate,
+            endedAt: new Date(transcript.recordingDate.getTime() + parseDuration(transcript.duration) * 1000),
+            durationSeconds: parseDuration(transcript.duration),
+            aiSummary: aiResult.summary,
+            aiActionItems: aiResult.actionItems,
+            aiSentiment: { overall: aiResult.sentiment, score: 0, timeline: [] },
+            aiTopics: aiResult.topics,
+          })
+          .returning();
+
+        console.log(`[TranscriptWorker] Created call record ${newCall.id} from SQL poll (${transcript.direction})`);
+
+        // Create wrapup draft linked to the real call
         await db
           .insert(wrapupDrafts)
           .values({
             tenantId,
-            callId: pseudoCallId, // Use SQL record ID as pseudo-call ID
+            callId: newCall.id, // Use real call ID
             status: "pending_review",
             summary: aiResult.summary,
             customerName: aiResult.customerName,
