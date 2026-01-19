@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
 
       if (customer) {
         contactId = customer.agencyzoomId ? parseInt(customer.agencyzoomId) : undefined;
-        contactName = customer.displayName || `${customer.firstName} ${customer.lastName}`;
+        contactName = `${customer.firstName} ${customer.lastName}`.trim();
         contactType = 'customer';
         console.log(`[SMS Relay] Found customer: ${contactName} (AZ ID: ${contactId})`);
       } else {
