@@ -789,6 +789,30 @@ export async function POST(
               `Received: ${new Date(triageItem.createdAt).toLocaleString('en-US', { timeZone: 'America/Chicago' })}`,
             ].join('\n');
 
+            // Try to determine a better service request type from the summary
+            let serviceRequestType = body.ticketDetails?.subject;
+            if (!serviceRequestType) {
+              // Check for common request types in the summary
+              const summaryLower = summary.toLowerCase();
+              if (summaryLower.includes('claim') || summaryLower.includes('accident') || summaryLower.includes('damage')) {
+                serviceRequestType = 'After Hours - Claims';
+              } else if (summaryLower.includes('cancel') || summaryLower.includes('cancellation')) {
+                serviceRequestType = 'After Hours - Cancellation Request';
+              } else if (summaryLower.includes('payment') || summaryLower.includes('bill') || summaryLower.includes('pay')) {
+                serviceRequestType = 'After Hours - Billing';
+              } else if (summaryLower.includes('quote') || summaryLower.includes('new policy')) {
+                serviceRequestType = 'After Hours - Quote Request';
+              } else if (summaryLower.includes('change') || summaryLower.includes('update') || summaryLower.includes('add') || summaryLower.includes('remove')) {
+                serviceRequestType = 'After Hours - Policy Change';
+              } else if (summaryLower.includes('id card') || summaryLower.includes('proof of insurance') || summaryLower.includes('certificate')) {
+                serviceRequestType = 'After Hours - ID Cards';
+              } else if (summaryLower.includes('renewal') || summaryLower.includes('renew')) {
+                serviceRequestType = 'After Hours - Renewal';
+              } else {
+                serviceRequestType = 'After Hours Callback';
+              }
+            }
+
             const serviceRequestPayload = {
               customerId: customerId.toString(),
               customerName: callerName,
@@ -796,7 +820,7 @@ export async function POST(
               customerPhone: callerPhone,
               customerType: 'customer' as const,
               summary: description,
-              serviceRequestTypeName: body.ticketDetails?.subject || 'After Hours Callback',
+              serviceRequestTypeName: serviceRequestType,
               assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007,
             };
 
@@ -1057,6 +1081,11 @@ export async function POST(
           }
         } else {
           // CREATE NEW MODE: Create service request via Zapier webhook
+          // Use appropriate service request type based on message type
+          const defaultServiceType = message.isAfterHours
+            ? 'After Hours Callback'
+            : 'SMS Service Request';
+
           const serviceRequestPayload = {
             customerId: customerId.toString(),
             customerName: customerName,
@@ -1064,7 +1093,7 @@ export async function POST(
             customerPhone: senderPhone,
             customerType: 'customer' as const,
             summary: description,
-            serviceRequestTypeName: body.ticketDetails?.subject || 'SMS Service Request',
+            serviceRequestTypeName: body.ticketDetails?.subject || defaultServiceType,
             assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007, // Default to Lee
           };
 
