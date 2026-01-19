@@ -572,20 +572,55 @@ export class AgencyZoomClient {
     stageId: number;
     source?: string;
     agentId?: number;
-  }): Promise<{ success: boolean; leadId?: number }> {
-    return this.request('/v1/api/leads/create', {
-      method: 'POST',
-      body: JSON.stringify({
+  }): Promise<{ success: boolean; leadId?: number; error?: string }> {
+    try {
+      const payload = {
         firstname: lead.firstName,
         lastname: lead.lastName,
-        email: lead.email,
-        phone: lead.phone,
+        email: lead.email || '',
+        phone: lead.phone || '',
         pipelineId: lead.pipelineId,
         stageId: lead.stageId,
-        source: lead.source,
+        source: lead.source || '',
         agentId: lead.agentId,
-      }),
-    });
+      };
+
+      console.log('[AgencyZoom] Creating lead:', JSON.stringify(payload, null, 2));
+
+      const result = await this.request<any>('/v1/api/leads/create', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      console.log('[AgencyZoom] Create lead response:', JSON.stringify(result, null, 2));
+
+      // AgencyZoom may return different response formats
+      // Check for various ways the lead ID might be returned
+      const leadId = result.leadId || result.id || result.lead?.id;
+
+      if (leadId) {
+        return { success: true, leadId: Number(leadId) };
+      }
+
+      // If no lead ID but also no error, check if response indicates success differently
+      if (result.success === true || result.status === 'success') {
+        // Success but no ID returned - this is unusual
+        console.warn('[AgencyZoom] Lead created but no ID returned:', result);
+        return { success: true };
+      }
+
+      // If we got here, something went wrong
+      return {
+        success: false,
+        error: result.message || result.error || 'Unknown error creating lead',
+      };
+    } catch (error) {
+      console.error('[AgencyZoom] Create lead error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create lead',
+      };
+    }
   }
 
   /**
