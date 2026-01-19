@@ -729,8 +729,8 @@ export default function LienHoldersPage() {
       csv += "Chase Bank,bank,\"123 Main St\",\"Suite 100\",Dallas,TX,75201,800-555-1234,800-555-1235,info@chase.com,Main branch\n";
       filename = "lien_holders_template.csv";
     } else {
-      csv = "displayName,clauseText,policyTypes\n";
-      csv += "\"Chase Mortgage - Standard\",\"Chase Home Finance LLC, Its Successors and/or Assigns, ISAOA ATIMA, 123 Main St, Dallas TX 75201\",\"Home, Flood\"\n";
+      csv = "displayName,clauseText,policyTypes,uploadWebsite,phone,fax,notes\n";
+      csv += "\"Chase Mortgage - Standard\",\"Chase Home Finance LLC, Its Successors and/or Assigns, ISAOA ATIMA, 123 Main St, Dallas TX 75201\",\"Home, Flood\",https://chase.com/insurance-upload,800-555-1234,800-555-1235,\"Upload via portal or fax\"\n";
       filename = "mortgagee_clauses_template.csv";
     }
 
