@@ -4,6 +4,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 
+// Default pipeline configuration for TCDS
+// These are known pipeline/stage IDs from AgencyZoom
+const DEFAULT_PIPELINES = [
+  {
+    id: 87550,
+    name: "New Leads Pipeline",
+    type: "sales",
+    stages: [
+      { id: 379364, name: "New Lead/Data Entry", order: 0 },
+      { id: 379365, name: "Quoted", order: 1 },
+      { id: 379366, name: "Presented", order: 2 },
+      { id: 379367, name: "Sold/Lost", order: 3 },
+    ],
+  },
+];
+
 // GET - Get available pipelines from AgencyZoom
 export async function GET(request: NextRequest) {
   try {
@@ -12,18 +28,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
     }
 
-    const azClient = getAgencyZoomClient();
-    // Use lead pipelines for quote extraction workflow
-    const pipelinesList = await azClient.getLeadPipelines();
+    // Try to get pipelines from AgencyZoom API
+    let pipelinesList: any[] = [];
+    try {
+      const azClient = getAgencyZoomClient();
+      pipelinesList = await azClient.getLeadPipelines();
+      console.log("[Quote Extractor] Pipelines from API:", JSON.stringify(pipelinesList, null, 2));
+    } catch (apiError: any) {
+      console.warn("[Quote Extractor] API pipeline fetch failed, using defaults:", apiError.message);
+    }
 
-    console.log("[Quote Extractor] Pipelines response:", JSON.stringify(pipelinesList, null, 2));
-
+    // If API returned no pipelines, use defaults
     if (!pipelinesList || pipelinesList.length === 0) {
-      console.warn("[Quote Extractor] No pipelines returned from AgencyZoom");
+      console.log("[Quote Extractor] Using default pipelines");
       return NextResponse.json({
-        success: false,
-        error: "No pipelines found in AgencyZoom",
-      }, { status: 404 });
+        success: true,
+        pipelines: DEFAULT_PIPELINES,
+        source: "defaults",
+      });
     }
 
     // Format pipelines with their stages
@@ -44,12 +66,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       pipelines,
+      source: "api",
     });
   } catch (error: any) {
     console.error("[Quote Extractor] Pipelines error:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to get pipelines", details: error.message },
-      { status: 500 }
-    );
+    // Even on error, return defaults so UI works
+    return NextResponse.json({
+      success: true,
+      pipelines: DEFAULT_PIPELINES,
+      source: "defaults",
+      warning: error.message,
+    });
   }
 }
