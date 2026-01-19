@@ -686,8 +686,190 @@ export async function POST(
           });
         }
 
-        // For other actions (note, ticket, ncm), use the linked message if available
-        // or return error if not supported
+        // Handle note/ticket actions for after-hours items
+        if (body.action === 'note' || body.action === 'ticket' || body.action === 'ncm') {
+          const customerId = body.customerId ? parseInt(body.customerId) : null;
+
+          // Get linked message for phone number
+          let linkedMessage = null;
+          if (triageItem.messageId) {
+            const [msg] = await db
+              .select()
+              .from(messages)
+              .where(eq(messages.id, triageItem.messageId))
+              .limit(1);
+            linkedMessage = msg;
+          }
+
+          const callerPhone = linkedMessage?.fromNumber?.replace('+1', '') || 'Unknown';
+          const callerName = triageItem.title || linkedMessage?.contactName || 'Unknown Caller';
+          const summary = triageItem.aiSummary || triageItem.description || linkedMessage?.body || 'After-hours callback request';
+
+          if (body.action === 'note') {
+            if (!customerId) {
+              return NextResponse.json({ error: "Customer ID required for note" }, { status: 400 });
+            }
+            if (!azClient) {
+              return NextResponse.json({ error: "AgencyZoom not configured" }, { status: 500 });
+            }
+
+            const noteText = formatNoteText('message', summary, {
+              phone: callerPhone,
+              requestType: 'After Hours Callback',
+            });
+
+            const noteResult = await azClient.addNote(customerId, noteText);
+            if (noteResult.success) {
+              await db
+                .update(triageItems)
+                .set({
+                  status: 'completed',
+                  resolvedAt: new Date(),
+                  resolvedById: reviewerId,
+                  resolution: 'note_posted',
+                })
+                .where(eq(triageItems.id, itemId));
+
+              if (triageItem.messageId) {
+                await db
+                  .update(messages)
+                  .set({ isAcknowledged: true })
+                  .where(eq(messages.id, triageItem.messageId));
+              }
+
+              return NextResponse.json({ success: true, action: "note", noteId: noteResult.id });
+            } else {
+              return NextResponse.json({ error: "Failed to post note" }, { status: 500 });
+            }
+          }
+
+          if (body.action === 'ticket') {
+            if (!customerId) {
+              return NextResponse.json({ error: "Customer ID required for ticket" }, { status: 400 });
+            }
+
+            // Fetch customer email
+            let customerEmail = null;
+            const [matchedCustomer] = await db
+              .select({ email: customers.email, firstName: customers.firstName, lastName: customers.lastName })
+              .from(customers)
+              .where(eq(customers.agencyzoomId, customerId.toString()))
+              .limit(1);
+            customerEmail = matchedCustomer?.email || null;
+
+            const description = [
+              summary,
+              '',
+              '--- Caller Information ---',
+              `Name: ${callerName}`,
+              `Phone: ${callerPhone}`,
+              '',
+              `Received: ${new Date(triageItem.createdAt).toLocaleString('en-US', { timeZone: 'America/Chicago' })}`,
+            ].join('\n');
+
+            const serviceRequestPayload = {
+              customerId: customerId.toString(),
+              customerName: callerName,
+              customerEmail: customerEmail,
+              customerPhone: callerPhone,
+              customerType: 'customer' as const,
+              summary: description,
+              serviceRequestTypeName: body.ticketDetails?.subject || 'After Hours Callback',
+              assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007,
+            };
+
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app');
+            const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(serviceRequestPayload),
+            });
+
+            const serviceResult = await serviceResponse.json();
+            if (serviceResult.success) {
+              await db
+                .update(triageItems)
+                .set({
+                  status: 'completed',
+                  resolvedAt: new Date(),
+                  resolvedById: reviewerId,
+                  resolution: 'ticket_created',
+                })
+                .where(eq(triageItems.id, itemId));
+
+              if (triageItem.messageId) {
+                await db
+                  .update(messages)
+                  .set({ isAcknowledged: true })
+                  .where(eq(messages.id, triageItem.messageId));
+              }
+
+              return NextResponse.json({ success: true, action: "ticket", ticketId: serviceResult.ticketId, noteId: serviceResult.noteId });
+            } else {
+              return NextResponse.json({ error: serviceResult.error || "Failed to create service request" }, { status: 500 });
+            }
+          }
+
+          if (body.action === 'ncm') {
+            const ncmCustomerId = NCM_CUSTOMER_ID;
+            if (!ncmCustomerId || ncmCustomerId === '0') {
+              return NextResponse.json({ error: "NCM customer not configured" }, { status: 500 });
+            }
+
+            const description = [
+              summary,
+              '',
+              '--- Caller Information ---',
+              `Name: ${callerName}`,
+              `Phone: ${callerPhone}`,
+              '',
+              `Received: ${new Date(triageItem.createdAt).toLocaleString('en-US', { timeZone: 'America/Chicago' })}`,
+            ].join('\n');
+
+            const serviceRequestPayload = {
+              customerId: ncmCustomerId,
+              customerName: callerName,
+              customerEmail: null,
+              customerPhone: callerPhone,
+              customerType: 'customer' as const,
+              summary: description,
+              serviceRequestTypeName: 'NCM: After Hours Callback',
+              assigneeAgentId: body.ticketDetails?.assigneeAgentId || 94007,
+            };
+
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tcds-triage.vercel.app');
+            const serviceResponse = await fetch(`${baseUrl}/api/service-request`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(serviceRequestPayload),
+            });
+
+            const serviceResult = await serviceResponse.json();
+            if (serviceResult.success) {
+              await db
+                .update(triageItems)
+                .set({
+                  status: 'completed',
+                  resolvedAt: new Date(),
+                  resolvedById: reviewerId,
+                  resolution: 'ncm_posted',
+                })
+                .where(eq(triageItems.id, itemId));
+
+              if (triageItem.messageId) {
+                await db
+                  .update(messages)
+                  .set({ isAcknowledged: true })
+                  .where(eq(messages.id, triageItem.messageId));
+              }
+
+              return NextResponse.json({ success: true, action: "ncm", ticketId: serviceResult.ticketId });
+            } else {
+              return NextResponse.json({ error: serviceResult.error || "Failed to create NCM service request" }, { status: 500 });
+            }
+          }
+        }
+
         return NextResponse.json({ error: "Action not supported for after-hours items" }, { status: 400 });
       }
 
