@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { messages } from "@/db/schema";
 import { twilioClient } from "@/lib/twilio";
+import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 import { sendSmsViaAutomation } from "@/lib/agencyzoom-automation";
 import { eq, lte, and } from "drizzle-orm";
 
@@ -12,7 +13,7 @@ import { eq, lte, and } from "drizzle-orm";
 // TYPES
 // =============================================================================
 
-type SendMethod = "twilio" | "agencyzoom-local";
+type SendMethod = "twilio" | "agencyzoom" | "agencyzoom-local";
 
 interface ScheduleSMSRequest {
   to: string;
@@ -128,9 +129,9 @@ export async function GET(request: NextRequest) {
       error?: string;
     }> = [];
 
-    // Determine send method from query param or default to Twilio
+    // Determine send method from query param or default to AgencyZoom
     const searchParams = request.nextUrl.searchParams;
-    const sendMethod = (searchParams.get("method") as SendMethod) || "twilio";
+    const sendMethod = (searchParams.get("method") as SendMethod) || "agencyzoom";
 
     for (const msg of pendingMessages) {
       try {
@@ -152,8 +153,24 @@ export async function GET(request: NextRequest) {
             error: result.error,
             messageId: `local_${Date.now()}`,
           };
+        } else if (sendMethod === "agencyzoom") {
+          // Send via AgencyZoom API (default - appears in customer conversation history)
+          console.log(`[Worker] Sending via AgencyZoom: ${msg.toNumber}`);
+          try {
+            const azClient = getAgencyZoomClient();
+            sendResult = await azClient.sendSMS({
+              phoneNumber: msg.toNumber || "",
+              message: msg.body,
+              contactId: msg.contactId ? parseInt(msg.contactId) : undefined,
+            });
+          } catch (azError) {
+            sendResult = {
+              success: false,
+              error: azError instanceof Error ? azError.message : 'AgencyZoom SMS failed',
+            };
+          }
         } else {
-          // Send via Twilio (default)
+          // Send via Twilio (only if explicitly requested)
           sendResult = await twilioClient.sendSMS({
             to: msg.toNumber || "",
             message: msg.body,

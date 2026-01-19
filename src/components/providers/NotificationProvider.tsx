@@ -101,8 +101,8 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
 
   // Show a notification
   const showNotification = useCallback(
-    (title: string, options?: NotificationOptions & { playSound?: boolean }) => {
-      const { playSound: shouldPlaySound = true, ...notificationOptions } = options || {};
+    (title: string, options?: NotificationOptions & { playSound?: boolean; autoClose?: number }) => {
+      const { playSound: shouldPlaySound = true, autoClose = 5000, ...notificationOptions } = options || {};
 
       // Play sound if enabled
       if (shouldPlaySound) {
@@ -114,11 +114,14 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
         try {
           const notification = new Notification(title, {
             tag: options?.tag || "tcds-notification",
+            icon: options?.icon || "/favicon.ico",
             ...notificationOptions,
           } as NotificationOptions);
 
-          // Auto-close after 5 seconds
-          setTimeout(() => notification.close(), 5000);
+          // Auto-close unless requireInteraction is set
+          if (!notificationOptions.requireInteraction && autoClose > 0) {
+            setTimeout(() => notification.close(), autoClose);
+          }
 
           // Focus window on click
           notification.onclick = () => {
@@ -227,6 +230,8 @@ export function useRealtimeNotifications() {
           showNotification("New Text Message", {
             body: `${data.contactName || data.from || "Unknown"}: ${data.body?.substring(0, 100) || "New message"}`,
             tag: `sms-${data.id || Date.now()}`,
+            icon: "/icons/sms-notification.png",
+            badge: "/icons/badge.png",
           });
           break;
 
@@ -235,6 +240,8 @@ export function useRealtimeNotifications() {
           showNotification("New Item for Review", {
             body: `${data.contactName || "Unknown"} - ${data.summary?.substring(0, 100) || "Pending review"}`,
             tag: `review-${data.id || Date.now()}`,
+            icon: "/icons/review-notification.png",
+            badge: "/icons/badge.png",
           });
           break;
 
@@ -242,6 +249,18 @@ export function useRealtimeNotifications() {
           showNotification("Incoming Call", {
             body: `${data.callerName || data.phoneNumber || "Unknown caller"}`,
             tag: `call-${data.sessionId || Date.now()}`,
+            icon: "/icons/call-notification.png",
+            badge: "/icons/badge.png",
+            requireInteraction: true, // Keep call notifications visible until dismissed
+          });
+          break;
+
+        case "call_missed":
+          showNotification("Missed Call", {
+            body: `${data.callerName || data.phoneNumber || "Unknown caller"}`,
+            tag: `missed-${data.sessionId || Date.now()}`,
+            icon: "/icons/missed-call.png",
+            badge: "/icons/badge.png",
           });
           break;
       }

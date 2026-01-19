@@ -10,6 +10,7 @@ import LiveAssistCard from "@/components/features/LiveAssistCard";
 import CustomerAssistCards from "@/components/features/CustomerAssistCards";
 import LeadAssistCards from "@/components/features/LeadAssistCards";
 import { MergedProfile } from "@/types/customer-profile";
+import { LeadQualityBadgeCompact, type LeadQualityData } from "@/components/features/LeadQualityBadge";
 import { Playbook, AgentSuggestion, TelemetryFeedback } from "@/lib/agent-assist/types";
 import { AgentAvatar } from "@/components/ui/agent-avatar";
 import { AgencyZoomButton, getAgencyZoomUrl } from "@/components/ui/agencyzoom-link";
@@ -162,6 +163,30 @@ export default function ActiveCallPage() {
   const [customerLookup, setCustomerLookup] = useState<CustomerLookup | null>(null);
   const [profile, setProfile] = useState<MergedProfile | null>(null);
   const [aiOverview, setAiOverview] = useState<AIOverview | null>(null);
+
+  // Trestle Caller ID State (for unknown callers)
+  const [trestleCallerData, setTrestleCallerData] = useState<{
+    name?: string;
+    firstName?: string;
+    lastName?: string;
+    phone: string;
+    lineType?: string;
+    carrier?: string;
+    address?: {
+      street: string;
+      city: string;
+      state: string;
+      zip: string;
+    };
+    emails?: string[];
+    confidence?: number;
+    leadQuality?: {
+      grade: 'A' | 'B' | 'C' | 'D' | 'F';
+      activityScore: number;
+      isValid: boolean;
+    };
+  } | null>(null);
+  const [trestleLoading, setTrestleLoading] = useState(false);
 
   // Loading State
   const [lookupLoading, setLookupLoading] = useState(true);
@@ -354,6 +379,41 @@ export default function ActiveCallPage() {
 
     lookupCustomer();
   }, [phoneNumber]);
+
+  // =========================================================================
+  // Fetch Trestle caller ID for unknown callers
+  // =========================================================================
+  useEffect(() => {
+    // Only fetch Trestle data if no customer match and we have a phone number
+    if (lookupLoading || customerLookup || !phoneNumber) {
+      setTrestleCallerData(null);
+      return;
+    }
+
+    const fetchTrestleCaller = async () => {
+      setTrestleLoading(true);
+      try {
+        const res = await fetch(`/api/trestle/caller-id?phone=${encodeURIComponent(phoneNumber)}`);
+        const data = await res.json();
+
+        if (data.success && data.found) {
+          setTrestleCallerData({
+            ...data.caller,
+            leadQuality: data.leadQuality,
+          });
+        } else {
+          setTrestleCallerData(null);
+        }
+      } catch (err) {
+        console.error("[ActiveCall] Trestle lookup failed:", err);
+        setTrestleCallerData(null);
+      } finally {
+        setTrestleLoading(false);
+      }
+    };
+
+    fetchTrestleCaller();
+  }, [lookupLoading, customerLookup, phoneNumber]);
 
   // =========================================================================
   // Load MergedProfile
@@ -990,13 +1050,105 @@ export default function ActiveCallPage() {
           ) : error ? (
             <div className="p-4 text-red-600 text-sm">{error}</div>
           ) : !customerLookup ? (
-            // NO MATCH - Unknown caller
+            // NO MATCH - Unknown caller with Trestle enrichment
             <div className="p-6">
-              <div className="text-center mb-6">
-                <div className="text-5xl mb-3">?</div>
-                <h3 className="font-semibold text-xl">Unknown Caller</h3>
-                <p className="text-gray-500">{phoneNumber}</p>
-              </div>
+              {trestleLoading ? (
+                <div className="text-center mb-6">
+                  <div className="animate-pulse text-4xl mb-3">...</div>
+                  <p className="text-gray-500">Looking up caller...</p>
+                </div>
+              ) : trestleCallerData?.name ? (
+                // Trestle found identity
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xl font-bold">
+                      {trestleCallerData.firstName?.[0] || trestleCallerData.name?.[0] || "?"}
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="font-bold text-xl text-gray-900">
+                        {trestleCallerData.name}
+                      </h2>
+                      <p className="text-gray-500 text-sm">{phoneNumber}</p>
+                    </div>
+                  </div>
+
+                  {/* Identity hint badge */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-blue-600 font-medium">Trestle Identity</span>
+                      {trestleCallerData.confidence && (
+                        <span className="text-blue-400 text-xs">
+                          ({Math.round(trestleCallerData.confidence * 100)}% confidence)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Lead Quality Badge */}
+                  {trestleCallerData.leadQuality && (
+                    <div className="flex items-center gap-2 mb-4">
+                      <LeadQualityBadgeCompact
+                        data={{
+                          grade: trestleCallerData.leadQuality.grade,
+                          activityScore: trestleCallerData.leadQuality.activityScore,
+                          phoneValid: trestleCallerData.leadQuality.isValid,
+                        }}
+                      />
+                      <span className="text-xs text-gray-500">Lead Quality</span>
+                    </div>
+                  )}
+
+                  {/* Contact Details */}
+                  <div className="space-y-2 text-sm border-t pt-4 mt-4">
+                    {trestleCallerData.address && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-gray-400 w-16 shrink-0">Address:</span>
+                        <span className="text-gray-700">
+                          {trestleCallerData.address.street}, {trestleCallerData.address.city}, {trestleCallerData.address.state} {trestleCallerData.address.zip}
+                        </span>
+                      </div>
+                    )}
+                    {trestleCallerData.emails && trestleCallerData.emails.length > 0 && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-gray-400 w-16 shrink-0">Email:</span>
+                        <span className="text-gray-700">{trestleCallerData.emails[0]}</span>
+                      </div>
+                    )}
+                    {trestleCallerData.lineType && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-gray-400 w-16 shrink-0">Line:</span>
+                        <span className="text-gray-700 capitalize">
+                          {trestleCallerData.lineType}
+                          {trestleCallerData.carrier && ` (${trestleCallerData.carrier})`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                // No Trestle data - show basic unknown caller
+                <div className="text-center mb-6">
+                  <div className="text-5xl mb-3">?</div>
+                  <h3 className="font-semibold text-xl">Unknown Caller</h3>
+                  <p className="text-gray-500">{phoneNumber}</p>
+                  {trestleCallerData?.leadQuality && (
+                    <div className="flex items-center justify-center gap-2 mt-3">
+                      <LeadQualityBadgeCompact
+                        data={{
+                          grade: trestleCallerData.leadQuality.grade,
+                          activityScore: trestleCallerData.leadQuality.activityScore,
+                          phoneValid: trestleCallerData.leadQuality.isValid,
+                        }}
+                      />
+                    </div>
+                  )}
+                  {trestleCallerData?.lineType && (
+                    <p className="text-xs text-gray-400 mt-2 capitalize">
+                      {trestleCallerData.lineType} {trestleCallerData.carrier && `- ${trestleCallerData.carrier}`}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <LeadAssistCards
                 phoneNumber={phoneNumber}
