@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { wrapupDrafts, messages, customers, users, calls } from "@/db/schema";
+import { wrapupDrafts, messages, customers, users, calls, triageItems } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 import { createClient } from "@/lib/supabase/server";
@@ -622,9 +622,76 @@ export async function POST(
     }
 
     // =======================================================================
-    // HANDLE MESSAGE
+    // HANDLE MESSAGE (including after-hours triage items)
     // =======================================================================
     else if (body.itemType === 'message') {
+      // First check if this is a triage item (after-hours)
+      const [triageItem] = await db
+        .select()
+        .from(triageItems)
+        .where(eq(triageItems.id, itemId))
+        .limit(1);
+
+      if (triageItem) {
+        // Handle triage item completion
+        if (body.action === 'acknowledge' || body.action === 'skip' || body.action === 'void') {
+          await db
+            .update(triageItems)
+            .set({
+              status: 'completed',
+              resolvedAt: new Date(),
+              resolvedById: reviewerId,
+              resolution: body.action === 'void' ? 'voided' : 'acknowledged',
+            })
+            .where(eq(triageItems.id, itemId));
+
+          // Also acknowledge the linked message if it exists
+          if (triageItem.messageId) {
+            await db
+              .update(messages)
+              .set({ isAcknowledged: true })
+              .where(eq(messages.id, triageItem.messageId));
+          }
+
+          return NextResponse.json({
+            success: true,
+            action: body.action,
+            message: `After-hours item ${body.action === 'void' ? 'voided' : 'acknowledged'}`
+          });
+        }
+
+        if (body.action === 'delete') {
+          await db
+            .update(triageItems)
+            .set({
+              status: 'cancelled',
+              resolvedAt: new Date(),
+              resolvedById: reviewerId,
+              resolution: `Deleted: ${body.deleteReason || 'No reason'}`,
+            })
+            .where(eq(triageItems.id, itemId));
+
+          // Also acknowledge the linked message if it exists
+          if (triageItem.messageId) {
+            await db
+              .update(messages)
+              .set({ isAcknowledged: true })
+              .where(eq(messages.id, triageItem.messageId));
+          }
+
+          return NextResponse.json({
+            success: true,
+            action: 'delete',
+            message: 'After-hours item deleted'
+          });
+        }
+
+        // For other actions (note, ticket, ncm), use the linked message if available
+        // or return error if not supported
+        return NextResponse.json({ error: "Action not supported for after-hours items" }, { status: 400 });
+      }
+
+      // Not a triage item, look for message
       const [message] = await db
         .select()
         .from(messages)
