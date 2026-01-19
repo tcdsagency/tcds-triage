@@ -866,19 +866,25 @@ export class AgencyZoomClient {
   /**
    * Send SMS via AgencyZoom (uses sidecar for session cookies)
    * This ensures SMS appears in customer's conversation history
-   * Note: Uses app.agencyzoom.com, not api.agencyzoom.com
+   * Note: Uses app.agencyzoom.com internal API, not a public API
+   *
+   * AgencyZoom SMS uses internal web endpoints that require:
+   * 1. Session cookies from browser login (via Selenium sidecar)
+   * 2. CSRF token extracted from the page
+   * 3. Specific payload format matching their internal API
    */
   async sendSMS(params: {
     phoneNumber: string;
     message: string;
     contactId?: number;
+    contactType?: 'customer' | 'lead';
     fromName?: string;
   }): Promise<{ success: boolean; messageId?: string; error?: string }> {
     if (!this.sidecarUrl) {
       throw new Error('SIDECAR_URL not configured - required for SMS');
     }
 
-    // Get session cookies from sidecar
+    // Get session cookies from sidecar (Selenium extracts these by logging in)
     const sessionResponse = await fetch(`${this.sidecarUrl}/agencyzoom/session`, {
       method: 'POST',
     });
@@ -888,15 +894,33 @@ export class AgencyZoomClient {
     }
 
     const sessionData = await sessionResponse.json();
-    
+
     if (!sessionData.success || !sessionData.data?.cookies) {
       throw new Error(sessionData.error || 'No session cookies returned');
     }
 
-    // Build cookie header
+    // Build cookie header from Selenium-extracted cookies
     const cookieHeader = sessionData.data.cookies
       .map((c: { name: string; value: string }) => `${c.name}=${c.value}`)
       .join('; ');
+
+    // Normalize phone number (remove non-digits, keep last 10)
+    const normalizedPhone = params.phoneNumber.replace(/\D/g, '').slice(-10);
+
+    // Build payload matching AgencyZoom's internal API format
+    const payload = {
+      sendType: 'single',
+      referer: '/integration/messages/index',
+      linkToType: params.contactType || 'customer',
+      linkToId: params.contactId ? [String(params.contactId)] : [],
+      from: params.fromName || 'TCDS Insurance',
+      phoneNumbers: [normalizedPhone],
+      actionType: '41', // SMS action type in AgencyZoom
+      message: params.message,
+      files: [],
+    };
+
+    console.log('[AgencyZoom SMS] Sending to:', normalizedPhone, 'contactId:', params.contactId);
 
     // Send SMS via internal endpoint (uses app.agencyzoom.com, not api)
     // Must include browser-like headers to pass AgencyZoom's validation
@@ -906,26 +930,24 @@ export class AgencyZoomClient {
         'Content-Type': 'application/json',
         'Cookie': cookieHeader,
         'Origin': 'https://app.agencyzoom.com',
-        'Referer': 'https://app.agencyzoom.com/',
+        'Referer': 'https://app.agencyzoom.com/integration/messages/index',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         ...(sessionData.data.csrfToken && {
           'X-CSRF-TOKEN': sessionData.data.csrfToken,
         }),
       },
-      body: JSON.stringify({
-        phoneNumber: params.phoneNumber,
-        message: params.message,
-        fromName: params.fromName || 'TCDS Insurance',
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!smsResponse.ok) {
-      const error = await smsResponse.text();
-      return { success: false, error };
+      const errorText = await smsResponse.text();
+      console.error('[AgencyZoom SMS] Failed:', smsResponse.status, errorText);
+      return { success: false, error: `HTTP ${smsResponse.status}: ${errorText}` };
     }
 
     const result = await smsResponse.json();
-    return { success: true, messageId: result.id };
+    console.log('[AgencyZoom SMS] Success:', result);
+    return { success: true, messageId: result.id || result.messageId };
   }
 }
 

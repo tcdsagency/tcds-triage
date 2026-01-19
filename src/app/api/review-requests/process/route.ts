@@ -168,6 +168,7 @@ async function sendSMS(
       phoneNumber: phone,
       message: message,
       contactId: customerId ? parseInt(customerId) : undefined,
+      contactType: 'customer', // Review requests are always for customers
     });
 
     return result;

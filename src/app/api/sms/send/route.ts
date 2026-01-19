@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
           phoneNumber: body.to,
           message: body.message,
           contactId: body.contactId ? parseInt(body.contactId) : undefined,
+          contactType: body.contactType || 'customer',
         });
       } catch (error) {
         console.error("AgencyZoom SMS error:", error);
