@@ -78,6 +78,8 @@ export interface TrestlePhoneValidation {
   isDisposable?: boolean;
   isPorted?: boolean;
   riskScore?: number;
+  // Activity score from API (0-100)
+  activityScore?: number;
 }
 
 export interface TrestleAddressResult {
@@ -152,6 +154,7 @@ class TrestleIQClient {
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
         'x-api-key': this.apiKey,
         ...options.headers,
       },
@@ -181,11 +184,14 @@ class TrestleIQClient {
         return null;
       }
 
-      const data = await this.fetch<any>(`/3.1/phone/${normalized}`);
+      const data = await this.fetch<any>(`/3.2/phone?phone=${normalized}`);
 
       // Map TrestleIQ response to our interface
-      const person = data.belongs_to?.[0];
-      const address = data.current_addresses?.[0];
+      // Prefer Person over Business in the owners array
+      const owners = data.owners || [];
+      const personOwner = owners.find((o: any) => o.type === 'Person');
+      const owner = personOwner || owners[0];
+      const address = owner?.current_addresses?.[0];
 
       return {
         phoneNumber: normalized,
@@ -193,12 +199,12 @@ class TrestleIQClient {
         lineType: this.mapLineType(data.line_type),
         carrier: data.carrier,
         countryCode: data.country_calling_code || '1',
-        person: person ? {
-          name: person.name || `${person.firstname || ''} ${person.lastname || ''}`.trim(),
-          firstName: person.firstname,
-          lastName: person.lastname,
-          age: person.age_range ? parseInt(person.age_range.split('-')[0]) : undefined,
-          gender: person.gender,
+        person: owner ? {
+          name: owner.name || `${owner.firstname || ''} ${owner.lastname || ''}`.trim(),
+          firstName: owner.firstname,
+          lastName: owner.lastname,
+          age: owner.age_range ? parseInt(owner.age_range.split('-')[0]) : undefined,
+          gender: owner.gender,
         } : undefined,
         address: address ? {
           street: address.street_line_1 || '',
@@ -207,8 +213,10 @@ class TrestleIQClient {
           zip: address.postal_code || '',
           type: address.location_type === 'Commercial' ? 'commercial' : 'residential',
         } : undefined,
-        emails: data.emails?.map((e: any) => e.address) || [],
-        alternatePhones: data.associated_phones?.map((p: any) => p.phone_number) || [],
+        // emails is a plain string array
+        emails: owner?.emails || [],
+        // alternate_phones uses phoneNumber not phone_number
+        alternatePhones: owner?.alternate_phones?.map((p: any) => p.phoneNumber?.replace('+1', '') || p.phone_number) || [],
         confidence: data.confidence_score,
         lastUpdated: data.last_seen,
       };
@@ -233,22 +241,27 @@ class TrestleIQClient {
         return null;
       }
 
-      const data = await this.fetch<any>(`/3.0/caller_id?phone=${normalized}`);
+      const data = await this.fetch<any>(`/3.1/caller_id?phone=${normalized}`);
+
+      // Caller ID uses belongs_to object
+      const belongsTo = data.belongs_to;
+      const isBusiness = belongsTo?.type === 'Business';
+      const isPerson = belongsTo?.type === 'Person';
 
       return {
         phoneNumber: normalized,
-        callerName: data.name || data.caller_name || 'Unknown',
-        callerType: data.type === 'Business' ? 'business' : data.type === 'Person' ? 'person' : 'unknown',
+        callerName: belongsTo?.name || 'Unknown',
+        callerType: isBusiness ? 'business' : isPerson ? 'person' : 'unknown',
         spamScore: data.spam_score,
         isSpam: data.is_spam === true || (data.spam_score && data.spam_score > 70),
-        person: data.person ? {
-          name: data.person.name,
-          firstName: data.person.first_name,
-          lastName: data.person.last_name,
+        person: isPerson && belongsTo ? {
+          name: belongsTo.name,
+          firstName: belongsTo.firstname,
+          lastName: belongsTo.lastname,
         } : undefined,
-        business: data.business ? {
-          name: data.business.name,
-          industry: data.business.industry,
+        business: isBusiness && belongsTo ? {
+          name: belongsTo.name,
+          industry: Array.isArray(belongsTo.industry) ? belongsTo.industry[0] : belongsTo.industry,
         } : undefined,
       };
     } catch (error) {
@@ -286,6 +299,7 @@ class TrestleIQClient {
         isDisposable: data.is_disposable,
         isPorted: data.is_ported,
         riskScore: data.risk_score,
+        activityScore: data.activity_score,
       };
     } catch (error) {
       console.error('TrestleIQ validatePhone error:', error);
@@ -667,11 +681,16 @@ export async function quickLeadCheck(phoneNumber: string): Promise<{
     const validation = await trestleIQClient.validatePhone(phoneNumber);
     if (!validation) return null;
 
-    let activityScore = validation.isValid ? 70 : 20;
+    // Use API activity score if available, otherwise calculate
+    let activityScore = validation.activityScore ?? (validation.isValid ? 70 : 20);
     const riskScore = validation.riskScore || 0;
-    activityScore -= Math.floor(riskScore * 0.3);
-    if (validation.isMobile) activityScore += 15;
-    if (validation.isDisposable) activityScore -= 30;
+
+    // Only adjust if we didn't get an API score
+    if (validation.activityScore === undefined) {
+      activityScore -= Math.floor(riskScore * 0.3);
+      if (validation.isMobile) activityScore += 15;
+      if (validation.isDisposable) activityScore -= 30;
+    }
     activityScore = Math.max(0, Math.min(100, activityScore));
 
     const grade = calculateGrade(activityScore, riskScore, validation.isValid);
