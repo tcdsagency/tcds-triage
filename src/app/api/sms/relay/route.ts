@@ -103,8 +103,7 @@ export async function POST(request: NextRequest) {
       const customer = await db.query.customers.findFirst({
         where: or(
           sql`${customers.phone} LIKE ${'%' + normalizedPhone}`,
-          sql`${customers.phoneCell} LIKE ${'%' + normalizedPhone}`,
-          sql`${customers.phoneWork} LIKE ${'%' + normalizedPhone}`
+          sql`${customers.phoneAlt} LIKE ${'%' + normalizedPhone}`
         ),
       });
 
