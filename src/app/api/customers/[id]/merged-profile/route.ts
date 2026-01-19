@@ -835,9 +835,10 @@ export async function GET(
       },
       
       // Address from HawkSoft (more reliable for mailing), fallback to AgencyZoom
+      // HawkSoft normalizes to line1/line2, not address1/address2
       address: hsClient?.address ? {
-        street: hsClient.address.address1,
-        street2: hsClient.address.address2,
+        street: hsClient.address.line1,
+        street2: hsClient.address.line2,
         city: hsClient.address.city,
         state: hsClient.address.state,
         zip: hsClient.address.zip,
