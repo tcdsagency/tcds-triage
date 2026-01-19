@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, pendingVmEvents, pendingTranscriptJobs, users } from "@/db/schema";
-import { eq, lt, and, or, gt, desc } from "drizzle-orm";
+import { eq, lt, and, or, gt, desc, sql } from "drizzle-orm";
 
 // =============================================================================
 // Types
@@ -235,25 +235,73 @@ export async function POST(request: NextRequest) {
         }
 
         // If no existing call found by vmSessionId/threeCxCallId, also check for
-        // recent calls created by presence detection (which have "Unknown" fromNumber)
+        // recent calls created by presence detection (which have "Unknown" fromNumber or no externalCallId)
         if (!existingCall && agentId) {
-          const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+          const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
           const [presenceCall] = await db
-            .select({ id: calls.id, fromNumber: calls.fromNumber })
+            .select({ id: calls.id, fromNumber: calls.fromNumber, externalCallId: calls.externalCallId })
             .from(calls)
             .where(
               and(
                 eq(calls.agentId, agentId),
-                or(eq(calls.status, "ringing"), eq(calls.status, "in_progress")),
-                gt(calls.createdAt, twoMinutesAgo)
+                or(
+                  eq(calls.status, "ringing"),
+                  eq(calls.status, "in_progress")
+                ),
+                gt(calls.createdAt, fiveMinutesAgo),
+                // Only match calls that don't have an externalCallId (presence-created)
+                // or have "Unknown" as fromNumber
+                or(
+                  sql`${calls.externalCallId} IS NULL`,
+                  eq(calls.fromNumber, "Unknown")
+                )
               )
             )
             .orderBy(desc(calls.createdAt))
             .limit(1);
 
           if (presenceCall) {
-            console.log(`[VM Events] Found presence-detected call ${presenceCall.id} for ext=${extension}`);
+            console.log(`[VM Events] Found presence-detected call ${presenceCall.id} for ext=${extension}, linking to VM session ${sessionId}`);
             existingCall = presenceCall;
+
+            // Also link the externalCallId so future events can find it
+            if (threeCxCallId) {
+              await db
+                .update(calls)
+                .set({ externalCallId: threeCxCallId })
+                .where(eq(calls.id, presenceCall.id));
+              console.log(`[VM Events] Linked externalCallId ${threeCxCallId} to presence call ${presenceCall.id}`);
+            }
+          }
+        }
+
+        // Also try to find by extension alone if still no match (wider search)
+        if (!existingCall && extension) {
+          const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+          const [extCall] = await db
+            .select({ id: calls.id, fromNumber: calls.fromNumber })
+            .from(calls)
+            .where(
+              and(
+                eq(calls.extension, extension),
+                or(eq(calls.status, "ringing"), eq(calls.status, "in_progress")),
+                gt(calls.createdAt, fiveMinutesAgo),
+                sql`${calls.externalCallId} IS NULL`
+              )
+            )
+            .orderBy(desc(calls.createdAt))
+            .limit(1);
+
+          if (extCall) {
+            console.log(`[VM Events] Found call by extension ${extension}: ${extCall.id}`);
+            existingCall = extCall;
+
+            if (threeCxCallId) {
+              await db
+                .update(calls)
+                .set({ externalCallId: threeCxCallId })
+                .where(eq(calls.id, extCall.id));
+            }
           }
         }
 
@@ -371,6 +419,46 @@ export async function POST(request: NextRequest) {
             .where(eq(calls.externalCallId, threeCxCallId))
             .limit(1);
           call = byExternal;
+        }
+
+        // If still no match, try to find by extension (presence-created calls)
+        if (!call && extension) {
+          const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+          const [extCall] = await db
+            .select()
+            .from(calls)
+            .where(
+              and(
+                eq(calls.extension, extension),
+                or(
+                  eq(calls.status, "ringing"),
+                  eq(calls.status, "in_progress")
+                ),
+                gt(calls.createdAt, tenMinutesAgo),
+                or(
+                  sql`${calls.externalCallId} IS NULL`,
+                  eq(calls.fromNumber, "Unknown")
+                )
+              )
+            )
+            .orderBy(desc(calls.createdAt))
+            .limit(1);
+
+          if (extCall) {
+            console.log(`[VM Events] call_ended: Found presence call by extension ${extension}: ${extCall.id}`);
+            call = extCall;
+
+            // Link the IDs for transcript processing
+            if (threeCxCallId || sessionId) {
+              await db
+                .update(calls)
+                .set({
+                  externalCallId: threeCxCallId || undefined,
+                  vmSessionId: sessionId || undefined,
+                })
+                .where(eq(calls.id, extCall.id));
+            }
+          }
         }
 
         if (call) {
