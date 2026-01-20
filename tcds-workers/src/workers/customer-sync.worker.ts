@@ -281,17 +281,24 @@ async function syncAllCustomersChunked(
   }
 
   // Sync HawkSoft customers (uses existing batched endpoint)
+  // Using smaller batches (100) to avoid Vercel timeout (~0.4s per customer = ~40s per batch)
   if (provider === 'hawksoft' || provider === 'both') {
     logger.info('Syncing HawkSoft customers...');
 
-    await job.updateProgress({
-      stage: 'hawksoft',
-      totalSynced,
-    });
+    const HS_BATCH_SIZE = 100;
+    const HS_MAX_CUSTOMERS = 2500;
+    let hsOffset = 0;
+    let hsHasMore = true;
 
-    for (let offset = 0; offset < 2000; offset += 500) {
+    while (hsHasMore && hsOffset < HS_MAX_CUSTOMERS) {
       try {
-        const response = await fetch(`${config.app.url}/api/sync/hawksoft?offset=${offset}&limit=500`, {
+        await job.updateProgress({
+          stage: 'hawksoft',
+          offset: hsOffset,
+          totalSynced,
+        });
+
+        const response = await fetch(`${config.app.url}/api/sync/hawksoft?offset=${hsOffset}&limit=${HS_BATCH_SIZE}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -300,34 +307,42 @@ async function syncAllCustomersChunked(
         });
 
         if (!response.ok) {
-          logger.warn({ offset, status: response.status }, 'HawkSoft batch failed');
+          logger.warn({ offset: hsOffset, status: response.status }, 'HawkSoft batch failed');
           totalErrors++;
+          hsOffset += HS_BATCH_SIZE;
           continue;
         }
 
         const result = await response.json() as {
           success: boolean;
-          updated?: number;
+          customersUpdated?: number;
           policiesSynced?: number;
+          hasMore?: boolean;
         };
 
         if (result.success) {
-          totalSynced += result.updated || 0;
+          totalSynced += result.customersUpdated || 0;
           logger.info({
             event: 'hawksoft_batch_complete',
-            offset,
-            updated: result.updated,
+            offset: hsOffset,
+            updated: result.customersUpdated,
             policies: result.policiesSynced,
           });
         }
 
-        // Stop if we got fewer than limit
-        if ((result.updated || 0) < 500) break;
+        // Check if there are more customers
+        hsHasMore = result.hasMore ?? false;
+        hsOffset += HS_BATCH_SIZE;
 
-        await sleep(1000);
+        // Small delay between batches
+        if (hsHasMore) {
+          await sleep(500);
+        }
       } catch (err) {
-        logger.error({ offset, error: err }, 'HawkSoft batch error');
+        logger.error({ offset: hsOffset, error: err }, 'HawkSoft batch error');
         totalErrors++;
+        hsOffset += HS_BATCH_SIZE;
+        await sleep(2000);
       }
     }
   }
