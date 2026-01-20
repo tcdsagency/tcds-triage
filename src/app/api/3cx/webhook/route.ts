@@ -11,6 +11,7 @@ import { calls, customers, users, pendingVmEvents } from "@/db/schema";
 import { eq, or, ilike, sql, and, gte, desc } from "drizzle-orm";
 import { VMBridgeClient, getVMBridgeClient } from "@/lib/api/vm-bridge";
 import { queueTranscriptProcessing } from "@/lib/queues/client";
+import { getThreeCXClient } from "@/lib/api/threecx";
 
 // Verify webhook authentication
 function verifyWebhookAuth(request: NextRequest): boolean {
@@ -85,6 +86,56 @@ async function findAgentByExtension(extension: string, tenantId: string) {
     .limit(1);
 
   return agent || null;
+}
+
+// Enrich caller ID from 3CX Call Control API when webhook data is missing
+// This queries the active call participants to get the party_caller_id
+async function enrichCallerIdFrom3CX(
+  extension: string,
+  callId: string
+): Promise<{ callerNumber: string | null; callerName: string | null }> {
+  try {
+    const threecxClient = await getThreeCXClient();
+    if (!threecxClient) {
+      console.log("[3CX Webhook] Cannot enrich caller ID - 3CX client not configured");
+      return { callerNumber: null, callerName: null };
+    }
+
+    console.log(`[3CX Webhook] Enriching caller ID from 3CX API for ext ${extension}, callId ${callId}`);
+
+    // Query the extension info to get active call participants
+    const extInfo = await threecxClient.getExtensionInfo(extension);
+    if (!extInfo || !extInfo.participants || extInfo.participants.length === 0) {
+      console.log(`[3CX Webhook] No active participants found for ext ${extension}`);
+      return { callerNumber: null, callerName: null };
+    }
+
+    console.log(`[3CX Webhook] Found ${extInfo.participants.length} participants for ext ${extension}`);
+
+    // Find the matching participant by callId or use the first one
+    const participant = extInfo.participants.find(p =>
+      p.callid === callId || p.id === callId
+    ) || extInfo.participants[0];
+
+    if (participant?.party_caller_id) {
+      const callerIdRaw = participant.party_caller_id;
+      console.log(`[3CX Webhook] Found party_caller_id: ${callerIdRaw}`);
+
+      // party_caller_id might be "Name <number>" or just "number"
+      const match = callerIdRaw.match(/^(.+?)\s*<(.+)>$/);
+      if (match) {
+        return { callerName: match[1].trim(), callerNumber: match[2].trim() };
+      }
+      // Just a number
+      return { callerNumber: callerIdRaw, callerName: null };
+    }
+
+    console.log(`[3CX Webhook] No party_caller_id in participant data`);
+    return { callerNumber: null, callerName: null };
+  } catch (error) {
+    console.error("[3CX Webhook] Error enriching caller ID from 3CX:", error);
+    return { callerNumber: null, callerName: null };
+  }
 }
 
 // Predict call reason based on customer data
@@ -338,6 +389,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body: ThreeCXCallEvent = await request.json();
+
+    // Log FULL raw payload for debugging missing caller ID issues
+    const ext = body.extension || body.Extension || body.ext || body.Ext || "?";
+    console.log(`[3CX Webhook] ===== RAW PAYLOAD for ext ${ext} =====`);
+    console.log(`[3CX Webhook] Full body: ${JSON.stringify(body)}`);
+
     // Log key fields for debugging call creation issues
     const rawDirection = body.direction || body.Direction;
     console.log(`[3CX Webhook] Event: ${body.event || body.Event || body.type}, Direction: ${rawDirection || 'NOT_SET'}, From: ${body.from || body.From}, To: ${body.to || body.To}`);
@@ -406,8 +463,25 @@ export async function POST(request: NextRequest) {
       case "ringing":
       case "incoming":
       case "outgoing": {
+        // If customer phone is missing, try to enrich from 3CX Call Control API
+        let enrichedCustomerPhone = customerPhone;
+        if (!customerPhone && extension) {
+          console.log(`[3CX Webhook] Customer phone missing, attempting 3CX API enrichment for ext ${extension}`);
+          const enriched = await enrichCallerIdFrom3CX(extension, callId);
+          if (enriched.callerNumber) {
+            enrichedCustomerPhone = enriched.callerNumber;
+            console.log(`[3CX Webhook] Enriched customer phone: ${enrichedCustomerPhone}`);
+            // Update fromNumber/toNumber based on direction
+            if (direction === "inbound") {
+              fromNumber = enrichedCustomerPhone;
+            } else {
+              toNumber = enrichedCustomerPhone;
+            }
+          }
+        }
+
         // Look up customer and agent
-        const customer = customerPhone ? await findCustomerByPhone(customerPhone, tenantId) : null;
+        const customer = enrichedCustomerPhone ? await findCustomerByPhone(enrichedCustomerPhone, tenantId) : null;
         const agent = extension ? await findAgentByExtension(extension, tenantId) : null;
 
         // Predict call reason based on customer data
@@ -424,7 +498,7 @@ export async function POST(request: NextRequest) {
             status: "ringing",
             fromNumber: normalizePhone(fromNumber),
             toNumber: normalizePhone(toNumber),
-            externalNumber: customerPhone ? normalizePhone(customerPhone) : null,
+            externalNumber: enrichedCustomerPhone ? normalizePhone(enrichedCustomerPhone) : null,
             customerId: customer?.id,
             agentId: agent?.id,
             extension,
@@ -442,7 +516,7 @@ export async function POST(request: NextRequest) {
         await notifyRealtimeServer({
           type: "call_ringing",
           sessionId: call.id,
-          phoneNumber: customerPhone,
+          phoneNumber: enrichedCustomerPhone,
           direction,
           customerId: customer?.id,
           customerName: customer ? `${customer.firstName} ${customer.lastName}`.trim() : undefined,
@@ -491,6 +565,35 @@ export async function POST(request: NextRequest) {
 
         console.log(`[3CX Webhook] Updated call record: ${call.id}`);
         console.log(`[3CX Webhook] Call agent ID: ${call.agentId || "NOT SET"}`);
+
+        // If call doesn't have a customer linked and has no external number, try to enrich
+        // This is a second chance - call is definitely established now
+        const callExtension = extension || call.extension;
+        if (!call.customerId && !call.externalNumber && callExtension) {
+          console.log(`[3CX Webhook] Call missing customer data, attempting 3CX API enrichment on answer`);
+          const enriched = await enrichCallerIdFrom3CX(callExtension, callId);
+          if (enriched.callerNumber) {
+            const enrichedPhone = normalizePhone(enriched.callerNumber);
+            console.log(`[3CX Webhook] Enriched phone on answer: ${enrichedPhone}`);
+
+            // Look up customer with enriched phone
+            const customer = await findCustomerByPhone(enrichedPhone, tenantId);
+
+            // Update call record with enriched data
+            await db
+              .update(calls)
+              .set({
+                externalNumber: enrichedPhone,
+                fromNumber: call.direction === "inbound" ? enrichedPhone : call.fromNumber,
+                toNumber: call.direction === "outbound" ? enrichedPhone : call.toNumber,
+                customerId: customer?.id || call.customerId,
+                updatedAt: new Date(),
+              })
+              .where(eq(calls.id, call.id));
+
+            console.log(`[3CX Webhook] Updated call with enriched data, customer: ${customer?.id || 'not found'}`);
+          }
+        }
 
         await notifyRealtimeServer({
           type: "call_started",
