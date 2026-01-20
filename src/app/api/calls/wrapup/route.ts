@@ -136,7 +136,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'id and action required' }, { status: 400 });
     }
 
-    let updates: Record<string, any> = { updatedAt: new Date() };
+    const updates: Record<string, any> = { updatedAt: new Date() };
 
     switch (action) {
       case 'approve':

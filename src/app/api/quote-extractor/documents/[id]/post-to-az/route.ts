@@ -66,7 +66,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const azClient = getAgencyZoomClient();
     let leadId = existingLeadId;
-    let customerId = existingCustomerId;
+    const customerId = existingCustomerId;
 
     // Create lead if no existing lead provided
     if (!leadId && !customerId) {

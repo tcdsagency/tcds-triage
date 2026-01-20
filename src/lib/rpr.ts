@@ -803,12 +803,12 @@ class RPRClient {
     zip: string;
   } {
     const parts = address.split(",").map((p) => p.trim());
-    let street = parts[0] || "";
-    let city = parts[1] || "";
-    let stateZip = parts[2] || "";
+    const street = parts[0] || "";
+    const city = parts[1] || "";
+    const stateZip = parts[2] || "";
 
     const stateZipMatch = stateZip.match(/([A-Z]{2})\s*(\d{5})?/i);
-    let state = stateZipMatch?.[1]?.toUpperCase() || "";
+    const state = stateZipMatch?.[1]?.toUpperCase() || "";
     let zip = stateZipMatch?.[2] || "";
 
     if (!zip && parts[3]) {

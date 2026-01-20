@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
     const hawksoftCustomers = customersToSync.filter((c) => c.hawksoftClientCode);
     const hawksoftClientCodes = hawksoftCustomers.map((c) => parseInt(c.hawksoftClientCode!));
 
-    let hawksoftData: Map<number, string | null> = new Map();
+    const hawksoftData: Map<number, string | null> = new Map();
 
     if (hawksoftClient && hawksoftClientCodes.length > 0) {
       console.log(`[DOB Sync] Fetching ${hawksoftClientCodes.length} customers from HawkSoft...`);

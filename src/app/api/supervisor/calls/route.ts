@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(calls.startedAt));
 
     // Fetch real-time presence from 3CX/VoIPTools
-    let presenceMap = new Map<string, string>();
+    const presenceMap = new Map<string, string>();
     try {
       const presenceRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/3cx/presence`);
       if (presenceRes.ok) {
