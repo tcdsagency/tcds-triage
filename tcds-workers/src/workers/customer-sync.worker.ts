@@ -4,10 +4,12 @@
  * Syncs customer data from external CRMs (AgencyZoom, HawkSoft)
  * to the local database for faster lookups and unified profiles.
  *
+ * Uses chunked API calls to avoid Vercel timeout issues.
+ *
  * Job Types:
  * - single: Sync a single customer by ID
  * - batch: Sync a batch of customers by IDs
- * - full: Full sync of all customers
+ * - full: Full sync of all customers (chunked)
  */
 
 import { Worker, Job } from 'bullmq';
@@ -15,6 +17,12 @@ import { redis } from '../redis';
 import { config } from '../config';
 import { logger } from '../logger';
 import { CustomerSyncJobData } from '../queues';
+
+// Batch size for chunked sync - keep aligned with API endpoint
+const CHUNK_SIZE = 25;
+
+// Max pages to process in a single job (safety limit)
+const MAX_PAGES = 200;
 
 /**
  * Create and return the customer sync worker
@@ -58,7 +66,7 @@ export function createCustomerSyncWorker(): Worker<CustomerSyncJobData> {
             break;
 
           case 'full':
-            const fullResults = await syncAllCustomers(provider);
+            const fullResults = await syncAllCustomersChunked(provider, job);
             syncedCount = fullResults.synced;
             errorCount = fullResults.errors;
             break;
@@ -98,32 +106,29 @@ export function createCustomerSyncWorker(): Worker<CustomerSyncJobData> {
     },
     {
       connection: redis,
-      concurrency: 3,
+      concurrency: 1, // Only one sync at a time to avoid overwhelming APIs
       limiter: {
-        max: 30,
-        duration: 60000, // Max 30 jobs per minute
+        max: 5,
+        duration: 60000, // Max 5 jobs per minute
       },
     }
   );
 }
 
 // =============================================================================
-// SYNC FUNCTIONS (STUBS - Implement actual logic)
+// SYNC FUNCTIONS
 // =============================================================================
 
+/**
+ * Sync a single customer by ID
+ */
 async function syncSingleCustomer(
   customerId: string,
   provider?: 'agencyzoom' | 'hawksoft' | 'both'
 ): Promise<void> {
   logger.debug({ customerId, provider }, 'Syncing single customer');
 
-  // TODO: Implement actual sync logic:
-  // 1. Fetch customer from AgencyZoom/HawkSoft API
-  // 2. Transform to local schema
-  // 3. Upsert to Supabase database
-  // 4. Sync related data (policies, notes, etc.)
-
-  // Placeholder - call main app API which has the sync logic
+  // For single customer sync, use the main API (quick operation)
   const response = await fetch(`${config.app.url}/api/sync/customers`, {
     method: 'POST',
     headers: {
@@ -143,6 +148,9 @@ async function syncSingleCustomer(
   }
 }
 
+/**
+ * Sync a batch of customers by IDs
+ */
 async function syncBatchCustomers(
   customerIds: string[],
   provider?: 'agencyzoom' | 'hawksoft' | 'both'
@@ -152,62 +160,191 @@ async function syncBatchCustomers(
   let synced = 0;
   let errors = 0;
 
-  // Process in smaller batches to avoid rate limits
-  const batchSize = 10;
-  for (let i = 0; i < customerIds.length; i += batchSize) {
-    const batch = customerIds.slice(i, i + batchSize);
-
-    await Promise.all(
-      batch.map(async (id) => {
-        try {
-          await syncSingleCustomer(id, provider);
-          synced++;
-        } catch (err) {
-          logger.warn({ customerId: id, error: err }, 'Failed to sync customer');
-          errors++;
-        }
-      })
-    );
-
-    // Rate limit pause between batches
-    if (i + batchSize < customerIds.length) {
-      await sleep(1000);
+  // Process individually to avoid timeout
+  for (const id of customerIds) {
+    try {
+      await syncSingleCustomer(id, provider);
+      synced++;
+    } catch (err) {
+      logger.warn({ customerId: id, error: err }, 'Failed to sync customer');
+      errors++;
     }
+
+    // Small delay between requests to avoid rate limits
+    await sleep(200);
   }
 
   return { synced, errors };
 }
 
-async function syncAllCustomers(
-  provider?: 'agencyzoom' | 'hawksoft' | 'both'
+/**
+ * Full sync using chunked API calls
+ *
+ * This avoids Vercel timeout by:
+ * 1. Calling a chunked API endpoint that processes small batches
+ * 2. Iterating through pages until no more data
+ * 3. Each chunk request is quick (<60s)
+ */
+async function syncAllCustomersChunked(
+  provider: 'agencyzoom' | 'hawksoft' | 'both' = 'agencyzoom',
+  job: Job<CustomerSyncJobData>
 ): Promise<{ synced: number; errors: number }> {
-  logger.info({ provider }, 'Starting full customer sync');
+  logger.info({ provider }, 'Starting chunked full customer sync');
 
-  // Call main app API which orchestrates the full sync
-  const response = await fetch(`${config.app.url}/api/sync/customers`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.app.internalKey}`,
-    },
-    body: JSON.stringify({
-      type: 'full',
-      provider,
-    }),
-  });
+  let totalSynced = 0;
+  let totalErrors = 0;
+  let page = 1;
+  let hasMore = true;
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Full sync failed: ${response.status} ${errorText}`);
+  // Sync AgencyZoom customers
+  if (provider === 'agencyzoom' || provider === 'both') {
+    logger.info('Syncing AgencyZoom customers...');
+
+    while (hasMore && page <= MAX_PAGES) {
+      try {
+        // Update job progress
+        await job.updateProgress({
+          stage: 'agencyzoom',
+          page,
+          totalSynced,
+        });
+
+        const response = await fetch(`${config.app.url}/api/sync/customers/chunk`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${config.app.internalKey}`,
+          },
+          body: JSON.stringify({
+            page,
+            batchSize: CHUNK_SIZE,
+            provider: 'agencyzoom',
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          logger.error({ page, status: response.status, error: errorText }, 'Chunk sync failed');
+          totalErrors++;
+
+          // If it's a 5xx error, maybe retry; otherwise skip this page
+          if (response.status >= 500) {
+            await sleep(5000); // Wait before retry
+            continue; // Retry same page
+          }
+          page++;
+          continue;
+        }
+
+        const result = await response.json() as {
+          success: boolean;
+          synced: number;
+          errors: number;
+          hasMore: boolean;
+          nextPage: number | null;
+          duration: number;
+        };
+
+        totalSynced += result.synced || 0;
+        totalErrors += result.errors || 0;
+        hasMore = result.hasMore;
+
+        logger.info({
+          event: 'chunk_complete',
+          provider: 'agencyzoom',
+          page,
+          synced: result.synced,
+          totalSynced,
+          hasMore,
+          duration: result.duration,
+        });
+
+        page++;
+
+        // Small delay between chunks to be nice to the API
+        if (hasMore) {
+          await sleep(500);
+        }
+      } catch (err) {
+        logger.error({ page, error: err }, 'Error processing chunk');
+        totalErrors++;
+        page++;
+
+        // Don't fail the whole job for one bad page
+        await sleep(2000);
+      }
+    }
+
+    if (page > MAX_PAGES) {
+      logger.warn({ maxPages: MAX_PAGES }, 'Reached max page limit');
+    }
   }
 
-  const result = await response.json() as { synced?: number; errors?: number };
-  return {
-    synced: result.synced || 0,
-    errors: result.errors || 0,
-  };
+  // Sync HawkSoft customers (uses existing batched endpoint)
+  if (provider === 'hawksoft' || provider === 'both') {
+    logger.info('Syncing HawkSoft customers...');
+
+    await job.updateProgress({
+      stage: 'hawksoft',
+      totalSynced,
+    });
+
+    for (let offset = 0; offset < 2000; offset += 500) {
+      try {
+        const response = await fetch(`${config.app.url}/api/sync/hawksoft?offset=${offset}&limit=500`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${config.app.internalKey}`,
+          },
+        });
+
+        if (!response.ok) {
+          logger.warn({ offset, status: response.status }, 'HawkSoft batch failed');
+          totalErrors++;
+          continue;
+        }
+
+        const result = await response.json() as {
+          success: boolean;
+          updated?: number;
+          policiesSynced?: number;
+        };
+
+        if (result.success) {
+          totalSynced += result.updated || 0;
+          logger.info({
+            event: 'hawksoft_batch_complete',
+            offset,
+            updated: result.updated,
+            policies: result.policiesSynced,
+          });
+        }
+
+        // Stop if we got fewer than limit
+        if ((result.updated || 0) < 500) break;
+
+        await sleep(1000);
+      } catch (err) {
+        logger.error({ offset, error: err }, 'HawkSoft batch error');
+        totalErrors++;
+      }
+    }
+  }
+
+  logger.info({
+    event: 'full_sync_complete',
+    totalSynced,
+    totalErrors,
+    pagesProcessed: page - 1,
+  });
+
+  return { synced: totalSynced, errors: totalErrors };
 }
 
+/**
+ * Sleep helper
+ */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
