@@ -187,16 +187,17 @@ export async function initializeScheduledJobs(): Promise<void> {
     );
     logger.info('Scheduled: risk-monitor-daily (6 AM CT)');
 
-    // Embeddings - Daily at 2 AM Central
-    await embeddingsQueue.upsertJobScheduler(
-      'embeddings-daily',
-      { pattern: '0 2 * * *', tz: 'America/Chicago' },
-      {
-        name: 'process-pending',
-        data: { type: 'pending' },
-      }
-    );
-    logger.info('Scheduled: embeddings-daily (2 AM CT)');
+    // Embeddings - DISABLED (endpoint not implemented yet)
+    // await embeddingsQueue.upsertJobScheduler(
+    //   'embeddings-daily',
+    //   { pattern: '0 2 * * *', tz: 'America/Chicago' },
+    //   {
+    //     name: 'process-pending',
+    //     data: { type: 'pending' },
+    //   }
+    // );
+    // logger.info('Scheduled: embeddings-daily (2 AM CT)');
+    logger.info('Skipped: embeddings-daily (disabled)');
 
     // Payment Reminders - Daily at 8 AM Central
     await notificationsQueue.upsertJobScheduler(
