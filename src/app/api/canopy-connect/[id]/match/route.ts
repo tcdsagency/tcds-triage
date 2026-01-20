@@ -46,7 +46,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
 
     // If customerId provided, verify customer exists and get agencyzoomId
-    let resolvedCustomerId = customerId;
+    const resolvedCustomerId = customerId;
     let resolvedAgencyzoomId = agencyzoomId;
 
     if (customerId) {

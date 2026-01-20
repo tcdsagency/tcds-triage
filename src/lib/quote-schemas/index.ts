@@ -129,7 +129,7 @@ export function shouldSkipField(field: { showIf?: string; skipIf?: string }, dat
  */
 export function evaluateCondition(condition: string, data: Record<string, any>): boolean {
   // Replace field references with actual values
-  let evalString = condition;
+  const evalString = condition;
   
   // Handle simple equality: field === "value"
   const simpleMatch = condition.match(/^(\w+)\s*(===|!==|==|!=)\s*["']?([^"']+)["']?$/);

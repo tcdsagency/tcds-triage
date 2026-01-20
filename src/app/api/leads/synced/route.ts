@@ -175,7 +175,7 @@ export async function GET(request: NextRequest) {
     // ==========================================================================
     // API Fallback: If few results and searching, also check AgencyZoom API
     // ==========================================================================
-    let apiLeads: any[] = [];
+    const apiLeads: any[] = [];
 
     if (enrichedLeads.length < 5 && query.length >= 2) {
       try {

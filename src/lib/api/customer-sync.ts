@@ -1242,7 +1242,7 @@ function isHawkSoftProspect(client: HawkSoftClient): boolean {
 function extractHawkSoftContacts(client: HawkSoftClient): { email: string | null; phone: string | null; phoneAlt: string | null } {
   let email = client.email || null;
   let phone = client.phone || null;
-  let phoneAlt = client.phoneCell || null;
+  const phoneAlt = client.phoneCell || null;
 
   // Check contacts array for additional info
   if (client.contacts && client.contacts.length > 0) {

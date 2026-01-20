@@ -109,7 +109,7 @@ export function AddressAutocomplete({
         const detailsResponse = await fetch(`/api/places/details?place_id=${suggestion.place_id}`);
         const details = await detailsResponse.json();
 
-        let street = suggestion.structured_formatting?.main_text || suggestion.description.split(',')[0];
+        const street = suggestion.structured_formatting?.main_text || suggestion.description.split(',')[0];
         let city = '';
         let state = '';
         let zip = '';

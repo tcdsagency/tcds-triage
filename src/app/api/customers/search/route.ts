@@ -332,7 +332,7 @@ export async function GET(request: NextRequest) {
     // ==========================================================================
     // API Fallback: If few results, search AgencyZoom for customers and leads
     // ==========================================================================
-    let apiResults: any[] = [];
+    const apiResults: any[] = [];
     const searchQuery = query || phone || '';
 
     if (enrichedResults.length < 5 && searchQuery.length >= 2) {

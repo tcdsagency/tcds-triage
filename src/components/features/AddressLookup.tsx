@@ -231,7 +231,7 @@ export function AddressLookup({
       }
 
       // Parse address components
-      let street = suggestion.structured_formatting?.main_text || suggestion.description.split(',')[0];
+      const street = suggestion.structured_formatting?.main_text || suggestion.description.split(',')[0];
       let city = '';
       let state = '';
       let zip = '';

@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
     }
 
     let pdfBuffer: ArrayBuffer | null = null;
-    let attachmentFilename = filename || "email-attachment.pdf";
+    const attachmentFilename = filename || "email-attachment.pdf";
 
     // Fetch attachment from external email API
     if (emailEndpoint && emailApiKey) {

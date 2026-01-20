@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const limit = parseInt(searchParams.get("limit") || "50");
 
-    let query = db
+    const query = db
       .select({
         id: paymentAdvances.id,
         firstName: paymentAdvances.firstName,

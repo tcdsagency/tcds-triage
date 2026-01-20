@@ -290,7 +290,7 @@ export async function POST(request: NextRequest) {
     const phaseInstructions = getPhaseInstructions(transcript.length);
 
     // Build base system prompt with phase instructions
-    let enhancedSystemPrompt = SYSTEM_PROMPT + `\n\n${phaseInstructions}`;
+    const enhancedSystemPrompt = SYSTEM_PROMPT + `\n\n${phaseInstructions}`;
 
     // Build user message
     let userMessage = `## Current Conversation\n${transcript}\n`;

@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
 
     // Import new customers
     let imported = 0;
-    let errors: string[] = [];
+    const errors: string[] = [];
 
     for (const customer of newCustomers) {
       try {

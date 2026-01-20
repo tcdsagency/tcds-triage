@@ -2260,7 +2260,7 @@ export default function QuoteIntakePage() {
     setSaving(true);
     try {
       // Build the payload based on form type
-      let payload: any = {
+      const payload: any = {
         type: selectedType === "recreational" ? "recreational_vehicle" : selectedType,
       };
 

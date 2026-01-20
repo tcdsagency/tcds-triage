@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get("offset") || "0");
 
     // Build base query
-    let conditions = [eq(riskMonitorPolicies.tenantId, tenantId)];
+    const conditions = [eq(riskMonitorPolicies.tenantId, tenantId)];
 
     if (status) {
       conditions.push(eq(riskMonitorPolicies.currentStatus, status as any));

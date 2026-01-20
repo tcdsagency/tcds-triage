@@ -273,7 +273,7 @@ export class MSSQLTranscriptsClient {
     const pool = await this.getPool();
     const request = pool.request();
 
-    let whereConditions: string[] = ["Transcription IS NOT NULL"];
+    const whereConditions: string[] = ["Transcription IS NOT NULL"];
 
     if (params.callerNumber) {
       const phone = params.callerNumber.replace(/\D/g, "");
@@ -322,7 +322,7 @@ export class MSSQLTranscriptsClient {
   }> {
     const pool = await this.getPool();
 
-    let whereConditions: string[] = ["Transcription IS NOT NULL"];
+    const whereConditions: string[] = ["Transcription IS NOT NULL"];
 
     // Build WHERE conditions
     if (params.extension) {
@@ -417,7 +417,7 @@ export class MSSQLTranscriptsClient {
   async getStats(startDate?: Date, endDate?: Date): Promise<TranscriptStats> {
     const pool = await this.getPool();
 
-    let whereConditions = ["Transcription IS NOT NULL"];
+    const whereConditions = ["Transcription IS NOT NULL"];
     if (startDate) {
       whereConditions.push(`RecordingDate >= '${startDate.toISOString()}'`);
     }
