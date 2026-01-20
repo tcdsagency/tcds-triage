@@ -347,8 +347,41 @@ export async function POST(request: NextRequest) {
     // Normalize event fields (3CX uses various naming conventions)
     const eventType = (body.event || body.Event || body.type || "").toLowerCase();
     const callId = body.callId || body.CallId || body.sessionId || body.SessionId || body.id || `call_${Date.now()}`;
-    const direction = (rawDirection || "inbound").toLowerCase() as "inbound" | "outbound";
     const extension = body.extension || body.Extension || body.ext || body.Ext || "";
+
+    // Extract raw from/to for smart direction detection
+    const rawFrom = body.from || body.From || body.caller || body.Caller || body.callerNumber || body.CallerNumber || "";
+    const rawTo = body.to || body.To || body.callee || body.Callee || body.dialedNumber || body.DialedNumber || "";
+
+    // Smart direction detection when 3CX doesn't provide direction
+    // - If 'from' is a short extension (1-4 digits) and 'to' is a full phone number (7+ digits) → outbound
+    // - If 'to' is a short extension and 'from' is a full phone number → inbound
+    // - Otherwise use provided direction or default to inbound
+    let direction: "inbound" | "outbound";
+    if (rawDirection) {
+      direction = rawDirection.toLowerCase() as "inbound" | "outbound";
+    } else {
+      const fromDigits = rawFrom.replace(/\D/g, "");
+      const toDigits = rawTo.replace(/\D/g, "");
+      const fromIsExtension = fromDigits.length >= 1 && fromDigits.length <= 4;
+      const toIsExtension = toDigits.length >= 1 && toDigits.length <= 4;
+      const fromIsFullPhone = fromDigits.length >= 7;
+      const toIsFullPhone = toDigits.length >= 7;
+
+      if (fromIsExtension && toIsFullPhone) {
+        // Extension calling external number = outbound
+        direction = "outbound";
+        console.log(`[3CX Webhook] Smart direction: OUTBOUND (from ext ${rawFrom} to phone ${rawTo})`);
+      } else if (toIsExtension && fromIsFullPhone) {
+        // External number calling extension = inbound
+        direction = "inbound";
+        console.log(`[3CX Webhook] Smart direction: INBOUND (from phone ${rawFrom} to ext ${rawTo})`);
+      } else {
+        // Default to inbound if can't determine
+        direction = "inbound";
+        console.log(`[3CX Webhook] Smart direction: DEFAULT INBOUND (from: ${rawFrom}, to: ${rawTo})`);
+      }
+    }
 
     // Determine phone numbers based on direction
     let fromNumber: string;
@@ -356,12 +389,12 @@ export async function POST(request: NextRequest) {
     let customerPhone: string;
 
     if (direction === "inbound") {
-      fromNumber = body.from || body.From || body.caller || body.Caller || body.callerNumber || body.CallerNumber || "";
-      toNumber = body.to || body.To || body.callee || body.Callee || body.dialedNumber || body.DialedNumber || extension;
+      fromNumber = rawFrom;
+      toNumber = rawTo || extension;
       customerPhone = fromNumber;
     } else {
-      fromNumber = extension || body.from || body.From || "";
-      toNumber = body.to || body.To || body.callee || body.Callee || body.dialedNumber || body.DialedNumber || "";
+      fromNumber = extension || rawFrom;
+      toNumber = rawTo;
       customerPhone = toNumber;
     }
 
