@@ -132,7 +132,7 @@ interface PendingCounts {
 }
 
 // =============================================================================
-// GET - List Pending Items
+// GET - List Pending Items (Optimized with parallel queries)
 // =============================================================================
 
 export async function GET(request: NextRequest) {
@@ -142,10 +142,12 @@ export async function GET(request: NextRequest) {
     const typeFilter = searchParams.get('type'); // wrapup, message, lead
     const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 200);
 
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
+    const tenantIdEnv = process.env.DEFAULT_TENANT_ID;
+    if (!tenantIdEnv) {
       return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
     }
+    // Capture as const for use in nested functions
+    const tenantId: string = tenantIdEnv;
 
     // Get current user to determine filtering rules
     const currentUser = await getCurrentUser();
@@ -155,24 +157,23 @@ export async function GET(request: NextRequest) {
     // For agents without an extension configured, they can't see any wrapups
     const agentCanSeeWrapups = !isAgent || (isAgent && userExtension);
 
-    const items: PendingItem[] = [];
     const now = new Date();
 
     // =======================================================================
-    // 1. Fetch Pending Wrapups
+    // PARALLEL DATA FETCHING - Run all queries concurrently
     // =======================================================================
-    if ((!typeFilter || typeFilter === 'wrapup') && agentCanSeeWrapups) {
-      // Build where conditions
-      // For agents: only show wrapups where agent_extension matches their extension
-      // For CSRs/admins: show all wrapups
+
+    // Helper function to fetch wrapups
+    async function fetchWrapups(): Promise<PendingItem[]> {
+      if (typeFilter && typeFilter !== 'wrapup') return [];
+      if (!agentCanSeeWrapups) return [];
+
       const whereConditions = [
         eq(wrapupDrafts.tenantId, tenantId),
         eq(wrapupDrafts.status, 'pending_review'),
       ];
 
-      // Add extension filter for agents only
       if (isAgent && userExtension) {
-        // Agent can see calls they handled (agent_extension) OR calls to/from their extension
         whereConditions.push(
           or(
             eq(wrapupDrafts.agentExtension, userExtension),
@@ -197,7 +198,6 @@ export async function GET(request: NextRequest) {
           trestleData: wrapupDrafts.trestleData,
           outcome: wrapupDrafts.outcome,
           createdAt: wrapupDrafts.createdAt,
-          // Join call data
           callFromNumber: calls.fromNumber,
           callToNumber: calls.toNumber,
           transcription: calls.transcription,
@@ -209,7 +209,7 @@ export async function GET(request: NextRequest) {
         .orderBy(desc(wrapupDrafts.createdAt))
         .limit(limit);
 
-      // Get agent details for wrapups
+      // Get agent details in parallel
       const agentIds = wrapups.map(w => w.agentId).filter(Boolean) as string[];
       const agents = agentIds.length > 0
         ? await db
@@ -223,28 +223,22 @@ export async function GET(request: NextRequest) {
             .from(users)
             .where(inArray(users.id, agentIds))
         : [];
+
       const agentMap = new Map(agents.map(a => {
         const name = `${a.firstName} ${a.lastName}`.trim();
         const initials = `${a.firstName?.[0] || ''}${a.lastName?.[0] || ''}`.toUpperCase();
-        return [a.id, {
-          id: a.id,
-          name,
-          avatar: a.avatarUrl,
-          extension: a.extension,
-          initials,
-        }];
+        return [a.id, { id: a.id, name, avatar: a.avatarUrl, extension: a.extension, initials }];
       }));
 
+      const items: PendingItem[] = [];
       for (const w of wrapups) {
         const extraction = w.aiExtraction as any || {};
         const trestle = w.trestleData as any || {};
 
-        // Determine match status and reason
         let matchStatus: PendingItem['matchStatus'] = 'unmatched';
         let matchReason: string | null = null;
         if (w.matchStatus === 'matched') {
           matchStatus = 'matched';
-          matchReason = null;
         } else if (w.matchStatus === 'multiple_matches') {
           matchStatus = 'needs_review';
           matchReason = 'Multiple matches found in AgencyZoom';
@@ -253,14 +247,9 @@ export async function GET(request: NextRequest) {
           matchReason = trestle.person ? 'No match in database - Trestle identified caller' : 'No match found in database';
         }
 
-        // Skip if filtering by status and doesn't match
         if (statusFilter && statusFilter !== matchStatus) continue;
 
         const ageMinutes = Math.floor((now.getTime() - new Date(w.createdAt).getTime()) / 60000);
-
-        // Use external phone number based on call direction
-        // Inbound: customer called us, so fromNumber is the customer
-        // Outbound: we called customer, so toNumber is the customer
         const isInbound = w.direction?.toLowerCase() === 'inbound';
         const externalPhone = isInbound ? w.callFromNumber : w.callToNumber;
 
@@ -298,20 +287,20 @@ export async function GET(request: NextRequest) {
               isSpam: trestle.leadQuality.isSpam,
             } : undefined,
           } : null,
-          matchSuggestions: [], // Will be populated from matchSuggestions table if needed
+          matchSuggestions: [],
           callId: w.callId || undefined,
           transcription: w.transcription || undefined,
           agencyzoomCustomerId: extraction.agencyZoomCustomerId,
           agencyzoomLeadId: extraction.agencyZoomLeadId,
         });
       }
+      return items;
     }
 
-    // =======================================================================
-    // 2. Fetch Unacknowledged Messages - GROUPED BY PHONE NUMBER
-    // =======================================================================
-    if (!typeFilter || typeFilter === 'message') {
-      // Get all unacknowledged inbound messages
+    // Helper function to fetch messages with BATCHED conversation threads
+    async function fetchMessages(): Promise<PendingItem[]> {
+      if (typeFilter && typeFilter !== 'message') return [];
+
       const unreadMessages = await db
         .select({
           id: messages.id,
@@ -336,6 +325,8 @@ export async function GET(request: NextRequest) {
         .orderBy(desc(messages.createdAt))
         .limit(limit);
 
+      if (unreadMessages.length === 0) return [];
+
       // Group messages by phone number
       const messagesByPhone = new Map<string, typeof unreadMessages>();
       for (const m of unreadMessages) {
@@ -346,41 +337,52 @@ export async function GET(request: NextRequest) {
         messagesByPhone.get(phone)!.push(m);
       }
 
-      // For each phone group, also fetch recent conversation (including auto-replies)
-      for (const [phone, phoneMessages] of messagesByPhone) {
-        const firstMsg = phoneMessages[0]; // Most recent unread message
-        const oldestMsg = phoneMessages[phoneMessages.length - 1];
+      // OPTIMIZATION: Batch fetch all conversation threads in ONE query
+      const phoneNumbers = Array.from(messagesByPhone.keys()).filter(Boolean);
+      const cutoff24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-        // Get the full conversation thread (last 24 hours or since oldest unread)
-        const conversationCutoff = new Date(Math.min(
-          oldestMsg.createdAt.getTime(),
-          now.getTime() - 24 * 60 * 60 * 1000 // 24 hours ago
-        ));
-
-        const fullThread = await db
-          .select({
-            id: messages.id,
-            direction: messages.direction,
-            body: messages.body,
-            createdAt: messages.createdAt,
-            aiGenerated: messages.aiGenerated,
-          })
-          .from(messages)
-          .where(
-            and(
-              eq(messages.tenantId, tenantId),
-              sql`(${messages.fromNumber} = ${phone} OR ${messages.toNumber} = ${phone})`,
-              sql`${messages.createdAt} >= ${conversationCutoff.toISOString()}`
-            )
+      // Fetch all recent messages for all phone numbers in one query
+      const allThreadMessages = phoneNumbers.length > 0 ? await db
+        .select({
+          id: messages.id,
+          direction: messages.direction,
+          body: messages.body,
+          fromNumber: messages.fromNumber,
+          toNumber: messages.toNumber,
+          createdAt: messages.createdAt,
+          aiGenerated: messages.aiGenerated,
+        })
+        .from(messages)
+        .where(
+          and(
+            eq(messages.tenantId, tenantId),
+            sql`${messages.createdAt} >= ${cutoff24h.toISOString()}`,
+            sql`(${messages.fromNumber} IN (${sql.join(phoneNumbers.map(p => sql`${p}`), sql`, `)}) OR ${messages.toNumber} IN (${sql.join(phoneNumbers.map(p => sql`${p}`), sql`, `)}))`
           )
-          .orderBy(messages.createdAt)
-          .limit(20);
+        )
+        .orderBy(messages.createdAt) : [];
 
-        // Build conversation summary
+      // Group thread messages by phone number
+      const threadsByPhone = new Map<string, typeof allThreadMessages>();
+      for (const m of allThreadMessages) {
+        const phone = m.fromNumber && phoneNumbers.includes(m.fromNumber) ? m.fromNumber : m.toNumber;
+        if (phone && phoneNumbers.includes(phone)) {
+          if (!threadsByPhone.has(phone)) {
+            threadsByPhone.set(phone, []);
+          }
+          threadsByPhone.get(phone)!.push(m);
+        }
+      }
+
+      const items: PendingItem[] = [];
+      for (const [phone, phoneMessages] of messagesByPhone) {
+        const firstMsg = phoneMessages[0];
+        const oldestMsg = phoneMessages[phoneMessages.length - 1];
+        const fullThread = (threadsByPhone.get(phone) || []).slice(0, 20);
+
         const unreadCount = phoneMessages.length;
         const hasAutoReply = fullThread.some(m => m.direction === 'outbound' && m.aiGenerated);
 
-        // Create summary showing all unread messages
         let summary = phoneMessages.map(m => m.body || '').filter(Boolean).join('\n---\n');
         if (unreadCount > 1) {
           summary = `[${unreadCount} unread messages]\n\n${summary}`;
@@ -394,13 +396,12 @@ export async function GET(request: NextRequest) {
         const msgMatchReason = matchStatus === 'unmatched' ? 'No match found in database' :
                               matchStatus === 'after_hours' ? 'After hours message' + (hasAutoReply ? ' (auto-reply sent)' : '') : null;
 
-        // Skip if filtering by status and doesn't match
         if (statusFilter && statusFilter !== matchStatus) continue;
 
         const ageMinutes = Math.floor((now.getTime() - new Date(oldestMsg.createdAt).getTime()) / 60000);
 
         items.push({
-          id: firstMsg.id, // Use first message ID as group ID
+          id: firstMsg.id,
           type: 'message',
           direction: 'inbound',
           contactName: firstMsg.contactName,
@@ -422,30 +423,21 @@ export async function GET(request: NextRequest) {
           trestleData: null,
           matchSuggestions: [],
           agencyzoomCustomerId: firstMsg.contactId || undefined,
-          // Include conversation thread for display
           conversationThread: fullThread.map(t => ({
             direction: t.direction,
             body: t.body,
             timestamp: t.createdAt.toISOString(),
             isAutoReply: t.aiGenerated || false,
           })),
-          messageIds: phoneMessages.map(m => m.id), // All message IDs in this group
+          messageIds: phoneMessages.map(m => m.id),
         });
       }
+      return items;
     }
 
-    // NOTE: Leads are NOT included in pending review - they belong to sales workflow
-    // Leads are managed separately in /leads page
-
-    // =======================================================================
-    // 3. Fetch After-Hours Triage Items
-    // =======================================================================
-    if (!typeFilter || typeFilter === 'after_hours') {
-      const triageWhereConditions = [
-        eq(triageItems.tenantId, tenantId),
-        eq(triageItems.type, 'after_hours'),
-        eq(triageItems.status, 'pending'),
-      ];
+    // Helper function to fetch after-hours triage items
+    async function fetchTriageItems(): Promise<PendingItem[]> {
+      if (typeFilter && typeFilter !== 'after_hours') return [];
 
       const afterHoursTriageItems = await db
         .select({
@@ -461,36 +453,41 @@ export async function GET(request: NextRequest) {
           createdAt: triageItems.createdAt,
         })
         .from(triageItems)
-        .where(and(...triageWhereConditions))
+        .where(and(
+          eq(triageItems.tenantId, tenantId),
+          eq(triageItems.type, 'after_hours'),
+          eq(triageItems.status, 'pending'),
+        ))
         .orderBy(desc(triageItems.createdAt))
         .limit(limit);
 
-      // Get customer details for triage items
+      if (afterHoursTriageItems.length === 0) return [];
+
+      // Batch fetch customer and message details in parallel
       const triageCustomerIds = afterHoursTriageItems.map(t => t.customerId).filter(Boolean) as string[];
-      const triageCustomerMap = triageCustomerIds.length > 0
-        ? await db
-            .select({ id: customers.id, firstName: customers.firstName, lastName: customers.lastName, phone: customers.phone })
-            .from(customers)
-            .where(inArray(customers.id, triageCustomerIds))
-            .then(rows => new Map(rows.map(c => [c.id, c])))
-        : new Map();
-
-      // Get linked messages for phone numbers
       const triageMessageIds = afterHoursTriageItems.map(t => t.messageId).filter(Boolean) as string[];
-      const triageMessageMap = triageMessageIds.length > 0
-        ? await db
-            .select({ id: messages.id, fromNumber: messages.fromNumber, body: messages.body })
-            .from(messages)
-            .where(inArray(messages.id, triageMessageIds))
-            .then(rows => new Map(rows.map(m => [m.id, m])))
-        : new Map();
 
+      const [triageCustomers, triageMessages] = await Promise.all([
+        triageCustomerIds.length > 0
+          ? db.select({ id: customers.id, firstName: customers.firstName, lastName: customers.lastName, phone: customers.phone })
+              .from(customers)
+              .where(inArray(customers.id, triageCustomerIds))
+          : Promise.resolve([]),
+        triageMessageIds.length > 0
+          ? db.select({ id: messages.id, fromNumber: messages.fromNumber, body: messages.body })
+              .from(messages)
+              .where(inArray(messages.id, triageMessageIds))
+          : Promise.resolve([]),
+      ]);
+
+      const triageCustomerMap = new Map(triageCustomers.map(c => [c.id, c]));
+      const triageMessageMap = new Map(triageMessages.map(m => [m.id, m]));
+
+      const items: PendingItem[] = [];
       for (const t of afterHoursTriageItems) {
-        // Skip if we already have this item from messages (avoid duplicates)
         const linkedMessage = t.messageId ? triageMessageMap.get(t.messageId) : null;
         const phone = linkedMessage?.fromNumber || '';
 
-        // Skip if status filter doesn't match
         if (statusFilter && statusFilter !== 'after_hours') continue;
 
         const customer = t.customerId ? triageCustomerMap.get(t.customerId) : null;
@@ -498,7 +495,7 @@ export async function GET(request: NextRequest) {
 
         items.push({
           id: t.id,
-          type: 'message', // Treat as message type for UI consistency
+          type: 'message',
           direction: 'inbound',
           contactName: t.title || (customer ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() : null),
           contactPhone: phone.replace('+1', ''),
@@ -519,11 +516,23 @@ export async function GET(request: NextRequest) {
           trestleData: null,
           matchSuggestions: [],
           agencyzoomCustomerId: customer?.id,
-          // Store the triage item ID for completion
           triageItemId: t.id,
         });
       }
+      return items;
     }
+
+    // =======================================================================
+    // RUN ALL FETCHES IN PARALLEL
+    // =======================================================================
+    const [wrapupItems, messageItems, triageItemsList] = await Promise.all([
+      fetchWrapups(),
+      fetchMessages(),
+      fetchTriageItems(),
+    ]);
+
+    // Combine all items
+    const items = [...wrapupItems, ...messageItems, ...triageItemsList];
 
     // =======================================================================
     // Deduplicate items (same phone + similar time = duplicate)
