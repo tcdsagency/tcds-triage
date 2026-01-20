@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { CanopyConnectSMS } from "@/components/CanopyConnectSMS";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // Types from API
 interface SMSMessage {
@@ -438,10 +439,17 @@ export default function MessagesPage() {
 
         <div className="flex-1 overflow-y-auto">
           {filteredConversations.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
-              <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p>No conversations found</p>
-            </div>
+            <EmptyState
+              icon="messages"
+              title={searchQuery ? "No conversations found" : "No messages yet"}
+              description={
+                searchQuery
+                  ? `No results for "${searchQuery}"`
+                  : "Your inbox is empty. Messages from customers will appear here."
+              }
+              size="sm"
+              className="py-12"
+            />
           ) : (
             filteredConversations.map((conv) => (
               <div
@@ -696,11 +704,12 @@ export default function MessagesPage() {
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center bg-gray-50">
-          <div className="text-center text-gray-500">
-            <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No conversation selected</h3>
-            <p>Select a conversation to start messaging</p>
-          </div>
+          <EmptyState
+            icon="messages"
+            title="No conversation selected"
+            description="Select a conversation from the list to start messaging"
+            size="md"
+          />
         </div>
       )}
     </div>

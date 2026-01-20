@@ -4,14 +4,18 @@
  * Agent Assist Panel Component
  *
  * Right sidebar showing AI-powered suggestions including intent detection,
- * compliance warnings, script suggestions, and knowledge base recommendations.
+ * compliance warnings, script suggestions, knowledge base recommendations,
+ * and personalization features.
  */
 
 import React, { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { Customer } from '@/types';
-import type { AssistState, Suggestion, ComplianceWarning, KnowledgeItem } from '@/hooks/use-claude-assist';
+import type { AssistState, Suggestion, ComplianceWarning, KnowledgeItem, ProactiveItem } from '@/hooks/use-claude-assist';
+import { PersonalizationBanner } from './personalization-banner';
+import { ProactiveItemsCard } from './proactive-items-card';
+import { PersonalizedGreetingCard } from './personalized-greeting-card';
 
 // =============================================================================
 // ICONS
@@ -96,6 +100,7 @@ interface AgentAssistPanelProps {
   assistState: AssistState;
   isLoading?: boolean;
   onQuickPrompt?: (prompt: 'handle_objection' | 'close_sale' | 'find_upsell') => void;
+  onProactiveItemMentioned?: (item: ProactiveItem) => void;
 }
 
 // =============================================================================
@@ -340,8 +345,19 @@ export function AgentAssistPanel({
   assistState,
   isLoading,
   onQuickPrompt,
+  onProactiveItemMentioned,
 }: AgentAssistPanelProps) {
-  const { intent, suggestions, compliance, knowledge, questionsToAsk } = assistState;
+  const { intent, suggestions, compliance, knowledge, questionsToAsk, personalization } = assistState;
+
+  // Get customer name for personalization
+  const customerName = customer
+    ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Customer'
+    : 'Customer';
+
+  // Calculate years as customer from createdAt
+  const yearsAsCustomer = customer?.createdAt
+    ? Math.floor((Date.now() - new Date(customer.createdAt).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+    : undefined;
 
   return (
     <aside className="w-96 flex-shrink-0 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 flex flex-col overflow-hidden">
@@ -366,6 +382,39 @@ export function AgentAssistPanel({
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Personalization Banner */}
+        {personalization && (
+          <PersonalizationBanner
+            customerName={customerName}
+            preferredName={personalization.preferredName}
+            yearsAsCustomer={yearsAsCustomer}
+            communicationPrefs={personalization.communicationPrefs}
+            sentiment={personalization.sentiment}
+            pendingItemsCount={personalization.pendingItemsCount}
+            lifeEventsCount={personalization.lifeEventsCount}
+            authorizedContacts={personalization.authorizedContacts}
+          />
+        )}
+
+        {/* Personalized Greeting (only in opening phase) */}
+        {personalization?.greeting && personalization.callPhase === 'opening' && (
+          <PersonalizedGreetingCard
+            greeting={personalization.greeting}
+            customerName={customerName}
+            preferredName={personalization.preferredName}
+            contextUsed={personalization.communicationPrefs.length > 0 ? ['Communication prefs'] : undefined}
+          />
+        )}
+
+        {/* Proactive Items */}
+        {personalization?.proactiveItems && personalization.proactiveItems.length > 0 && (
+          <ProactiveItemsCard
+            items={personalization.proactiveItems}
+            onItemMentioned={onProactiveItemMentioned}
+            defaultOpen={personalization.callPhase === 'opening' || personalization.callPhase === 'discovery'}
+          />
+        )}
+
         {/* Detected Intent */}
         {intent && (
           <CollapsibleSection title="Detected Intent" icon={<TargetIcon />} defaultOpen={true}>

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 import { PolicyType } from "@/types/customer-profile";
 
@@ -445,9 +446,17 @@ export default function CustomersPage() {
               ))}
             </div>
           ) : filteredCustomers.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
-              <p>Type at least 2 characters to search</p>
-            </div>
+            <EmptyState
+              icon="search"
+              title={searchQuery.length < 2 ? "Search for customers" : "No customers found"}
+              description={
+                searchQuery.length < 2
+                  ? "Type at least 2 characters to search"
+                  : `No results for "${searchQuery}"`
+              }
+              size="sm"
+              className="py-12"
+            />
           ) : (
             filteredCustomers.map((customer) => (
               <div
@@ -985,23 +994,32 @@ export default function CustomersPage() {
 
             {/* Empty State for Leads */}
             {selectedCustomer.policies.length === 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-                <Shield className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                <h3 className="text-sm font-medium text-gray-900 mb-1">No Policies Yet</h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  {selectedCustomer.isLead ? "This lead doesn't have any policies. Create a quote to get started." : "No policies found for this customer."}
-                </p>
+              <EmptyState
+                icon="policies"
+                title="No Policies Yet"
+                description={
+                  selectedCustomer.isLead
+                    ? "This lead doesn't have any policies. Create a quote to get started."
+                    : "No policies found for this customer."
+                }
+                className="bg-white rounded-lg border border-gray-200"
+              >
                 <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700">
                   <Plus className="w-4 h-4 mr-1" />
                   Create Quote
                 </Button>
-              </div>
+              </EmptyState>
             )}
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-gray-500">
-          Select a customer to view details
+        <div className="flex-1 flex items-center justify-center">
+          <EmptyState
+            icon="customers"
+            title="Select a customer"
+            description="Choose a customer from the list to view their details and policies"
+            size="md"
+          />
         </div>
       )}
     </div>

@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 import CallPopup from "@/components/features/CallPopup";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // =============================================================================
 // TYPES
@@ -723,11 +724,21 @@ export default function CallsPage() {
           </tbody>
         </table>
 
-        {filteredCalls.length === 0 && (
-          <div className="text-center py-12">
-            <Phone className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">No calls found matching your filters</p>
-          </div>
+        {filteredCalls.length === 0 && !loading && (
+          <EmptyState
+            icon="calls"
+            title={searchQuery || directionFilter !== "all" || statusFilter !== "all" || agentFilter !== "all"
+              ? "No calls found"
+              : "No calls yet"
+            }
+            description={
+              searchQuery || directionFilter !== "all" || statusFilter !== "all" || agentFilter !== "all"
+                ? "Try adjusting your search or filters to find what you're looking for."
+                : "Call activity will appear here once calls come in through the phone system."
+            }
+            size="md"
+            className="py-12"
+          />
         )}
       </div>
 

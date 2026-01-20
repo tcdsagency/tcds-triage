@@ -7,13 +7,22 @@
  * - Compliance warnings
  * - Knowledge base recommendations
  * - Questions to ask
+ * - Personalized context and greetings
+ * - Proactive items to mention
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { db } from '@/db';
 import { knowledgeArticles } from '@/db/schema';
-import { ilike, or, sql } from 'drizzle-orm';
+import { ilike, or } from 'drizzle-orm';
+import { extractPersonalContext, type PersonalContext } from '@/lib/claude/context/note-extractor';
+import { getPhaseInstructions, getCallPhase } from '@/lib/claude/prompts/call-phases';
+import {
+  generatePersonalizedGreeting,
+  generateProactiveItems,
+  type ProactiveItem,
+} from '@/lib/claude/prompts/personalized-system-prompt';
 
 // =============================================================================
 // TYPES
@@ -68,6 +77,18 @@ interface AnalysisResult {
   knowledge: KnowledgeItem[];
   questionsToAsk: string[];
   detectedNeeds: string[];
+  // Personalization additions
+  personalization?: {
+    preferredName?: string;
+    greeting?: string;
+    communicationPrefs: string[];
+    sentiment: 'positive' | 'neutral' | 'at-risk';
+    pendingItemsCount: number;
+    lifeEventsCount: number;
+    authorizedContacts: string[];
+    proactiveItems: ProactiveItem[];
+    callPhase: 'opening' | 'discovery' | 'resolution' | 'closing';
+  };
 }
 
 // =============================================================================
@@ -264,6 +285,13 @@ export async function POST(request: NextRequest) {
     // Initialize Anthropic client
     const anthropic = new Anthropic({ apiKey });
 
+    // Get call phase and phase-specific instructions
+    const callPhase = getCallPhase(transcript.length);
+    const phaseInstructions = getPhaseInstructions(transcript.length);
+
+    // Build base system prompt with phase instructions
+    let enhancedSystemPrompt = SYSTEM_PROMPT + `\n\n${phaseInstructions}`;
+
     // Build user message
     let userMessage = `## Current Conversation\n${transcript}\n`;
 
@@ -276,11 +304,11 @@ export async function POST(request: NextRequest) {
       userMessage += `- Status: ${customerContext.isExisting ? 'Existing Customer' : 'New Prospect'}\n`;
     }
 
-    // Add customer notes for personalization
+    // Add customer notes for personalization (keep brief in user message)
     if (customerNotes && customerNotes.length > 0) {
-      userMessage += `\n## Recent Notes from CRM (for personalization)\n`;
-      customerNotes.slice(0, 5).forEach((note, i) => {
-        userMessage += `${i + 1}. ${note.slice(0, 200)}\n`;
+      userMessage += `\n## Recent Notes (${customerNotes.length} total)\n`;
+      customerNotes.slice(0, 3).forEach((note, i) => {
+        userMessage += `${i + 1}. ${note.slice(0, 150)}...\n`;
       });
     }
 
@@ -291,18 +319,31 @@ export async function POST(request: NextRequest) {
 
     userMessage += `\n\nAnalyze this conversation and provide assistance. Respond with valid JSON only.`;
 
-    // Call Claude API
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: userMessage,
-        },
-      ],
-    });
+    // Run main Claude call and personal context extraction in parallel
+    // Only extract personal context in opening/discovery phase when personalization matters most
+    const shouldExtractContext = callPhase === 'opening' || callPhase === 'discovery';
+    const personalContextPromise = shouldExtractContext && customerNotes && customerNotes.length > 0
+      ? extractPersonalContext(customerNotes, { apiKey }).catch((err) => {
+          console.warn('[Assist] Failed to extract personal context:', err);
+          return null;
+        })
+      : Promise.resolve(null);
+
+    // Call Claude API (runs in parallel with personal context extraction)
+    const [response, personalContext] = await Promise.all([
+      anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system: enhancedSystemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: userMessage,
+          },
+        ],
+      }),
+      personalContextPromise,
+    ]);
 
     // Extract text content
     const textContent = response.content.find((c) => c.type === 'text');
@@ -351,6 +392,71 @@ export async function POST(request: NextRequest) {
       if (kbResults.length > 0) {
         analysis.knowledge = [...kbResults, ...analysis.knowledge].slice(0, 3);
       }
+    }
+
+    // Build personalization data if context is available
+    if (personalContext || customerContext) {
+      // Build a minimal AgentAssistContext for greeting/proactive item generation
+      const minimalContext = {
+        customer: {
+          id: body.customerId || 'unknown',
+          name: customerContext?.name || 'Customer',
+          preferredName: personalContext?.preferredName,
+          phone: '',
+          state: 'AL',
+        },
+        personal: personalContext || {
+          communicationPrefs: [],
+          authorizedContacts: [],
+          familyMembers: [],
+          lifeEvents: [],
+          recentTopics: [],
+          pendingItems: [],
+          preferences: [],
+          concerns: [],
+          sentiment: 'neutral' as const,
+          loyaltyIndicators: [],
+          painPoints: [],
+          personalInterests: [],
+          smallTalkTopics: [],
+        },
+        policies: [],
+        call: {
+          id: callId,
+          direction: 'inbound' as const,
+          duration: 0,
+        },
+        history: {
+          totalCalls: 0,
+          recentClaims: [],
+          openTasks: [],
+        },
+        agent: {
+          id: agentId,
+          name: 'Agent',
+          extension: '',
+        },
+      };
+
+      // Generate personalized greeting (only in opening phase)
+      const greeting = callPhase === 'opening'
+        ? generatePersonalizedGreeting(minimalContext)
+        : undefined;
+
+      // Generate proactive items
+      const proactiveItems = generateProactiveItems(minimalContext);
+
+      analysis.personalization = {
+        preferredName: personalContext?.preferredName,
+        greeting,
+        communicationPrefs: personalContext?.communicationPrefs || [],
+        sentiment: personalContext?.sentiment || 'neutral',
+        pendingItemsCount: personalContext?.pendingItems.length || 0,
+        lifeEventsCount: personalContext?.lifeEvents.length || 0,
+        authorizedContacts: personalContext?.authorizedContacts.map((c) => c.name) || [],
+        proactiveItems,
+        callPhase,
+      };
     }
 
     return NextResponse.json({
