@@ -75,21 +75,35 @@ export function isValidEmail(email: string): boolean {
   return emailRegex.test(email);
 }
 
-// Debounce function
+// Debounce function with cancel support
+export interface DebouncedFunction<T extends (...args: any[]) => any> {
+  (...args: Parameters<T>): void;
+  cancel: () => void;
+}
+
 export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
-): (...args: Parameters<T>) => void {
+): DebouncedFunction<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  return function (...args: Parameters<T>) {
+  const debouncedFn = function (...args: Parameters<T>) {
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
     timeoutId = setTimeout(() => {
       func(...args);
     }, wait);
+  } as DebouncedFunction<T>;
+
+  debouncedFn.cancel = function () {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
   };
+
+  return debouncedFn;
 }
 
 /**
