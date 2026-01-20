@@ -12,6 +12,16 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Compiled output
+    "**/dist/**",
+    // Utility scripts (CommonJS)
+    "scripts/**",
+    // Node.js servers and workers (CommonJS)
+    "server/**",
+    "worker/**",
+    "tcds-workers/**",
+    // Browser extension
+    "chrome-extension/**",
   ]),
 ]);
 
