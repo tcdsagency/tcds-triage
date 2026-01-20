@@ -149,7 +149,8 @@ async function syncAgencyZoomChunk(page: number, batchSize: number) {
  */
 async function upsertCustomer(azCustomer: AgencyZoomCustomer): Promise<'created' | 'updated'> {
   // Handle AgencyZoom API field name variations (lowercase vs camelCase)
-  const raw = azCustomer as Record<string, unknown>;
+  // AgencyZoom API returns lowercase field names but TypeScript interface uses camelCase
+  const raw = azCustomer as unknown as Record<string, unknown>;
 
   const firstName = (raw.firstname || raw.firstName || '') as string;
   const lastName = (raw.lastname || raw.lastName || '') as string;
@@ -203,10 +204,11 @@ async function upsertCustomer(azCustomer: AgencyZoomCustomer): Promise<'created'
   const customerData = {
     tenantId: TENANT_ID,
     agencyzoomId: azCustomer.id.toString(),
-    hawksoftClientCode: externalId || existing?.hawksoftClientCode || null,
-    firstName: displayFirstName || null,
-    lastName: displayLastName || null,
-    email: email || secondaryEmail,
+    hawksoftClientCode: externalId || existing?.hawksoftClientCode || undefined,
+    // firstName and lastName are required (notNull) fields
+    firstName: displayFirstName || 'Unknown',
+    lastName: displayLastName || 'Customer',
+    email: email || secondaryEmail || undefined,
     phone: normalizePhone(phone),
     phoneAlt: normalizePhone(secondaryPhone || (phone && phoneCell ? phoneCell : null)),
     address: streetAddress ? {
@@ -214,10 +216,10 @@ async function upsertCustomer(azCustomer: AgencyZoomCustomer): Promise<'created'
       city,
       state,
       zip,
-    } : null,
-    dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
-    pipelineStage,
-    leadSource,
+    } : undefined,
+    dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+    pipelineStage: pipelineStage || undefined,
+    leadSource: leadSource || undefined,
     lastSyncedFromAz: new Date(),
     updatedAt: new Date(),
   };
@@ -240,9 +242,9 @@ async function upsertCustomer(azCustomer: AgencyZoomCustomer): Promise<'created'
 /**
  * Normalize phone number to 10 digits
  */
-function normalizePhone(phone: string | null | undefined): string | null {
-  if (!phone) return null;
+function normalizePhone(phone: string | null | undefined): string | undefined {
+  if (!phone) return undefined;
   const digits = phone.replace(/\D/g, '');
-  if (digits.length < 10) return null;
+  if (digits.length < 10) return undefined;
   return digits.slice(-10);
 }
