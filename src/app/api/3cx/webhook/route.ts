@@ -10,6 +10,7 @@ import { db } from "@/db";
 import { calls, customers, users, pendingVmEvents } from "@/db/schema";
 import { eq, or, ilike, sql, and, gte, desc } from "drizzle-orm";
 import { VMBridgeClient, getVMBridgeClient } from "@/lib/api/vm-bridge";
+import { queueTranscriptProcessing } from "@/lib/queues/client";
 
 // Verify webhook authentication
 function verifyWebhookAuth(request: NextRequest): boolean {
@@ -513,13 +514,14 @@ export async function POST(request: NextRequest) {
       case "hangup":
       case "disconnected": {
         const duration = body.duration || body.Duration;
+        const callEndedAt = new Date();
 
         // Update call status - use 'completed' (matches DB enum)
         const [call] = await db
           .update(calls)
           .set({
             status: "completed",
-            endedAt: new Date(),
+            endedAt: callEndedAt,
             durationSeconds: duration,
           })
           .where(eq(calls.externalCallId, callId))
@@ -534,6 +536,43 @@ export async function POST(request: NextRequest) {
 
           // Stop transcription
           await stopTranscription(call.id);
+
+          // Queue transcript processing job (30s delay for SQL Server write)
+          // Only queue if call had an agent and lasted more than 10 seconds
+          if (call.agentId && (!duration || duration > 10)) {
+            try {
+              // Get caller name if customer is linked
+              let callerName: string | undefined;
+              if (call.customerId) {
+                const [customer] = await db
+                  .select({ firstName: customers.firstName, lastName: customers.lastName })
+                  .from(customers)
+                  .where(eq(customers.id, call.customerId))
+                  .limit(1);
+                if (customer) {
+                  callerName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || undefined;
+                }
+              }
+
+              await queueTranscriptProcessing({
+                callId: call.id,
+                externalCallId: callId,
+                extension: call.extension || extension || '',
+                callerNumber: call.externalNumber || call.fromNumber || '',
+                callerName,
+                agentId: call.agentId,
+                callStartedAt: call.startedAt?.toISOString() || callEndedAt.toISOString(),
+                callEndedAt: callEndedAt.toISOString(),
+              });
+
+              console.log(`[3CX Webhook] Queued transcript processing for call ${call.id}`);
+            } catch (queueError) {
+              // Log but don't fail the webhook - transcript can be processed later
+              console.error(`[3CX Webhook] Failed to queue transcript processing:`, queueError);
+            }
+          } else {
+            console.log(`[3CX Webhook] Skipping transcript queue: agentId=${call.agentId}, duration=${duration}`);
+          }
         }
 
         return NextResponse.json({
