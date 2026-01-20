@@ -3,22 +3,48 @@
 /**
  * Keyboard Shortcuts Provider
  * ===========================
- * Provides the Command Palette, global keyboard shortcuts,
- * and shortcuts help modal throughout the dashboard.
+ * Provides global keyboard shortcuts throughout the app.
+ * Handles Cmd+K for command palette, Cmd+1-9 for navigation, etc.
  */
 
-import { useState, useEffect, useCallback, createContext, useContext } from 'react';
-import { CommandPalette } from '@/components/CommandPalette';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import { CommandPalette, type CommandItem } from './command-palette';
+
+// =============================================================================
+// TYPES
+// =============================================================================
+
+interface KeyboardShortcutsContextValue {
+  /** Open the command palette */
+  openCommandPalette: () => void;
+  /** Close the command palette */
+  closeCommandPalette: () => void;
+  /** Toggle the command palette */
+  toggleCommandPalette: () => void;
+  /** Whether command palette is open */
+  isCommandPaletteOpen: boolean;
+  /** Open the shortcuts help modal */
+  openShortcutsHelp: () => void;
+  /** Close the shortcuts help modal */
+  closeShortcutsHelp: () => void;
+  /** Whether shortcuts help is open */
+  isShortcutsHelpOpen: boolean;
+  /** Register additional command palette items */
+  registerItems: (items: CommandItem[]) => void;
+  /** Unregister command palette items */
+  unregisterItems: (ids: string[]) => void;
+}
+
+interface KeyboardShortcutsProviderProps {
+  children: React.ReactNode;
+  /** Callback to search customers */
+  onSearchCustomers?: (query: string) => Promise<CommandItem[]>;
+}
 
 // =============================================================================
 // CONTEXT
 // =============================================================================
-
-interface KeyboardShortcutsContextValue {
-  openShortcutsHelp: () => void;
-  closeShortcutsHelp: () => void;
-  isShortcutsHelpOpen: boolean;
-}
 
 const KeyboardShortcutsContext = createContext<KeyboardShortcutsContextValue | null>(null);
 
@@ -34,7 +60,12 @@ export function useKeyboardShortcuts() {
 // SHORTCUTS HELP MODAL
 // =============================================================================
 
-function ShortcutsHelpModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+interface ShortcutsHelpModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+function ShortcutsHelpModal({ isOpen, onClose }: ShortcutsHelpModalProps) {
   const isMac = typeof navigator !== 'undefined' && navigator.platform.includes('Mac');
   const cmdKey = isMac ? '⌘' : 'Ctrl';
 
@@ -59,26 +90,19 @@ function ShortcutsHelpModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       { keys: `${cmdKey}+K`, description: 'Open command palette' },
       { keys: `${cmdKey}+1`, description: 'Go to Dashboard' },
       { keys: `${cmdKey}+2`, description: 'Go to Pending Review' },
-      { keys: `${cmdKey}+3`, description: 'Go to Calls' },
-      { keys: `${cmdKey}+4`, description: 'Go to Customers' },
-      { keys: `${cmdKey}+5`, description: 'Go to Risk Monitor' },
-      { keys: `${cmdKey}+6`, description: 'Go to Leads' },
-      { keys: `${cmdKey}+7`, description: 'Go to Messages' },
+      { keys: `${cmdKey}+3`, description: 'Go to Lead Queue' },
+      { keys: `${cmdKey}+4`, description: 'Go to Calls' },
+      { keys: `${cmdKey}+5`, description: 'Go to Customers' },
     ]},
     { category: 'Actions', items: [
+      { keys: `${cmdKey}+N`, description: 'New Quote' },
       { keys: `${cmdKey}+/`, description: 'Show keyboard shortcuts' },
       { keys: '?', description: 'Show keyboard shortcuts' },
     ]},
-    { category: 'Pending Review', items: [
-      { keys: 'J / K', description: 'Navigate items (down / up)' },
-      { keys: 'P', description: 'Post note' },
-      { keys: 'S', description: 'Create service request' },
-      { keys: 'D', description: 'Delete item' },
-      { keys: 'F', description: 'Find match' },
-    ]},
     { category: 'General', items: [
       { keys: 'Esc', description: 'Close modal / Cancel action' },
-      { keys: 'Enter', description: 'Select / Confirm' },
+      { keys: 'J / K', description: 'Navigate list (down / up)' },
+      { keys: 'Enter', description: 'Select / Open' },
     ]},
   ];
 
@@ -86,12 +110,12 @@ function ShortcutsHelpModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50 z-[100] animate-in fade-in duration-150"
+        className="fixed inset-0 bg-black/50 z-50 animate-in fade-in duration-150"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="fixed inset-x-4 top-[15%] mx-auto max-w-md z-[101] animate-in fade-in slide-in-from-top-4 duration-200">
+      <div className="fixed inset-x-4 top-[15%] mx-auto max-w-md z-50 animate-in fade-in slide-in-from-top-4 duration-200">
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
@@ -103,7 +127,7 @@ function ShortcutsHelpModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             </h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -160,40 +184,131 @@ function ShortcutsHelpModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 // PROVIDER
 // =============================================================================
 
-export function KeyboardShortcutsProvider({ children }: { children: React.ReactNode }) {
+export function KeyboardShortcutsProvider({
+  children,
+  onSearchCustomers,
+}: KeyboardShortcutsProviderProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false);
+  const [additionalItems, setAdditionalItems] = useState<CommandItem[]>([]);
 
-  const openShortcutsHelp = useCallback(() => setIsShortcutsHelpOpen(true), []);
-  const closeShortcutsHelp = useCallback(() => setIsShortcutsHelpOpen(false), []);
+  // Navigation routes
+  const routes = [
+    '/',              // Cmd+1
+    '/pending-review', // Cmd+2
+    '/lead-queue',    // Cmd+3
+    '/calls',         // Cmd+4
+    '/customers',     // Cmd+5
+    '/quotes',        // Cmd+6
+    '/messages',      // Cmd+7
+    '/properties',    // Cmd+8
+    '/risk-monitor',  // Cmd+9
+  ];
 
-  // Listen for ? and Cmd+/ to open shortcuts help
+  // Handle global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isModKey = e.metaKey || e.ctrlKey;
       const target = e.target as HTMLElement;
       const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-      const isModKey = e.metaKey || e.ctrlKey;
 
-      // Cmd+/ or ? (not in input)
+      // Cmd+K - Command Palette (works even in inputs)
+      if (isModKey && e.key === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
+        return;
+      }
+
+      // Don't trigger other shortcuts in inputs
+      if (isInput && !isModKey) return;
+
+      // Cmd+1-9 - Navigation shortcuts
+      if (isModKey && e.key >= '1' && e.key <= '9') {
+        const index = parseInt(e.key) - 1;
+        if (index < routes.length) {
+          e.preventDefault();
+          router.push(routes[index]);
+          return;
+        }
+      }
+
+      // Cmd+N - New Quote
+      if (isModKey && e.key === 'n') {
+        e.preventDefault();
+        router.push('/quotes/new');
+        return;
+      }
+
+      // Cmd+/ or ? - Shortcuts Help
       if ((isModKey && e.key === '/') || (!isInput && e.key === '?')) {
         e.preventDefault();
         setIsShortcutsHelpOpen(true);
+        return;
+      }
+
+      // Escape - Close modals
+      if (e.key === 'Escape') {
+        if (isCommandPaletteOpen) {
+          setIsCommandPaletteOpen(false);
+        } else if (isShortcutsHelpOpen) {
+          setIsShortcutsHelpOpen(false);
+        }
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [router, routes, isCommandPaletteOpen, isShortcutsHelpOpen]);
+
+  // Close command palette on navigation
+  useEffect(() => {
+    setIsCommandPaletteOpen(false);
+  }, [pathname]);
+
+  // Context methods
+  const openCommandPalette = useCallback(() => setIsCommandPaletteOpen(true), []);
+  const closeCommandPalette = useCallback(() => setIsCommandPaletteOpen(false), []);
+  const toggleCommandPalette = useCallback(() => setIsCommandPaletteOpen(prev => !prev), []);
+  const openShortcutsHelp = useCallback(() => setIsShortcutsHelpOpen(true), []);
+  const closeShortcutsHelp = useCallback(() => setIsShortcutsHelpOpen(false), []);
+
+  const registerItems = useCallback((items: CommandItem[]) => {
+    setAdditionalItems(prev => [...prev, ...items]);
+  }, []);
+
+  const unregisterItems = useCallback((ids: string[]) => {
+    setAdditionalItems(prev => prev.filter(item => !ids.includes(item.id)));
   }, []);
 
   const contextValue: KeyboardShortcutsContextValue = {
+    openCommandPalette,
+    closeCommandPalette,
+    toggleCommandPalette,
+    isCommandPaletteOpen,
     openShortcutsHelp,
     closeShortcutsHelp,
     isShortcutsHelpOpen,
+    registerItems,
+    unregisterItems,
   };
 
   return (
     <KeyboardShortcutsContext.Provider value={contextValue}>
       {children}
-      <CommandPalette />
+
+      {/* Command Palette */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={closeCommandPalette}
+        additionalItems={additionalItems}
+        onSearchCustomers={onSearchCustomers}
+        placeholder="Search pages, actions, customers..."
+      />
+
+      {/* Shortcuts Help */}
       <ShortcutsHelpModal
         isOpen={isShortcutsHelpOpen}
         onClose={closeShortcutsHelp}

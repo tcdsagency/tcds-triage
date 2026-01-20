@@ -37,7 +37,10 @@ export async function GET() {
         isLead: customers.isLead,
       })
       .from(customers)
-      .where(and(eq(customers.tenantId, tenantId), eq(customers.isLead, false)));
+      .where(and(
+        eq(customers.tenantId, tenantId),
+        or(eq(customers.isLead, false), isNull(customers.isLead))
+      ));
 
     const withDob = allCustomers.filter((c) => c.dateOfBirth !== null);
     const withHawksoft = allCustomers.filter((c) => c.hawksoftClientCode !== null);
@@ -96,7 +99,7 @@ export async function POST(request: NextRequest) {
       .where(
         and(
           eq(customers.tenantId, tenantId),
-          eq(customers.isLead, false),
+          or(eq(customers.isLead, false), isNull(customers.isLead)),
           isNull(customers.dateOfBirth),
           or(isNotNull(customers.hawksoftClientCode), isNotNull(customers.agencyzoomId))
         )

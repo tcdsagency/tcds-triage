@@ -45,6 +45,26 @@ export interface KnowledgeItem {
   category?: string;
 }
 
+export interface ProactiveItem {
+  item: string;
+  reason: string;
+  script: string;
+  type: 'pending' | 'life-event' | 'follow-up' | 'coverage-gap';
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface PersonalizationState {
+  preferredName?: string;
+  greeting?: string;
+  communicationPrefs: string[];
+  sentiment: 'positive' | 'neutral' | 'at-risk';
+  pendingItemsCount: number;
+  lifeEventsCount: number;
+  authorizedContacts: string[];
+  proactiveItems: ProactiveItem[];
+  callPhase: 'opening' | 'discovery' | 'resolution' | 'closing';
+}
+
 export interface AssistState {
   intent: DetectedIntent | null;
   suggestions: Suggestion[];
@@ -52,6 +72,7 @@ export interface AssistState {
   knowledge: KnowledgeItem[];
   questionsToAsk: string[];
   detectedNeeds: string[];
+  personalization?: PersonalizationState;
 }
 
 export interface UseClaudeAssistOptions {
@@ -83,6 +104,7 @@ const initialAssistState: AssistState = {
   knowledge: [],
   questionsToAsk: [],
   detectedNeeds: [],
+  personalization: undefined,
 };
 
 // =============================================================================
@@ -178,6 +200,7 @@ export function useClaudeAssist({
             knowledge: data.analysis.knowledge || [],
             questionsToAsk: data.analysis.questionsToAsk || [],
             detectedNeeds: data.analysis.detectedNeeds || [],
+            personalization: data.analysis.personalization || undefined,
           };
 
           // Cache the result

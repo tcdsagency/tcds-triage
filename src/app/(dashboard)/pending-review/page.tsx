@@ -14,6 +14,7 @@ import ReviewedItemCard, { ReviewedItemCardSkeleton, type ReviewedItem } from '@
 import AssigneeSelectModal from '@/components/features/AssigneeSelectModal';
 import DeleteModal from '@/components/features/DeleteModal';
 import { hasFeatureAccess } from '@/lib/feature-permissions';
+import { EmptyState } from '@/components/ui/empty-state';
 
 // =============================================================================
 // TYPES
@@ -1113,19 +1114,33 @@ export default function PendingReviewPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="text-center py-12"
         >
-          <div className="text-6xl mb-4">
-            {statusFilter === 'all' ? '✅' : '🔍'}
-          </div>
-          <h2 className="text-xl font-medium text-gray-900 dark:text-white mb-2">
-            {statusFilter === 'all' ? 'All caught up!' : 'No items found'}
-          </h2>
-          <p className="text-gray-500 dark:text-gray-400">
-            {statusFilter === 'all'
-              ? 'No pending items to review. Great work!'
-              : `No items with status "${statusFilter.replace('_', ' ')}"`}
-          </p>
+          {statusFilter === 'all' ? (
+            <EmptyState
+              icon={
+                <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              }
+              title="All caught up!"
+              description="No pending items to review. Great work! New items will appear here as they come in."
+              size="lg"
+              className="py-12"
+            />
+          ) : (
+            <EmptyState
+              icon="search"
+              title="No items found"
+              description={`No items with status "${statusFilter.replace('_', ' ')}". Try a different filter or check back later.`}
+              action={{
+                label: 'Clear Filter',
+                onClick: () => setStatusFilter('all'),
+                variant: 'outline',
+              }}
+              size="lg"
+              className="py-12"
+            />
+          )}
         </motion.div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1220,19 +1235,24 @@ export default function PendingReviewPage() {
               ))}
             </div>
           ) : reviewedItems.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">📋</div>
-              <h2 className="text-xl font-medium text-gray-900 dark:text-white mb-2">
-                No reviewed items
-              </h2>
-              <p className="text-gray-500 dark:text-gray-400">
-                {reviewedFilter === 'auto_voided'
-                  ? 'No auto-voided items found'
+            <EmptyState
+              icon="document"
+              title="No reviewed items"
+              description={
+                reviewedFilter === 'auto_voided'
+                  ? 'No auto-voided items found. Items are auto-voided when they expire without action.'
                   : reviewedFilter === 'reviewed'
-                    ? 'No manually reviewed items found'
-                    : 'Completed items will appear here'}
-              </p>
-            </div>
+                    ? 'No manually reviewed items found. Items you process will appear here.'
+                    : 'Completed items will appear here after you process them from the pending queue.'
+              }
+              action={reviewedFilter !== 'all' ? {
+                label: 'Show All',
+                onClick: () => setReviewedFilter('all'),
+                variant: 'outline',
+              } : undefined}
+              size="lg"
+              className="py-12"
+            />
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {reviewedItems.map((item) => (

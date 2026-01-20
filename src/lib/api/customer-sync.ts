@@ -659,6 +659,8 @@ async function upsertFromAgencyZoom(
       zip,
     } : null,
     dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+    // AgencyZoom customers (not leads) are real customers
+    isLead: false,
     // Agent assignment (resolved from AZ IDs to internal UUIDs)
     producerId: producerId || existing?.producerId || null,
     csrId: csrId || existing?.csrId || null,
@@ -818,6 +820,8 @@ async function upsertFromHawkSoft(
       zip: hsClient.address.zip || '',
     } : existing?.address,
     dateOfBirth: hsClient.dateOfBirth ? new Date(hsClient.dateOfBirth) : existing?.dateOfBirth,
+    // HawkSoft customers are real customers (not leads)
+    isLead: false,
     lastSyncedFromHs: new Date(),
     updatedAt: new Date(),
   };
