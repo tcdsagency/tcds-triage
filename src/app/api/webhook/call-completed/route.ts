@@ -962,7 +962,11 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
     let mergedTriageItemId: string | undefined;
 
     // Create wrapup for calls with analysis OR hangups (for QA review)
+    console.log(`[Call-Completed] 🔍 Wrapup creation check: analysis=${!!analysis}, isHangup=${isHangup}, disposition=${call.disposition}`);
+
     if (analysis || isHangup) {
+      console.log(`[Call-Completed] ✅ Entering wrapup creation block for call ${call.id}`);
+
       // Get customer phone from call record (preferred) or webhook data
       // For outbound calls: customer is the "to" number
       // For inbound calls: customer is the "from" number
@@ -971,6 +975,8 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         ? (call.fromNumber || callerNumber)
         : (call.toNumber || calledNumber);
       const phoneForLookup = analysis?.extractedData?.phone || customerPhone;
+      console.log(`[Call-Completed] 📞 Customer phone for lookup: ${phoneForLookup} (direction: ${callDir})`);
+
 
       // 4.1 Customer matching - PRIORITY: Use screen pop match if available
       let azMatches: AgencyZoomCustomer[] = [];
@@ -1133,7 +1139,12 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
 
       // Use transaction to ensure wrapup and match suggestions are created atomically
       // Use upsert to handle duplicate webhook calls (Zapier may retry)
-      const txResult = await db.transaction(async (tx) => {
+      console.log(`[Call-Completed] 🔄 Starting wrapup transaction for call ${call.id}`);
+
+      let txResult: { wrapup: typeof wrapupDrafts.$inferSelect | null; suggestionCount: number; mergedWithExisting: boolean; triageItemId?: string };
+
+      try {
+        txResult = await db.transaction(async (tx) => {
         // Prefer extension from call record (set during call-started), fall back to webhook body
         const agentExt = call.extension || extension;
         // Prefer direction from call record
@@ -1146,10 +1157,14 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         // Check if there's already a triage item from after-hours-email webhook
         // If so, link the call instead of creating duplicate wrapupDraft
         // =========================================================================
+        let linkedMessageId: string | undefined;
+
         if (isAfterHoursCall) {
           console.log("[Call-Completed] 📞 After-hours call detected - checking for existing triage item...");
+          console.log(`[Call-Completed] 📞 Phone for lookup: ${phoneForLookup}`);
 
           const existingAfterHours = await checkExistingAfterHoursEntry(tenantId, phoneForLookup);
+          console.log(`[Call-Completed] 📞 checkExistingAfterHoursEntry result: found=${existingAfterHours.found}, triageItemId=${existingAfterHours.triageItemId || 'none'}, messageId=${existingAfterHours.messageId || 'none'}`);
 
           if (existingAfterHours.found && existingAfterHours.triageItemId) {
             // Found existing triage item - link call and update with transcript/summary
@@ -1193,7 +1208,13 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             };
           }
 
-          console.log("[Call-Completed] 📞 No existing triage item found - creating wrapup for after-hours call");
+          // If we found an orphaned message (no triage item), save it to link to the wrapup later
+          if (existingAfterHours.found && existingAfterHours.messageId) {
+            console.log(`[Call-Completed] 📞 Found orphaned after-hours message ${existingAfterHours.messageId} - will create wrapup and link`);
+            linkedMessageId = existingAfterHours.messageId;
+          } else {
+            console.log("[Call-Completed] 📞 No existing triage item or message found - creating fresh wrapup for after-hours call");
+          }
         }
 
         // Look up agent name from users table using agentId or extension
@@ -1259,6 +1280,8 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
           autoVoidReason: shouldAutoVoid ? autoVoidReason : null,
         };
 
+        console.log(`[Call-Completed] 📝 Creating wrapup for call ${call.id} (direction: ${callDirection}, after-hours: ${isAfterHoursCall}, status: ${wrapupStatus})`);
+
         const [wrapup] = await tx
           .insert(wrapupDrafts)
           .values(wrapupValues)
@@ -1279,6 +1302,8 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             },
           })
           .returning();
+
+        console.log(`[Call-Completed] ✅ Wrapup created/updated: ${wrapup.id}`);
 
         let suggestionCount = 0;
 
@@ -1343,7 +1368,50 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         }
 
         return { wrapup, suggestionCount, mergedWithExisting: false };
-      });
+        });
+      } catch (txError) {
+        console.error(`[Call-Completed] ❌ Transaction failed for call ${call.id}:`, txError);
+
+        // Fallback: Try to create a basic wrapup outside the transaction
+        console.log(`[Call-Completed] 🔄 Attempting fallback wrapup creation for call ${call.id}`);
+        try {
+          const callDir = call.direction || direction;
+          const isAfterHoursCall = call.disposition === "after_hours";
+
+          const [fallbackWrapup] = await db
+            .insert(wrapupDrafts)
+            .values({
+              tenantId,
+              callId: call.id,
+              direction: (callDir === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
+              agentExtension: isAfterHoursCall ? "after-hours" : (call.extension || extension),
+              agentName: isAfterHoursCall ? "After-Hours Service" : null,
+              summary: analysis?.summary || "Call completed - review required",
+              customerName: analysis?.extractedData?.customerName || null,
+              customerPhone: phoneForLookup,
+              requestType: analysis?.serviceRequestType || analysis?.callType || (isAfterHoursCall ? "after_hours" : "general"),
+              status: shouldAutoVoid ? "completed" : "pending_review",
+              matchStatus: customerMatchStatus,
+              aiCleanedSummary: analysis?.summary,
+              aiProcessingStatus: analysis ? "completed" : "skipped",
+              aiProcessedAt: new Date(),
+              isAutoVoided: shouldAutoVoid,
+            })
+            .onConflictDoNothing()
+            .returning();
+
+          if (fallbackWrapup) {
+            console.log(`[Call-Completed] ✅ Fallback wrapup created: ${fallbackWrapup.id}`);
+            txResult = { wrapup: fallbackWrapup, suggestionCount: 0, mergedWithExisting: false };
+          } else {
+            console.log(`[Call-Completed] ⚠️ Fallback wrapup not created (likely already exists)`);
+            txResult = { wrapup: null, suggestionCount: 0, mergedWithExisting: false };
+          }
+        } catch (fallbackError) {
+          console.error(`[Call-Completed] ❌ Fallback wrapup creation also failed:`, fallbackError);
+          txResult = { wrapup: null, suggestionCount: 0, mergedWithExisting: false };
+        }
+      }
 
       // Handle the case where we merged with an existing after-hours triage item
       if (txResult.mergedWithExisting) {
@@ -1356,10 +1424,15 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         if (txResult.suggestionCount > 0) {
           console.log(`[Call-Completed] Stored ${txResult.suggestionCount} match suggestions (${azMatches.length} customers, ${azLeadMatches.length} leads)`);
         }
+      } else {
+        console.warn(`[Call-Completed] ⚠️ No wrapup created for call ${call.id} - this should be investigated`);
       }
 
       // Note: Triage items removed - wrapup_drafts is the single source of truth
       // All call review happens through /pending-review using wrapup_drafts table
+    } else {
+      // No analysis and not a hangup - log why we're skipping wrapup creation
+      console.log(`[Call-Completed] ⏭️ Skipping wrapup creation for call ${call.id}: no analysis and not detected as hangup (duration: ${body.duration}s, transcript length: ${transcript?.length || 0})`);
     }
 
     // 5. NOTE: Auto-posting to AgencyZoom removed
