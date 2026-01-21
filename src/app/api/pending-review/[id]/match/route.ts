@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { wrapupDrafts, messages } from '@/db/schema';
+import { wrapupDrafts, messages, triageItems } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
 
 /**
@@ -81,7 +81,7 @@ export async function POST(
     if (itemType === 'message') {
       // Update message with the matched contact
       // Ensure customerId is a string for the varchar field
-      const [updated] = await db
+      let [updated] = await db
         .update(messages)
         .set({
           contactId: String(customerId),
@@ -89,6 +89,26 @@ export async function POST(
         })
         .where(eq(messages.id, itemId))
         .returning();
+
+      // If not found, check if this is a triage item ID (after-hours items use triage ID)
+      if (!updated) {
+        const triageItem = await db.query.triageItems.findFirst({
+          where: eq(triageItems.id, itemId),
+          columns: { messageId: true, customerId: true },
+        });
+
+        if (triageItem?.messageId) {
+          // Update the linked message
+          [updated] = await db
+            .update(messages)
+            .set({
+              contactId: String(customerId),
+              contactName: customerName || null,
+            })
+            .where(eq(messages.id, triageItem.messageId))
+            .returning();
+        }
+      }
 
       if (!updated) {
         return NextResponse.json({ error: 'Message not found' }, { status: 404 });
