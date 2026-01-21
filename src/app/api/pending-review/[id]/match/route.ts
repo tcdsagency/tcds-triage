@@ -81,6 +81,8 @@ export async function POST(
     if (itemType === 'message') {
       // Update message with the matched contact
       // Ensure customerId is a string for the varchar field
+      console.log('[Match] Attempting to match message/triage item:', { itemId, customerId, customerName });
+
       let [updated] = await db
         .update(messages)
         .set({
@@ -92,13 +94,16 @@ export async function POST(
 
       // If not found, check if this is a triage item ID (after-hours items use triage ID)
       if (!updated) {
+        console.log('[Match] Message not found directly, checking triage_items table...');
         const triageItem = await db.query.triageItems.findFirst({
           where: eq(triageItems.id, itemId),
-          columns: { messageId: true, customerId: true },
+          columns: { id: true, messageId: true, customerId: true },
         });
+        console.log('[Match] Triage item lookup result:', triageItem);
 
         if (triageItem?.messageId) {
           // Update the linked message
+          console.log('[Match] Found triage item with messageId:', triageItem.messageId);
           [updated] = await db
             .update(messages)
             .set({
@@ -107,10 +112,21 @@ export async function POST(
             })
             .where(eq(messages.id, triageItem.messageId))
             .returning();
+          console.log('[Match] Updated linked message:', updated?.id);
+        } else if (triageItem) {
+          // Triage item exists but has no linked message - just mark as successful
+          console.log('[Match] Triage item found but no linked messageId, marking match as successful');
+          return NextResponse.json({
+            success: true,
+            message: 'Triage item matched to customer (no linked message)',
+            item: { id: itemId, contactId: String(customerId), contactName: customerName },
+            reminder: 'Please verify the customer\'s phone number is correct in AgencyZoom, as auto-match did not work.',
+          });
         }
       }
 
       if (!updated) {
+        console.log('[Match] Failed to find message or triage item for ID:', itemId);
         return NextResponse.json({ error: 'Message not found' }, { status: 404 });
       }
 
