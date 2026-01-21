@@ -259,25 +259,46 @@ export class AgencyZoomClient {
 
   /**
    * Search customers by phone number (returns first match)
+   * Uses findCustomersByPhone to ensure proper phone filtering
    */
   async findCustomerByPhone(phone: string): Promise<AgencyZoomCustomer | null> {
-    // Normalize phone number
-    const normalized = phone.replace(/\D/g, '');
-
-    const result = await this.getCustomers({ search: normalized, limit: 1 });
-    return result.data[0] || null;
+    const matches = await this.findCustomersByPhone(phone, 1);
+    return matches[0] || null;
   }
 
   /**
    * Search customers by phone number (returns all matches)
    * Used for wrapup matching where we need to show multiple options
+   *
+   * NOTE: AgencyZoom's searchText is a generic search that matches ANY field.
+   * We must filter results to only include customers where the phone actually matches.
    */
   async findCustomersByPhone(phone: string, limit: number = 5): Promise<AgencyZoomCustomer[]> {
     const normalized = phone.replace(/\D/g, '');
     if (normalized.length < 10) return [];
 
-    const result = await this.getCustomers({ search: normalized, limit });
-    return result.data;
+    // Get last 10 digits for matching
+    const last10 = normalized.slice(-10);
+
+    // Search with a larger limit since we'll filter results
+    const result = await this.getCustomers({ search: normalized, limit: limit * 3 });
+
+    // Filter to only include customers where phone actually matches
+    const filtered = result.data.filter(customer => {
+      const phones = [
+        customer.phone,
+        customer.phoneCell,
+        customer.secondaryPhone,
+      ].filter(Boolean);
+
+      return phones.some(p => {
+        const pNormalized = p?.replace(/\D/g, '') || '';
+        // Match if last 10 digits match
+        return pNormalized.slice(-10) === last10 || last10.endsWith(pNormalized.slice(-10));
+      });
+    });
+
+    return filtered.slice(0, limit);
   }
 
   /**
