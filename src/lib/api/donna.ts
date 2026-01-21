@@ -48,7 +48,6 @@ export class DonnaClient {
    */
   private extractCookies(headers: Headers): string[] {
     const setCookies: string[] = [];
-    // @ts-ignore - getSetCookie exists in Node 18+
     const rawCookies = headers.getSetCookie?.() || [];
     for (const cookie of rawCookies) {
       const cookieValue = cookie.split(';')[0].trim();

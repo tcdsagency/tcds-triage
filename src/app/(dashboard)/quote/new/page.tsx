@@ -1808,7 +1808,8 @@ export default function QuoteIntakePage() {
 
   // Auto form completion calculation
   const autoCompletion = useCallback(() => {
-    let filled = 0, total = 10;
+    let filled = 0;
+    const total = 10;
     if (autoFormData.firstName) filled++;
     if (autoFormData.lastName) filled++;
     if (autoFormData.phone) filled++;
@@ -1824,7 +1825,8 @@ export default function QuoteIntakePage() {
 
   // Homeowners form completion calculation
   const homeownersCompletion = useCallback(() => {
-    let filled = 0, total = 12;
+    let filled = 0;
+    const total = 12;
     if (homeownersFormData.firstName) filled++;
     if (homeownersFormData.lastName) filled++;
     if (homeownersFormData.phone) filled++;
@@ -1842,7 +1844,8 @@ export default function QuoteIntakePage() {
 
   // Renters form completion calculation
   const rentersCompletion = useCallback(() => {
-    let filled = 0, total = 8;
+    let filled = 0;
+    const total = 8;
     if (rentersFormData.firstName) filled++;
     if (rentersFormData.lastName) filled++;
     if (rentersFormData.phone) filled++;
@@ -1856,7 +1859,8 @@ export default function QuoteIntakePage() {
 
   // Umbrella form completion calculation
   const umbrellaCompletion = useCallback(() => {
-    let filled = 0, total = 8;
+    let filled = 0;
+    const total = 8;
     if (umbrellaFormData.firstName) filled++;
     if (umbrellaFormData.lastName) filled++;
     if (umbrellaFormData.phone) filled++;
@@ -1870,7 +1874,8 @@ export default function QuoteIntakePage() {
 
   // BOP form completion calculation
   const bopCompletion = useCallback(() => {
-    let filled = 0, total = 10;
+    let filled = 0;
+    const total = 10;
     if (bopFormData.businessName) filled++;
     if (bopFormData.contactName) filled++;
     if (bopFormData.phone) filled++;
@@ -1886,7 +1891,8 @@ export default function QuoteIntakePage() {
 
   // GL form completion calculation
   const glCompletion = useCallback(() => {
-    let filled = 0, total = 10;
+    let filled = 0;
+    const total = 10;
     if (glFormData.businessName) filled++;
     if (glFormData.contactName) filled++;
     if (glFormData.phone) filled++;
@@ -1902,7 +1908,8 @@ export default function QuoteIntakePage() {
 
   // Workers Comp form completion calculation
   const wcCompletion = useCallback(() => {
-    let filled = 0, total = 10;
+    let filled = 0;
+    const total = 10;
     if (wcFormData.businessName) filled++;
     if (wcFormData.contactName) filled++;
     if (wcFormData.phone) filled++;
@@ -1918,7 +1925,8 @@ export default function QuoteIntakePage() {
 
   // Recreational form completion calculation
   const recreationalCompletion = useCallback(() => {
-    let filled = 0, total = 12;
+    let filled = 0;
+    const total = 12;
     if (recreationalFormData.firstName) filled++;
     if (recreationalFormData.lastName) filled++;
     if (recreationalFormData.phone) filled++;
@@ -1936,7 +1944,8 @@ export default function QuoteIntakePage() {
 
   // Mobile Home form completion calculation
   const mobileHomeCompletion = useCallback(() => {
-    let filled = 0, total = 12;
+    let filled = 0;
+    const total = 12;
     if (mobileHomeFormData.firstName) filled++;
     if (mobileHomeFormData.lastName) filled++;
     if (mobileHomeFormData.phone) filled++;

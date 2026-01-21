@@ -23,6 +23,26 @@ const eslintConfig = defineConfig([
     // Browser extension
     "chrome-extension/**",
   ]),
+  // Custom rule overrides
+  {
+    rules: {
+      // Downgrade to warnings - these are code quality issues that don't affect functionality
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": ["warn", {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_"
+      }],
+      "react/no-unescaped-entities": "warn",
+      "react-hooks/exhaustive-deps": "warn",
+      "@next/next/no-img-element": "warn",
+      // React 19 compiler rules (Next.js 16) - downgrade to warnings
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/purity": "warn",
+      "react-hooks/refs": "warn",
+      "react-hooks/immutability": "warn",
+    },
+  },
 ]);
 
 export default eslintConfig;

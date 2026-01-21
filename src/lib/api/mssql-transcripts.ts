@@ -123,7 +123,8 @@ export class MSSQLTranscriptsClient {
 
     // Dynamic import to avoid issues if mssql not installed
     try {
-      this.mssql = require("mssql");
+      // @ts-expect-error - mssql types not installed, package is optional
+      this.mssql = await import("mssql");
     } catch {
       throw new Error(
         "MSSQL package not installed. Run: npm install mssql"
