@@ -59,7 +59,7 @@ interface Stats {
 // CONSTANTS
 // =============================================================================
 
-const PRIORITY_CONFIG = {
+const _PRIORITY_CONFIG = {
   urgent: { label: 'URGENT', color: 'bg-red-500 text-white' },
   high: { label: 'HIGH', color: 'bg-orange-500 text-white' },
   medium: { label: 'MEDIUM', color: 'bg-yellow-500 text-yellow-900' },
@@ -649,7 +649,7 @@ export default function AfterHoursQueuePage() {
                   </div>
                   {selectedItem.autoReplyMessage && (
                     <p className="text-sm text-green-600 italic">
-                      "{selectedItem.autoReplyMessage}"
+                      &quot;{selectedItem.autoReplyMessage}&quot;
                     </p>
                   )}
                 </div>
