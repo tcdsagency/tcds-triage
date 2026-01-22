@@ -70,6 +70,7 @@ export interface TriageItem {
   contactEmail: string | null;
   matchStatus: 'matched' | 'needs_review' | 'unmatched' | 'after_hours';
   summary: string;
+  transcript?: string;
   requestType: string | null;
   handledBy: string | null;
   handledByAgent: {
@@ -189,6 +190,7 @@ export async function GET(request: NextRequest) {
             callFromNumber: calls.fromNumber,
             callToNumber: calls.toNumber,
             agentId: calls.agentId,
+            transcript: calls.transcription,
           })
           .from(wrapupDrafts)
           .leftJoin(calls, eq(wrapupDrafts.callId, calls.id))
@@ -238,6 +240,7 @@ export async function GET(request: NextRequest) {
             contactEmail: w.customerEmail,
             matchStatus,
             summary: w.aiCleanedSummary || w.summary || '',
+            transcript: w.transcript || undefined,
             requestType: w.requestType || extraction.serviceRequestType || null,
             handledBy: w.agentId ? agentMap.get(w.agentId)?.name || null : null,
             handledByAgent: w.agentId ? agentMap.get(w.agentId) || null : null,

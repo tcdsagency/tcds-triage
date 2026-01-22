@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn, formatPhoneNumber } from '@/lib/utils';
@@ -100,6 +101,8 @@ export default function TriageCard({
   };
 
   const sourceBadge = getSourceBadge();
+  const [showTranscript, setShowTranscript] = useState(false);
+  const hasTranscript = item.itemType === 'wrapup' && item.transcript;
 
   return (
     <div
@@ -154,6 +157,29 @@ export default function TriageCard({
         <p className="text-xs text-gray-600 dark:text-gray-300 line-clamp-2">
           {item.summary || 'No summary available'}
         </p>
+
+        {/* Transcript toggle and content */}
+        {hasTranscript && (
+          <div className="space-y-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowTranscript(!showTranscript);
+              }}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium flex items-center gap-1"
+            >
+              <span>{showTranscript ? '▼' : '▶'}</span>
+              <span>{showTranscript ? 'Hide' : 'Show'} Transcript</span>
+            </button>
+            {showTranscript && (
+              <div className="bg-gray-50 dark:bg-gray-900/50 rounded p-2 max-h-48 overflow-y-auto">
+                <pre className="text-xs text-gray-600 dark:text-gray-300 whitespace-pre-wrap font-mono leading-relaxed">
+                  {item.transcript}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Source badge + Call ID */}
         <div className="flex items-center gap-2 flex-wrap">
