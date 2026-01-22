@@ -649,7 +649,11 @@ export async function POST(
           if (triageItem.messageId) {
             await db
               .update(messages)
-              .set({ isAcknowledged: true })
+              .set({
+                isAcknowledged: true,
+                acknowledgedAt: new Date(),
+                acknowledgedById: reviewerId,
+              })
               .where(eq(messages.id, triageItem.messageId));
           }
 
@@ -675,7 +679,11 @@ export async function POST(
           if (triageItem.messageId) {
             await db
               .update(messages)
-              .set({ isAcknowledged: true })
+              .set({
+                isAcknowledged: true,
+                acknowledgedAt: new Date(),
+                acknowledgedById: reviewerId,
+              })
               .where(eq(messages.id, triageItem.messageId));
           }
 
@@ -755,7 +763,11 @@ export async function POST(
               if (triageItem.messageId) {
                 await db
                   .update(messages)
-                  .set({ isAcknowledged: true })
+                  .set({
+                    isAcknowledged: true,
+                    acknowledgedAt: new Date(),
+                    acknowledgedById: reviewerId,
+                  })
                   .where(eq(messages.id, triageItem.messageId));
               }
 
@@ -846,7 +858,11 @@ export async function POST(
               if (triageItem.messageId) {
                 await db
                   .update(messages)
-                  .set({ isAcknowledged: true })
+                  .set({
+                    isAcknowledged: true,
+                    acknowledgedAt: new Date(),
+                    acknowledgedById: reviewerId,
+                  })
                   .where(eq(messages.id, triageItem.messageId));
               }
 
@@ -905,7 +921,11 @@ export async function POST(
               if (triageItem.messageId) {
                 await db
                   .update(messages)
-                  .set({ isAcknowledged: true })
+                  .set({
+                    isAcknowledged: true,
+                    acknowledgedAt: new Date(),
+                    acknowledgedById: reviewerId,
+                  })
                   .where(eq(messages.id, triageItem.messageId));
               }
 
@@ -937,7 +957,11 @@ export async function POST(
         for (const msgId of idsToAcknowledge) {
           await db
             .update(messages)
-            .set({ isAcknowledged: true })
+            .set({
+              isAcknowledged: true,
+              acknowledgedAt: new Date(),
+              acknowledgedById: reviewerId,
+            })
             .where(eq(messages.id, msgId));
         }
 
@@ -955,7 +979,11 @@ export async function POST(
         for (const msgId of idsToVoid) {
           await db
             .update(messages)
-            .set({ isAcknowledged: true })
+            .set({
+              isAcknowledged: true,
+              acknowledgedAt: new Date(),
+              acknowledgedById: reviewerId,
+            })
             .where(eq(messages.id, msgId));
         }
 
@@ -985,7 +1013,11 @@ export async function POST(
         if (noteResult.success) {
           await db
             .update(messages)
-            .set({ isAcknowledged: true })
+            .set({
+              isAcknowledged: true,
+              acknowledgedAt: new Date(),
+              acknowledgedById: reviewerId,
+            })
             .where(eq(messages.id, itemId));
 
           result = { success: true, action: "note", noteId: noteResult.id };
@@ -1056,7 +1088,11 @@ export async function POST(
             if (ticketNoteResult.success) {
               await db
                 .update(messages)
-                .set({ isAcknowledged: true })
+                .set({
+                  isAcknowledged: true,
+                  acknowledgedAt: new Date(),
+                  acknowledgedById: reviewerId,
+                })
                 .where(eq(messages.id, itemId));
 
               result = { success: true, action: "ticket", ticketId: appendToTicketId, message: "Note appended to existing ticket" };
@@ -1068,7 +1104,11 @@ export async function POST(
               if (noteResult.success) {
                 await db
                   .update(messages)
-                  .set({ isAcknowledged: true })
+                  .set({
+                    isAcknowledged: true,
+                    acknowledgedAt: new Date(),
+                    acknowledgedById: reviewerId,
+                  })
                   .where(eq(messages.id, itemId));
 
                 result = { success: true, action: "ticket", ticketId: appendToTicketId, noteId: noteResult.id, message: "Note posted to customer (ticket note API unavailable)" };
@@ -1108,7 +1148,11 @@ export async function POST(
           if (serviceResult.success) {
             await db
               .update(messages)
-              .set({ isAcknowledged: true })
+              .set({
+                isAcknowledged: true,
+                acknowledgedAt: new Date(),
+                acknowledgedById: reviewerId,
+              })
               .where(eq(messages.id, itemId));
 
             result = { success: true, action: "ticket", ticketId: serviceResult.ticketId, noteId: serviceResult.noteId };
@@ -1165,7 +1209,11 @@ export async function POST(
         if (serviceResult.success) {
           await db
             .update(messages)
-            .set({ isAcknowledged: true })
+            .set({
+              isAcknowledged: true,
+              acknowledgedAt: new Date(),
+              acknowledgedById: reviewerId,
+            })
             .where(eq(messages.id, itemId));
 
           result = { success: true, action: "ncm", ticketId: serviceResult.ticketId };

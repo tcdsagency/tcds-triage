@@ -94,7 +94,11 @@ export async function POST(request: NextRequest) {
       if (messageIds.length > 0) {
         await db
           .update(messages)
-          .set({ isAcknowledged: true })
+          .set({
+            isAcknowledged: true,
+            acknowledgedAt: new Date(),
+            acknowledgedById: reviewerId,
+          })
           .where(inArray(messages.id, messageIds));
         results.processed += messageIds.length;
       }
@@ -142,7 +146,11 @@ export async function POST(request: NextRequest) {
       if (messageIds.length > 0) {
         await db
           .update(messages)
-          .set({ isAcknowledged: true })
+          .set({
+            isAcknowledged: true,
+            acknowledgedAt: new Date(),
+            acknowledgedById: reviewerId,
+          })
           .where(inArray(messages.id, messageIds));
         results.processed += messageIds.length;
       }
@@ -279,7 +287,11 @@ export async function POST(request: NextRequest) {
             if (noteResult.success) {
               await db
                 .update(messages)
-                .set({ isAcknowledged: true })
+                .set({
+                  isAcknowledged: true,
+                  acknowledgedAt: new Date(),
+                  acknowledgedById: reviewerId,
+                })
                 .where(eq(messages.id, item.id));
               results.processed++;
             } else {
