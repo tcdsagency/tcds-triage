@@ -155,15 +155,21 @@ export default function TriageCard({
           {item.summary || 'No summary available'}
         </p>
 
-        {/* Source badge */}
-        {sourceBadge && (
-          <div className="flex items-center gap-1">
+        {/* Source badge + Call ID */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {sourceBadge && (
             <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium inline-flex items-center gap-1', sourceBadge.bg, sourceBadge.text)}>
               <span>{sourceBadge.icon}</span>
               <span>{sourceBadge.label}</span>
             </span>
-          </div>
-        )}
+          )}
+          {/* Show Call ID for wrapup items */}
+          {item.itemType === 'wrapup' && item.callId && (
+            <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">
+              #{item.callId.slice(-8)}
+            </span>
+          )}
+        </div>
 
         {/* Footer: Dates */}
         <div className="pt-1 border-t border-gray-100 dark:border-gray-700/50 space-y-0.5">
