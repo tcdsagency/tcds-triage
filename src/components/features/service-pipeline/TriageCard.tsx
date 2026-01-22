@@ -3,6 +3,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn, formatPhoneNumber } from '@/lib/utils';
+import { format, parseISO } from 'date-fns';
 import type { TriageItem } from '@/app/api/service-pipeline/route';
 
 interface TriageCardProps {
@@ -10,6 +11,16 @@ interface TriageCardProps {
   onClick?: () => void;
   onQuickAction?: (action: 'note' | 'ticket' | 'skip' | 'delete') => void;
   isDragging?: boolean;
+}
+
+// Format date to AgencyZoom style: "Jan 22, 2026"
+function formatEnteredDate(dateStr: string): string {
+  try {
+    const date = parseISO(dateStr);
+    return format(date, 'MMM d, yyyy');
+  } catch {
+    return 'Unknown';
+  }
 }
 
 // Match status colors
@@ -64,20 +75,31 @@ export default function TriageCard({
 
   const isCurrentlyDragging = isDragging || isSortableDragging;
 
-  // Format age
-  const formatAge = (minutes: number) => {
-    if (minutes < 60) return `${minutes}m ago`;
-    if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
-    return `${Math.floor(minutes / 1440)}d ago`;
-  };
-
   const statusStyle = STATUS_COLORS[item.matchStatus] || STATUS_COLORS.unmatched;
+  const isNCM = item.matchStatus === 'unmatched' || item.matchStatus === 'needs_review';
+  const isAfterHours = item.matchStatus === 'after_hours';
 
   // Get handler initials
   const getHandlerInitials = () => {
     if (!item.handledByAgent) return null;
     return item.handledByAgent.initials;
   };
+
+  // Determine source badge
+  const getSourceBadge = () => {
+    if (isAfterHours) {
+      return { icon: '🌙', label: 'After Hours', bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-700 dark:text-purple-400' };
+    }
+    if (item.itemType === 'message') {
+      return { icon: '💬', label: 'SMS', bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-400' };
+    }
+    if (item.itemType === 'wrapup') {
+      return { icon: '📞', label: 'Incoming Call', bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-400' };
+    }
+    return null;
+  };
+
+  const sourceBadge = getSourceBadge();
 
   return (
     <div
@@ -95,35 +117,37 @@ export default function TriageCard({
       )}
     >
       <div className="p-3 space-y-2">
-        {/* Header: Contact + Type Badge */}
+        {/* NCM Badge - prominent at top */}
+        {isNCM && (
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+              No Customer Match
+            </span>
+          </div>
+        )}
+
+        {/* Header: Contact Name */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              {/* Item type icon */}
-              <span className="text-gray-400 dark:text-gray-500 text-sm">
-                {item.itemType === 'wrapup' ? '📞' : '💬'}
-              </span>
-              <h4 className="font-semibold text-gray-900 dark:text-white text-sm truncate">
-                {item.contactName || formatPhoneNumber(item.contactPhone) || 'Unknown'}
-              </h4>
-            </div>
+            <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+              {item.contactName || formatPhoneNumber(item.contactPhone) || 'Unknown Caller'}
+            </h4>
             {item.contactPhone && item.contactName && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-mono">
                 {formatPhoneNumber(item.contactPhone)}
               </p>
             )}
           </div>
-          {/* Match status badge */}
-          <span
-            className={cn(
-              'text-xs px-2 py-0.5 rounded-full font-medium',
-              statusStyle.bg,
-              statusStyle.text
-            )}
-            title={item.matchStatus.replace('_', ' ')}
-          >
-            {statusStyle.icon}
-          </span>
+          {/* Handler badge */}
+          {item.handledByAgent && (
+            <div
+              className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
+              style={{ backgroundColor: '#6366f1' }}
+              title={item.handledByAgent.name}
+            >
+              {getHandlerInitials()}
+            </div>
+          )}
         </div>
 
         {/* Summary preview */}
@@ -131,27 +155,21 @@ export default function TriageCard({
           {item.summary || 'No summary available'}
         </p>
 
-        {/* Footer: Request type + Handler + Age */}
-        <div className="flex items-center justify-between pt-1 border-t border-gray-100 dark:border-gray-700/50">
-          <div className="flex items-center gap-2">
-            {item.requestType && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 truncate max-w-[100px]">
-                {item.requestType}
-              </span>
-            )}
-            {item.handledByAgent && (
-              <div
-                className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold"
-                style={{ backgroundColor: '#6366f1' }}
-                title={item.handledByAgent.name}
-              >
-                {getHandlerInitials()}
-              </div>
-            )}
+        {/* Source badge */}
+        {sourceBadge && (
+          <div className="flex items-center gap-1">
+            <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium inline-flex items-center gap-1', sourceBadge.bg, sourceBadge.text)}>
+              <span>{sourceBadge.icon}</span>
+              <span>{sourceBadge.label}</span>
+            </span>
           </div>
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            {formatAge(item.ageMinutes)}
-          </span>
+        )}
+
+        {/* Footer: Dates */}
+        <div className="pt-1 border-t border-gray-100 dark:border-gray-700/50 space-y-0.5">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="font-medium">Entered:</span> {formatEnteredDate(item.timestamp)}
+          </div>
         </div>
 
         {/* Quick actions on hover */}
