@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { cn, formatPhoneNumber } from '@/lib/utils';
 import { getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
 import { LeadQualityBadgeCompact } from '@/components/features/LeadQualityBadge';
+import { ServiceTicketBadgeCompact } from '@/components/features/ServiceTicketBadge';
 
 // =============================================================================
 // TOOLTIP COMPONENT
@@ -105,6 +106,16 @@ export interface PendingItem {
     isAutoReply: boolean;
   }[];
   messageIds?: string[]; // All message IDs in this group
+
+  // Linked service ticket (if one was created)
+  linkedTicket?: {
+    id: string;
+    azTicketId: number;
+    status: 'active' | 'completed' | 'removed';
+    stageName: string | null;
+    subject: string;
+    csrName: string | null;
+  } | null;
 }
 
 export interface PendingItemCardProps {
@@ -671,6 +682,18 @@ export default function PendingItemCard({
             <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 font-medium">
               🔖 {item.policies.join(', ')}
             </span>
+          )}
+
+          {/* Linked Service Ticket */}
+          {item.linkedTicket && (
+            <ServiceTicketBadgeCompact
+              ticket={{
+                azTicketId: item.linkedTicket.azTicketId,
+                status: item.linkedTicket.status,
+                stageName: item.linkedTicket.stageName,
+                subject: item.linkedTicket.subject,
+              }}
+            />
           )}
         </div>
 

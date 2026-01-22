@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { wrapupDrafts, messages, users, calls, triageItems, customers } from "@/db/schema";
+import { wrapupDrafts, messages, users, calls, triageItems, customers, serviceTickets } from "@/db/schema";
 import { eq, and, desc, sql, inArray, or } from "drizzle-orm";
 import { createClient } from "@/lib/supabase/server";
 
@@ -116,6 +116,16 @@ interface PendingItem {
 
   // After-hours triage item reference
   triageItemId?: string;
+
+  // Linked service ticket (if ticket was created from this wrapup)
+  linkedTicket?: {
+    id: string;
+    azTicketId: number;
+    status: 'active' | 'completed' | 'removed';
+    stageName: string | null;
+    subject: string;
+    csrName: string | null;
+  } | null;
 }
 
 interface PendingCounts {
@@ -202,9 +212,17 @@ export async function GET(request: NextRequest) {
           callToNumber: calls.toNumber,
           transcription: calls.transcription,
           agentId: calls.agentId,
+          // Linked service ticket (if any)
+          ticketId: serviceTickets.id,
+          ticketAzId: serviceTickets.azTicketId,
+          ticketStatus: serviceTickets.status,
+          ticketStageName: serviceTickets.stageName,
+          ticketSubject: serviceTickets.subject,
+          ticketCsrName: serviceTickets.csrName,
         })
         .from(wrapupDrafts)
         .leftJoin(calls, eq(wrapupDrafts.callId, calls.id))
+        .leftJoin(serviceTickets, eq(serviceTickets.wrapupDraftId, wrapupDrafts.id))
         .where(and(...whereConditions))
         .orderBy(desc(wrapupDrafts.createdAt))
         .limit(limit);
@@ -292,6 +310,15 @@ export async function GET(request: NextRequest) {
           transcription: w.transcription || undefined,
           agencyzoomCustomerId: extraction.agencyZoomCustomerId,
           agencyzoomLeadId: extraction.agencyZoomLeadId,
+          // Linked service ticket (if any)
+          linkedTicket: w.ticketId ? {
+            id: w.ticketId,
+            azTicketId: w.ticketAzId!,
+            status: w.ticketStatus as 'active' | 'completed' | 'removed',
+            stageName: w.ticketStageName,
+            subject: w.ticketSubject!,
+            csrName: w.ticketCsrName,
+          } : null,
         });
       }
       return items;
