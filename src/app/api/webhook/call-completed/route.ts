@@ -1028,13 +1028,13 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
           // If no customers found, search leads (with timeout)
           if (azMatches.length === 0) {
             try {
-              const normalizedPhone = phoneForLookup.replace(/\D/g, "");
-              const leadsResult = await withTimeout(
-                azClient.getLeads({ searchText: normalizedPhone, limit: 5 }),
+              // Use findLeadsByPhone which filters results to actual phone matches
+              // (getLeads with searchText matches ANY field, not just phone)
+              azLeadMatches = await withTimeout(
+                azClient.findLeadsByPhone(phoneForLookup, 5),
                 5000, // 5s timeout for leads
-                { data: [] as AgencyZoomLead[], total: 0 }
+                []
               );
-              azLeadMatches = leadsResult.data;
               console.log(`[Call-Completed] AgencyZoom lead lookup for ${phoneForLookup}: ${azLeadMatches.length} matches`);
               matchType = azLeadMatches.length > 0 ? "lead" : "none";
             } catch (leadError) {

@@ -1,18 +1,23 @@
 // API Route: /api/policy-change
-// Handle policy change requests - saves to DB and creates AgencyZoom ticket via Zapier
+// Handle policy change requests - saves to DB and creates AgencyZoom ticket via direct API
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from '@/db';
-import { policyChangeRequests, policies, customers } from '@/db/schema';
+import { policyChangeRequests, policies, customers, serviceTickets } from '@/db/schema';
 import { eq, desc, and } from 'drizzle-orm';
+import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import {
+  SERVICE_PIPELINES,
+  PIPELINE_STAGES,
+  getDefaultDueDate,
+} from "@/lib/api/agencyzoom-service-tickets";
 
 // =============================================================================
-// ZAPIER INTEGRATION
+// AGENCYZOOM INTEGRATION
 // =============================================================================
 
-const ZAPIER_WEBHOOK_URL = "https://hooks.zapier.com/hooks/catch/5343719/uf796g9/";
-const PIPELINE_ID = 30699;      // Service Center pipeline
-const STAGE_ID = 111160;        // Initial "New" stage
+const PIPELINE_ID = SERVICE_PIPELINES.POLICY_SERVICE;    // 30699 - Service Center pipeline
+const STAGE_ID = PIPELINE_STAGES.POLICY_SERVICE_NEW;     // 111160 - Initial "New" stage
 
 // Map change types to AgencyZoom category IDs
 const CHANGE_TYPE_TO_CATEGORY: Record<string, number> = {
@@ -173,17 +178,35 @@ export async function POST(request: NextRequest) {
     const summary = generateChangeSummary(body.changeType, body.data);
 
     // ==========================================================================
-    // CREATE AGENCYZOOM SERVICE REQUEST VIA ZAPIER
+    // CREATE AGENCYZOOM SERVICE REQUEST VIA DIRECT API
     // ==========================================================================
 
-    let zapierTicketId: string | null = null;
+    let azTicketId: number | string | null = null;
 
     try {
-      // Determine if we need to use No Match fallback (no email)
-      const useNoMatch = !customerEmail;
+      // Determine if we need to use No Match fallback (no email/customer)
+      const useNoMatch = !customerId;
 
-      const effectiveEmail = useNoMatch ? NO_MATCH_CUSTOMER.email : customerEmail;
-      const effectiveName = useNoMatch ? NO_MATCH_CUSTOMER.name : (customerName || 'Unknown Customer');
+      // Get the AgencyZoom customer ID - either from matched customer or NCM placeholder
+      let azCustomerId: number;
+      if (useNoMatch) {
+        azCustomerId = parseInt(NO_MATCH_CUSTOMER.id);
+      } else {
+        // Look up the AgencyZoom ID from our database customer
+        // customerId is guaranteed non-null here since useNoMatch = !customerId
+        const [dbCustomer] = await db
+          .select({ agencyzoomId: customers.agencyzoomId })
+          .from(customers)
+          .where(eq(customers.id, customerId!))
+          .limit(1);
+
+        if (dbCustomer?.agencyzoomId) {
+          azCustomerId = parseInt(dbCustomer.agencyzoomId);
+        } else {
+          // Fall back to NCM if we can't find the AZ ID
+          azCustomerId = parseInt(NO_MATCH_CUSTOMER.id);
+        }
+      }
 
       // Build description with full details
       let ticketDescription = `📋 Policy Change Request\n\n${summary}\n\nPolicy: ${body.policyNumber}\nEffective Date: ${body.effectiveDate}`;
@@ -202,52 +225,84 @@ export async function POST(request: NextRequest) {
       // Get category and priority
       const categoryId = CHANGE_TYPE_TO_CATEGORY[body.changeType] || 115762;
       const priorityId = body.changeType === 'cancel_policy' ? PRIORITY_IDS.urgent : PRIORITY_IDS.standard;
-
-      // Build Zapier payload - use provided assignee or default
       const assigneeId = body.assigneeId || DEFAULT_CSR_ID;
-      const zapierPayload = {
-        Name: effectiveName,
-        Email: effectiveEmail,
-        Subject: `${getChangeTypeLabel(body.changeType)} - ${body.policyNumber}`,
-        "Service Desc": ticketDescription,
-        "Pipeline Id": PIPELINE_ID,
-        "Stage Id": STAGE_ID,
-        "Due After Days": body.changeType === 'cancel_policy' ? 0 : 1,
-        "Category Id": categoryId,
-        "Priority Id": priorityId,
-        "Csr Id": assigneeId,
-      };
 
-      console.log('[PolicyChange] Sending to Zapier:', {
-        name: effectiveName,
-        email: effectiveEmail,
+      // Calculate due date (today for urgent cancellations, tomorrow otherwise)
+      const dueDate = body.changeType === 'cancel_policy'
+        ? new Date().toISOString().split('T')[0]
+        : getDefaultDueDate();
+
+      console.log('[PolicyChange] Creating service ticket via direct API:', {
+        customerId: azCustomerId,
         changeType: body.changeType,
         policyNumber: body.policyNumber,
+        useNoMatch,
       });
 
-      // Send to Zapier webhook
-      const zapierResponse = await fetch(ZAPIER_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(zapierPayload),
+      // Create service ticket via direct AgencyZoom API
+      const azClient = getAgencyZoomClient();
+      const ticketResult = await azClient.createServiceTicket({
+        subject: `${getChangeTypeLabel(body.changeType)} - ${body.policyNumber}`,
+        description: ticketDescription,
+        customerId: azCustomerId,
+        pipelineId: PIPELINE_ID,
+        stageId: STAGE_ID,
+        priorityId: priorityId,
+        categoryId: categoryId,
+        csrId: assigneeId,
+        dueDate: dueDate,
       });
 
-      if (zapierResponse.ok) {
-        const zapierResult = await zapierResponse.json();
-        zapierTicketId = zapierResult.id || `zapier-${Date.now()}`;
-        console.log('[PolicyChange] Zapier ticket created:', zapierTicketId);
+      if (ticketResult.success || ticketResult.serviceTicketId) {
+        azTicketId = ticketResult.serviceTicketId || `az-${Date.now()}`;
+        console.log('[PolicyChange] AgencyZoom ticket created:', azTicketId);
+
+        // Store ticket locally
+        if (typeof azTicketId === 'number' && azTicketId > 0) {
+          try {
+            const ticketSubject = `${getChangeTypeLabel(body.changeType)} - ${body.policyNumber}`;
+            const priorityName = body.changeType === 'cancel_policy' ? 'Urgent!' : 'Standard';
+
+            await db.insert(serviceTickets).values({
+              tenantId,
+              azTicketId: azTicketId,
+              azHouseholdId: azCustomerId,
+              customerId: useNoMatch ? null : customerId,
+              subject: ticketSubject,
+              description: ticketDescription,
+              status: 'active',
+              pipelineId: PIPELINE_ID,
+              pipelineName: 'Policy Service',
+              stageId: STAGE_ID,
+              stageName: 'New',
+              categoryId: categoryId,
+              categoryName: 'Policy Modification',
+              priorityId: priorityId,
+              priorityName: priorityName,
+              csrId: assigneeId,
+              dueDate: dueDate,
+              azCreatedAt: new Date(),
+              source: 'policy_change',
+              lastSyncedFromAz: new Date(),
+            });
+            console.log('[PolicyChange] Ticket stored locally');
+          } catch (localDbError) {
+            console.error('[PolicyChange] Error storing ticket locally:', localDbError);
+            // Don't fail the request if local storage fails
+          }
+        }
       } else {
-        console.error('[PolicyChange] Zapier error:', zapierResponse.status, await zapierResponse.text());
+        console.error('[PolicyChange] AgencyZoom API error:', ticketResult);
       }
-    } catch (zapierError) {
-      console.error('[PolicyChange] Zapier webhook error:', zapierError);
-      // Don't fail the request if Zapier fails - the change request is already saved
+    } catch (azError) {
+      console.error('[PolicyChange] AgencyZoom API error:', azError);
+      // Don't fail the request if AgencyZoom fails - the change request is already saved
     }
 
     return NextResponse.json({
       success: true,
       changeRequestId: changeRequest.id,
-      ticketId: zapierTicketId,
+      ticketId: azTicketId,
       message: `Policy change request submitted successfully`,
       summary,
       status: 'pending',

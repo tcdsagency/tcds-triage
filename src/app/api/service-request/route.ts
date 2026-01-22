@@ -1,20 +1,26 @@
 // API Route: /api/service-request
-// Create service requests via Zapier webhook to AgencyZoom Service Center
+// Create service requests via direct AgencyZoom API (formerly via Zapier webhook)
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { wrapupDrafts } from "@/db/schema";
+import { wrapupDrafts, serviceTickets, customers } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import {
+  SERVICE_PIPELINES,
+  PIPELINE_STAGES,
+  SERVICE_PRIORITIES,
+  SERVICE_TICKET_DEFAULTS,
+  getDefaultDueDate,
+} from "@/lib/api/agencyzoom-service-tickets";
 
 // =============================================================================
 // CONSTANTS
 // =============================================================================
 
-const ZAPIER_WEBHOOK_URL = "https://hooks.zapier.com/hooks/catch/5343719/uf796g9/";
-
-// Pipeline & Stage IDs for AgencyZoom Service Center
-const PIPELINE_ID = 30699;      // Service Center pipeline
-const STAGE_ID = 111160;        // Initial "New" stage
+// Pipeline & Stage IDs for AgencyZoom Service Center (imported from service-tickets types)
+const PIPELINE_ID = SERVICE_PIPELINES.POLICY_SERVICE;  // 30699 - Policy Service pipeline
+const STAGE_ID = PIPELINE_STAGES.POLICY_SERVICE_NEW;   // 111160 - Initial "New" stage
 
 // =============================================================================
 // SERVICE REQUEST TYPES (AI-detected from transcript)
@@ -211,30 +217,14 @@ ${body.leadStage ? `Stage: ${body.leadStage}` : ""}`.trim();
                     (body.category && SERVICE_REQUEST_TYPES[body.category]?.name) ||
                     `Service Request - ${new Date().toLocaleDateString("en-US", { timeZone: "America/Chicago" })}`;
 
-    // Build Zapier payload matching exact AgencyZoom field names
-    const zapierPayload = {
-      // Customer identification
-      Name: effectiveName,
-      Email: effectiveEmail,
+    // Determine the customer ID to use for the service ticket
+    // For "No Match" scenarios, use the NCM customer ID
+    const effectiveCustomerId = useNoMatch
+      ? parseInt(NO_MATCH_CUSTOMER.id)
+      : parseInt(body.customerId);
 
-      // Ticket content
-      Subject: subject,                    // AI-detected type name
-      "Service Desc": effectiveDescription,
-
-      // Pipeline routing (hardcoded)
-      "Pipeline Id": PIPELINE_ID,          // Service Center: 30699
-      "Stage Id": STAGE_ID,                // New: 111160
-      "Due After Days": 1,                 // Due tomorrow
-
-      // Task properties
-      "Category Id": categoryId,           // AI-detected or default
-      "Priority Id": priorityId,           // AI-detected or default
-      "Csr Id": body.assigneeAgentId,      // USER SELECTED
-    };
-
-    console.log("[ServiceRequest] Sending to Zapier:", {
-      name: effectiveName,
-      email: effectiveEmail,
+    console.log("[ServiceRequest] Creating service ticket via direct API:", {
+      customerId: effectiveCustomerId,
       subject,
       assignee: body.assigneeAgentId,
       categoryId,
@@ -242,26 +232,90 @@ ${body.leadStage ? `Stage: ${body.leadStage}` : ""}`.trim();
       useNoMatch,
     });
 
-    // Send to Zapier webhook
-    const zapierResponse = await fetch(ZAPIER_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(zapierPayload),
+    // Create service ticket via direct AgencyZoom API
+    const azClient = getAgencyZoomClient();
+    const ticketResult = await azClient.createServiceTicket({
+      subject: subject,
+      description: effectiveDescription,
+      customerId: effectiveCustomerId,
+      pipelineId: PIPELINE_ID,
+      stageId: STAGE_ID,
+      priorityId: priorityId,
+      categoryId: categoryId,
+      csrId: body.assigneeAgentId,
+      dueDate: getDefaultDueDate(),  // Tomorrow
     });
 
-    if (!zapierResponse.ok) {
-      const errorText = await zapierResponse.text();
-      console.error("[ServiceRequest] Zapier webhook error:", zapierResponse.status, errorText);
+    if (!ticketResult.success && !ticketResult.serviceTicketId) {
+      console.error("[ServiceRequest] AgencyZoom API error:", ticketResult);
       return NextResponse.json(
-        { error: `Zapier webhook error: ${zapierResponse.status}` },
+        { error: "Failed to create service ticket in AgencyZoom" },
         { status: 500 }
       );
     }
 
-    const zapierResult = await zapierResponse.json();
-    const ticketId = zapierResult.id || `zapier-${Date.now()}`;
+    const ticketId = ticketResult.serviceTicketId?.toString() || `az-${Date.now()}`;
+    const azTicketIdNum = ticketResult.serviceTicketId || 0;
 
-    console.log("[ServiceRequest] Zapier response:", zapierResult);
+    console.log("[ServiceRequest] AgencyZoom API response:", ticketResult);
+
+    // ==========================================================================
+    // Store ticket locally in service_tickets table
+    // ==========================================================================
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    let localTicketId: string | null = null;
+
+    if (tenantId && azTicketIdNum > 0) {
+      try {
+        // Look up local customer ID by agencyzoomId (if not using NCM)
+        let localCustomerId: string | null = null;
+        if (!useNoMatch) {
+          const [customer] = await db
+            .select({ id: customers.id })
+            .from(customers)
+            .where(eq(customers.agencyzoomId, body.customerId))
+            .limit(1);
+          localCustomerId = customer?.id || null;
+        }
+
+        // Get category and priority names for display
+        const categoryName = body.serviceRequestTypeName ||
+          (body.category && SERVICE_REQUEST_TYPES[body.category]?.name) ||
+          null;
+        const priorityName = Object.entries(PRIORITY_TYPES).find(([_, v]) => v.id === priorityId)?.[1]?.name || "Standard";
+
+        // Insert into local database
+        const [localTicket] = await db.insert(serviceTickets).values({
+          tenantId,
+          azTicketId: azTicketIdNum,
+          azHouseholdId: effectiveCustomerId,
+          wrapupDraftId: body.wrapupId || null,
+          customerId: localCustomerId,
+          subject: subject,
+          description: effectiveDescription,
+          status: 'active',
+          pipelineId: PIPELINE_ID,
+          pipelineName: 'Policy Service',
+          stageId: STAGE_ID,
+          stageName: 'New',
+          categoryId: categoryId,
+          categoryName: categoryName,
+          priorityId: priorityId,
+          priorityName: priorityName,
+          csrId: body.assigneeAgentId,
+          dueDate: getDefaultDueDate(),
+          azCreatedAt: new Date(),
+          source: body.wrapupId ? 'wrapup' : 'api',
+          lastSyncedFromAz: new Date(),
+        }).returning({ id: serviceTickets.id });
+
+        localTicketId = localTicket?.id || null;
+        console.log("[ServiceRequest] Stored ticket locally:", localTicketId);
+      } catch (dbError) {
+        console.error("[ServiceRequest] Error storing ticket locally:", dbError);
+        // Don't fail the request if local storage fails
+      }
+    }
 
     // Post companion note to AgencyZoom (if not using No Match)
     let noteId: string | null = null;
@@ -318,9 +372,9 @@ Priority: ${Object.entries(PRIORITY_TYPES).find(([_, v]) => v.id === priorityId)
     return NextResponse.json({
       success: true,
       ticketId,
+      localTicketId,
       noteId,
       message: "Service request created successfully",
-      zapierResponse: zapierResult,
     });
   } catch (error) {
     console.error("[ServiceRequest] Error:", error);

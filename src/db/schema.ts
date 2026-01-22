@@ -187,6 +187,12 @@ export const webhookDeliveryStatusEnum = pgEnum('webhook_delivery_status', [
   'failed',         // Delivery failed (will retry)
 ]);
 
+export const serviceTicketStatusEnum = pgEnum('service_ticket_status', [
+  'active',         // Status 1 in AgencyZoom - Open ticket
+  'completed',      // Status 2 in AgencyZoom - Resolved
+  'removed',        // Status 0 in AgencyZoom - Deleted/removed
+]);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MULTI-TENANCY: TENANTS (Agencies)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1784,6 +1790,71 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   index('wrapup_drafts_status_idx').on(table.tenantId, table.status),
   index('wrapup_drafts_match_idx').on(table.tenantId, table.matchStatus),
   index('wrapup_drafts_created_idx').on(table.tenantId, table.createdAt),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERVICE TICKETS (Local cache of AgencyZoom Service Tickets)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const serviceTickets = pgTable('service_tickets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // AgencyZoom identifiers
+  azTicketId: integer('az_ticket_id').notNull().unique(),
+  azHouseholdId: integer('az_household_id'),
+
+  // Local references (nullable - not all tickets come from these sources)
+  wrapupDraftId: uuid('wrapup_draft_id').references(() => wrapupDrafts.id, { onDelete: 'set null' }),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+
+  // Ticket content
+  subject: text('subject').notNull(),
+  description: text('description'),
+
+  // Status tracking
+  status: serviceTicketStatusEnum('status').notNull().default('active'),
+
+  // Workflow/Pipeline
+  pipelineId: integer('pipeline_id'),
+  pipelineName: text('pipeline_name'),
+  stageId: integer('stage_id'),
+  stageName: text('stage_name'),
+
+  // Classification
+  categoryId: integer('category_id'),
+  categoryName: text('category_name'),
+  priorityId: integer('priority_id'),
+  priorityName: text('priority_name'),
+
+  // Assignment
+  csrId: integer('csr_id'),
+  csrName: text('csr_name'),
+
+  // Dates
+  dueDate: date('due_date'),
+  azCreatedAt: timestamp('az_created_at'),
+  azCompletedAt: timestamp('az_completed_at'),
+
+  // Resolution (when completed)
+  resolutionId: integer('resolution_id'),
+  resolutionDesc: text('resolution_desc'),
+
+  // Source tracking
+  source: text('source').notNull().default('api'), // 'wrapup', 'policy_change', 'ncm', 'api'
+
+  // Sync metadata
+  lastSyncedFromAz: timestamp('last_synced_from_az'),
+
+  // Local timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('service_tickets_tenant_idx').on(table.tenantId),
+  index('service_tickets_az_id_idx').on(table.azTicketId),
+  index('service_tickets_customer_idx').on(table.customerId),
+  index('service_tickets_status_idx').on(table.tenantId, table.status),
+  index('service_tickets_wrapup_idx').on(table.wrapupDraftId),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
