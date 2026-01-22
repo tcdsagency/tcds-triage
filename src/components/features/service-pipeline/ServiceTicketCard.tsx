@@ -61,16 +61,12 @@ export default function ServiceTicketCard({
   const isCurrentlyDragging = isDragging || isSortableDragging;
   const isNCM = ticket.azHouseholdId === NCM_HOUSEHOLD_ID;
 
-  // Get CSR initials
-  const getCsrInitials = (name: string | null) => {
-    if (!name) return '?';
-    const parts = name.split(' ');
-    return parts
-      .slice(0, 2)
-      .map(p => p[0])
-      .join('')
-      .toUpperCase();
-  };
+  // Use pre-computed initials from API, fallback to computing from name
+  const csrInitials = ticket.csrInitials || (
+    ticket.csrName
+      ? ticket.csrName.split(' ').slice(0, 2).map(p => p[0]).join('').toUpperCase()
+      : '?'
+  );
 
   // Generate a color based on CSR name
   const getCsrColor = (name: string | null) => {
@@ -125,7 +121,7 @@ export default function ServiceTicketCard({
             style={{ backgroundColor: getCsrColor(ticket.csrName) }}
             title={ticket.csrName || 'Unassigned'}
           >
-            {getCsrInitials(ticket.csrName)}
+            {csrInitials}
           </div>
         </div>
 
@@ -159,15 +155,12 @@ export default function ServiceTicketCard({
 
 // Drag overlay version (used during drag)
 export function ServiceTicketCardOverlay({ ticket }: { ticket: ServiceTicketItem }) {
-  const getCsrInitials = (name: string | null) => {
-    if (!name) return '?';
-    const parts = name.split(' ');
-    return parts
-      .slice(0, 2)
-      .map(p => p[0])
-      .join('')
-      .toUpperCase();
-  };
+  // Use pre-computed initials from API, fallback to computing from name
+  const csrInitials = ticket.csrInitials || (
+    ticket.csrName
+      ? ticket.csrName.split(' ').slice(0, 2).map(p => p[0]).join('').toUpperCase()
+      : '?'
+  );
 
   const getCsrColor = (name: string | null) => {
     if (!name) return '#9ca3af';
@@ -191,7 +184,7 @@ export function ServiceTicketCardOverlay({ ticket }: { ticket: ServiceTicketItem
           style={{ backgroundColor: getCsrColor(ticket.csrName) }}
           title={ticket.csrName || 'Unassigned'}
         >
-          {getCsrInitials(ticket.csrName)}
+          {csrInitials}
         </div>
       </div>
     </div>

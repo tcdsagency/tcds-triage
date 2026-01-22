@@ -98,6 +98,7 @@ export interface ServiceTicketItem {
   stageName: string | null;
   csrId: number | null;
   csrName: string | null;
+  csrInitials: string | null;
   priorityId: number | null;
   priorityName: string | null;
   categoryId: number | null;
@@ -360,6 +361,11 @@ export async function GET(request: NextRequest) {
             .filter(Boolean)
             .join(' ')
             .trim() || t.name || null;
+          const csrName = [t.csrFirstname, t.csrLastname].filter(Boolean).join(' ').trim() || null;
+          // Compute initials from csr first/last name
+          const csrInitials = t.csrFirstname || t.csrLastname
+            ? `${t.csrFirstname?.[0] || ''}${t.csrLastname?.[0] || ''}`.toUpperCase()
+            : null;
 
           return {
             id: t.id.toString(),
@@ -371,7 +377,8 @@ export async function GET(request: NextRequest) {
             stageId: isCompleted ? null : t.workflowStageId,
             stageName: isCompleted ? 'Completed' : (t.workflowStageName || null),
             csrId: t.csr || null,
-            csrName: [t.csrFirstname, t.csrLastname].filter(Boolean).join(' ').trim() || null,
+            csrName,
+            csrInitials,
             priorityId: t.priorityId || null,
             priorityName: t.priorityName || null,
             categoryId: t.categoryId || null,
@@ -397,56 +404,102 @@ export async function GET(request: NextRequest) {
       } catch (error) {
         console.error('[Service Pipeline] Error fetching from AgencyZoom:', error);
         // Fallback to local database if AZ fails
-        const tickets = await db
-          .select({
-            id: serviceTickets.id,
-            azTicketId: serviceTickets.azTicketId,
-            subject: serviceTickets.subject,
-            description: serviceTickets.description,
-            azHouseholdId: serviceTickets.azHouseholdId,
-            stageId: serviceTickets.stageId,
-            stageName: serviceTickets.stageName,
-            csrId: serviceTickets.csrId,
-            csrName: serviceTickets.csrName,
-            priorityId: serviceTickets.priorityId,
-            priorityName: serviceTickets.priorityName,
-            categoryId: serviceTickets.categoryId,
-            categoryName: serviceTickets.categoryName,
-            dueDate: serviceTickets.dueDate,
-            createdAt: serviceTickets.createdAt,
-          })
-          .from(serviceTickets)
-          .where(
-            and(
-              eq(serviceTickets.tenantId, tenantId),
-              eq(serviceTickets.pipelineId, SERVICE_PIPELINES.POLICY_SERVICE)
-            )
-          )
-          .orderBy(desc(serviceTickets.createdAt))
-          .limit(200);
+        // Filter to target stages only, like the AgencyZoom path does
+        const targetStageIds = [
+          PIPELINE_STAGES.NEW,
+          PIPELINE_STAGES.IN_PROGRESS,
+          PIPELINE_STAGES.WAITING_ON_INFO,
+        ];
 
-        return tickets.map(t => ({
+        const [activeTickets, completedTickets] = await Promise.all([
+          db
+            .select({
+              id: serviceTickets.id,
+              azTicketId: serviceTickets.azTicketId,
+              subject: serviceTickets.subject,
+              description: serviceTickets.description,
+              azHouseholdId: serviceTickets.azHouseholdId,
+              stageId: serviceTickets.stageId,
+              stageName: serviceTickets.stageName,
+              csrId: serviceTickets.csrId,
+              csrName: serviceTickets.csrName,
+              priorityId: serviceTickets.priorityId,
+              priorityName: serviceTickets.priorityName,
+              categoryId: serviceTickets.categoryId,
+              categoryName: serviceTickets.categoryName,
+              dueDate: serviceTickets.dueDate,
+              createdAt: serviceTickets.createdAt,
+              status: serviceTickets.status,
+              azCompletedAt: serviceTickets.azCompletedAt,
+            })
+            .from(serviceTickets)
+            .where(
+              and(
+                eq(serviceTickets.tenantId, tenantId),
+                eq(serviceTickets.pipelineId, SERVICE_PIPELINES.POLICY_SERVICE),
+                eq(serviceTickets.status, 'active'),
+                inArray(serviceTickets.stageId, targetStageIds)
+              )
+            )
+            .orderBy(desc(serviceTickets.createdAt))
+            .limit(100),
+          db
+            .select({
+              id: serviceTickets.id,
+              azTicketId: serviceTickets.azTicketId,
+              subject: serviceTickets.subject,
+              description: serviceTickets.description,
+              azHouseholdId: serviceTickets.azHouseholdId,
+              stageId: serviceTickets.stageId,
+              stageName: serviceTickets.stageName,
+              csrId: serviceTickets.csrId,
+              csrName: serviceTickets.csrName,
+              priorityId: serviceTickets.priorityId,
+              priorityName: serviceTickets.priorityName,
+              categoryId: serviceTickets.categoryId,
+              categoryName: serviceTickets.categoryName,
+              dueDate: serviceTickets.dueDate,
+              createdAt: serviceTickets.createdAt,
+              status: serviceTickets.status,
+              azCompletedAt: serviceTickets.azCompletedAt,
+            })
+            .from(serviceTickets)
+            .where(
+              and(
+                eq(serviceTickets.tenantId, tenantId),
+                eq(serviceTickets.pipelineId, SERVICE_PIPELINES.POLICY_SERVICE),
+                eq(serviceTickets.status, 'completed')
+              )
+            )
+            .orderBy(desc(serviceTickets.azCompletedAt))
+            .limit(50),
+        ]);
+
+        const mapDbTicket = (t: typeof activeTickets[0]): ServiceTicketItem => ({
           id: t.id,
           azTicketId: t.azTicketId,
           subject: t.subject,
           description: t.description,
           customerName: null,
           customerPhone: null,
-          stageId: t.stageId,
-          stageName: t.stageName,
+          stageId: t.status === 'completed' ? null : t.stageId,
+          stageName: t.status === 'completed' ? 'Completed' : t.stageName,
           csrId: t.csrId,
           csrName: t.csrName,
+          csrInitials: null, // Will be filled in by employee lookup
           priorityId: t.priorityId,
           priorityName: t.priorityName,
           categoryId: t.categoryId,
           categoryName: t.categoryName,
           dueDate: t.dueDate,
           createdAt: t.createdAt.toISOString(),
-          completedAt: null,
+          completedAt: t.azCompletedAt ? t.azCompletedAt.toISOString() : null,
           ageMinutes: Math.floor((now.getTime() - new Date(t.createdAt).getTime()) / 60000),
           azHouseholdId: t.azHouseholdId,
-          status: 'active',
-        }));
+          status: t.status === 'completed' ? 'completed' : 'active',
+        });
+
+        return [...activeTickets.map(mapDbTicket), ...completedTickets.map(mapDbTicket)];
       }
     }
 
@@ -487,12 +540,19 @@ export async function GET(request: NextRequest) {
     // Build employee lookup map for CSR name resolution
     const employeeMap = new Map(employees.map(e => [e.id, e]));
 
-    // Populate CSR names on tickets using employee lookup
+    // Populate CSR names and initials on tickets using employee lookup
     for (const ticket of ticketItems) {
-      if (ticket.csrId && !ticket.csrName) {
+      if (ticket.csrId) {
         const employee = employeeMap.get(ticket.csrId);
         if (employee) {
-          ticket.csrName = employee.name;
+          // Fill in name if missing
+          if (!ticket.csrName) {
+            ticket.csrName = employee.name;
+          }
+          // Fill in initials if missing (use employee's pre-computed initials)
+          if (!ticket.csrInitials) {
+            ticket.csrInitials = employee.initials;
+          }
         }
       }
     }
