@@ -13,6 +13,7 @@ import AssigneeSelectModal from '@/components/features/AssigneeSelectModal';
 import CustomerSearchModal from '@/components/features/CustomerSearchModal';
 import DeleteModal from '@/components/features/DeleteModal';
 import CreateServiceTicketModal, { type ServiceTicketFormData } from '@/components/features/CreateServiceTicketModal';
+import CompleteTicketModal, { type CompleteTicketFormData } from '@/components/features/CompleteTicketModal';
 import { hasFeatureAccess } from '@/lib/feature-permissions';
 
 // =============================================================================
@@ -23,6 +24,7 @@ interface PipelineData {
   stages: StageConfig[];
   items: {
     triage: TriageItem[];
+    completed: ServiceTicketItem[];
     [key: number]: ServiceTicketItem[];
   };
   employees: Employee[];
@@ -57,6 +59,7 @@ export default function PendingReviewPage() {
   const [findMatchItem, setFindMatchItem] = useState<TriageItem | null>(null);
   const [deleteModalItem, setDeleteModalItem] = useState<TriageItem | null>(null);
   const [createTicketItem, setCreateTicketItem] = useState<{ item: TriageItem; stageId: number } | null>(null);
+  const [completeTicketItem, setCompleteTicketItem] = useState<ServiceTicketItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   // User state
@@ -515,6 +518,46 @@ export default function PendingReviewPage() {
   };
 
   // ==========================================================================
+  // COMPLETE TICKET (DRAG TO COMPLETED)
+  // ==========================================================================
+
+  const handleCompleteTicket = (ticket: ServiceTicketItem) => {
+    // Open the complete ticket modal when a ticket is dragged to completed column
+    setCompleteTicketItem(ticket);
+  };
+
+  const handleCompleteTicketSubmit = async (formData: CompleteTicketFormData) => {
+    if (!completeTicketItem) return;
+
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/service-tickets/${completeTicketItem.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resolutionId: formData.resolutionId,
+          resolutionDesc: formData.resolutionDesc,
+          cancelRelatedTasks: formData.cancelRelatedTasks,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setCompleteTicketItem(null);
+        toast.success('Ticket completed successfully');
+        fetchPipelineData();
+      } else {
+        toast.error(data.error || 'Failed to complete ticket');
+      }
+    } catch (error) {
+      console.error('Complete ticket error:', error);
+      toast.error('Failed to complete ticket');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ==========================================================================
   // CUSTOMER MATCH
   // ==========================================================================
 
@@ -652,11 +695,13 @@ export default function PendingReviewPage() {
               111161: pipelineData.items[111161] || [],
               111162: pipelineData.items[111162] || [],
             }}
+            completedTickets={pipelineData.items.completed || []}
             employees={pipelineData.employees}
             onStageChange={handleStageChange}
             onTriageAction={handleTriageAction}
             onItemClick={handleItemClick}
             onCreateTicketFromTriage={handleCreateTicketFromTriage}
+            onCompleteTicket={handleCompleteTicket}
           />
         ) : null}
       </div>
@@ -697,6 +742,17 @@ export default function PendingReviewPage() {
           triageItem={createTicketItem.item}
           targetStageId={createTicketItem.stageId}
           employees={pipelineData.employees}
+          isLoading={actionLoading}
+        />
+      )}
+
+      {/* Complete Ticket Modal for drag-to-completed */}
+      {completeTicketItem && (
+        <CompleteTicketModal
+          isOpen={!!completeTicketItem}
+          onClose={() => setCompleteTicketItem(null)}
+          onSubmit={handleCompleteTicketSubmit}
+          ticket={completeTicketItem}
           isLoading={actionLoading}
         />
       )}

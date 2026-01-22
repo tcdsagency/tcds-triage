@@ -22,11 +22,13 @@ interface ServiceKanbanBoardProps {
   stages: StageConfig[];
   triageItems: TriageItem[];
   tickets: Record<number, ServiceTicketItem[]>;
+  completedTickets?: ServiceTicketItem[];
   employees: Employee[];
   onStageChange: (ticketId: string, newStageId: number, newStageName: string) => Promise<boolean>;
   onTriageAction: (item: TriageItem, action: 'note' | 'ticket' | 'skip' | 'delete') => void;
   onItemClick: (item: TriageItem | ServiceTicketItem, type: 'triage' | 'ticket') => void;
   onCreateTicketFromTriage?: (item: TriageItem, targetStageId: number) => void;
+  onCompleteTicket?: (ticket: ServiceTicketItem) => void;
 }
 
 type DragItemType = 'triage' | 'ticket';
@@ -36,14 +38,17 @@ export default function ServiceKanbanBoard({
   stages,
   triageItems,
   tickets,
+  completedTickets = [],
   employees,
   onStageChange,
   onTriageAction,
   onItemClick,
   onCreateTicketFromTriage,
+  onCompleteTicket,
 }: ServiceKanbanBoardProps) {
   const [localTriageItems, setLocalTriageItems] = useState<TriageItem[]>(triageItems);
   const [localTickets, setLocalTickets] = useState<Record<number, ServiceTicketItem[]>>(tickets);
+  const [localCompleted, setLocalCompleted] = useState<ServiceTicketItem[]>(completedTickets);
   const [activeItem, setActiveItem] = useState<ActiveItem | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
 
@@ -63,6 +68,9 @@ export default function ServiceKanbanBoard({
     }
     if (JSON.stringify(tickets) !== JSON.stringify(localTickets)) {
       setLocalTickets(tickets);
+    }
+    if (JSON.stringify(completedTickets) !== JSON.stringify(localCompleted)) {
+      setLocalCompleted(completedTickets);
     }
   }
 
@@ -93,7 +101,8 @@ export default function ServiceKanbanBoard({
     const match = droppableId.match(/^stage-(.+)$/);
     if (!match) return null;
     const id = match[1];
-    return id === 'triage' ? 'triage' : parseInt(id);
+    if (id === 'triage' || id === 'completed') return id;
+    return parseInt(id);
   };
 
   // Handle drag start
@@ -102,7 +111,13 @@ export default function ServiceKanbanBoard({
     const data = active.data.current;
 
     if (data?.type === 'ticket') {
-      setActiveItem({ type: 'ticket', item: data.ticket as ServiceTicketItem });
+      const ticket = data.ticket as ServiceTicketItem;
+      // Don't allow dragging completed tickets
+      if (ticket.status === 'completed') {
+        toast.error("Can't move completed tickets");
+        return;
+      }
+      setActiveItem({ type: 'ticket', item: ticket });
     } else if (data?.type === 'triage') {
       setActiveItem({ type: 'triage', item: data.item as TriageItem });
     }
@@ -154,6 +169,14 @@ export default function ServiceKanbanBoard({
       if (targetStageId === 'triage') {
         // Can't move a ticket back to triage
         toast.error("Can't move a ticket back to triage");
+        return;
+      }
+
+      // Handle drop to completed column - open complete modal
+      if (targetStageId === 'completed') {
+        if (onCompleteTicket) {
+          onCompleteTicket(currentActiveItem.item);
+        }
         return;
       }
 
@@ -217,6 +240,12 @@ export default function ServiceKanbanBoard({
         return;
       }
 
+      // Can't move triage directly to completed
+      if (targetStageId === 'completed') {
+        toast.error('Create a ticket first before marking as completed');
+        return;
+      }
+
       // Moving triage item to a service stage = create ticket
       if (onCreateTicketFromTriage) {
         const targetStage = stages.find((s) => s.id === targetStageId);
@@ -238,15 +267,27 @@ export default function ServiceKanbanBoard({
       <div className="flex gap-4 overflow-x-auto pb-4 h-full">
         {stages.map((stage) => {
           const isTriage = stage.id === 'triage';
+          const isCompleted = stage.id === 'completed';
+
+          // Get tickets for this column
+          let columnTickets: ServiceTicketItem[] | undefined;
+          if (isCompleted) {
+            columnTickets = localCompleted;
+          } else if (!isTriage) {
+            columnTickets = localTickets[stage.id as number] || [];
+          }
+
           return (
             <ServiceKanbanColumn
               key={stage.id}
               stage={stage}
               triageItems={isTriage ? localTriageItems : undefined}
-              tickets={!isTriage ? localTickets[stage.id as number] || [] : undefined}
+              tickets={columnTickets}
               onItemClick={onItemClick}
               onTriageAction={isTriage ? onTriageAction : undefined}
               isOver={overId === `stage-${stage.id}`}
+              isCollapsible={isCompleted}
+              defaultCollapsed={isCompleted}
             />
           );
         })}
