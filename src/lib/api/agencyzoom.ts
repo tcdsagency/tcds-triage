@@ -22,6 +22,86 @@ export interface AgencyZoomConfig {
   sidecarUrl?: string;
 }
 
+// ============================================================================
+// REFERENCE DATA TYPES
+// ============================================================================
+
+export interface AgencyZoomCarrier {
+  id: number;
+  name: string;
+  standardCarrierCode: string | null;
+}
+
+export interface AgencyZoomProductLine {
+  id: number;
+  name: string;
+  productCategoryId: number;
+}
+
+export interface AgencyZoomProductCategory {
+  id: number;
+  name: string;
+}
+
+export interface AgencyZoomLeadSource {
+  id: number;
+  name: string;
+  excludeAsSales: boolean;
+  categoryId: number | null;
+}
+
+export interface AgencyZoomCSR {
+  id: number;
+  name: string;
+}
+
+export interface AgencyZoomEmployee {
+  id: number;
+  firstname: string;
+  lastname: string;
+  email: string;
+  isProducer: boolean;
+  isActive: boolean;
+}
+
+// ============================================================================
+// QUOTE TYPES
+// ============================================================================
+
+export interface AgencyZoomQuote {
+  id: number;
+  carrierId: number;
+  carrierName?: string;
+  productLineId: number;
+  productName?: string;
+  premium: number;
+  items: number;
+  sold: boolean;
+  effectiveDate?: string;
+  propertyAddress?: string;
+  customFields?: Record<string, any>[];
+}
+
+export interface CreateQuoteRequest {
+  carrierId: number;
+  productLineId: number;
+  premium: number;
+  items?: number;
+  effectiveDate?: string;
+  propertyAddress?: string;
+}
+
+export interface AgencyZoomOpportunity {
+  id: number;
+  carrierId: number;
+  carrierName?: string;
+  productLineId: number;
+  productName?: string;
+  premium: number;
+  items?: number;
+  customFields?: Record<string, any>[];
+}
+
 export interface AgencyZoomCustomer {
   id: number;
   firstName: string;
@@ -763,6 +843,418 @@ export class AgencyZoomClient {
       return result;
     }
     return result.pipelines || result.data || [];
+  }
+
+  // --------------------------------------------------------------------------
+  // REFERENCE DATA (for Quote Extractor)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Get all carriers
+   * GET /v1/api/carriers
+   */
+  async getCarriers(): Promise<AgencyZoomCarrier[]> {
+    const result = await this.request<AgencyZoomCarrier[] | { carriers: AgencyZoomCarrier[] }>('/v1/api/carriers');
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return (result as any).carriers || [];
+  }
+
+  /**
+   * Get all product lines
+   * GET /v1/api/product-lines
+   */
+  async getProductLines(): Promise<AgencyZoomProductLine[]> {
+    const result = await this.request<AgencyZoomProductLine[] | { productLines: AgencyZoomProductLine[] }>('/v1/api/product-lines');
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return (result as any).productLines || [];
+  }
+
+  /**
+   * Get all product categories
+   * GET /v1/api/product-categories
+   */
+  async getProductCategories(): Promise<AgencyZoomProductCategory[]> {
+    const result = await this.request<AgencyZoomProductCategory[] | { productCategories: AgencyZoomProductCategory[] }>('/v1/api/product-categories');
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return (result as any).productCategories || [];
+  }
+
+  /**
+   * Get all lead sources
+   * GET /v1/api/lead-sources
+   */
+  async getLeadSources(): Promise<AgencyZoomLeadSource[]> {
+    const result = await this.request<AgencyZoomLeadSource[] | { leadSources: AgencyZoomLeadSource[] }>('/v1/api/lead-sources');
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return (result as any).leadSources || [];
+  }
+
+  /**
+   * Get all CSRs
+   * GET /v1/api/csrs
+   */
+  async getCSRs(): Promise<AgencyZoomCSR[]> {
+    const result = await this.request<{ csrs: AgencyZoomCSR[] }>('/v1/api/csrs');
+    return result.csrs || [];
+  }
+
+  /**
+   * Get all employees with full details
+   * GET /v1/api/employees
+   */
+  async getEmployees(): Promise<AgencyZoomEmployee[]> {
+    const result = await this.request<AgencyZoomEmployee[] | { employees: AgencyZoomEmployee[] }>('/v1/api/employees');
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return (result as any).employees || [];
+  }
+
+  // --------------------------------------------------------------------------
+  // QUOTE OPERATIONS (for Quote Extractor)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Get quotes for a lead
+   * GET /v1/api/leads/{leadId}/quotes
+   */
+  async getLeadQuotes(leadId: number): Promise<AgencyZoomQuote[]> {
+    const result = await this.request<AgencyZoomQuote[] | { quotes: AgencyZoomQuote[] }>(`/v1/api/leads/${leadId}/quotes`);
+    if (Array.isArray(result)) {
+      return result;
+    }
+    return (result as any).quotes || [];
+  }
+
+  /**
+   * Create a quote for a lead
+   * POST /v1/api/leads/{leadId}/quotes
+   */
+  async createLeadQuote(leadId: number, quote: CreateQuoteRequest): Promise<{ success: boolean; quote?: AgencyZoomQuote; error?: string }> {
+    try {
+      const result = await this.request<AgencyZoomQuote>(`/v1/api/leads/${leadId}/quotes`, {
+        method: 'POST',
+        body: JSON.stringify({
+          carrierId: quote.carrierId,
+          productLineId: quote.productLineId,
+          premium: quote.premium,
+          items: quote.items || 1,
+          effectiveDate: quote.effectiveDate,
+          propertyAddress: quote.propertyAddress,
+        }),
+      });
+      return { success: true, quote: result };
+    } catch (error) {
+      console.error('[AgencyZoom] Create quote error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create quote',
+      };
+    }
+  }
+
+  /**
+   * Update a quote for a lead
+   * PUT /v1/api/leads/{leadId}/quotes/{quoteId}
+   */
+  async updateLeadQuote(
+    leadId: number,
+    quoteId: number,
+    updates: Partial<CreateQuoteRequest>
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.request(`/v1/api/leads/${leadId}/quotes/${quoteId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('[AgencyZoom] Update quote error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update quote',
+      };
+    }
+  }
+
+  /**
+   * Delete a quote from a lead
+   * DELETE /v1/api/leads/{leadId}/quotes/{quoteId}
+   */
+  async deleteLeadQuote(leadId: number, quoteId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.request(`/v1/api/leads/${leadId}/quotes/${quoteId}`, {
+        method: 'DELETE',
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('[AgencyZoom] Delete quote error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete quote',
+      };
+    }
+  }
+
+  /**
+   * Create an opportunity for a lead
+   * POST /v1/api/leads/{leadId}/opportunities
+   */
+  async createLeadOpportunity(leadId: number, opportunity: {
+    carrierId: number;
+    productLineId: number;
+    premium: number;
+    items?: number;
+  }): Promise<{ success: boolean; opportunity?: AgencyZoomOpportunity; error?: string }> {
+    try {
+      const result = await this.request<AgencyZoomOpportunity>(`/v1/api/leads/${leadId}/opportunities`, {
+        method: 'POST',
+        body: JSON.stringify({
+          carrierId: opportunity.carrierId,
+          productLineId: opportunity.productLineId,
+          premium: opportunity.premium,
+          items: opportunity.items || 1,
+        }),
+      });
+      return { success: true, opportunity: result };
+    } catch (error) {
+      console.error('[AgencyZoom] Create opportunity error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create opportunity',
+      };
+    }
+  }
+
+  /**
+   * Update an opportunity for a lead
+   * PUT /v1/api/leads/{leadId}/opportunities/{opportunityId}
+   */
+  async updateLeadOpportunity(
+    leadId: number,
+    opportunityId: number,
+    updates: Partial<{
+      carrierId: number;
+      productLineId: number;
+      premium: number;
+      items: number;
+    }>
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.request(`/v1/api/leads/${leadId}/opportunities/${opportunityId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('[AgencyZoom] Update opportunity error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update opportunity',
+      };
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // LEAD STATUS OPERATIONS (for Quote Extractor)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Mark a lead as sold
+   * POST /v1/api/leads/{leadId}/sold
+   */
+  async markLeadSold(leadId: number, soldData: {
+    soldDate: string;
+    products: Array<{
+      productLineId: number;
+      carrierId: number;
+      premium: number;
+      effectiveDate?: string;
+    }>;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.request(`/v1/api/leads/${leadId}/sold`, {
+        method: 'POST',
+        body: JSON.stringify(soldData),
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('[AgencyZoom] Mark sold error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to mark lead as sold',
+      };
+    }
+  }
+
+  /**
+   * Set lead X-Date (follow-up date)
+   * PUT /v1/api/leads/{leadId}
+   */
+  async setLeadXDate(leadId: number, xDate: string, xDateType?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.request(`/v1/api/leads/${leadId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: 5, // X-Date status
+          xDate,
+          xDateType: xDateType || 'Customer Request Re-Quote',
+        }),
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('[AgencyZoom] Set X-Date error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to set X-Date',
+      };
+    }
+  }
+
+  /**
+   * Mark lead as lost
+   * PUT /v1/api/leads/{leadId}
+   */
+  async markLeadLost(leadId: number, lossReasonId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.request(`/v1/api/leads/${leadId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: 3, // Lost status
+          lossReasonId,
+        }),
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('[AgencyZoom] Mark lost error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to mark lead as lost',
+      };
+    }
+  }
+
+  /**
+   * Enhanced create lead with full address and source info
+   * POST /v1/api/leads/create
+   */
+  async createLeadFull(lead: {
+    firstName: string;
+    lastName: string;
+    email?: string;
+    phone?: string;
+    streetAddress?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    leadSourceId?: number;
+    assignedTo?: number;
+    csrId?: number;
+    pipelineId: number;
+    stageId: number;
+    birthday?: string;
+    leadType?: 'personal' | 'commercial';
+  }): Promise<{ success: boolean; leadId?: number; error?: string }> {
+    try {
+      const payload = {
+        firstname: lead.firstName,
+        lastname: lead.lastName,
+        email: lead.email || '',
+        phone: lead.phone || '',
+        streetAddress: lead.streetAddress,
+        city: lead.city,
+        state: lead.state,
+        zip: lead.zip,
+        country: 'USA',
+        leadSourceId: lead.leadSourceId,
+        assignedTo: lead.assignedTo,
+        csrId: lead.csrId,
+        pipelineId: lead.pipelineId,
+        stageId: lead.stageId,
+        birthday: lead.birthday,
+        leadType: lead.leadType || 'personal',
+      };
+
+      console.log('[AgencyZoom] Creating lead (full):', JSON.stringify(payload, null, 2));
+
+      const result = await this.request<any>('/v1/api/leads/create', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      console.log('[AgencyZoom] Create lead response:', JSON.stringify(result, null, 2));
+
+      const leadId = result.leadId || result.id || result.lead?.id;
+      if (leadId) {
+        return { success: true, leadId: Number(leadId) };
+      }
+
+      if (result.success === true || result.status === 'success') {
+        console.warn('[AgencyZoom] Lead created but no ID returned:', result);
+        return { success: true };
+      }
+
+      return {
+        success: false,
+        error: result.message || result.error || 'Unknown error creating lead',
+      };
+    } catch (error) {
+      console.error('[AgencyZoom] Create lead (full) error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create lead',
+      };
+    }
+  }
+
+  /**
+   * Batch create leads (up to 5)
+   * POST /v1/api/leads/batch
+   */
+  async createLeadsBatch(leads: Array<{
+    firstName: string;
+    lastName: string;
+    email?: string;
+    phone?: string;
+    leadSourceId?: number;
+    assignedTo?: number;
+  }>): Promise<{ success: boolean; leadIds?: number[]; error?: string }> {
+    try {
+      const payload = {
+        leads: leads.map(lead => ({
+          firstname: lead.firstName,
+          lastname: lead.lastName,
+          email: lead.email,
+          phone: lead.phone,
+          leadSourceId: lead.leadSourceId,
+          assignedTo: lead.assignedTo,
+        })),
+      };
+
+      const result = await this.request<any>('/v1/api/leads/batch', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      return {
+        success: true,
+        leadIds: result.leadIds || result.ids || [],
+      };
+    } catch (error) {
+      console.error('[AgencyZoom] Batch create leads error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to batch create leads',
+      };
+    }
   }
 
   // --------------------------------------------------------------------------

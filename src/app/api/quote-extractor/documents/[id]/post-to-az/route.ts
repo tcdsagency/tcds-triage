@@ -1,18 +1,23 @@
 // API Route: /api/quote-extractor/documents/[id]/post-to-az
-// Post extracted quote data to AgencyZoom as a lead
+// Post extracted quote data to AgencyZoom as a lead with actual quote records
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { quoteDocuments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import {
+  findCarrierByName,
+  findProductLineByQuoteType,
+  KNOWN_IDS,
+} from "@/lib/api/agencyzoom-reference";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
 // =============================================================================
-// POST - Create/Update AgencyZoom Lead
+// POST - Create/Update AgencyZoom Lead with Quote
 // =============================================================================
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
@@ -24,7 +29,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { pipelineId, stageId, agentId, existingLeadId, existingCustomerId } = body;
+    const {
+      pipelineId,
+      stageId,
+      agentId,
+      existingLeadId,
+      existingCustomerId,
+      // Optional overrides for carrier/product line
+      carrierId: overrideCarrierId,
+      productLineId: overrideProductLineId,
+      // Skip quote creation (just create lead + note)
+      skipQuote = false,
+    } = body;
 
     if (!pipelineId || !stageId) {
       return NextResponse.json(
@@ -59,26 +75,101 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Parse customer name
-    const nameParts = (document.customerName || "Unknown Customer").split(" ");
-    const firstName = nameParts[0] || "Unknown";
-    const lastName = nameParts.slice(1).join(" ") || "Customer";
-
     const azClient = getAgencyZoomClient();
     let leadId = existingLeadId;
     const customerId = existingCustomerId;
 
-    // Create lead if no existing lead provided
+    // ==========================================================================
+    // Step 1: Map carrier and product line
+    // ==========================================================================
+
+    let carrierId = overrideCarrierId ? parseInt(overrideCarrierId) : null;
+    let productLineId = overrideProductLineId ? parseInt(overrideProductLineId) : null;
+    let carrierName = document.carrierName;
+    let productLineName: string | null = document.quoteType;
+
+    // Auto-match carrier if not overridden
+    if (!carrierId && document.carrierName) {
+      const carrier = await findCarrierByName(document.carrierName);
+      if (carrier) {
+        carrierId = carrier.id;
+        carrierName = carrier.name;
+        console.log(`[Quote Extractor] Matched carrier: ${document.carrierName} -> ${carrier.name} (ID: ${carrier.id})`);
+      } else {
+        console.warn(`[Quote Extractor] Could not match carrier: ${document.carrierName}`);
+      }
+    }
+
+    // Auto-match product line if not overridden
+    if (!productLineId && document.quoteType) {
+      const productLine = await findProductLineByQuoteType(document.quoteType);
+      if (productLine) {
+        productLineId = productLine.id;
+        productLineName = productLine.name;
+        console.log(`[Quote Extractor] Matched product line: ${document.quoteType} -> ${productLine.name} (ID: ${productLine.id})`);
+      } else {
+        console.warn(`[Quote Extractor] Could not match product line: ${document.quoteType}`);
+      }
+    }
+
+    // ==========================================================================
+    // Step 2: Search for existing lead/customer if not provided
+    // ==========================================================================
+
     if (!leadId && !customerId) {
-      const leadResult = await azClient.createLead({
+      // Try to find existing lead by phone or email
+      if (document.customerPhone) {
+        try {
+          const existingLead = await azClient.findLeadByPhone(document.customerPhone);
+          if (existingLead) {
+            console.log(`[Quote Extractor] Found existing lead by phone: ${existingLead.id}`);
+            leadId = existingLead.id;
+          }
+        } catch (e) {
+          console.warn('[Quote Extractor] Lead search by phone failed:', e);
+        }
+      }
+
+      // Also check if they're an existing customer
+      if (!leadId && document.customerPhone) {
+        try {
+          const existingCustomer = await azClient.findCustomerByPhone(document.customerPhone);
+          if (existingCustomer) {
+            console.log(`[Quote Extractor] Found existing customer by phone: ${existingCustomer.id}`);
+            // For existing customers, we might want to add a note instead of creating a lead
+            // For now, we'll still create a lead but track the customer ID
+          }
+        } catch (e) {
+          console.warn('[Quote Extractor] Customer search by phone failed:', e);
+        }
+      }
+    }
+
+    // ==========================================================================
+    // Step 3: Create lead if needed
+    // ==========================================================================
+
+    if (!leadId && !customerId) {
+      // Parse customer name
+      const nameParts = (document.customerName || "Unknown Customer").split(" ");
+      const firstName = nameParts[0] || "Unknown";
+      const lastName = nameParts.slice(1).join(" ") || "Customer";
+
+      // Use enhanced createLeadFull for full address support
+      const leadResult = await azClient.createLeadFull({
         firstName,
         lastName,
         email: document.customerEmail || undefined,
         phone: document.customerPhone || undefined,
+        streetAddress: document.customerAddress || undefined,
+        city: document.customerCity || undefined,
+        state: document.customerState || undefined,
+        zip: document.customerZip || undefined,
+        leadSourceId: KNOWN_IDS.leadSources.QUOTE_EXTRACTOR,
+        assignedTo: agentId ? parseInt(agentId) : undefined,
         pipelineId: parseInt(pipelineId),
         stageId: parseInt(stageId),
-        source: "Quote Extractor",
-        agentId: agentId ? parseInt(agentId) : undefined,
+        leadType: document.quoteType?.toLowerCase().includes('commercial') ? 'commercial' : 'personal',
       });
 
       if (!leadResult.success || !leadResult.leadId) {
@@ -94,14 +185,135 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
 
       leadId = leadResult.leadId;
+      console.log(`[Quote Extractor] Created new lead: ${leadId}`);
     }
 
-    // Build note content
+    // ==========================================================================
+    // Step 4: Calculate items count from vehicles/drivers/properties
+    // ==========================================================================
+
+    // Determine items count based on quote type and extracted data
+    let itemsCount = 1;
+    const quoteTypeLower = (document.quoteType || '').toLowerCase();
+    const isAutoQuote = quoteTypeLower.includes('auto') || quoteTypeLower === 'motorcycle';
+    const isPropertyQuote = quoteTypeLower.includes('home') || quoteTypeLower.includes('property') ||
+                            quoteTypeLower.includes('condo') || quoteTypeLower.includes('renters') ||
+                            quoteTypeLower.includes('dwelling');
+
+    if (isAutoQuote) {
+      // For auto quotes, items = number of vehicles
+      const vehicles = document.vehicleInfo as any[] | null;
+      if (vehicles && vehicles.length > 0) {
+        itemsCount = vehicles.length;
+        console.log(`[Quote Extractor] Auto quote with ${itemsCount} vehicle(s)`);
+      }
+    } else if (isPropertyQuote) {
+      // For property quotes, items = 1 (single property)
+      itemsCount = 1;
+    }
+
+    // Build vehicle/driver summary for custom fields
+    const vehicleSummary = (document.vehicleInfo as any[] || [])
+      .map((v, i) => `Vehicle ${i + 1}: ${[v.year, v.make, v.model].filter(Boolean).join(' ')}${v.vin ? ` (VIN: ${v.vin})` : ''}`)
+      .join('; ');
+
+    const driverSummary = (document.driverInfo as any[] || [])
+      .map((d, i) => `Driver ${i + 1}: ${d.name || 'Unknown'}${d.dob ? ` (DOB: ${d.dob})` : ''}`)
+      .join('; ');
+
+    // ==========================================================================
+    // Step 5: Create quote record if we have carrier and product line
+    // ==========================================================================
+
+    let quoteId: number | undefined;
+    let quoteCreated = false;
+    let opportunityId: number | undefined;
+    let opportunityCreated = false;
+
+    if (!skipQuote && leadId && carrierId && productLineId && document.quotedPremium) {
+      // Check for duplicate quotes first
+      try {
+        const existingQuotes = await azClient.getLeadQuotes(leadId);
+        const isDuplicate = existingQuotes.some(q =>
+          q.carrierId === carrierId &&
+          q.productLineId === productLineId
+        );
+
+        if (isDuplicate) {
+          console.log(`[Quote Extractor] Skipping duplicate quote for carrier ${carrierId}, product ${productLineId}`);
+        } else {
+          // Build property address for property quotes
+          let propertyAddress: string | undefined;
+          if (isPropertyQuote) {
+            const propInfo = document.propertyInfo as Record<string, any> | null;
+            propertyAddress = propInfo?.address ||
+              `${document.customerAddress || ''}, ${document.customerCity || ''}, ${document.customerState || ''} ${document.customerZip || ''}`.trim();
+          }
+
+          // Create the quote
+          const quoteResult = await azClient.createLeadQuote(leadId, {
+            carrierId,
+            productLineId,
+            premium: Math.round(document.quotedPremium), // Ensure integer
+            items: itemsCount,
+            effectiveDate: document.effectiveDate
+              ? new Date(document.effectiveDate).toISOString().split('T')[0]
+              : undefined,
+            propertyAddress: propertyAddress || undefined,
+          });
+
+          if (quoteResult.success && quoteResult.quote) {
+            quoteId = quoteResult.quote.id;
+            quoteCreated = true;
+            console.log(`[Quote Extractor] Created quote: ${quoteId} with ${itemsCount} item(s)`);
+          } else {
+            console.warn('[Quote Extractor] Quote creation failed:', quoteResult.error);
+            // Continue anyway - we can still add the note
+          }
+        }
+      } catch (e) {
+        console.warn('[Quote Extractor] Quote operations failed:', e);
+        // Continue anyway - we can still add the note
+      }
+
+      // Also create an opportunity if we have vehicle/driver data to track
+      // Opportunities can store additional metadata through notes
+      if (body.createOpportunity && !opportunityCreated) {
+        try {
+          const oppResult = await azClient.createLeadOpportunity(leadId, {
+            carrierId,
+            productLineId,
+            premium: Math.round(document.quotedPremium),
+            items: itemsCount,
+          });
+
+          if (oppResult.success && oppResult.opportunity) {
+            opportunityId = oppResult.opportunity.id;
+            opportunityCreated = true;
+            console.log(`[Quote Extractor] Created opportunity: ${opportunityId}`);
+          }
+        } catch (e) {
+          console.warn('[Quote Extractor] Opportunity creation failed:', e);
+        }
+      }
+    } else if (!skipQuote) {
+      // Log why we couldn't create a quote
+      const reasons = [];
+      if (!carrierId) reasons.push('no carrier ID');
+      if (!productLineId) reasons.push('no product line ID');
+      if (!document.quotedPremium) reasons.push('no premium');
+      console.log(`[Quote Extractor] Skipping quote creation: ${reasons.join(', ')}`);
+    }
+
+    // ==========================================================================
+    // Step 6: Build and post note
+    // ==========================================================================
+
     const noteLines = [
       "📄 QUOTE EXTRACTED FROM PDF",
       "",
-      `Carrier: ${document.carrierName || "Unknown"}`,
-      `Quote Type: ${document.quoteType || "Unknown"}`,
+      `Carrier: ${carrierName || "Unknown"}${carrierId ? ` (ID: ${carrierId})` : ''}`,
+      `Product: ${productLineName || "Unknown"}${productLineId ? ` (ID: ${productLineId})` : ''}`,
       `Premium: ${document.quotedPremium ? `$${document.quotedPremium.toLocaleString()}` : "N/A"}`,
       `Term: ${document.termMonths ? `${document.termMonths} months` : "N/A"}`,
     ];
@@ -112,6 +324,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (document.effectiveDate) {
       noteLines.push(`Effective: ${new Date(document.effectiveDate).toLocaleDateString()}`);
+    }
+
+    // Add items count (vehicles/properties)
+    if (itemsCount > 1 || isAutoQuote) {
+      noteLines.push(`Items: ${itemsCount} ${isAutoQuote ? 'vehicle(s)' : 'item(s)'}`);
+    }
+
+    if (quoteCreated && quoteId) {
+      noteLines.push("");
+      noteLines.push(`✅ Quote record created in AgencyZoom (Quote ID: ${quoteId}, ${itemsCount} item(s))`);
+    } else if (!skipQuote && carrierId && productLineId) {
+      noteLines.push("");
+      noteLines.push("⚠️ Quote record may already exist or could not be created");
+    }
+
+    if (opportunityCreated && opportunityId) {
+      noteLines.push(`✅ Opportunity created (ID: ${opportunityId})`);
     }
 
     noteLines.push("");
@@ -191,7 +420,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       noteResult = await azClient.addNote(customerId, noteContent);
     }
 
-    // Update document with AZ info
+    // ==========================================================================
+    // Step 7: Update document record
+    // ==========================================================================
+
     await db
       .update(quoteDocuments)
       .set({
@@ -206,11 +438,31 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
       .where(eq(quoteDocuments.id, id));
 
+    // Build detailed message
+    let message = "Lead created in AgencyZoom";
+    if (quoteCreated) {
+      message = `Quote created with ${itemsCount} item(s)`;
+      if (opportunityCreated) {
+        message += " and opportunity";
+      }
+    } else if (!skipQuote && carrierId && productLineId) {
+      message = "Lead created (quote may already exist)";
+    }
+
     return NextResponse.json({
       success: true,
-      message: "Quote posted to AgencyZoom",
+      message,
       leadId,
       customerId,
+      quoteId,
+      quoteCreated,
+      opportunityId,
+      opportunityCreated,
+      carrierId,
+      productLineId,
+      itemsCount,
+      vehicleSummary: vehicleSummary || undefined,
+      driverSummary: driverSummary || undefined,
       noteId: noteResult?.id,
     });
   } catch (error: any) {
