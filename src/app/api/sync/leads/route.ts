@@ -95,6 +95,12 @@ export async function POST(request: NextRequest) {
         const azProducerId = raw.producerId || raw.producer_id || raw.assignedTo || null;
         const producerId = azProducerId ? agentMap.get(azProducerId.toString()) || null : null;
 
+        // Extract pipeline fields from AgencyZoom response
+        const pipelineId = raw.pipelineId || raw.pipeline_id || null;
+        const pipelineStageId = raw.stageId || raw.stage_id || raw.pipelineStageId || null;
+        const quotedPremium = raw.premium || raw.quotedPremium || raw.quoted_premium || null;
+        const stageEnteredAt = raw.stageEnteredAt || raw.stage_entered_at || raw.stageDate || null;
+
         const data = {
           tenantId,
           agencyzoomId: azId,
@@ -105,6 +111,10 @@ export async function POST(request: NextRequest) {
           phoneAlt: normalizePhone(raw.phonecell || raw.secondaryphone),
           leadSource: raw.source || lead.source || null,
           pipelineStage: raw.pipelinestage || raw.stageName || null,
+          pipelineId: pipelineId ? parseInt(pipelineId) : null,
+          pipelineStageId: pipelineStageId ? parseInt(pipelineStageId) : null,
+          stageEnteredAt: stageEnteredAt ? new Date(stageEnteredAt) : null,
+          quotedPremium: quotedPremium ? parseFloat(quotedPremium) : null,
           isLead: true,
           leadStatus: raw.status || lead.status || 'new',
           producerId, // Set producer if assigned in AgencyZoom
@@ -136,6 +146,10 @@ export async function POST(request: NextRequest) {
                 phoneAlt: data.phoneAlt,
                 leadSource: data.leadSource,
                 pipelineStage: data.pipelineStage,
+                pipelineId: data.pipelineId,
+                pipelineStageId: data.pipelineStageId,
+                stageEnteredAt: data.stageEnteredAt,
+                quotedPremium: data.quotedPremium,
                 leadStatus: data.leadStatus,
                 producerId: data.producerId,
                 lastSyncedFromAz: data.lastSyncedFromAz,
