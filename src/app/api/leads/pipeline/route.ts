@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { customers, users } from "@/db/schema";
-import { eq, and, isNull, sql, desc } from "drizzle-orm";
+import { eq, and, isNull, sql, desc, inArray } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 
 // Default pipeline configuration (New Leads Pipeline)
@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
       const producers = await db
         .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
         .from(users)
-        .where(sql`${users.id} = ANY(${producerIds})`);
+        .where(inArray(users.id, producerIds));
 
       producers.forEach(p => {
         producerMap.set(p.id, `${p.firstName} ${p.lastName}`);
