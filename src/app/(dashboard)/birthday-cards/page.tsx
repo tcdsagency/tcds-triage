@@ -15,6 +15,8 @@ import {
   Send,
   MailCheck,
   AlertCircle,
+  List,
+  CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +40,7 @@ interface BirthdayCustomer {
   birthDay?: number;
   birthMonth?: number;
   age?: number;
+  daysUntilBirthday?: number | null;
   address: {
     street: string;
     city: string;
@@ -49,6 +52,8 @@ interface BirthdayCustomer {
   cardPrepared?: boolean;
   cardMailed?: boolean;
 }
+
+type ViewMode = "month" | "all";
 
 // =============================================================================
 // MONTH NAMES
@@ -65,6 +70,7 @@ const MONTHS = [
 
 export default function BirthdayCardsPage() {
   const currentDate = new Date();
+  const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear());
   const [customers, setCustomers] = useState<BirthdayCustomer[]>([]);
@@ -89,9 +95,11 @@ export default function BirthdayCardsPage() {
     setError(null);
 
     try {
-      const res = await fetch(
-        `/api/customers/birthdays?month=${selectedMonth}&year=${selectedYear}`
-      );
+      const url = viewMode === "all"
+        ? `/api/customers/birthdays?all=true&year=${selectedYear}`
+        : `/api/customers/birthdays?month=${selectedMonth}&year=${selectedYear}`;
+
+      const res = await fetch(url);
       const data = await res.json();
 
       if (data.success) {
@@ -105,7 +113,7 @@ export default function BirthdayCardsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth, selectedYear]);
+  }, [viewMode, selectedMonth, selectedYear]);
 
   useEffect(() => {
     fetchCustomers();
@@ -438,6 +446,32 @@ export default function BirthdayCardsPage() {
   }
 
   // ==========================================================================
+  // HELPERS FOR GROUPING
+  // ==========================================================================
+
+  // Group customers by month for the "all" view
+  const customersByMonth = viewMode === "all"
+    ? customers.reduce((acc, customer) => {
+        const month = customer.birthMonth || 0;
+        if (!acc[month]) acc[month] = [];
+        acc[month].push(customer);
+        return acc;
+      }, {} as Record<number, BirthdayCustomer[]>)
+    : {};
+
+  // Get ordered list of months starting from current month
+  const orderedMonths = viewMode === "all"
+    ? Array.from(new Set(customers.map(c => c.birthMonth || 0)))
+        .filter(m => m > 0)
+        .sort((a, b) => {
+          const currentMonth = currentDate.getMonth() + 1;
+          const aOffset = a >= currentMonth ? a - currentMonth : a + 12 - currentMonth;
+          const bOffset = b >= currentMonth ? b - currentMonth : b + 12 - currentMonth;
+          return aOffset - bOffset;
+        })
+    : [];
+
+  // ==========================================================================
   // RENDER - LIST VIEW
   // ==========================================================================
 
@@ -455,65 +489,95 @@ export default function BirthdayCardsPage() {
               Prepare and track handwritten birthday cards
             </p>
           </div>
-        </div>
 
-        {/* Month/Year Selector */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex-1 min-w-[200px]">
-              <label className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2 block">
-                Select Month
-              </label>
-              <div className="flex items-center gap-2">
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  {MONTHS.map((month, index) => (
-                    <option key={month} value={index + 1}>
-                      {month}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                  className="w-24 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  {[currentDate.getFullYear(), currentDate.getFullYear() + 1].map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={startCardFlow}
-                disabled={loading || customers.length === 0}
-                className="bg-pink-600 hover:bg-pink-700"
-              >
-                <Mail className="w-4 h-4 mr-2" />
-                Start Card Flow
-              </Button>
-
-              {preparedIds.size > 0 && preparedIds.size > mailedIds.size && (
-                <Button
-                  variant="outline"
-                  onClick={handleBulkMarkMailed}
-                  disabled={actionLoading}
-                  className="border-emerald-300 text-emerald-600 hover:bg-emerald-50"
-                >
-                  <MailCheck className="w-4 h-4 mr-2" />
-                  Mark All Mailed ({preparedIds.size - mailedIds.size})
-                </Button>
+          {/* View Mode Toggle */}
+          <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode("all")}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                viewMode === "all"
+                  ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                  : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
               )}
-            </div>
+            >
+              <List className="w-4 h-4" />
+              All Birthdays
+            </button>
+            <button
+              onClick={() => setViewMode("month")}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                viewMode === "month"
+                  ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                  : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              )}
+            >
+              <CalendarDays className="w-4 h-4" />
+              By Month
+            </button>
           </div>
         </div>
+
+        {/* Month/Year Selector - Only show in month view */}
+        {viewMode === "month" && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex-1 min-w-[200px]">
+                <label className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2 block">
+                  Select Month
+                </label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    {MONTHS.map((month, index) => (
+                      <option key={month} value={index + 1}>
+                        {month}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                    className="w-24 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    {[currentDate.getFullYear(), currentDate.getFullYear() + 1].map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={startCardFlow}
+                  disabled={loading || customers.length === 0}
+                  className="bg-pink-600 hover:bg-pink-700"
+                >
+                  <Mail className="w-4 h-4 mr-2" />
+                  Start Card Flow
+                </Button>
+
+                {preparedIds.size > 0 && preparedIds.size > mailedIds.size && (
+                  <Button
+                    variant="outline"
+                    onClick={handleBulkMarkMailed}
+                    disabled={actionLoading}
+                    className="border-emerald-300 text-emerald-600 hover:bg-emerald-50"
+                  >
+                    <MailCheck className="w-4 h-4 mr-2" />
+                    Mark All Mailed ({preparedIds.size - mailedIds.size})
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Stats Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -589,16 +653,141 @@ export default function BirthdayCardsPage() {
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
             <Cake className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">
-              No birthdays in {MONTHS[selectedMonth - 1]}
+              {viewMode === "all" ? "No birthdays found" : `No birthdays in ${MONTHS[selectedMonth - 1]}`}
             </h3>
             <p className="text-gray-500 dark:text-gray-400">
-              Try selecting a different month
+              {viewMode === "all" ? "No customers with birthdays and addresses" : "Try selecting a different month"}
             </p>
           </div>
+        ) : viewMode === "all" ? (
+          /* ALL BIRTHDAYS VIEW - Grouped by month */
+          <div className="space-y-6">
+            {orderedMonths.map((monthNum) => {
+              const monthCustomers = customersByMonth[monthNum] || [];
+              const isCurrentMonth = monthNum === currentDate.getMonth() + 1;
+
+              return (
+                <div key={monthNum} className="space-y-2">
+                  {/* Month Header */}
+                  <div className="flex items-center gap-3 px-1">
+                    <h2 className={cn(
+                      "text-lg font-semibold",
+                      isCurrentMonth ? "text-pink-600 dark:text-pink-400" : "text-gray-700 dark:text-gray-300"
+                    )}>
+                      {MONTHS[monthNum - 1]}
+                    </h2>
+                    <Badge variant="outline" className={cn(
+                      "text-xs",
+                      isCurrentMonth && "border-pink-300 text-pink-600 dark:border-pink-700 dark:text-pink-400"
+                    )}>
+                      {monthCustomers.length} {monthCustomers.length === 1 ? "birthday" : "birthdays"}
+                    </Badge>
+                    {isCurrentMonth && (
+                      <Badge className="bg-pink-500 text-white text-xs">
+                        This Month
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Month's Customers */}
+                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {monthCustomers.map((customer) => {
+                        const isPrepared = preparedIds.has(customer.id);
+                        const isMailed = mailedIds.has(customer.id);
+                        const daysUntil = customer.daysUntilBirthday;
+
+                        return (
+                          <div
+                            key={customer.id}
+                            className={cn(
+                              "p-4 flex items-center gap-4 transition-colors",
+                              isMailed && "bg-emerald-50 dark:bg-emerald-900/10",
+                              isPrepared && !isMailed && "bg-blue-50 dark:bg-blue-900/10"
+                            )}
+                          >
+                            {/* Day Badge with countdown */}
+                            <div className="w-16 h-16 rounded-xl bg-pink-100 dark:bg-pink-900/30 flex flex-col items-center justify-center shrink-0">
+                              <span className="text-xs text-pink-600 dark:text-pink-400 font-medium">
+                                {MONTHS[monthNum - 1].slice(0, 3)}
+                              </span>
+                              <span className="text-xl font-bold text-pink-700 dark:text-pink-300">
+                                {customer.birthDay}
+                              </span>
+                              {daysUntil !== null && daysUntil !== undefined && (
+                                <span className={cn(
+                                  "text-[10px] font-medium",
+                                  daysUntil === 0 ? "text-pink-600 dark:text-pink-400" :
+                                  daysUntil <= 7 ? "text-amber-600 dark:text-amber-400" :
+                                  "text-gray-500 dark:text-gray-400"
+                                )}>
+                                  {daysUntil === 0 ? "Today!" : daysUntil === 1 ? "Tomorrow" : `${daysUntil}d`}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Customer Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-semibold text-gray-900 dark:text-white">
+                                  {customer.fullName}
+                                </h3>
+                                {customer.age && (
+                                  <Badge variant="outline" className="text-xs">
+                                    Turning {customer.age}
+                                  </Badge>
+                                )}
+                                {isPrepared && (
+                                  <Badge className="bg-blue-500 text-white text-xs">
+                                    <Send className="w-3 h-3 mr-1" />
+                                    Prepared
+                                  </Badge>
+                                )}
+                                {isMailed && (
+                                  <Badge className="bg-emerald-500 text-white text-xs">
+                                    <MailCheck className="w-3 h-3 mr-1" />
+                                    Mailed
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-1">
+                                <MapPin className="w-4 h-4 shrink-0" />
+                                <span className="truncate">
+                                  {customer.address.street}, {customer.address.city},{" "}
+                                  {customer.address.state} {customer.address.zip}
+                                </span>
+                              </p>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex items-center gap-2 shrink-0">
+                              {isPrepared && !isMailed && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleMarkAsMailed(customer)}
+                                  disabled={actionLoading}
+                                  className="text-emerald-600 border-emerald-300 hover:bg-emerald-50"
+                                >
+                                  <MailCheck className="w-4 h-4 mr-1" />
+                                  Mark Mailed
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
+          /* MONTH VIEW - Single month list */
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {customers.map((customer, index) => {
+              {customers.map((customer) => {
                 const isPrepared = preparedIds.has(customer.id);
                 const isMailed = mailedIds.has(customer.id);
 
