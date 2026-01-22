@@ -9,7 +9,7 @@ import type { TriageItem } from '@/app/api/service-pipeline/route';
 interface TriageCardProps {
   item: TriageItem;
   onClick?: () => void;
-  onQuickAction?: (action: 'note' | 'ticket' | 'skip' | 'delete') => void;
+  onQuickAction?: (action: 'note' | 'ticket' | 'skip' | 'delete' | 'match') => void;
   isDragging?: boolean;
 }
 
@@ -200,18 +200,30 @@ export default function TriageCard({
                 </button>
               </>
             )}
-            {/* Show SR button for NCM items too - they can still create tickets */}
+            {/* Show Find Match and SR buttons for NCM items */}
             {isNCM && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onQuickAction('ticket');
-                }}
-                className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
-                title="Create SR (NCM)"
-              >
-                SR
-              </button>
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onQuickAction('match');
+                  }}
+                  className="px-2 py-1 text-xs rounded bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50"
+                  title="Find Customer Match"
+                >
+                  Match
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onQuickAction('ticket');
+                  }}
+                  className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
+                  title="Create SR (NCM)"
+                >
+                  SR
+                </button>
+              </>
             )}
             {/* Skip button for all items */}
             <button

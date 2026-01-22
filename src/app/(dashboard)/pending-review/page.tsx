@@ -243,7 +243,7 @@ export default function PendingReviewPage() {
 
   const handleTriageAction = async (
     item: TriageItem,
-    action: 'note' | 'ticket' | 'skip' | 'delete'
+    action: 'note' | 'ticket' | 'skip' | 'delete' | 'match'
   ) => {
     if (action === 'ticket') {
       setAssignSRItem(item);
@@ -252,6 +252,11 @@ export default function PendingReviewPage() {
 
     if (action === 'delete') {
       setDeleteModalItem(item);
+      return;
+    }
+
+    if (action === 'match') {
+      setFindMatchItem(item);
       return;
     }
 

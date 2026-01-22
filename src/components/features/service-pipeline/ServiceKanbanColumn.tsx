@@ -20,7 +20,7 @@ interface ServiceKanbanColumnProps {
   triageItems?: TriageItem[];
   tickets?: ServiceTicketItem[];
   onItemClick?: (item: TriageItem | ServiceTicketItem, type: 'triage' | 'ticket') => void;
-  onTriageAction?: (item: TriageItem, action: 'note' | 'ticket' | 'skip' | 'delete') => void;
+  onTriageAction?: (item: TriageItem, action: 'note' | 'ticket' | 'skip' | 'delete' | 'match') => void;
   isOver?: boolean;
   isCollapsible?: boolean;
   defaultCollapsed?: boolean;
