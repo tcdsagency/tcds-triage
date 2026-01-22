@@ -162,21 +162,129 @@ export async function GET(request: NextRequest) {
     if (fetchFromAz) {
       try {
         const azClient = getAgencyZoomClient();
-        const azLeads = await azClient.getLeads({
-          pipelineId: parseInt(pipelineId),
-          limit: 200,
-        });
+
+        // Fetch multiple pages of leads (AZ API limit is 100 per page)
+        const allAzLeads: any[] = [];
+        let page = 1;
+        let hasMore = true;
+        while (hasMore && page <= 5) { // Max 5 pages = 500 leads
+          const azLeads = await azClient.getLeads({
+            pipelineId: parseInt(pipelineId),
+            page,
+            limit: 100,
+          });
+          allAzLeads.push(...azLeads.data);
+          hasMore = azLeads.data.length === 100;
+          page++;
+        }
 
         // Merge AZ leads with local data (AZ data takes precedence for stage info)
-        const azLeadMap = new Map(azLeads.data.map((l: any) => [l.id.toString(), l]));
+        const azLeadMap = new Map(allAzLeads.map((l: any) => [l.id.toString(), l]));
 
+        // Build dynamic stages from actual AZ data
+        // The list endpoint often doesn't include workflowStageName, so we need to handle that
+        const stageIds = new Set<number>();
+        allAzLeads.forEach((l: any) => {
+          if (l.workflowStageId) stageIds.add(l.workflowStageId);
+        });
+
+        // Get stage names by fetching a sample lead with each unique stage ID
+        // OR use known stage name mappings
+        const stageNameMap: Record<number, string> = {};
+
+        // Try to get names from leads that have them
+        allAzLeads.forEach((l: any) => {
+          if (l.workflowStageId && l.workflowStageName && !stageNameMap[l.workflowStageId]) {
+            stageNameMap[l.workflowStageId] = l.workflowStageName;
+          }
+        });
+
+        // For stages without names, try fetching a sample lead's details
+        const missingNameStages = Array.from(stageIds).filter(id => !stageNameMap[id]);
+        if (missingNameStages.length > 0) {
+          // Fetch sample leads to get stage names (one per unique stage)
+          const samplePromises = missingNameStages.map(async (stageId) => {
+            const leadWithStage = allAzLeads.find((l: any) => l.workflowStageId === stageId);
+            if (leadWithStage) {
+              try {
+                const detail = await azClient.getLead(leadWithStage.id) as any;
+                if (detail.workflowStageName) {
+                  stageNameMap[stageId] = detail.workflowStageName;
+                }
+              } catch (e) {
+                // Ignore errors fetching individual leads
+              }
+            }
+          });
+          await Promise.all(samplePromises);
+        }
+
+        // Build a mapping from stageId to stageName for lead matching
+        // This will be used to match leads to consolidated stages by name
+        const stageIdToName = new Map<number, string>();
+        Array.from(stageIds).forEach(stageId => {
+          const name = stageNameMap[stageId] || "";
+          stageIdToName.set(stageId, name);
+        });
+
+        // Standard stage names for consolidation (Kanban columns)
+        const standardStages = [
+          { id: 1, name: "New Lead/Data Entry", aliases: ["new lead", "new", "data entry", "1st cycle"] },
+          { id: 2, name: "Contacted/Quoted", aliases: ["contacted", "quoted", "quoting", "working"] },
+          { id: 3, name: "Sent to Customer", aliases: ["sent to customer", "customer review"] },
+          { id: 4, name: "Sent to Lender", aliases: ["sent to lender", "lender review"] },
+          { id: 5, name: "Sold", aliases: ["sold", "won", "closed", "bound"] },
+        ];
+
+        // Build consolidated stages
+        const consolidatedStages: Array<{ id: number; name: string; order: number; stageIds: number[] }> =
+          standardStages.map((s, idx) => ({
+            id: s.id,
+            name: s.name,
+            order: idx,
+            stageIds: [] as number[],
+          }));
+
+        // Map each AZ stage ID to a consolidated stage based on name matching
+        Array.from(stageIds).forEach(stageId => {
+          const stageName = stageIdToName.get(stageId)?.toLowerCase() || "";
+          const matched = consolidatedStages.find(cs =>
+            cs.name.toLowerCase() === stageName ||
+            cs.aliases?.some((alias: string) => stageName.includes(alias))
+          );
+          if (matched) {
+            (matched as any).stageIds.push(stageId);
+          }
+        });
+
+        // Use consolidated stages (without the stageIds helper property)
+        pipeline = {
+          ...pipeline,
+          stages: consolidatedStages.map(({ id, name, order }) => ({ id, name, order })),
+        };
+
+        // Create a lookup from AZ stageId -> consolidated stage ID
+        const azToConsolidatedStage = new Map<number, number>();
+        consolidatedStages.forEach(cs => {
+          (cs as any).stageIds.forEach((azId: number) => {
+            azToConsolidatedStage.set(azId, cs.id);
+          });
+        });
+
+        // Update leads with AZ data, mapping to consolidated stage IDs
         leads = leads.map(lead => {
           if (lead.agencyzoomId && azLeadMap.has(lead.agencyzoomId)) {
-            const azLead = azLeadMap.get(lead.agencyzoomId)!;
+            const azLead = azLeadMap.get(lead.agencyzoomId)! as any;
+            const azStageId = azLead.workflowStageId;
+            const consolidatedId = azToConsolidatedStage.get(azStageId);
+            const stageName = stageIdToName.get(azStageId) || azLead.workflowStageName;
+
             return {
               ...lead,
-              pipelineStageId: azLead.stageId || lead.pipelineStageId,
-              pipelineStage: azLead.stageName || lead.pipelineStage,
+              pipelineStageId: consolidatedId || azStageId || lead.pipelineStageId,
+              pipelineStage: stageName || lead.pipelineStage,
+              // Also sync quoted premium from AZ
+              quotedPremium: azLead.quoted || azLead.totalQuotePremium || lead.quotedPremium,
             };
           }
           return lead;
