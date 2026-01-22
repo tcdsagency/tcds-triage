@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { leadQueueEntries, leadClaimActivity, users } from '@/db/schema';
+import { leadQueueEntries, leadClaimActivity, users, customers } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { getAgencyZoomClient } from '@/lib/api/agencyzoom';
 
 // GET /api/leads/[id] - Get single lead
 export async function GET(
@@ -89,7 +90,7 @@ export async function GET(
   }
 }
 
-// PATCH /api/leads/[id] - Update lead (assign, convert, etc.)
+// PATCH /api/leads/[id] - Update lead (assign, convert, etc.) or customer details for pipeline
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -108,7 +109,26 @@ export async function PATCH(
       assignToUserId,
       userId, // User performing the action
       agencyzoomLeadId,
+      // Customer/Pipeline lead fields (when no action specified)
+      firstName,
+      lastName,
+      email,
+      phone,
+      quotedPremium,
+      producerId,
     } = body;
+
+    // If no action specified, this is a customer detail update (for pipeline leads)
+    if (!action) {
+      return handleCustomerUpdate(id, tenantId, {
+        firstName,
+        lastName,
+        email,
+        phone,
+        quotedPremium,
+        producerId,
+      });
+    }
 
     // Get current lead
     const [lead] = await db
@@ -199,4 +219,115 @@ export async function PATCH(
       { status: 500 }
     );
   }
+}
+
+// =============================================================================
+// Helper: Update customer details (for pipeline leads)
+// =============================================================================
+
+interface CustomerUpdateData {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  quotedPremium?: number | null;
+  producerId?: string | null;
+}
+
+async function handleCustomerUpdate(
+  id: string,
+  tenantId: string,
+  data: CustomerUpdateData
+) {
+  const { firstName, lastName, email, phone, quotedPremium, producerId } = data;
+
+  // Get the current customer/lead
+  const [customer] = await db
+    .select({
+      id: customers.id,
+      agencyzoomId: customers.agencyzoomId,
+      firstName: customers.firstName,
+      lastName: customers.lastName,
+      email: customers.email,
+      phone: customers.phone,
+      quotedPremium: customers.quotedPremium,
+      producerId: customers.producerId,
+    })
+    .from(customers)
+    .where(and(eq(customers.tenantId, tenantId), eq(customers.id, id)))
+    .limit(1);
+
+  if (!customer) {
+    return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+  }
+
+  // Build update object with only provided fields
+  const updateData: Record<string, any> = {
+    updatedAt: new Date(),
+  };
+
+  if (firstName !== undefined) updateData.firstName = firstName;
+  if (lastName !== undefined) updateData.lastName = lastName;
+  if (email !== undefined) updateData.email = email || null;
+  if (phone !== undefined) updateData.phone = phone || null;
+  if (quotedPremium !== undefined) updateData.quotedPremium = quotedPremium;
+  if (producerId !== undefined) updateData.producerId = producerId;
+
+  // Update local database
+  const [updated] = await db
+    .update(customers)
+    .set(updateData)
+    .where(eq(customers.id, id))
+    .returning({
+      id: customers.id,
+      firstName: customers.firstName,
+      lastName: customers.lastName,
+      email: customers.email,
+      phone: customers.phone,
+      quotedPremium: customers.quotedPremium,
+      producerId: customers.producerId,
+    });
+
+  // Push to AgencyZoom if customer has an agencyzoomId
+  let azSyncResult = { success: true, error: null as string | null };
+
+  if (customer.agencyzoomId) {
+    try {
+      const azClient = getAgencyZoomClient();
+
+      // Build AgencyZoom update payload (only contact fields are synced)
+      const azUpdate: Record<string, any> = {};
+      if (firstName !== undefined) azUpdate.firstName = firstName;
+      if (lastName !== undefined) azUpdate.lastName = lastName;
+      if (email !== undefined) azUpdate.email = email || null;
+      if (phone !== undefined) azUpdate.phone = phone || null;
+
+      // Only sync if there are fields to update in AgencyZoom
+      if (Object.keys(azUpdate).length > 0) {
+        await azClient.updateLead(parseInt(customer.agencyzoomId), azUpdate);
+        console.log(
+          `[Lead Update] Pushed updates to AgencyZoom for lead ${customer.agencyzoomId}:`,
+          azUpdate
+        );
+      }
+    } catch (azError: any) {
+      console.error(
+        `[Lead Update] Failed to push to AgencyZoom for lead ${customer.agencyzoomId}:`,
+        azError
+      );
+      azSyncResult = {
+        success: false,
+        error: azError.message || 'Failed to sync with AgencyZoom',
+      };
+    }
+  }
+
+  return NextResponse.json({
+    success: true,
+    lead: updated,
+    agencyzoomSync: azSyncResult,
+    message: azSyncResult.success
+      ? 'Lead updated successfully'
+      : 'Lead updated locally, but AgencyZoom sync failed',
+  });
 }
