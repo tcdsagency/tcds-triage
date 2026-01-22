@@ -170,7 +170,7 @@ export interface ServiceTicket {
   serviceDesc: string;
   priorityId: number;
   categoryId: number;
-  dueDate: number;
+  dueDate: string | null;
   createDate: string;
   createdBy: number;
   modifyDate: string;
@@ -179,12 +179,18 @@ export interface ServiceTicket {
   resolutionId: number | null;
   resolutionDesc: string | null;
   lastActivityDate: string;
-  // Joined fields
+  // Joined fields from API
   name?: string; // Household name
   workflowName?: string;
   workflowStageName?: string;
   phone?: string;
   email?: string;
+  householdFirstname?: string;
+  householdLastname?: string;
+  csrFirstname?: string;
+  csrLastname?: string;
+  priorityName?: string;
+  categoryName?: string;
 }
 
 // ============================================================================
