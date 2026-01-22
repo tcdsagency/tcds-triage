@@ -178,9 +178,9 @@ export default function TriageCard({
           </div>
         </div>
 
-        {/* Quick actions on hover */}
+        {/* Quick actions - always visible */}
         {onQuickAction && (
-          <div className="hidden group-hover:flex items-center justify-end gap-1 pt-1">
+          <div className="flex items-center justify-end gap-1 pt-1">
             {/* Show Note and SR buttons for matched items */}
             {item.matchStatus === 'matched' && (
               <>
@@ -206,8 +206,8 @@ export default function TriageCard({
                 </button>
               </>
             )}
-            {/* Show Find Match and SR buttons for NCM items */}
-            {isNCM && (
+            {/* Show Find Match and SR buttons for NCM/after_hours items */}
+            {(isNCM || isAfterHours) && (
               <>
                 <button
                   onClick={(e) => {
@@ -225,7 +225,7 @@ export default function TriageCard({
                     onQuickAction('ticket');
                   }}
                   className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
-                  title="Create SR (NCM)"
+                  title="Create SR"
                 >
                   SR
                 </button>
