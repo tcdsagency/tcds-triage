@@ -3,12 +3,27 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/utils';
+import { format, parseISO } from 'date-fns';
 import type { ServiceTicketItem } from '@/app/api/service-pipeline/route';
+
+// NCM (No Customer Match) household ID in AgencyZoom
+const NCM_HOUSEHOLD_ID = 22138921;
 
 interface ServiceTicketCardProps {
   ticket: ServiceTicketItem;
   onClick?: () => void;
   isDragging?: boolean;
+}
+
+// Format date to AgencyZoom style: "Jan 22, 2026"
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return 'N/A';
+  try {
+    const date = parseISO(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T'));
+    return format(date, 'MMM d, yyyy');
+  } catch {
+    return 'N/A';
+  }
 }
 
 // Priority color mapping
@@ -44,13 +59,7 @@ export default function ServiceTicketCard({
   };
 
   const isCurrentlyDragging = isDragging || isSortableDragging;
-
-  // Format age
-  const formatAge = (minutes: number) => {
-    if (minutes < 60) return `${minutes}m ago`;
-    if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
-    return `${Math.floor(minutes / 1440)}d ago`;
-  };
+  const isNCM = ticket.azHouseholdId === NCM_HOUSEHOLD_ID;
 
   // Get CSR initials
   const getCsrInitials = (name: string | null) => {
@@ -91,17 +100,24 @@ export default function ServiceTicketCard({
       )}
     >
       <div className="p-3 space-y-2">
-        {/* Header: Subject + CSR Badge */}
+        {/* NCM Badge - prominent at top if applicable */}
+        {isNCM && (
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+              No Customer Match
+            </span>
+          </div>
+        )}
+
+        {/* Header: Customer Name + CSR Badge */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
-            <h4 className="font-semibold text-gray-900 dark:text-white text-sm line-clamp-2">
-              {ticket.subject}
+            <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+              {ticket.customerName || 'Unknown Customer'}
             </h4>
-            {ticket.customerName && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                {ticket.customerName}
-              </p>
-            )}
+            <p className="text-xs text-gray-600 dark:text-gray-300 mt-0.5 line-clamp-2">
+              {ticket.subject}
+            </p>
           </div>
           {/* CSR Badge */}
           <div
@@ -113,23 +129,28 @@ export default function ServiceTicketCard({
           </div>
         </div>
 
-        {/* Category */}
+        {/* Category/Service Type Badge */}
         {ticket.categoryName && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-            {ticket.categoryName}
-          </p>
+          <div className="flex items-center gap-1">
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+              {ticket.categoryName}
+            </span>
+            {ticket.priorityName && ticket.priorityName !== 'Standard' && (
+              <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', priorityClass)}>
+                {ticket.priorityName}
+              </span>
+            )}
+          </div>
         )}
 
-        {/* Footer: Priority + Age */}
-        <div className="flex items-center justify-between pt-1 border-t border-gray-100 dark:border-gray-700/50">
-          {ticket.priorityName && (
-            <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', priorityClass)}>
-              {ticket.priorityName}
-            </span>
-          )}
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            {formatAge(ticket.ageMinutes)}
-          </span>
+        {/* Footer: Dates */}
+        <div className="pt-1 border-t border-gray-100 dark:border-gray-700/50 space-y-0.5">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="font-medium">Entered:</span> {formatDate(ticket.createdAt)}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="font-medium">Due:</span> {formatDate(ticket.dueDate)}
+          </div>
         </div>
       </div>
     </div>
