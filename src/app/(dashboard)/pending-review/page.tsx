@@ -720,6 +720,7 @@ export default function PendingReviewPage() {
           handleTriageAction(item, action);
           handleDetailPanelClose();
         }}
+        onTicketUpdated={fetchPipelineData}
       />
 
       {/* Assignee Selection Modal for quick SR button */}

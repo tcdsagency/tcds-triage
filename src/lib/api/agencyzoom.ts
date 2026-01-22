@@ -1355,20 +1355,30 @@ export class AgencyZoomClient {
       status?: number;
       csrId?: number;
       priorityId?: number;
+      categoryId?: number;
+      dueDate?: string;
+      subject?: string;
+      description?: string;
       resolutionId?: number;
       resolutionDesc?: string;
     }
   ): Promise<{ success: boolean }> {
+    const body: Record<string, unknown> = {};
+
+    if (updates.stageId !== undefined) body.workflowStageId = updates.stageId;
+    if (updates.status !== undefined) body.status = updates.status;
+    if (updates.csrId !== undefined) body.csr = updates.csrId;
+    if (updates.priorityId !== undefined) body.priorityId = updates.priorityId;
+    if (updates.categoryId !== undefined) body.categoryId = updates.categoryId;
+    if (updates.dueDate !== undefined) body.dueDate = updates.dueDate;
+    if (updates.subject !== undefined) body.subject = updates.subject;
+    if (updates.description !== undefined) body.description = updates.description;
+    if (updates.resolutionId !== undefined) body.resolutionId = updates.resolutionId;
+    if (updates.resolutionDesc !== undefined) body.resolutionDesc = updates.resolutionDesc;
+
     return this.request(`/v1/api/serviceTicket/service-tickets/${ticketId}`, {
       method: 'PUT',
-      body: JSON.stringify({
-        workflowStageId: updates.stageId,
-        status: updates.status,
-        csr: updates.csrId,
-        priorityId: updates.priorityId,
-        resolutionId: updates.resolutionId,
-        resolutionDesc: updates.resolutionDesc,
-      }),
+      body: JSON.stringify(body),
     });
   }
 
