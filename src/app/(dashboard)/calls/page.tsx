@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Phone,
   PhoneIncoming,
@@ -27,6 +27,12 @@ import {
   FileText,
   Mic,
   X,
+  HelpCircle,
+  MapPin,
+  Mail,
+  Smartphone,
+  Building2,
+  Loader2,
 } from "lucide-react";
 import CallPopup from "@/components/features/CallPopup";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -123,6 +129,222 @@ function formatPhoneNumber(phone: string | undefined | null): string {
 }
 
 // =============================================================================
+// TRESTLE CALLER INFO HOVER
+// =============================================================================
+
+interface TrestleLookupResult {
+  success: boolean;
+  phone: string;
+  overview?: {
+    isValid: boolean;
+    lineType: string;
+    carrier: string;
+    activityScore: number;
+    leadGrade: string;
+    confidence?: number;
+  };
+  owner?: {
+    name: string;
+    firstName?: string;
+    lastName?: string;
+    age?: number;
+    gender?: string;
+    isBusiness?: boolean;
+    industry?: string;
+  } | null;
+  contact?: {
+    currentAddress?: {
+      street: string;
+      city: string;
+      state: string;
+      zip: string;
+    } | null;
+    emails?: string[];
+    alternatePhones?: string[];
+  };
+  verification?: {
+    isSpam: boolean;
+    spamScore?: number;
+  };
+}
+
+// Cache for Trestle lookups to avoid repeated API calls
+const trestleCache = new Map<string, TrestleLookupResult>();
+
+function TrestleCallerHover({ phoneNumber, children }: { phoneNumber: string; children: React.ReactNode }) {
+  const [isHovering, setIsHovering] = useState(false);
+  const [trestleData, setTrestleData] = useState<TrestleLookupResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchTrestleData = useCallback(async () => {
+    if (!phoneNumber) return;
+
+    // Check cache first
+    const cached = trestleCache.get(phoneNumber);
+    if (cached) {
+      setTrestleData(cached);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/trestle/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phoneNumber })
+      });
+      const data = await res.json();
+      if (data.success) {
+        trestleCache.set(phoneNumber, data);
+        setTrestleData(data);
+      }
+    } catch (error) {
+      console.error('Trestle lookup failed:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [phoneNumber]);
+
+  const handleMouseEnter = () => {
+    hoverTimeoutRef.current = setTimeout(() => {
+      setIsHovering(true);
+      if (!trestleData && !loading) {
+        fetchTrestleData();
+      }
+    }, 300); // Small delay to prevent accidental triggers
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    setIsHovering(false);
+  };
+
+  const getGradeColor = (grade: string) => {
+    switch (grade) {
+      case 'A': return 'bg-green-100 text-green-700';
+      case 'B': return 'bg-blue-100 text-blue-700';
+      case 'C': return 'bg-yellow-100 text-yellow-700';
+      case 'D': return 'bg-orange-100 text-orange-700';
+      case 'F': return 'bg-red-100 text-red-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {children}
+
+      {isHovering && (
+        <div className="absolute left-0 top-full mt-2 z-50 w-72 bg-white rounded-lg shadow-xl border border-gray-200 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
+            <HelpCircle className="h-4 w-4 text-indigo-500" />
+            <span className="text-sm font-medium text-gray-700">Possible Caller Info</span>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
+              <span className="ml-2 text-sm text-gray-500">Looking up caller...</span>
+            </div>
+          ) : trestleData ? (
+            <div className="space-y-3">
+              {/* Owner Info */}
+              {trestleData.owner ? (
+                <div className="flex items-start gap-2">
+                  {trestleData.owner.isBusiness ? (
+                    <Building2 className="h-4 w-4 text-gray-400 mt-0.5" />
+                  ) : (
+                    <User className="h-4 w-4 text-gray-400 mt-0.5" />
+                  )}
+                  <div>
+                    <p className="font-medium text-gray-900">{trestleData.owner.name}</p>
+                    {trestleData.owner.age && (
+                      <p className="text-xs text-gray-500">Age: ~{trestleData.owner.age}</p>
+                    )}
+                    {trestleData.owner.industry && (
+                      <p className="text-xs text-gray-500">{trestleData.owner.industry}</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-gray-400">
+                  <User className="h-4 w-4" />
+                  <span className="text-sm">No owner info found</span>
+                </div>
+              )}
+
+              {/* Address */}
+              {trestleData.contact?.currentAddress && (
+                <div className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 text-gray-400 mt-0.5" />
+                  <div className="text-sm text-gray-600">
+                    <p>{trestleData.contact.currentAddress.street}</p>
+                    <p>{trestleData.contact.currentAddress.city}, {trestleData.contact.currentAddress.state} {trestleData.contact.currentAddress.zip}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Email */}
+              {trestleData.contact?.emails && trestleData.contact.emails.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm text-gray-600 truncate">{trestleData.contact.emails[0]}</span>
+                </div>
+              )}
+
+              {/* Phone Info */}
+              {trestleData.overview && (
+                <div className="flex items-center gap-2">
+                  <Smartphone className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm text-gray-600 capitalize">
+                    {trestleData.overview.lineType} - {trestleData.overview.carrier}
+                  </span>
+                </div>
+              )}
+
+              {/* Lead Grade & Activity */}
+              {trestleData.overview && (
+                <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500">Lead Grade:</span>
+                    <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${getGradeColor(trestleData.overview.leadGrade)}`}>
+                      {trestleData.overview.leadGrade}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500">Activity:</span>
+                    <span className="text-xs font-medium text-gray-700">{trestleData.overview.activityScore}%</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Spam Warning */}
+              {trestleData.verification?.isSpam && (
+                <div className="flex items-center gap-2 p-2 bg-red-50 rounded-md">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <span className="text-xs text-red-700 font-medium">Potential Spam Caller</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500 text-center py-2">
+              No data available
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
 // COMPONENTS
 // =============================================================================
 
@@ -159,6 +381,8 @@ function CallRow({
   isSelected: boolean;
   onSelect: () => void;
 }) {
+  const isUnknown = call.customerName === "Unknown" || !call.customerId;
+
   return (
     <tr
       onClick={onSelect}
@@ -171,10 +395,22 @@ function CallRow({
       <td className="px-4 py-4">
         <div className="flex items-center gap-3">
           <CallStatusIcon call={call} />
-          <div>
-            <p className="font-medium text-gray-900">{call.customerName}</p>
-            <p className="text-sm text-gray-500">{formatPhoneNumber(call.phoneNumber)}</p>
-          </div>
+          {isUnknown ? (
+            <TrestleCallerHover phoneNumber={call.phoneNumber}>
+              <div className="cursor-help">
+                <div className="flex items-center gap-1.5">
+                  <p className="font-medium text-gray-900">{call.customerName}</p>
+                  <HelpCircle className="h-3.5 w-3.5 text-gray-400" />
+                </div>
+                <p className="text-sm text-gray-500">{formatPhoneNumber(call.phoneNumber)}</p>
+              </div>
+            </TrestleCallerHover>
+          ) : (
+            <div>
+              <p className="font-medium text-gray-900">{call.customerName}</p>
+              <p className="text-sm text-gray-500">{formatPhoneNumber(call.phoneNumber)}</p>
+            </div>
+          )}
         </div>
       </td>
       <td className="px-4 py-4">

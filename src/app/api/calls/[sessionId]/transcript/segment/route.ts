@@ -415,20 +415,42 @@ export async function GET(
     // Resolve sessionId to actual call UUID
     let callId = sessionId;
 
-    // If not a valid UUID, look up by externalCallId
+    // If not a valid UUID, look up by various ID types
     if (!isValidUUID(sessionId)) {
-      const call = await db
-        .select({ id: calls.id })
-        .from(calls)
-        .where(eq(calls.externalCallId, sessionId))
-        .limit(1)
-        .then(r => r[0]);
+      let call = null;
+
+      // 1. Try vmSessionId first (for VM Bridge sessions like sess_xxx)
+      if (sessionId.startsWith('sess_')) {
+        call = await db
+          .select({ id: calls.id })
+          .from(calls)
+          .where(eq(calls.vmSessionId, sessionId))
+          .limit(1)
+          .then(r => r[0]);
+
+        if (call) {
+          console.log(`[Transcript GET] Resolved vmSessionId ${sessionId} to call ${call.id}`);
+        }
+      }
+
+      // 2. Try externalCallId (3CX call ID)
+      if (!call) {
+        call = await db
+          .select({ id: calls.id })
+          .from(calls)
+          .where(eq(calls.externalCallId, sessionId))
+          .limit(1)
+          .then(r => r[0]);
+
+        if (call) {
+          console.log(`[Transcript GET] Resolved externalCallId ${sessionId} to call ${call.id}`);
+        }
+      }
 
       if (call) {
         callId = call.id;
-        console.log(`[Transcript] Resolved externalCallId ${sessionId} to call ${callId}`);
       } else {
-        console.log(`[Transcript] No call found for sessionId: ${sessionId}`);
+        console.log(`[Transcript GET] No call found for sessionId: ${sessionId}`);
         return NextResponse.json({
           success: true,
           segments: [],
