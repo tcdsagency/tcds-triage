@@ -313,3 +313,149 @@ export async function syncSingleTicket(
     };
   }
 }
+
+// ============================================================================
+// IMPORT EXISTING TICKETS FROM AGENCYZOOM
+// ============================================================================
+
+export interface ImportTicketsOptions {
+  tenantId: string;
+  status?: number;       // 0=removed, 1=active, 2=completed. Default: 1 (active)
+  limit?: number;        // Max tickets per page. Default: 100
+  maxPages?: number;     // Max pages to fetch. Default: 10 (1000 tickets)
+  pipelineId?: number;   // Filter by pipeline
+}
+
+export interface ImportTicketsResult {
+  imported: number;
+  skipped: number;       // Already exist locally
+  errors: number;
+  total: number;
+  duration: number;
+}
+
+/**
+ * Import existing tickets from AgencyZoom into local database
+ * Only imports tickets that don't already exist locally
+ */
+export async function importTicketsFromAgencyZoom(
+  options: ImportTicketsOptions
+): Promise<ImportTicketsResult> {
+  const startTime = Date.now();
+  const result: ImportTicketsResult = {
+    imported: 0,
+    skipped: 0,
+    errors: 0,
+    total: 0,
+    duration: 0,
+  };
+
+  const pageSize = options.limit || 100;
+  const maxPages = options.maxPages || 10;
+  const status = options.status ?? 1; // Default to active tickets
+
+  try {
+    const azClient = getAgencyZoomClient();
+
+    // Get existing local ticket IDs to skip duplicates
+    const existingTickets = await db
+      .select({ azTicketId: serviceTickets.azTicketId })
+      .from(serviceTickets)
+      .where(eq(serviceTickets.tenantId, options.tenantId));
+
+    const existingIds = new Set(existingTickets.map(t => t.azTicketId));
+    console.log(`[ServiceTicketImport] Found ${existingIds.size} existing local tickets`);
+
+    // Paginate through all tickets
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore && page <= maxPages) {
+      console.log(`[ServiceTicketImport] Fetching page ${page} (status=${status}, pageSize=${pageSize})`);
+
+      const { data: azTickets, total } = await azClient.getServiceTickets({
+        status,
+        limit: pageSize,
+        page,
+        pipelineId: options.pipelineId,
+      });
+
+      if (page === 1) {
+        console.log(`[ServiceTicketImport] Total tickets in AgencyZoom: ${total}`);
+      }
+
+      if (azTickets.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      result.total += azTickets.length;
+
+      // Import each ticket from this page
+      for (const azTicket of azTickets) {
+        // Skip if already exists
+        if (existingIds.has(azTicket.id)) {
+          result.skipped++;
+          continue;
+        }
+
+        try {
+          // Use list data directly - the list endpoint returns enough detail
+          // Cast to any to handle the response structure
+          const ticket = azTicket as any;
+
+          await db.insert(serviceTickets).values({
+            tenantId: options.tenantId,
+            azTicketId: ticket.id,
+            azHouseholdId: ticket.householdId,
+            subject: ticket.subject || 'No Subject',
+            description: ticket.serviceDesc || null,
+            status: mapAzStatusToEnum(ticket.status),
+            pipelineId: ticket.workflowId,
+            pipelineName: ticket.workflowName || null,
+            stageId: ticket.workflowStageId,
+            stageName: ticket.workflowStageName || null,
+            categoryId: ticket.categoryId || null,
+            priorityId: ticket.priorityId || null,
+            csrId: ticket.csr || null,
+            csrName: ticket.csrFirstname && ticket.csrLastname
+              ? `${ticket.csrFirstname} ${ticket.csrLastname}`
+              : null,
+            dueDate: ticket.dueDate ? new Date(ticket.dueDate).toISOString().split('T')[0] : null,
+            azCreatedAt: ticket.createDate ? new Date(ticket.createDate) : null,
+            azCompletedAt: ticket.completeDate ? new Date(ticket.completeDate) : null,
+            resolutionId: ticket.resolutionId || null,
+            resolutionDesc: ticket.resolutionDesc || null,
+            source: 'import',
+            lastSyncedFromAz: new Date(),
+          });
+
+          result.imported++;
+          // Add to existingIds to prevent duplicates within same import run
+          existingIds.add(ticket.id);
+        } catch (ticketError) {
+          console.error(`[ServiceTicketImport] Error importing ticket ${azTicket.id}:`, ticketError);
+          result.errors++;
+        }
+      }
+
+      // Move to next page
+      page++;
+
+      // Small delay between pages to avoid rate limiting
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    result.duration = Date.now() - startTime;
+    console.log(`[ServiceTicketImport] Completed in ${result.duration}ms: imported=${result.imported}, skipped=${result.skipped}, errors=${result.errors}`);
+
+    return result;
+  } catch (error) {
+    console.error('[ServiceTicketImport] Fatal error:', error);
+    result.errors++;
+    result.duration = Date.now() - startTime;
+    return result;
+  }
+}

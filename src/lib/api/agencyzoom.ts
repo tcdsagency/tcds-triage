@@ -1263,7 +1263,7 @@ export class AgencyZoomClient {
 
   /**
    * Search service tickets
-   * POST /v1/api/service-tickets/list
+   * POST /v1/api/serviceTicket/service-tickets/list
    */
   async getServiceTickets(params?: {
     page?: number;
@@ -1279,10 +1279,10 @@ export class AgencyZoomClient {
     const result = await this.request<{
       serviceTickets: ServiceTicket[];
       totalCount: number;
-    }>('/v1/api/service-tickets/list', {
+    }>('/v1/api/serviceTicket/service-tickets/list', {
       method: 'POST',
       body: JSON.stringify({
-        pageNo: params?.page || 1,
+        page: params?.page || 1,      // NOTE: API uses 'page' not 'pageNo'
         pageSize: params?.limit || 50,
         status: params?.status ?? 1, // Default to active
         workflowId: params?.pipelineId,
@@ -1301,15 +1301,15 @@ export class AgencyZoomClient {
 
   /**
    * Get single service ticket by ID
-   * GET /v1/api/service-tickets/{serviceTicketId}
+   * GET /v1/api/serviceTicket/service-tickets/{serviceTicketId}
    */
   async getServiceTicket(ticketId: number): Promise<ServiceTicket> {
-    return this.request<ServiceTicket>(`/v1/api/service-tickets/${ticketId}`);
+    return this.request<ServiceTicket>(`/v1/api/serviceTicket/service-tickets/${ticketId}`);
   }
 
   /**
    * Create a service ticket
-   * POST /v1/api/service-tickets/create
+   * POST /v1/api/serviceTicket/service-tickets/create
    */
   async createServiceTicket(ticket: {
     subject: string;
@@ -1322,7 +1322,7 @@ export class AgencyZoomClient {
     csrId?: number;
     dueDate?: string;
   }): Promise<{ success: boolean; serviceTicketId?: number }> {
-    return this.request('/v1/api/service-tickets/create', {
+    return this.request('/v1/api/serviceTicket/service-tickets/create', {
       method: 'POST',
       body: JSON.stringify({
         subject: ticket.subject,
@@ -1340,7 +1340,7 @@ export class AgencyZoomClient {
 
   /**
    * Update a service ticket
-   * PUT /v1/api/service-tickets/{serviceTicketId}
+   * PUT /v1/api/serviceTicket/service-tickets/{serviceTicketId}
    */
   async updateServiceTicket(
     ticketId: number,
@@ -1353,7 +1353,7 @@ export class AgencyZoomClient {
       resolutionDesc?: string;
     }
   ): Promise<{ success: boolean }> {
-    return this.request(`/v1/api/service-tickets/${ticketId}`, {
+    return this.request(`/v1/api/serviceTicket/service-tickets/${ticketId}`, {
       method: 'PUT',
       body: JSON.stringify({
         workflowStageId: updates.stageId,
@@ -1368,7 +1368,7 @@ export class AgencyZoomClient {
 
   /**
    * Add a note/comment to an existing service ticket
-   * POST /v1/api/service-tickets/{serviceTicketId}/notes
+   * POST /v1/api/serviceTicket/service-tickets/{serviceTicketId}/notes
    */
   async addServiceTicketNote(
     ticketId: number,
@@ -1376,7 +1376,7 @@ export class AgencyZoomClient {
   ): Promise<{ success: boolean; noteId?: number }> {
     try {
       const result = await this.request<{ success?: boolean; noteId?: number; id?: number }>(
-        `/v1/api/service-tickets/${ticketId}/notes`,
+        `/v1/api/serviceTicket/service-tickets/${ticketId}/notes`,
         {
           method: 'POST',
           body: JSON.stringify({
@@ -1396,10 +1396,10 @@ export class AgencyZoomClient {
 
   /**
    * Get service ticket pipelines (workflows)
-   * GET /v1/api/service-tickets/pipelines
+   * GET /v1/api/serviceTicket/service-tickets/pipelines
    */
   async getServiceTicketPipelines(): Promise<any[]> {
-    const result = await this.request<any>('/v1/api/service-tickets/pipelines');
+    const result = await this.request<any>('/v1/api/serviceTicket/service-tickets/pipelines');
     // Handle both wrapped { pipelines: [...] } and direct array response
     if (Array.isArray(result)) {
       return result;
