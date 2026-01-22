@@ -8,6 +8,7 @@ export interface Agent {
   initials: string;
   color: string;
   agencyzoomId?: string | null;
+  avatarUrl?: string | null;
 }
 
 interface AgentBadgeProps {
@@ -46,16 +47,28 @@ export default function AgentBadge({
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      <div
-        className={cn(
-          'rounded-full flex items-center justify-center text-white font-semibold shadow-sm',
-          SIZE_STYLES[size]
-        )}
-        style={{ backgroundColor: agent.color }}
-        title={agent.name}
-      >
-        {agent.initials}
-      </div>
+      {agent.avatarUrl ? (
+        <img
+          src={agent.avatarUrl}
+          alt={agent.name}
+          className={cn(
+            'rounded-full object-cover shadow-sm',
+            SIZE_STYLES[size]
+          )}
+          title={agent.name}
+        />
+      ) : (
+        <div
+          className={cn(
+            'rounded-full flex items-center justify-center text-white font-semibold shadow-sm',
+            SIZE_STYLES[size]
+          )}
+          style={{ backgroundColor: agent.color }}
+          title={agent.name}
+        >
+          {agent.initials}
+        </div>
+      )}
       {showName && (
         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {agent.name}

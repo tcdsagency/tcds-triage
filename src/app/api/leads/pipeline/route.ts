@@ -237,12 +237,13 @@ export async function GET(request: NextRequest) {
         ];
 
         // Build consolidated stages
-        const consolidatedStages: Array<{ id: number; name: string; order: number; stageIds: number[] }> =
+        const consolidatedStages: Array<{ id: number; name: string; order: number; stageIds: number[]; aliases: string[] }> =
           standardStages.map((s, idx) => ({
             id: s.id,
             name: s.name,
             order: idx,
             stageIds: [] as number[],
+            aliases: s.aliases,
           }));
 
         // Map each AZ stage ID to a consolidated stage based on name matching
@@ -250,10 +251,10 @@ export async function GET(request: NextRequest) {
           const stageName = stageIdToName.get(stageId)?.toLowerCase() || "";
           const matched = consolidatedStages.find(cs =>
             cs.name.toLowerCase() === stageName ||
-            cs.aliases?.some((alias: string) => stageName.includes(alias))
+            cs.aliases.some((alias: string) => stageName.includes(alias))
           );
           if (matched) {
-            (matched as any).stageIds.push(stageId);
+            matched.stageIds.push(stageId);
           }
         });
 
@@ -361,6 +362,7 @@ export async function GET(request: NextRequest) {
         firstName: users.firstName,
         lastName: users.lastName,
         agencyzoomId: users.agencyzoomId,
+        avatarUrl: users.avatarUrl,
       })
       .from(users)
       .where(and(eq(users.tenantId, tenantId), eq(users.isActive, true)));
@@ -377,6 +379,7 @@ export async function GET(request: NextRequest) {
       initials: `${emp.firstName[0] || ""}${emp.lastName[0] || ""}`.toUpperCase(),
       color: AGENT_COLORS[idx % AGENT_COLORS.length],
       agencyzoomId: emp.agencyzoomId,
+      avatarUrl: emp.avatarUrl,
     }));
 
     return NextResponse.json({
