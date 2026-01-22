@@ -12,6 +12,7 @@ import type { ServiceTicketItem, TriageItem, Employee } from '@/app/api/service-
 import AssigneeSelectModal from '@/components/features/AssigneeSelectModal';
 import CustomerSearchModal from '@/components/features/CustomerSearchModal';
 import DeleteModal from '@/components/features/DeleteModal';
+import CreateServiceTicketModal, { type ServiceTicketFormData } from '@/components/features/CreateServiceTicketModal';
 import { hasFeatureAccess } from '@/lib/feature-permissions';
 
 // =============================================================================
@@ -463,12 +464,54 @@ export default function PendingReviewPage() {
   // ==========================================================================
 
   const handleCreateTicketFromTriage = (item: TriageItem, targetStageId: number) => {
-    if (item.matchStatus !== 'matched') {
-      toast.error('Please match to a customer before creating a ticket');
-      return;
-    }
+    // Open the full create ticket modal - customer matching can be done in the modal
     setCreateTicketItem({ item, stageId: targetStageId });
-    setAssignSRItem(item);
+  };
+
+  const handleCreateTicketSubmit = async (formData: ServiceTicketFormData) => {
+    if (!createTicketItem) return;
+
+    const { item } = createTicketItem;
+
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/service-tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // Triage item reference
+          triageItemId: item.id,
+          triageItemType: item.itemType,
+          messageIds: item.messageIds,
+          // Full form data
+          subject: formData.subject,
+          customerId: formData.customerId,
+          customerName: formData.customerName,
+          categoryId: formData.categoryId,
+          priorityId: formData.priorityId,
+          assigneeId: formData.assigneeId,
+          stageId: formData.stageId,
+          dueDate: formData.dueDate,
+          description: formData.description,
+          // Reviewer info
+          reviewerId: currentUserId,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setCreateTicketItem(null);
+        toast.success('Service ticket created successfully');
+        fetchPipelineData();
+      } else {
+        toast.error(data.error || 'Failed to create service ticket');
+      }
+    } catch (error) {
+      console.error('Create ticket error:', error);
+      toast.error('Failed to create service ticket');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // ==========================================================================
@@ -634,16 +677,26 @@ export default function PendingReviewPage() {
         }}
       />
 
-      {/* Assignee Selection Modal for Service Requests */}
+      {/* Assignee Selection Modal for quick SR button */}
       {assignSRItem && (
         <AssigneeSelectModal
           isOpen={!!assignSRItem}
-          onClose={() => {
-            setAssignSRItem(null);
-            setCreateTicketItem(null);
-          }}
+          onClose={() => setAssignSRItem(null)}
           onSelect={handleAssignSR}
           title={`Assign Service Request for ${assignSRItem.contactName || 'Unknown'}`}
+          isLoading={actionLoading}
+        />
+      )}
+
+      {/* Full Create Ticket Modal for drag-and-drop */}
+      {createTicketItem && pipelineData && (
+        <CreateServiceTicketModal
+          isOpen={!!createTicketItem}
+          onClose={() => setCreateTicketItem(null)}
+          onSubmit={handleCreateTicketSubmit}
+          triageItem={createTicketItem.item}
+          targetStageId={createTicketItem.stageId}
+          employees={pipelineData.employees}
           isLoading={actionLoading}
         />
       )}
