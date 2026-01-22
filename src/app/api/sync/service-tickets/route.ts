@@ -3,7 +3,7 @@
 // Triggered by cron (every 15 minutes) or on-demand
 
 import { NextRequest, NextResponse } from 'next/server';
-import { syncServiceTickets, syncSingleTicket } from '@/lib/api/service-ticket-sync';
+import { syncServiceTickets, syncSingleTicket, importTicketsFromAgencyZoom } from '@/lib/api/service-ticket-sync';
 
 // Verify cron authorization
 function isAuthorized(request: NextRequest): boolean {
@@ -39,12 +39,37 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse options from request body (if any)
-    let options: { staleMinutes?: number; batchSize?: number; dryRun?: boolean; ticketId?: string } = {};
+    let options: {
+      action?: 'sync' | 'import';
+      staleMinutes?: number;
+      batchSize?: number;
+      dryRun?: boolean;
+      ticketId?: string;
+      // Import options
+      status?: number;
+      limit?: number;
+      pipelineId?: number;
+    } = {};
     try {
       const body = await request.json();
       options = body || {};
     } catch {
       // No body or invalid JSON - use defaults
+    }
+
+    // Import existing tickets from AgencyZoom
+    if (options.action === 'import') {
+      const result = await importTicketsFromAgencyZoom({
+        tenantId,
+        status: options.status,      // 0=removed, 1=active, 2=completed
+        limit: options.limit || 100,
+        pipelineId: options.pipelineId,
+      });
+      return NextResponse.json({
+        success: true,
+        action: 'import',
+        ...result,
+      });
     }
 
     // Single ticket sync
@@ -57,7 +82,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Batch sync
+    // Batch sync (default)
     const result = await syncServiceTickets({
       tenantId,
       staleMinutes: options.staleMinutes || 30,
