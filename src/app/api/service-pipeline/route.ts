@@ -21,6 +21,7 @@ const PIPELINE_STAGES = {
   NEW: 111160,
   IN_PROGRESS: 111161,
   WAITING_ON_INFO: 111162,
+  COMPLETED: 'completed',
 } as const;
 
 const STAGE_CONFIG = [
@@ -28,6 +29,7 @@ const STAGE_CONFIG = [
   { id: 111160, name: 'New', color: 'blue', order: 1 },
   { id: 111161, name: 'In Progress', color: 'purple', order: 2 },
   { id: 111162, name: 'Waiting on Info', color: 'orange', order: 3 },
+  { id: 'completed', name: 'Completed', color: 'green', order: 4 },
 ];
 
 // Helper to get current user
@@ -102,8 +104,10 @@ export interface ServiceTicketItem {
   categoryName: string | null;
   dueDate: string | null;
   createdAt: string;
+  completedAt: string | null;
   ageMinutes: number;
   azHouseholdId: number | null;
+  status: 'active' | 'completed';
 }
 
 export interface Employee {
@@ -116,6 +120,7 @@ interface PipelineResponse {
   stages: typeof STAGE_CONFIG;
   items: {
     triage: TriageItem[];
+    completed: ServiceTicketItem[];
     [key: number]: ServiceTicketItem[];
   };
   employees: Employee[];
@@ -319,57 +324,76 @@ export async function GET(request: NextRequest) {
       return items;
     }
 
-    // Fetch service tickets directly from AgencyZoom
+    // Fetch service tickets directly from AgencyZoom (both active and completed)
     async function fetchServiceTickets(): Promise<ServiceTicketItem[]> {
       try {
         const azClient = getAgencyZoomClient();
 
-        // Fetch active tickets from Policy Service pipeline
-        const result = await azClient.getServiceTickets({
-          pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
-          status: 1, // Active only
-          limit: 100,
-        });
+        // Fetch both active and completed tickets in parallel
+        const [activeResult, completedResult] = await Promise.all([
+          azClient.getServiceTickets({
+            pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
+            status: 1, // Active
+            limit: 100,
+          }),
+          azClient.getServiceTickets({
+            pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
+            status: 2, // Completed
+            limit: 50, // Limit completed to recent ones
+          }),
+        ]);
 
-        const azTickets = result.data || [];
+        const activeTickets = activeResult.data || [];
+        const completedTickets = completedResult.data || [];
 
-        // Filter to only include tickets in our target stages (New, In Progress, Waiting on Info)
+        // Filter active tickets to only include those in our target stages
         const targetStages = new Set<number>([
           PIPELINE_STAGES.NEW,
           PIPELINE_STAGES.IN_PROGRESS,
           PIPELINE_STAGES.WAITING_ON_INFO,
         ]);
 
-        return azTickets
-          .filter(t => t.workflowStageId && targetStages.has(t.workflowStageId))
-          .map(t => {
-            const createdDate = t.createDate ? new Date(t.createDate) : new Date();
-            const customerName = [t.householdFirstname, t.householdLastname]
-              .filter(Boolean)
-              .join(' ')
-              .trim() || t.name || null;
+        const mapTicket = (t: any, isCompleted: boolean): ServiceTicketItem => {
+          const createdDate = t.createDate ? new Date(t.createDate) : new Date();
+          const completedDate = t.completeDate ? new Date(t.completeDate) : null;
+          const customerName = [t.householdFirstname, t.householdLastname]
+            .filter(Boolean)
+            .join(' ')
+            .trim() || t.name || null;
 
-            return {
-              id: t.id.toString(), // Use AZ ID as the ID
-              azTicketId: t.id,
-              subject: t.subject || 'No Subject',
-              description: t.serviceDesc || null,
-              customerName,
-              customerPhone: t.phone || null,
-              stageId: t.workflowStageId,
-              stageName: t.workflowStageName || null,
-              csrId: t.csr || null,
-              csrName: [t.csrFirstname, t.csrLastname].filter(Boolean).join(' ').trim() || null,
-              priorityId: t.priorityId || null,
-              priorityName: t.priorityName || null,
-              categoryId: t.categoryId || null,
-              categoryName: t.categoryName || null,
-              dueDate: t.dueDate || null,
-              createdAt: createdDate.toISOString(),
-              ageMinutes: Math.floor((now.getTime() - createdDate.getTime()) / 60000),
-              azHouseholdId: t.householdId || null,
-            };
-          });
+          return {
+            id: t.id.toString(),
+            azTicketId: t.id,
+            subject: t.subject || 'No Subject',
+            description: t.serviceDesc || null,
+            customerName,
+            customerPhone: t.phone || null,
+            stageId: isCompleted ? null : t.workflowStageId,
+            stageName: isCompleted ? 'Completed' : (t.workflowStageName || null),
+            csrId: t.csr || null,
+            csrName: [t.csrFirstname, t.csrLastname].filter(Boolean).join(' ').trim() || null,
+            priorityId: t.priorityId || null,
+            priorityName: t.priorityName || null,
+            categoryId: t.categoryId || null,
+            categoryName: t.categoryName || null,
+            dueDate: t.dueDate || null,
+            createdAt: createdDate.toISOString(),
+            completedAt: completedDate ? completedDate.toISOString() : null,
+            ageMinutes: Math.floor((now.getTime() - createdDate.getTime()) / 60000),
+            azHouseholdId: t.householdId || null,
+            status: isCompleted ? 'completed' : 'active',
+          };
+        };
+
+        // Map active tickets (filtered to target stages)
+        const mappedActive = activeTickets
+          .filter(t => t.workflowStageId && targetStages.has(t.workflowStageId))
+          .map(t => mapTicket(t, false));
+
+        // Map completed tickets (no stage filter needed)
+        const mappedCompleted = completedTickets.map(t => mapTicket(t, true));
+
+        return [...mappedActive, ...mappedCompleted];
       } catch (error) {
         console.error('[Service Pipeline] Error fetching from AgencyZoom:', error);
         // Fallback to local database if AZ fails
@@ -395,8 +419,7 @@ export async function GET(request: NextRequest) {
           .where(
             and(
               eq(serviceTickets.tenantId, tenantId),
-              eq(serviceTickets.pipelineId, SERVICE_PIPELINES.POLICY_SERVICE),
-              eq(serviceTickets.status, 'active')
+              eq(serviceTickets.pipelineId, SERVICE_PIPELINES.POLICY_SERVICE)
             )
           )
           .orderBy(desc(serviceTickets.createdAt))
@@ -419,8 +442,10 @@ export async function GET(request: NextRequest) {
           categoryName: t.categoryName,
           dueDate: t.dueDate,
           createdAt: t.createdAt.toISOString(),
+          completedAt: null,
           ageMinutes: Math.floor((now.getTime() - new Date(t.createdAt).getTime()) / 60000),
           azHouseholdId: t.azHouseholdId,
+          status: 'active',
         }));
       }
     }
@@ -472,22 +497,34 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Group tickets by stage
+    // Group tickets by stage (active) and completed
     const ticketsByStage: Record<number, ServiceTicketItem[]> = {
       [PIPELINE_STAGES.NEW]: [],
       [PIPELINE_STAGES.IN_PROGRESS]: [],
       [PIPELINE_STAGES.WAITING_ON_INFO]: [],
     };
+    const completedTickets: ServiceTicketItem[] = [];
 
     for (const ticket of ticketItems) {
-      const stageId = ticket.stageId;
-      if (stageId && ticketsByStage[stageId]) {
-        ticketsByStage[stageId].push(ticket);
+      if (ticket.status === 'completed') {
+        completedTickets.push(ticket);
       } else {
-        // Default to New stage if no stage set
-        ticketsByStage[PIPELINE_STAGES.NEW].push(ticket);
+        const stageId = ticket.stageId;
+        if (stageId && ticketsByStage[stageId]) {
+          ticketsByStage[stageId].push(ticket);
+        } else {
+          // Default to New stage if no stage set
+          ticketsByStage[PIPELINE_STAGES.NEW].push(ticket);
+        }
       }
     }
+
+    // Sort completed by completion date (most recent first)
+    completedTickets.sort((a, b) => {
+      const dateA = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+      const dateB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+      return dateB - dateA;
+    });
 
     // Calculate counts
     const counts: Record<string | number, number> = {
@@ -495,12 +532,14 @@ export async function GET(request: NextRequest) {
       [PIPELINE_STAGES.NEW]: ticketsByStage[PIPELINE_STAGES.NEW].length,
       [PIPELINE_STAGES.IN_PROGRESS]: ticketsByStage[PIPELINE_STAGES.IN_PROGRESS].length,
       [PIPELINE_STAGES.WAITING_ON_INFO]: ticketsByStage[PIPELINE_STAGES.WAITING_ON_INFO].length,
+      completed: completedTickets.length,
     };
 
     const response: PipelineResponse = {
       stages: STAGE_CONFIG,
       items: {
         triage: triageItems,
+        completed: completedTickets,
         ...ticketsByStage,
       },
       employees,
