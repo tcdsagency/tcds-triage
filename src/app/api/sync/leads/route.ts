@@ -90,16 +90,37 @@ export async function POST(request: NextRequest) {
         const raw = lead as any;
         const firstName = raw.firstname || raw.firstName || lead.firstName || '';
         const lastName = raw.lastname || raw.lastName || lead.lastName || '';
-        
-        // Map AZ producer to our user ID if assigned
-        const azProducerId = raw.producerId || raw.producer_id || raw.assignedTo || null;
+
+        // Map AZ producer (assignedTo) to our user ID
+        const azProducerId = raw.assignedTo || raw.producerId || null;
         const producerId = azProducerId ? agentMap.get(azProducerId.toString()) || null : null;
 
-        // Extract pipeline fields from AgencyZoom response
-        const pipelineId = raw.pipelineId || raw.pipeline_id || null;
-        const pipelineStageId = raw.stageId || raw.stage_id || raw.pipelineStageId || null;
-        const quotedPremium = raw.premium || raw.quotedPremium || raw.quoted_premium || null;
-        const stageEnteredAt = raw.stageEnteredAt || raw.stage_entered_at || raw.stageDate || null;
+        // Map AZ CSR to our user ID (separate from producer)
+        const azCsrId = raw.csrId || null;
+        const csrId = azCsrId ? agentMap.get(azCsrId.toString()) || null : null;
+
+        // Extract pipeline fields - use correct AZ field names
+        const pipelineId = raw.workflowId || null;
+        const pipelineStageId = raw.workflowStageId || null;
+        const pipelineStageName = raw.workflowStageName || null;
+        const stageEnteredAt = raw.enterStageDate || null;
+
+        // Premium - use quoted or totalQuotePremium
+        const quotedPremium = raw.quoted || raw.totalQuotePremium || null;
+
+        // Lead source - use the name for display
+        const leadSourceName = raw.leadSourceName || raw.source || lead.source || null;
+
+        // Address fields
+        const address = (raw.streetAddress || raw.city || raw.state || raw.zip) ? {
+          street: raw.streetAddress || '',
+          city: raw.city || '',
+          state: raw.state || '',
+          zip: raw.zip || '',
+        } : null;
+
+        // Summary/notes from comments field
+        const aiSummary = raw.comments || null;
 
         const data = {
           tenantId,
@@ -108,16 +129,19 @@ export async function POST(request: NextRequest) {
           lastName: lastName || 'Lead',
           email: raw.email || lead.email || null,
           phone: normalizePhone(raw.phone || lead.phone),
-          phoneAlt: normalizePhone(raw.phonecell || raw.secondaryphone),
-          leadSource: raw.source || lead.source || null,
-          pipelineStage: raw.pipelinestage || raw.stageName || null,
+          phoneAlt: normalizePhone(raw.phonecell || raw.secondaryPhone || raw.cellphone),
+          address,
+          leadSource: leadSourceName,
+          pipelineStage: pipelineStageName,
           pipelineId: pipelineId ? parseInt(pipelineId) : null,
           pipelineStageId: pipelineStageId ? parseInt(pipelineStageId) : null,
           stageEnteredAt: stageEnteredAt ? new Date(stageEnteredAt) : null,
           quotedPremium: quotedPremium ? parseFloat(quotedPremium) : null,
+          aiSummary,
           isLead: true,
-          leadStatus: raw.status || lead.status || 'new',
-          producerId, // Set producer if assigned in AgencyZoom
+          leadStatus: raw.status?.toString() || lead.status || 'new',
+          producerId,
+          csrId,
           lastSyncedFromAz: new Date(),
         };
 
@@ -144,14 +168,17 @@ export async function POST(request: NextRequest) {
                 email: data.email,
                 phone: data.phone,
                 phoneAlt: data.phoneAlt,
+                address: data.address,
                 leadSource: data.leadSource,
                 pipelineStage: data.pipelineStage,
                 pipelineId: data.pipelineId,
                 pipelineStageId: data.pipelineStageId,
                 stageEnteredAt: data.stageEnteredAt,
                 quotedPremium: data.quotedPremium,
+                aiSummary: data.aiSummary,
                 leadStatus: data.leadStatus,
                 producerId: data.producerId,
+                csrId: data.csrId,
                 lastSyncedFromAz: data.lastSyncedFromAz,
                 updatedAt: new Date(),
               },
