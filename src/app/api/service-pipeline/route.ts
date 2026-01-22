@@ -13,6 +13,7 @@ import { wrapupDrafts, messages, users, calls, serviceTickets, customers } from 
 import { eq, and, desc, sql, inArray, or } from 'drizzle-orm';
 import { createClient } from '@/lib/supabase/server';
 import { SERVICE_PIPELINES } from '@/lib/api/agencyzoom-service-tickets';
+import { getAgencyZoomClient } from '@/lib/api/agencyzoom';
 
 // Policy Service Pipeline stages
 const PIPELINE_STAGES = {
@@ -318,66 +319,96 @@ export async function GET(request: NextRequest) {
       return items;
     }
 
-    // Fetch service tickets for Policy Service pipeline
+    // Fetch service tickets directly from AgencyZoom
     async function fetchServiceTickets(): Promise<ServiceTicketItem[]> {
-      const tickets = await db
-        .select({
-          id: serviceTickets.id,
-          azTicketId: serviceTickets.azTicketId,
-          subject: serviceTickets.subject,
-          description: serviceTickets.description,
-          azHouseholdId: serviceTickets.azHouseholdId,
-          stageId: serviceTickets.stageId,
-          stageName: serviceTickets.stageName,
-          csrId: serviceTickets.csrId,
-          csrName: serviceTickets.csrName,
-          priorityId: serviceTickets.priorityId,
-          priorityName: serviceTickets.priorityName,
-          categoryId: serviceTickets.categoryId,
-          categoryName: serviceTickets.categoryName,
-          dueDate: serviceTickets.dueDate,
-          createdAt: serviceTickets.createdAt,
-          customerId: serviceTickets.customerId,
-        })
-        .from(serviceTickets)
-        .where(
-          and(
-            eq(serviceTickets.tenantId, tenantId),
-            eq(serviceTickets.pipelineId, SERVICE_PIPELINES.POLICY_SERVICE),
-            eq(serviceTickets.status, 'active')
+      try {
+        const azClient = getAgencyZoomClient();
+
+        // Fetch active tickets from Policy Service pipeline
+        const result = await azClient.getServiceTickets({
+          pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
+          status: 1, // Active only
+          limit: 100,
+        });
+
+        const azTickets = result.data || [];
+
+        // Filter to only include tickets in our target stages (New, In Progress, Waiting on Info)
+        const targetStages = new Set<number>([
+          PIPELINE_STAGES.NEW,
+          PIPELINE_STAGES.IN_PROGRESS,
+          PIPELINE_STAGES.WAITING_ON_INFO,
+        ]);
+
+        return azTickets
+          .filter(t => t.workflowStageId && targetStages.has(t.workflowStageId))
+          .map(t => {
+            const createdDate = t.createDate ? new Date(t.createDate) : new Date();
+            const customerName = [t.householdFirstname, t.householdLastname]
+              .filter(Boolean)
+              .join(' ')
+              .trim() || t.name || null;
+
+            return {
+              id: t.id.toString(), // Use AZ ID as the ID
+              azTicketId: t.id,
+              subject: t.subject || 'No Subject',
+              description: t.serviceDesc || null,
+              customerName,
+              customerPhone: t.phone || null,
+              stageId: t.workflowStageId,
+              stageName: t.workflowStageName || null,
+              csrId: t.csr || null,
+              csrName: [t.csrFirstname, t.csrLastname].filter(Boolean).join(' ').trim() || null,
+              priorityId: t.priorityId || null,
+              priorityName: t.priorityName || null,
+              categoryId: t.categoryId || null,
+              categoryName: t.categoryName || null,
+              dueDate: t.dueDate || null,
+              createdAt: createdDate.toISOString(),
+              ageMinutes: Math.floor((now.getTime() - createdDate.getTime()) / 60000),
+              azHouseholdId: t.householdId || null,
+            };
+          });
+      } catch (error) {
+        console.error('[Service Pipeline] Error fetching from AgencyZoom:', error);
+        // Fallback to local database if AZ fails
+        const tickets = await db
+          .select({
+            id: serviceTickets.id,
+            azTicketId: serviceTickets.azTicketId,
+            subject: serviceTickets.subject,
+            description: serviceTickets.description,
+            azHouseholdId: serviceTickets.azHouseholdId,
+            stageId: serviceTickets.stageId,
+            stageName: serviceTickets.stageName,
+            csrId: serviceTickets.csrId,
+            csrName: serviceTickets.csrName,
+            priorityId: serviceTickets.priorityId,
+            priorityName: serviceTickets.priorityName,
+            categoryId: serviceTickets.categoryId,
+            categoryName: serviceTickets.categoryName,
+            dueDate: serviceTickets.dueDate,
+            createdAt: serviceTickets.createdAt,
+          })
+          .from(serviceTickets)
+          .where(
+            and(
+              eq(serviceTickets.tenantId, tenantId),
+              eq(serviceTickets.pipelineId, SERVICE_PIPELINES.POLICY_SERVICE),
+              eq(serviceTickets.status, 'active')
+            )
           )
-        )
-        .orderBy(desc(serviceTickets.createdAt))
-        .limit(200);
+          .orderBy(desc(serviceTickets.createdAt))
+          .limit(200);
 
-      // Get customer names for tickets with local customer IDs
-      const customerIds = tickets.map(t => t.customerId).filter(Boolean) as string[];
-      const customerRecords = customerIds.length > 0
-        ? await db
-            .select({
-              id: customers.id,
-              firstName: customers.firstName,
-              lastName: customers.lastName,
-              phone: customers.phone,
-            })
-            .from(customers)
-            .where(inArray(customers.id, customerIds))
-        : [];
-
-      const customerMap = new Map(customerRecords.map(c => [
-        c.id,
-        { name: `${c.firstName || ''} ${c.lastName || ''}`.trim(), phone: c.phone }
-      ]));
-
-      return tickets.map(t => {
-        const customer = t.customerId ? customerMap.get(t.customerId) : null;
-        return {
+        return tickets.map(t => ({
           id: t.id,
           azTicketId: t.azTicketId,
           subject: t.subject,
           description: t.description,
-          customerName: customer?.name || null,
-          customerPhone: customer?.phone || null,
+          customerName: null,
+          customerPhone: null,
           stageId: t.stageId,
           stageName: t.stageName,
           csrId: t.csrId,
@@ -390,8 +421,8 @@ export async function GET(request: NextRequest) {
           createdAt: t.createdAt.toISOString(),
           ageMinutes: Math.floor((now.getTime() - new Date(t.createdAt).getTime()) / 60000),
           azHouseholdId: t.azHouseholdId,
-        };
-      });
+        }));
+      }
     }
 
     // Fetch employees for assignment
