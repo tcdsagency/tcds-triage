@@ -21,7 +21,7 @@ interface TicketDetailPanelProps {
   onClose: () => void;
   onStageChange?: (ticketId: string, stageId: number, stageName: string) => Promise<void>;
   onAssigneeChange?: (ticketId: string, csrId: number, csrName: string) => Promise<void>;
-  onTriageAction?: (item: TriageItem, action: 'note' | 'ticket' | 'skip' | 'delete') => void;
+  onTriageAction?: (item: TriageItem, action: 'note' | 'ticket' | 'skip' | 'delete' | 'match') => void;
   onTicketUpdated?: () => void;
 }
 

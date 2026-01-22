@@ -25,7 +25,7 @@ interface ServiceKanbanBoardProps {
   completedTickets?: ServiceTicketItem[];
   employees: Employee[];
   onStageChange: (ticketId: string, newStageId: number, newStageName: string) => Promise<boolean>;
-  onTriageAction: (item: TriageItem, action: 'note' | 'ticket' | 'skip' | 'delete') => void;
+  onTriageAction: (item: TriageItem, action: 'note' | 'ticket' | 'skip' | 'delete' | 'match') => void;
   onItemClick: (item: TriageItem | ServiceTicketItem, type: 'triage' | 'ticket') => void;
   onCreateTicketFromTriage?: (item: TriageItem, targetStageId: number) => void;
   onCompleteTicket?: (ticket: ServiceTicketItem) => void;
