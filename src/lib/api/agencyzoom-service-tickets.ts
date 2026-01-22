@@ -163,12 +163,17 @@ export const SERVICE_PIPELINES = {
 
 // TCDS Agency-specific Stage IDs
 export const PIPELINE_STAGES = {
-  // Policy Service Pipeline
+  // Policy Service Pipeline (30699)
   POLICY_SERVICE_NEW: 111160,
-  // Claims
+  POLICY_SERVICE_IN_PROGRESS: 111161,
+  POLICY_SERVICE_WAITING_ON_INFO: 111162,
+  // Claims Pipeline (31742)
   CLAIMS_FILED: 115719,
-  // Mortgagee Late Pays
-  MORTGAGEE_VERIFIED: 339834
+  CLAIMS_PENDING: 115720,
+  CLAIMS_CLOSED: 115721,
+  // Mortgagee Billed Late Pays (79072)
+  MORTGAGEE_VERIFIED: 339834,
+  MORTGAGEE_PAYMENT_RECEIVED: 339835,
 } as const;
 
 // TCDS Agency-specific Category IDs
@@ -239,6 +244,7 @@ export const SERVICE_RESOLUTIONS = {
 
 // TCDS Agency Employee IDs (AgencyZoom CSR IDs)
 export const EMPLOYEE_IDS = {
+  ACCOUNT_CSR: 0,             // Special: assigns to customer's designated account CSR
   TODD_CONN: 94004,
   MONTRICE_LEMASTER: 94005,
   BLAIR_LEE: 94006,
@@ -247,6 +253,11 @@ export const EMPLOYEE_IDS = {
   AI_AGENT: 114877,
   PAULO_GACULA: 132766,
   STEPHANIE_GOODMAN: 159477,
+} as const;
+
+// Special Household IDs
+export const SPECIAL_HOUSEHOLDS = {
+  NCM_PLACEHOLDER: 22138921,  // "No Customer Match" placeholder for unmatched tickets
 } as const;
 
 // Default values
