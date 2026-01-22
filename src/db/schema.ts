@@ -423,7 +423,11 @@ export const customers = pgTable('customers', {
   // Pipeline (from AgencyZoom)
   pipelineStage: varchar('pipeline_stage', { length: 50 }),
   leadSource: varchar('lead_source', { length: 100 }),
-  
+  pipelineId: integer('pipeline_id'),
+  pipelineStageId: integer('pipeline_stage_id'),
+  stageEnteredAt: timestamp('stage_entered_at'),
+  quotedPremium: real('quoted_premium'),
+
   // Lead vs Customer distinction
   // Leads are prospects in AgencyZoom that haven't become customers yet
   // Important: Leads CANNOT have service requests in AgencyZoom
@@ -493,6 +497,7 @@ export const customers = pgTable('customers', {
   index('customers_hs_idx').on(table.tenantId, table.hawksoftClientCode),
   index('customers_archived_idx').on(table.tenantId, table.isArchived),
   index('customers_lead_idx').on(table.tenantId, table.isLead),
+  index('customers_pipeline_idx').on(table.tenantId, table.pipelineId, table.pipelineStageId),
   // Unique constraint to prevent duplicate AgencyZoom leads
   uniqueIndex('customers_tenant_az_unique').on(table.tenantId, table.agencyzoomId),
 ]);
