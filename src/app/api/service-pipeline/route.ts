@@ -459,6 +459,19 @@ export async function GET(request: NextRequest) {
       fetchEmployees(),
     ]);
 
+    // Build employee lookup map for CSR name resolution
+    const employeeMap = new Map(employees.map(e => [e.id, e]));
+
+    // Populate CSR names on tickets using employee lookup
+    for (const ticket of ticketItems) {
+      if (ticket.csrId && !ticket.csrName) {
+        const employee = employeeMap.get(ticket.csrId);
+        if (employee) {
+          ticket.csrName = employee.name;
+        }
+      }
+    }
+
     // Group tickets by stage
     const ticketsByStage: Record<number, ServiceTicketItem[]> = {
       [PIPELINE_STAGES.NEW]: [],
