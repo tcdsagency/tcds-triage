@@ -5,6 +5,10 @@
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/sms/sync",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/retry-queue/process",
       "schedule": "*/5 * * * *"
     },

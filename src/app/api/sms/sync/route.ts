@@ -398,13 +398,42 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * GET /api/sms/sync - Get sync status and history
+ * GET /api/sms/sync - Get sync status and history, or trigger sync if cron
  * Query params:
  *   - jobId: Get specific job status (optional)
+ *   - trigger: Set to "true" to trigger an incremental sync (for cron use)
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const jobId = searchParams.get("jobId");
+  const trigger = searchParams.get("trigger");
+  const isVercelCron = request.headers.get("x-vercel-cron") === "1";
+
+  // If triggered by cron or explicit trigger param, start an incremental sync
+  if (isVercelCron || trigger === "true") {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+
+    if (!tenantId) {
+      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    }
+
+    if (currentJob) {
+      return NextResponse.json({
+        success: false,
+        message: "Sync already in progress",
+        job: currentJob,
+      });
+    }
+
+    // Start incremental sync (last 1 month of threads)
+    runSync(tenantId, "incremental", 1).catch(console.error);
+
+    return NextResponse.json({
+      success: true,
+      message: "Incremental SMS sync started via cron",
+      jobId: (currentJob as SyncJob | null)?.id,
+    });
+  }
 
   if (jobId) {
     // Find specific job
