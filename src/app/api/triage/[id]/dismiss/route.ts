@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { wrapupDrafts } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 // Common dismissal reasons
 export const DISMISSAL_REASONS = {
@@ -81,25 +81,24 @@ export async function POST(
       : reason;
 
     // Update the wrapup draft
-    // Ensure reviewerId is explicitly null if empty/undefined (foreign key constraint)
-    let validReviewerId: string | null = null;
-    if (reviewerId && typeof reviewerId === 'string' && reviewerId.trim().length > 0) {
-      validReviewerId = reviewerId.trim();
-    }
+    // Build update object - only include reviewerId if it's a valid UUID
+    const hasValidReviewerId = reviewerId && typeof reviewerId === 'string' && reviewerId.trim().length > 0;
 
-    console.log(`[Dismiss] itemId=${itemId}, reviewerId input="${reviewerId}", validReviewerId=${validReviewerId}`);
+    console.log(`[Dismiss] itemId=${itemId}, reviewerId="${reviewerId}", hasValid=${hasValidReviewerId}`);
 
-    await db
-      .update(wrapupDrafts)
-      .set({
-        triageDecision: "dismiss",
-        status: "completed",
-        reviewerDecision: `dismissed: ${fullReason}`,
-        reviewerId: validReviewerId,
-        reviewedAt: new Date(),
-        outcome: `Dismissed: ${fullReason}`,
-      })
-      .where(eq(wrapupDrafts.id, itemId));
+    // Use raw SQL to ensure NULL is properly set
+    await db.execute(sql`
+      UPDATE wrapup_drafts
+      SET
+        triage_decision = 'dismiss',
+        status = 'completed',
+        reviewer_decision = ${`dismissed: ${fullReason}`},
+        reviewer_id = ${hasValidReviewerId ? reviewerId!.trim() : null},
+        reviewed_at = NOW(),
+        outcome = ${`Dismissed: ${fullReason}`},
+        updated_at = NOW()
+      WHERE id = ${itemId}
+    `);
 
     return NextResponse.json({
       success: true,
