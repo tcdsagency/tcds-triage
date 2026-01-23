@@ -1782,6 +1782,12 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   leadAssignedToId: uuid('lead_assigned_to_id').references(() => users.id),
   agencyzoomLeadId: text('agencyzoom_lead_id'),
 
+  // Smart Triage Inbox fields
+  aiTriageRecommendation: jsonb('ai_triage_recommendation'), // AI-generated triage recommendation
+  triageDecision: text('triage_decision'), // 'append', 'create', 'dismiss'
+  appendedToTicketId: integer('appended_to_ticket_id'), // AgencyZoom ticket ID if appended
+  similarityComputedAt: timestamp('similarity_computed_at'), // When similarity scoring was run
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   completedAt: timestamp('completed_at'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -1790,6 +1796,7 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   index('wrapup_drafts_status_idx').on(table.tenantId, table.status),
   index('wrapup_drafts_match_idx').on(table.tenantId, table.matchStatus),
   index('wrapup_drafts_created_idx').on(table.tenantId, table.createdAt),
+  index('wrapup_drafts_triage_idx').on(table.tenantId, table.status, table.triageDecision),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
