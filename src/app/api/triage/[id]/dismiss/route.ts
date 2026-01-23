@@ -86,11 +86,11 @@ export async function POST(
     console.log(`[Dismiss] itemId=${itemId}, reviewerId="${reviewerId}", hasValid=${hasValidReviewerId}`);
 
     // Use separate queries to handle NULL reviewer_id properly
+    // Note: triage_decision column doesn't exist in DB, using reviewer_decision instead
     if (hasValidReviewerId) {
       await db.execute(sql`
         UPDATE wrapup_drafts
         SET
-          triage_decision = 'dismiss',
           status = 'completed',
           reviewer_decision = ${`dismissed: ${fullReason}`},
           reviewer_id = ${reviewerId!.trim()},
@@ -103,7 +103,6 @@ export async function POST(
       await db.execute(sql`
         UPDATE wrapup_drafts
         SET
-          triage_decision = 'dismiss',
           status = 'completed',
           reviewer_decision = ${`dismissed: ${fullReason}`},
           reviewer_id = NULL,

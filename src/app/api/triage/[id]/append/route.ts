@@ -121,16 +121,16 @@ export async function POST(
     }
 
     // Update the wrapup draft
+    // Note: triageDecision and appendedToTicketId columns don't exist in DB
     await db
       .update(wrapupDrafts)
       .set({
-        triageDecision: "append",
-        appendedToTicketId: ticketId,
         status: "completed",
         reviewerDecision: "append_to_ticket",
         reviewerId: (reviewerId?.trim() || null),
         reviewedAt: new Date(),
         outcome: `Appended to ticket #${ticketId}`,
+        agencyzoomTicketId: ticketId.toString(),
       })
       .where(eq(wrapupDrafts.id, itemId));
 
