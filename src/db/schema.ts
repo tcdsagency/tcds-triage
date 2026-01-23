@@ -1784,7 +1784,7 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
 
   // Smart Triage Inbox fields
   aiTriageRecommendation: jsonb('ai_triage_recommendation'), // AI-generated triage recommendation
-  triageDecision: text('triage_decision'), // 'append', 'create', 'dismiss'
+  // triageDecision removed - column doesn't exist in DB, using reviewer_decision instead
   appendedToTicketId: integer('appended_to_ticket_id'), // AgencyZoom ticket ID if appended
   similarityComputedAt: timestamp('similarity_computed_at'), // When similarity scoring was run
 
@@ -1796,7 +1796,7 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   index('wrapup_drafts_status_idx').on(table.tenantId, table.status),
   index('wrapup_drafts_match_idx').on(table.tenantId, table.matchStatus),
   index('wrapup_drafts_created_idx').on(table.tenantId, table.createdAt),
-  index('wrapup_drafts_triage_idx').on(table.tenantId, table.status, table.triageDecision),
+  // wrapup_drafts_triage_idx removed - triageDecision column doesn't exist
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
