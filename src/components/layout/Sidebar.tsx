@@ -32,6 +32,7 @@ import {
   ClipboardCheck,
   Bell,
   Link2,
+  Inbox,
   Moon,
   Cake,
   Landmark,
@@ -44,6 +45,7 @@ import {
 const ROUTE_FEATURE_MAP: Record<string, string> = {
   // Core
   '/dashboard': 'dashboard',
+  '/triage-inbox': 'pendingReview', // Uses same permission as pending-review
   '/pending-review': 'pendingReview',
   '/after-hours': 'afterHours',
   '/messages': 'messages',
@@ -89,6 +91,7 @@ const dashboardNav = [
 // Intake & Reception section (base items - Supervisor added conditionally)
 const getIntakeNav = (canAccessSupervisor: boolean) => {
   const baseItems = [
+    { name: 'Triage Inbox', href: '/triage-inbox', icon: Inbox },
     { name: 'Pending Review', href: '/pending-review', icon: ClipboardCheck },
     { name: 'Lead Queue', href: '/leads', icon: UserPlus },
     { name: 'Calls', href: '/calls', icon: Phone },
