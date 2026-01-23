@@ -128,7 +128,7 @@ export async function POST(
         appendedToTicketId: ticketId,
         status: "completed",
         reviewerDecision: "append_to_ticket",
-        reviewerId: reviewerId || null,
+        reviewerId: (reviewerId?.trim() || null),
         reviewedAt: new Date(),
         outcome: `Appended to ticket #${ticketId}`,
       })

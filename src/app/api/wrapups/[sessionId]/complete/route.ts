@@ -170,7 +170,7 @@ export async function POST(
           outcome: "skipped",
           completionAction: "skipped",
           completedAt: new Date(),
-          reviewerId: body.reviewerId || null,
+          reviewerId: (body.reviewerId?.trim() || null),
           reviewedAt: new Date(),
         })
         .where(eq(wrapupDrafts.id, wrapupId));
@@ -200,10 +200,10 @@ export async function POST(
           completionAction: "deleted",
           deleteReason: body.deleteReason,
           deleteNotes: body.deleteNotes || null,
-          deletedById: body.reviewerId || null,
+          deletedById: (body.reviewerId?.trim() || null),
           deletedAt: new Date(),
           completedAt: new Date(),
-          reviewerId: body.reviewerId || null,
+          reviewerId: (body.reviewerId?.trim() || null),
           reviewedAt: new Date(),
         })
         .where(eq(wrapupDrafts.id, wrapupId));
@@ -287,7 +287,7 @@ export async function POST(
                 editedSummary: body.editedSummary || null,
                 agencyzoomNoteId: noteResult.id?.toString(),
                 completedAt: new Date(),
-                reviewerId: body.reviewerId || null,
+                reviewerId: (body.reviewerId?.trim() || null),
                 reviewedAt: new Date(),
               })
               .where(eq(wrapupDrafts.id, wrapupId));
@@ -457,7 +457,7 @@ export async function POST(
                 agencyzoomNoteId: noteId?.toString(),
                 agencyzoomTicketId: ticketResult.serviceTicketId?.toString(),
                 completedAt: new Date(),
-                reviewerId: body.reviewerId || null,
+                reviewerId: (body.reviewerId?.trim() || null),
                 reviewedAt: new Date(),
               })
               .where(eq(wrapupDrafts.id, wrapupId));
@@ -575,7 +575,7 @@ export async function POST(
                 leadAssignedToId: body.leadDetails?.assignedToId || null,
                 agencyzoomLeadId: leadResult.leadId?.toString(),
                 completedAt: new Date(),
-                reviewerId: body.reviewerId || null,
+                reviewerId: (body.reviewerId?.trim() || null),
                 reviewedAt: new Date(),
               })
               .where(eq(wrapupDrafts.id, wrapupId));

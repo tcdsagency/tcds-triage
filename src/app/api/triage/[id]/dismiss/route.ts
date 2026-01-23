@@ -81,13 +81,16 @@ export async function POST(
       : reason;
 
     // Update the wrapup draft
+    // Ensure reviewerId is null if empty string (foreign key constraint)
+    const validReviewerId = reviewerId && reviewerId.trim() ? reviewerId : null;
+
     await db
       .update(wrapupDrafts)
       .set({
         triageDecision: "dismiss",
         status: "completed",
         reviewerDecision: `dismissed: ${fullReason}`,
-        reviewerId: reviewerId || null,
+        reviewerId: validReviewerId,
         reviewedAt: new Date(),
         outcome: `Dismissed: ${fullReason}`,
       })
