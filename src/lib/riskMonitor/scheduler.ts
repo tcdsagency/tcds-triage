@@ -15,6 +15,7 @@ import { rprClient, type RPRPropertyData } from "@/lib/rpr";
 import { mmiClient, type MMIPropertyData } from "@/lib/mmi";
 import { outlookClient } from "@/lib/outlook";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { normalizeAddress, type NormalizedAddress } from "./addressUtils";
 
 // =============================================================================
 // TYPES
@@ -33,7 +34,7 @@ interface SchedulerSettings {
   alertEmailAddresses: string[];
 }
 
-interface PropertyCheckResult {
+export interface PropertyCheckResult {
   policyId: string;
   address: string;
   previousStatus: string;
@@ -42,9 +43,20 @@ interface PropertyCheckResult {
   mmiData?: MMIPropertyData | null;
   alertCreated: boolean;
   error?: string;
+  confidenceScore?: number;
+  confidenceFactors?: ConfidenceFactors;
 }
 
-interface SchedulerRunResult {
+export interface ConfidenceFactors {
+  rprScore: number;
+  mmiScore: number;
+  sourceAgreementBoost: number;
+  mlsBoost: number;
+  freshnessDecay: number;
+  finalScore: number;
+}
+
+export interface SchedulerRunResult {
   success: boolean;
   runId: string;
   propertiesChecked: number;
@@ -75,6 +87,19 @@ export class RiskMonitorScheduler {
     if (policy.addressLine2) parts.push(policy.addressLine2);
     parts.push(`${policy.city}, ${policy.state} ${policy.zipCode}`);
     return parts.join(", ");
+  }
+
+  /**
+   * Get normalized address from policy for consistent comparison
+   */
+  private getNormalizedAddress(policy: typeof riskMonitorPolicies.$inferSelect): NormalizedAddress {
+    return normalizeAddress(
+      policy.addressLine1,
+      policy.addressLine2,
+      policy.city,
+      policy.state,
+      policy.zipCode
+    );
   }
 
   /**
@@ -180,7 +205,10 @@ export class RiskMonitorScheduler {
   async checkProperty(
     policy: typeof riskMonitorPolicies.$inferSelect
   ): Promise<PropertyCheckResult> {
-    const fullAddress = this.getFullAddress(policy);
+    // Use normalized address for consistent API lookups
+    const normalizedAddr = this.getNormalizedAddress(policy);
+    const fullAddress = normalizedAddr.fullAddress;
+
     const result: PropertyCheckResult = {
       policyId: policy.id,
       address: fullAddress,
@@ -193,19 +221,20 @@ export class RiskMonitorScheduler {
       let rprData: RPRPropertyData | null = null;
       let mmiData: MMIPropertyData | null = null;
 
-      // Check RPR
+      // Check RPR using normalized address
       if (this.settings?.rprEnabled) {
-        await this.logEvent("rpr_lookup", policy.id, "Checking RPR...");
+        await this.logEvent("rpr_lookup", policy.id, `Checking RPR: ${fullAddress}`);
         rprData = await rprClient.lookupProperty(fullAddress);
         result.rprData = rprData;
         await this.logEvent("rpr_lookup", policy.id, "RPR check complete", {
           hasListing: !!rprData?.listing,
+          normalizedAddress: normalizedAddr.normalizedKey,
         });
       }
 
-      // Check MMI
+      // Check MMI using normalized address
       if (this.settings?.mmiEnabled) {
-        await this.logEvent("mmi_lookup", policy.id, "Checking MMI...");
+        await this.logEvent("mmi_lookup", policy.id, `Checking MMI: ${fullAddress}`);
         const mmiResult = await mmiClient.lookupByAddress(fullAddress);
         mmiData = mmiResult.data ?? null;
         result.mmiData = mmiData;
@@ -213,6 +242,7 @@ export class RiskMonitorScheduler {
           status: mmiData?.currentStatus,
           success: mmiResult.success,
           error: mmiResult.error,
+          normalizedAddress: normalizedAddr.normalizedKey,
         });
       }
 
@@ -230,6 +260,15 @@ export class RiskMonitorScheduler {
 
       // Determine new status based on both sources
       result.newStatus = this.determineStatus(rprData, mmiData);
+
+      // Calculate confidence score
+      const confidenceFactors = this.calculateConfidenceScore(rprData, mmiData, result.newStatus);
+      result.confidenceScore = confidenceFactors.finalScore;
+      result.confidenceFactors = confidenceFactors;
+
+      await this.logEvent("confidence_calculated", policy.id, `Confidence score: ${(confidenceFactors.finalScore * 100).toFixed(0)}%`, {
+        factors: confidenceFactors,
+      });
 
       // Update policy record
       await this.updatePolicyStatus(policy, result.newStatus, rprData, mmiData);
@@ -253,6 +292,17 @@ export class RiskMonitorScheduler {
     } catch (error: any) {
       result.error = error.message || "Unknown error";
       await this.logEvent("error", policy.id, `Error: ${result.error}`);
+
+      // Increment error count for the policy
+      await db
+        .update(riskMonitorPolicies)
+        .set({
+          checkErrorCount: sql`COALESCE(${riskMonitorPolicies.checkErrorCount}, 0) + 1`,
+          lastCheckError: result.error,
+          lastCheckedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(riskMonitorPolicies.id, policy.id));
     }
 
     return result;
@@ -308,6 +358,200 @@ export class RiskMonitorScheduler {
   }
 
   /**
+   * Calculate confidence score (0.0-1.0) based on source reliability and agreement
+   *
+   * Scoring factors:
+   * - Base scores: RPR (0.6) and MMI (0.7) - MMI slightly higher due to MLS data
+   * - Agreement boost: +0.1 if both sources agree on status/dates within 14 days
+   * - MLS boost: +0.15 if MLS data confirms active listing or recent sale
+   * - Freshness decay: Reduce score if event date is older than 90 days
+   */
+  private calculateConfidenceScore(
+    rprData: RPRPropertyData | null | undefined,
+    mmiData: MMIPropertyData | null | undefined,
+    determinedStatus: string
+  ): ConfidenceFactors {
+    const factors: ConfidenceFactors = {
+      rprScore: 0,
+      mmiScore: 0,
+      sourceAgreementBoost: 0,
+      mlsBoost: 0,
+      freshnessDecay: 0,
+      finalScore: 0,
+    };
+
+    // Base scores for available data sources
+    if (rprData) {
+      // RPR base score 0.6
+      factors.rprScore = 0.6;
+      // Increase if RPR has listing data
+      if (rprData.listing?.active || rprData.listing?.status) {
+        factors.rprScore = 0.65;
+      }
+    }
+
+    if (mmiData) {
+      // MMI base score 0.7 (higher because MLS-backed)
+      factors.mmiScore = 0.7;
+      // Increase if MMI has listing history
+      if (mmiData.listingHistory?.length) {
+        factors.mmiScore = 0.75;
+      }
+    }
+
+    // Source agreement boost (+0.1)
+    // Check if RPR and MMI agree on status or have events within 14 days
+    if (rprData && mmiData) {
+      const rprStatus = this.extractStatusFromRPR(rprData);
+      const mmiStatus = this.extractStatusFromMMI(mmiData);
+
+      if (rprStatus && mmiStatus) {
+        // Status agreement
+        if (rprStatus === mmiStatus) {
+          factors.sourceAgreementBoost = 0.1;
+        } else {
+          // Check date proximity - events within 14 days
+          const rprDate = this.extractEventDateFromRPR(rprData);
+          const mmiDate = this.extractEventDateFromMMI(mmiData);
+
+          if (rprDate && mmiDate) {
+            const daysDiff = Math.abs(rprDate.getTime() - mmiDate.getTime()) / (1000 * 60 * 60 * 24);
+            if (daysDiff <= 14) {
+              factors.sourceAgreementBoost = 0.1;
+            }
+          }
+        }
+      }
+    }
+
+    // MLS boost (+0.15) if MLS data aligns with determined status
+    const latestMLSListing = mmiData?.listingHistory?.[0];
+    if (latestMLSListing?.STATUS) {
+      const mlsStatus = latestMLSListing.STATUS.toUpperCase();
+
+      if (
+        (determinedStatus === "active" && mlsStatus === "ACTIVE") ||
+        (determinedStatus === "pending" && (mlsStatus === "PENDING" || mlsStatus === "UNDER CONTRACT")) ||
+        (determinedStatus === "sold" && (mlsStatus === "SOLD" || mlsStatus === "CLOSED"))
+      ) {
+        factors.mlsBoost = 0.15;
+      }
+    }
+
+    // Freshness decay - reduce score if event is older than 90 days
+    const eventDate = this.extractEventDateFromMMI(mmiData) || this.extractEventDateFromRPR(rprData);
+    if (eventDate) {
+      const daysSinceEvent = (Date.now() - eventDate.getTime()) / (1000 * 60 * 60 * 24);
+
+      if (daysSinceEvent > 365) {
+        // Very old events - significant penalty
+        factors.freshnessDecay = -0.3;
+      } else if (daysSinceEvent > 180) {
+        // 6+ months old - moderate penalty
+        factors.freshnessDecay = -0.15;
+      } else if (daysSinceEvent > 90) {
+        // 3-6 months old - small penalty
+        factors.freshnessDecay = -0.05;
+      }
+      // Events within 90 days get no penalty
+    }
+
+    // Calculate final score
+    // Use the higher of RPR or MMI as base, then add boosts and apply decay
+    const baseScore = Math.max(factors.rprScore, factors.mmiScore);
+    factors.finalScore = Math.min(
+      1.0,
+      Math.max(
+        0,
+        baseScore + factors.sourceAgreementBoost + factors.mlsBoost + factors.freshnessDecay
+      )
+    );
+
+    return factors;
+  }
+
+  /**
+   * Extract status from RPR data
+   */
+  private extractStatusFromRPR(rprData: RPRPropertyData): string | null {
+    if (rprData.listing?.active) return "active";
+    if (rprData.listing?.status) {
+      const status = rprData.listing.status.toLowerCase();
+      if (status === "pending" || status === "under contract") return "pending";
+      if (status === "sold" || status === "closed") return "sold";
+      if (status === "active") return "active";
+    }
+    if (rprData.currentStatus && rprData.currentStatus !== "unknown") {
+      return rprData.currentStatus;
+    }
+    return null;
+  }
+
+  /**
+   * Extract status from MMI data
+   */
+  private extractStatusFromMMI(mmiData: MMIPropertyData): string | null {
+    const latestListing = mmiData.listingHistory?.[0];
+    if (latestListing?.STATUS) {
+      const status = latestListing.STATUS.toUpperCase();
+      if (status === "ACTIVE") return "active";
+      if (status === "PENDING" || status === "UNDER CONTRACT") return "pending";
+      if (status === "SOLD" || status === "CLOSED") return "sold";
+    }
+    if (mmiData.currentStatus && mmiData.currentStatus !== "unknown") {
+      return mmiData.currentStatus;
+    }
+    return null;
+  }
+
+  /**
+   * Extract event date from RPR data (listing date or sale date)
+   */
+  private extractEventDateFromRPR(rprData: RPRPropertyData | null | undefined): Date | null {
+    if (!rprData) return null;
+
+    // Try listing date first (calculated from days on market)
+    if (rprData.listing?.daysOnMarket) {
+      const listDate = new Date();
+      listDate.setDate(listDate.getDate() - rprData.listing.daysOnMarket);
+      return listDate;
+    }
+
+    // Try last sale date
+    if (rprData.lastSaleDate) {
+      return new Date(rprData.lastSaleDate);
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract event date from MMI data (listing date or sale date)
+   */
+  private extractEventDateFromMMI(mmiData: MMIPropertyData | null | undefined): Date | null {
+    if (!mmiData) return null;
+
+    const latestListing = mmiData.listingHistory?.[0];
+
+    // Try sold date first (most relevant for sold properties)
+    if (latestListing?.SOLD_DATE) {
+      return new Date(latestListing.SOLD_DATE);
+    }
+
+    // Try listing date
+    if (latestListing?.LISTING_DATE) {
+      return new Date(latestListing.LISTING_DATE);
+    }
+
+    // Fallback to last sale date
+    if (mmiData.lastSaleDate) {
+      return new Date(mmiData.lastSaleDate);
+    }
+
+    return null;
+  }
+
+  /**
    * Update policy status in database
    */
   private async updatePolicyStatus(
@@ -322,6 +566,9 @@ export class RiskMonitorScheduler {
       lastCheckedAt: new Date(),
       lastStatusChange: newStatus !== policy.currentStatus ? new Date() : policy.lastStatusChange,
       updatedAt: new Date(),
+      // Reset error tracking on successful check
+      checkErrorCount: 0,
+      lastCheckError: null,
     };
 
     // Extract listing details from MMI
@@ -519,6 +766,10 @@ export class RiskMonitorScheduler {
         mmi: result.mmiData || null,
         rpr: result.rprData || null,
         checkedAt: new Date().toISOString(),
+        confidence: {
+          score: result.confidenceScore ?? 0,
+          factors: result.confidenceFactors ?? null,
+        },
         customer: {
           name: policy.contactName,
           email: policy.contactEmail,
@@ -528,8 +779,9 @@ export class RiskMonitorScheduler {
       },
     });
 
-    await this.logEvent("alert_created", policy.id, `Created ${alertType} alert`, {
+    await this.logEvent("alert_created", policy.id, `Created ${alertType} alert (confidence: ${((result.confidenceScore ?? 0) * 100).toFixed(0)}%)`, {
       priority,
+      confidenceScore: result.confidenceScore,
     });
 
     // Send email notification if enabled (for all alert types: sold, pending, active)
@@ -997,8 +1249,13 @@ Please review and take appropriate action.
 
   /**
    * Check a single property manually (outside of scheduled window)
+   * @param policyId - The policy ID to check
+   * @param forceRescan - If true, ignores lastCheckedAt and performs check regardless
    */
-  async checkPropertyManual(policyId: string): Promise<PropertyCheckResult> {
+  async checkPropertyManual(
+    policyId: string,
+    forceRescan: boolean = false
+  ): Promise<PropertyCheckResult> {
     this.settings = await this.loadSettings();
 
     const [policy] = await db
@@ -1023,7 +1280,485 @@ Please review and take appropriate action.
       };
     }
 
+    // Check if we should skip based on recent check (unless force_rescan)
+    if (!forceRescan && policy.lastCheckedAt) {
+      const checkIntervalMs = (this.settings?.checkIntervalDays ?? 3) * 24 * 60 * 60 * 1000;
+      const timeSinceLastCheck = Date.now() - policy.lastCheckedAt.getTime();
+
+      if (timeSinceLastCheck < checkIntervalMs) {
+        const hoursRemaining = Math.ceil((checkIntervalMs - timeSinceLastCheck) / (1000 * 60 * 60));
+        return {
+          policyId,
+          address: this.getFullAddress(policy),
+          previousStatus: policy.currentStatus ?? "unknown",
+          newStatus: policy.currentStatus ?? "unknown",
+          alertCreated: false,
+          error: `Recently checked - next check available in ${hoursRemaining} hours. Use force_rescan to override.`,
+        };
+      }
+    }
+
+    // If policy has too many consecutive errors, require force to retry
+    if (!forceRescan && (policy.checkErrorCount ?? 0) >= 3) {
+      return {
+        policyId,
+        address: this.getFullAddress(policy),
+        previousStatus: policy.currentStatus ?? "unknown",
+        newStatus: policy.currentStatus ?? "unknown",
+        alertCreated: false,
+        error: `Skipped due to ${policy.checkErrorCount} consecutive errors: ${policy.lastCheckError}. Use force_rescan to retry.`,
+      };
+    }
+
     return this.checkProperty(policy);
+  }
+
+  /**
+   * Queue a policy for rescan in the next scheduled run
+   * (resets lastCheckedAt to null)
+   */
+  async queueForRescan(policyId: string): Promise<{ success: boolean; error?: string }> {
+    const [policy] = await db
+      .select()
+      .from(riskMonitorPolicies)
+      .where(
+        and(
+          eq(riskMonitorPolicies.id, policyId),
+          eq(riskMonitorPolicies.tenantId, this.tenantId)
+        )
+      )
+      .limit(1);
+
+    if (!policy) {
+      return { success: false, error: "Policy not found" };
+    }
+
+    await db
+      .update(riskMonitorPolicies)
+      .set({
+        lastCheckedAt: null,
+        checkErrorCount: 0,
+        lastCheckError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(riskMonitorPolicies.id, policyId));
+
+    return { success: true };
+  }
+
+  /**
+   * Reset error count for a policy (allows it to be checked again)
+   */
+  async resetErrorCount(policyId: string): Promise<{ success: boolean; error?: string }> {
+    const [policy] = await db
+      .select()
+      .from(riskMonitorPolicies)
+      .where(
+        and(
+          eq(riskMonitorPolicies.id, policyId),
+          eq(riskMonitorPolicies.tenantId, this.tenantId)
+        )
+      )
+      .limit(1);
+
+    if (!policy) {
+      return { success: false, error: "Policy not found" };
+    }
+
+    await db
+      .update(riskMonitorPolicies)
+      .set({
+        checkErrorCount: 0,
+        lastCheckError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(riskMonitorPolicies.id, policyId));
+
+    return { success: true };
+  }
+
+  /**
+   * Pause monitoring for a specific policy
+   */
+  async pausePolicy(policyId: string): Promise<{ success: boolean; error?: string }> {
+    const [policy] = await db
+      .select()
+      .from(riskMonitorPolicies)
+      .where(
+        and(
+          eq(riskMonitorPolicies.id, policyId),
+          eq(riskMonitorPolicies.tenantId, this.tenantId)
+        )
+      )
+      .limit(1);
+
+    if (!policy) {
+      return { success: false, error: "Policy not found" };
+    }
+
+    await db
+      .update(riskMonitorPolicies)
+      .set({
+        isActive: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(riskMonitorPolicies.id, policyId));
+
+    return { success: true };
+  }
+
+  /**
+   * Resume monitoring for a specific policy
+   */
+  async resumePolicy(policyId: string): Promise<{ success: boolean; error?: string }> {
+    const [policy] = await db
+      .select()
+      .from(riskMonitorPolicies)
+      .where(
+        and(
+          eq(riskMonitorPolicies.id, policyId),
+          eq(riskMonitorPolicies.tenantId, this.tenantId)
+        )
+      )
+      .limit(1);
+
+    if (!policy) {
+      return { success: false, error: "Policy not found" };
+    }
+
+    await db
+      .update(riskMonitorPolicies)
+      .set({
+        isActive: true,
+        checkErrorCount: 0,
+        lastCheckError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(riskMonitorPolicies.id, policyId));
+
+    return { success: true };
+  }
+
+  /**
+   * Get skip statistics for the tenant
+   */
+  async getSkipStats(): Promise<{
+    totalPolicies: number;
+    activePolicies: number;
+    pausedPolicies: number;
+    erroredPolicies: number;
+    recentlyChecked: number;
+    pendingCheck: number;
+  }> {
+    const checkIntervalMs = (this.settings?.checkIntervalDays ?? 3) * 24 * 60 * 60 * 1000;
+    const cutoffDate = new Date(Date.now() - checkIntervalMs);
+
+    const stats = await db
+      .select({
+        total: sql<number>`COUNT(*)`,
+        active: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorPolicies.isActive} = true)`,
+        paused: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorPolicies.isActive} = false)`,
+        errored: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorPolicies.checkErrorCount} >= 3)`,
+        recentlyChecked: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorPolicies.lastCheckedAt} > ${cutoffDate})`,
+      })
+      .from(riskMonitorPolicies)
+      .where(eq(riskMonitorPolicies.tenantId, this.tenantId));
+
+    const result = stats[0];
+    return {
+      totalPolicies: Number(result?.total ?? 0),
+      activePolicies: Number(result?.active ?? 0),
+      pausedPolicies: Number(result?.paused ?? 0),
+      erroredPolicies: Number(result?.errored ?? 0),
+      recentlyChecked: Number(result?.recentlyChecked ?? 0),
+      pendingCheck: Number(result?.active ?? 0) - Number(result?.recentlyChecked ?? 0),
+    };
+  }
+
+  /**
+   * Get operational metrics for a time period
+   */
+  async getOperationalMetrics(days: number = 7): Promise<{
+    period: { start: Date; end: Date };
+    runs: {
+      total: number;
+      successful: number;
+      failed: number;
+      averageDuration: number;
+    };
+    properties: {
+      totalChecked: number;
+      averagePerRun: number;
+      uniqueProperties: number;
+    };
+    alerts: {
+      created: number;
+      byType: Record<string, number>;
+      byPriority: Record<string, number>;
+    };
+    apiCalls: {
+      rpr: { total: number; success: number; errorRate: number };
+      mmi: { total: number; success: number; errorRate: number };
+    };
+    errors: {
+      total: number;
+      byType: Record<string, number>;
+    };
+  }> {
+    const endDate = new Date();
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    // Get run statistics
+    const runStats = await db
+      .select({
+        total: sql<number>`COUNT(*)`,
+        successful: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorActivityLog.status} = 'completed')`,
+        failed: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorActivityLog.status} = 'failed')`,
+        totalDuration: sql<number>`SUM(EXTRACT(EPOCH FROM (${riskMonitorActivityLog.completedAt} - ${riskMonitorActivityLog.startedAt})) * 1000)`,
+        totalPoliciesChecked: sql<number>`SUM(${riskMonitorActivityLog.policiesChecked})`,
+        totalAlertsCreated: sql<number>`SUM(${riskMonitorActivityLog.alertsCreated})`,
+      })
+      .from(riskMonitorActivityLog)
+      .where(
+        and(
+          eq(riskMonitorActivityLog.tenantId, this.tenantId),
+          sql`${riskMonitorActivityLog.startedAt} >= ${startDate}`,
+          sql`${riskMonitorActivityLog.startedAt} <= ${endDate}`
+        )
+      );
+
+    const runs = runStats[0];
+    const totalRuns = Number(runs?.total ?? 0);
+    const successfulRuns = Number(runs?.successful ?? 0);
+    const totalPoliciesChecked = Number(runs?.totalPoliciesChecked ?? 0);
+
+    // Get alert statistics
+    const alertStats = await db
+      .select({
+        total: sql<number>`COUNT(*)`,
+        listingDetected: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorAlerts.alertType} = 'listing_detected')`,
+        pendingSale: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorAlerts.alertType} = 'pending_sale')`,
+        sold: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorAlerts.alertType} = 'sold')`,
+        priority1: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorAlerts.priority} = '1')`,
+        priority2: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorAlerts.priority} = '2')`,
+        priority3: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorAlerts.priority} = '3')`,
+        priority4: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorAlerts.priority} = '4')`,
+      })
+      .from(riskMonitorAlerts)
+      .where(
+        and(
+          eq(riskMonitorAlerts.tenantId, this.tenantId),
+          sql`${riskMonitorAlerts.createdAt} >= ${startDate}`,
+          sql`${riskMonitorAlerts.createdAt} <= ${endDate}`
+        )
+      );
+
+    const alerts = alertStats[0];
+
+    // Get API call statistics from activity events
+    const eventStats = await db
+      .select({
+        rprTotal: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorActivityEvents.eventType} = 'rpr_lookup')`,
+        rprSuccess: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorActivityEvents.eventType} = 'rpr_lookup' AND ${riskMonitorActivityEvents.description} LIKE '%complete%')`,
+        mmiTotal: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorActivityEvents.eventType} = 'mmi_lookup')`,
+        mmiSuccess: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorActivityEvents.eventType} = 'mmi_lookup' AND ${riskMonitorActivityEvents.description} LIKE '%complete%')`,
+        errorTotal: sql<number>`COUNT(*) FILTER (WHERE ${riskMonitorActivityEvents.eventType} = 'error')`,
+      })
+      .from(riskMonitorActivityEvents)
+      .where(
+        and(
+          eq(riskMonitorActivityEvents.tenantId, this.tenantId),
+          sql`${riskMonitorActivityEvents.createdAt} >= ${startDate}`,
+          sql`${riskMonitorActivityEvents.createdAt} <= ${endDate}`
+        )
+      );
+
+    const events = eventStats[0];
+    const rprTotal = Number(events?.rprTotal ?? 0);
+    const rprSuccess = Number(events?.rprSuccess ?? 0);
+    const mmiTotal = Number(events?.mmiTotal ?? 0);
+    const mmiSuccess = Number(events?.mmiSuccess ?? 0);
+
+    // Get unique properties checked
+    const uniqueProps = await db
+      .select({
+        count: sql<number>`COUNT(DISTINCT ${riskMonitorPolicies.id})`,
+      })
+      .from(riskMonitorPolicies)
+      .where(
+        and(
+          eq(riskMonitorPolicies.tenantId, this.tenantId),
+          sql`${riskMonitorPolicies.lastCheckedAt} >= ${startDate}`,
+          sql`${riskMonitorPolicies.lastCheckedAt} <= ${endDate}`
+        )
+      );
+
+    return {
+      period: { start: startDate, end: endDate },
+      runs: {
+        total: totalRuns,
+        successful: successfulRuns,
+        failed: Number(runs?.failed ?? 0),
+        averageDuration: totalRuns > 0
+          ? Math.round(Number(runs?.totalDuration ?? 0) / totalRuns)
+          : 0,
+      },
+      properties: {
+        totalChecked: totalPoliciesChecked,
+        averagePerRun: totalRuns > 0
+          ? Math.round(totalPoliciesChecked / totalRuns)
+          : 0,
+        uniqueProperties: Number(uniqueProps[0]?.count ?? 0),
+      },
+      alerts: {
+        created: Number(alerts?.total ?? 0),
+        byType: {
+          listing_detected: Number(alerts?.listingDetected ?? 0),
+          pending_sale: Number(alerts?.pendingSale ?? 0),
+          sold: Number(alerts?.sold ?? 0),
+        },
+        byPriority: {
+          critical: Number(alerts?.priority1 ?? 0),
+          high: Number(alerts?.priority2 ?? 0),
+          medium: Number(alerts?.priority3 ?? 0),
+          low: Number(alerts?.priority4 ?? 0),
+        },
+      },
+      apiCalls: {
+        rpr: {
+          total: rprTotal,
+          success: rprSuccess,
+          errorRate: rprTotal > 0
+            ? Math.round(((rprTotal - rprSuccess) / rprTotal) * 100)
+            : 0,
+        },
+        mmi: {
+          total: mmiTotal,
+          success: mmiSuccess,
+          errorRate: mmiTotal > 0
+            ? Math.round(((mmiTotal - mmiSuccess) / mmiTotal) * 100)
+            : 0,
+        },
+      },
+      errors: {
+        total: Number(events?.errorTotal ?? 0),
+        byType: {}, // Would need additional query to break down by error type
+      },
+    };
+  }
+
+  /**
+   * Get recent run history
+   */
+  async getRunHistory(limit: number = 10): Promise<Array<{
+    id: string;
+    runId: string;
+    runType: string;
+    status: string;
+    startedAt: Date;
+    completedAt: Date | null;
+    policiesChecked: number;
+    alertsCreated: number;
+    errorsEncountered: number;
+    duration: number | null;
+  }>> {
+    const runs = await db
+      .select({
+        id: riskMonitorActivityLog.id,
+        runId: riskMonitorActivityLog.runId,
+        runType: riskMonitorActivityLog.runType,
+        status: riskMonitorActivityLog.status,
+        startedAt: riskMonitorActivityLog.startedAt,
+        completedAt: riskMonitorActivityLog.completedAt,
+        policiesChecked: riskMonitorActivityLog.policiesChecked,
+        alertsCreated: riskMonitorActivityLog.alertsCreated,
+        errorsEncountered: riskMonitorActivityLog.errorsEncountered,
+      })
+      .from(riskMonitorActivityLog)
+      .where(eq(riskMonitorActivityLog.tenantId, this.tenantId))
+      .orderBy(desc(riskMonitorActivityLog.startedAt))
+      .limit(limit);
+
+    return runs.map((run) => ({
+      id: run.id,
+      runId: run.runId,
+      runType: run.runType ?? "scheduled",
+      status: run.status ?? "unknown",
+      startedAt: run.startedAt,
+      completedAt: run.completedAt,
+      policiesChecked: run.policiesChecked ?? 0,
+      alertsCreated: run.alertsCreated ?? 0,
+      errorsEncountered: run.errorsEncountered ?? 0,
+      duration: run.completedAt && run.startedAt
+        ? run.completedAt.getTime() - run.startedAt.getTime()
+        : null,
+    }));
+  }
+
+  /**
+   * Get property status distribution
+   */
+  async getStatusDistribution(): Promise<Record<string, number>> {
+    const stats = await db
+      .select({
+        status: riskMonitorPolicies.currentStatus,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(riskMonitorPolicies)
+      .where(
+        and(
+          eq(riskMonitorPolicies.tenantId, this.tenantId),
+          eq(riskMonitorPolicies.isActive, true)
+        )
+      )
+      .groupBy(riskMonitorPolicies.currentStatus);
+
+    const distribution: Record<string, number> = {};
+    for (const row of stats) {
+      distribution[row.status ?? "unknown"] = Number(row.count);
+    }
+
+    return distribution;
+  }
+
+  /**
+   * Get confidence score distribution for recent alerts
+   */
+  async getConfidenceDistribution(days: number = 30): Promise<{
+    high: number;    // >= 0.8
+    medium: number;  // 0.6 - 0.8
+    low: number;     // < 0.6
+  }> {
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const alerts = await db
+      .select({
+        rawData: riskMonitorAlerts.rawData,
+      })
+      .from(riskMonitorAlerts)
+      .where(
+        and(
+          eq(riskMonitorAlerts.tenantId, this.tenantId),
+          sql`${riskMonitorAlerts.createdAt} >= ${startDate}`
+        )
+      );
+
+    let high = 0, medium = 0, low = 0;
+
+    for (const alert of alerts) {
+      const rawData = alert.rawData as { confidence?: { score?: number } } | null;
+      const score = rawData?.confidence?.score ?? 0;
+
+      if (score >= 0.8) {
+        high++;
+      } else if (score >= 0.6) {
+        medium++;
+      } else {
+        low++;
+      }
+    }
+
+    return { high, medium, low };
   }
 }
 
