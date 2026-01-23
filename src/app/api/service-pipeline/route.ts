@@ -191,6 +191,7 @@ export async function GET(request: NextRequest) {
             callToNumber: calls.toNumber,
             agentId: calls.agentId,
             transcript: calls.transcription,
+            callStartedAt: calls.startedAt,
           })
           .from(wrapupDrafts)
           .leftJoin(calls, eq(wrapupDrafts.callId, calls.id))
@@ -244,8 +245,8 @@ export async function GET(request: NextRequest) {
             requestType: w.requestType || extraction.serviceRequestType || null,
             handledBy: w.agentId ? agentMap.get(w.agentId)?.name || null : null,
             handledByAgent: w.agentId ? agentMap.get(w.agentId) || null : null,
-            timestamp: w.createdAt.toISOString(),
-            ageMinutes: Math.floor((now.getTime() - new Date(w.createdAt).getTime()) / 60000),
+            timestamp: (w.callStartedAt || w.createdAt).toISOString(),
+            ageMinutes: Math.floor((now.getTime() - new Date(w.callStartedAt || w.createdAt).getTime()) / 60000),
             agencyzoomCustomerId: extraction.agencyZoomCustomerId,
             agencyzoomLeadId: extraction.agencyZoomLeadId,
             callId: w.callId || undefined,
