@@ -81,24 +81,38 @@ export async function POST(
       : reason;
 
     // Update the wrapup draft
-    // Build update object - only include reviewerId if it's a valid UUID
     const hasValidReviewerId = reviewerId && typeof reviewerId === 'string' && reviewerId.trim().length > 0;
 
     console.log(`[Dismiss] itemId=${itemId}, reviewerId="${reviewerId}", hasValid=${hasValidReviewerId}`);
 
-    // Use raw SQL to ensure NULL is properly set
-    await db.execute(sql`
-      UPDATE wrapup_drafts
-      SET
-        triage_decision = 'dismiss',
-        status = 'completed',
-        reviewer_decision = ${`dismissed: ${fullReason}`},
-        reviewer_id = ${hasValidReviewerId ? reviewerId!.trim() : null},
-        reviewed_at = NOW(),
-        outcome = ${`Dismissed: ${fullReason}`},
-        updated_at = NOW()
-      WHERE id = ${itemId}
-    `);
+    // Use separate queries to handle NULL reviewer_id properly
+    if (hasValidReviewerId) {
+      await db.execute(sql`
+        UPDATE wrapup_drafts
+        SET
+          triage_decision = 'dismiss',
+          status = 'completed',
+          reviewer_decision = ${`dismissed: ${fullReason}`},
+          reviewer_id = ${reviewerId!.trim()},
+          reviewed_at = NOW(),
+          outcome = ${`Dismissed: ${fullReason}`},
+          updated_at = NOW()
+        WHERE id = ${itemId}
+      `);
+    } else {
+      await db.execute(sql`
+        UPDATE wrapup_drafts
+        SET
+          triage_decision = 'dismiss',
+          status = 'completed',
+          reviewer_decision = ${`dismissed: ${fullReason}`},
+          reviewer_id = NULL,
+          reviewed_at = NOW(),
+          outcome = ${`Dismissed: ${fullReason}`},
+          updated_at = NOW()
+        WHERE id = ${itemId}
+      `);
+    }
 
     return NextResponse.json({
       success: true,
