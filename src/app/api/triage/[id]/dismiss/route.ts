@@ -81,8 +81,13 @@ export async function POST(
       : reason;
 
     // Update the wrapup draft
-    // Ensure reviewerId is null if empty string (foreign key constraint)
-    const validReviewerId = reviewerId && reviewerId.trim() ? reviewerId : null;
+    // Ensure reviewerId is explicitly null if empty/undefined (foreign key constraint)
+    let validReviewerId: string | null = null;
+    if (reviewerId && typeof reviewerId === 'string' && reviewerId.trim().length > 0) {
+      validReviewerId = reviewerId.trim();
+    }
+
+    console.log(`[Dismiss] itemId=${itemId}, reviewerId input="${reviewerId}", validReviewerId=${validReviewerId}`);
 
     await db
       .update(wrapupDrafts)
