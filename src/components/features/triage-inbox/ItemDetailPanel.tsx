@@ -121,6 +121,16 @@ export default function ItemDetailPanel({
         </p>
       </div>
 
+      {/* Transcript */}
+      {item.transcript && (
+        <div className="bg-muted/30 rounded-lg p-4 border border-border">
+          <h3 className="font-medium mb-2">Call Transcript</h3>
+          <div className="text-sm whitespace-pre-wrap max-h-80 overflow-y-auto text-muted-foreground">
+            {item.transcript}
+          </div>
+        </div>
+      )}
+
       {/* Related Tickets from AI */}
       {recommendation?.relatedTickets && recommendation.relatedTickets.length > 0 && (
         <div>

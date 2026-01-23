@@ -17,6 +17,7 @@ export interface TriageQueueItem {
   customerName: string | null;
   customerPhone: string | null;
   summary: string | null;
+  transcript: string | null;
   createdAt: string;
   agentName: string | null;
   direction: string;
@@ -126,6 +127,7 @@ export default function TriageInboxPage() {
           customerName: t.contactName,
           customerPhone: t.contactPhone,
           summary: t.summary,
+          transcript: t.transcript || null,
           createdAt: t.timestamp,
           agentName: t.handledBy || t.handledByAgent?.name || null,
           direction: t.direction === 'inbound' ? 'Inbound' : 'Outbound',
