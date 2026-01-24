@@ -1787,6 +1787,9 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   // triageDecision removed - column doesn't exist in DB, using reviewer_decision instead
   appendedToTicketId: integer('appended_to_ticket_id'), // AgencyZoom ticket ID if appended
   similarityComputedAt: timestamp('similarity_computed_at'), // When similarity scoring was run
+  aiSimilarityScore: integer('ai_similarity_score'), // 0-100 confidence score
+  aiRelatedTicketId: integer('ai_related_ticket_id'), // Best matching AgencyZoom ticket ID
+  aiRecommendationReason: text('ai_recommendation_reason'), // Human-readable reason for recommendation
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   completedAt: timestamp('completed_at'),

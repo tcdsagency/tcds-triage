@@ -126,6 +126,28 @@ interface PendingItem {
     subject: string;
     csrName: string | null;
   } | null;
+
+  // Smart Triage AI analysis
+  aiAnalysis?: {
+    recommendation: string;
+    relatedTicketId: number | null;
+    similarityScore: number | null;
+    reason: string | null;
+    intent: string | null;
+    sentiment: string | null;
+    // Full triage recommendation object for UI (matches TriageRecommendation format)
+    triageRecommendation?: {
+      suggestedAction: 'append' | 'create' | 'dismiss';
+      confidence: number;
+      reasoning: string;
+      relatedTickets?: Array<{
+        ticketId: number;
+        similarity: number;
+        subject: string;
+        csrName: string | null;
+      }>;
+    } | null;
+  };
 }
 
 interface PendingCounts {
@@ -208,6 +230,11 @@ export async function GET(request: NextRequest) {
           trestleData: wrapupDrafts.trestleData,
           outcome: wrapupDrafts.outcome,
           createdAt: wrapupDrafts.createdAt,
+          // Smart Triage fields
+          aiTriageRecommendation: wrapupDrafts.aiTriageRecommendation,
+          aiSimilarityScore: wrapupDrafts.aiSimilarityScore,
+          aiRelatedTicketId: wrapupDrafts.aiRelatedTicketId,
+          aiRecommendationReason: wrapupDrafts.aiRecommendationReason,
           callFromNumber: calls.fromNumber,
           callToNumber: calls.toNumber,
           transcription: calls.transcription,
@@ -319,6 +346,43 @@ export async function GET(request: NextRequest) {
             subject: w.ticketSubject!,
             csrName: w.ticketCsrName,
           } : null,
+          // Smart Triage AI analysis (use stored recommendation if available)
+          aiAnalysis: (() => {
+            type TriageRec = {
+              suggestedAction: 'append' | 'create' | 'dismiss';
+              confidence: number;
+              reasoning: string;
+              relatedTickets?: Array<{ ticketId: number; similarity: number; subject: string; csrName: string | null; }>;
+            };
+            const rec = w.aiTriageRecommendation as Partial<TriageRec> | null;
+
+            if (rec && rec.suggestedAction && rec.confidence !== undefined && rec.reasoning) {
+              const validRec: TriageRec = {
+                suggestedAction: rec.suggestedAction,
+                confidence: rec.confidence,
+                reasoning: rec.reasoning,
+                relatedTickets: rec.relatedTickets,
+              };
+              return {
+                recommendation: validRec.suggestedAction.toUpperCase(),
+                relatedTicketId: w.aiRelatedTicketId || null,
+                similarityScore: w.aiSimilarityScore || null,
+                reason: w.aiRecommendationReason || validRec.reasoning || null,
+                intent: extraction.serviceRequestType || null,
+                sentiment: extraction.sentiment || null,
+                triageRecommendation: validRec,
+              };
+            }
+            return {
+              recommendation: 'CREATE' as string,
+              relatedTicketId: null,
+              similarityScore: null,
+              reason: null,
+              intent: extraction.serviceRequestType || null,
+              sentiment: extraction.sentiment || null,
+              triageRecommendation: null,
+            };
+          })(),
         });
       }
       return items;
