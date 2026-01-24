@@ -5,6 +5,8 @@ import { cn, formatPhoneNumber } from '@/lib/utils';
 import { getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
 import { LeadQualityBadgeCompact } from '@/components/features/LeadQualityBadge';
 import { ServiceTicketBadgeCompact } from '@/components/features/ServiceTicketBadge';
+import { PriorityBadge } from '@/components/features/PriorityBadge';
+import { AssignmentBadge } from '@/components/features/AssignmentSelector';
 import { toast } from 'sonner';
 
 // =============================================================================
@@ -117,6 +119,19 @@ export interface PendingItem {
     subject: string;
     csrName: string | null;
   } | null;
+
+  // Priority scoring (Phase 2)
+  priority?: 'high' | 'medium' | 'low';
+  priorityScore?: number;
+  priorityReasons?: string[];
+
+  // Assignment (Phase 2)
+  assignedTo?: {
+    id: string;
+    name: string;
+    initials: string;
+  } | null;
+  assignedAt?: string | null;
 }
 
 export interface PendingItemCardProps {
@@ -431,11 +446,17 @@ export default function PendingItemCard({
         {/* Contact Info Row */}
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            {/* Name */}
+            {/* Name with Priority and Assignment */}
             <div className="flex items-center gap-2 mb-1">
+              {/* Priority Badge (Phase 2) */}
+              {item.priority && (
+                <PriorityBadge priority={item.priority} size="sm" />
+              )}
+
               <h3 className="font-semibold text-lg text-gray-900 dark:text-white">
                 {displayName}
               </h3>
+
               {item.contactType && (
                 <span className={cn(
                   'text-xs px-2 py-0.5 rounded-full font-medium',
@@ -445,6 +466,11 @@ export default function PendingItemCard({
                 )}>
                   {item.contactType}
                 </span>
+              )}
+
+              {/* Assignment Badge (Phase 2) */}
+              {item.assignedTo && (
+                <AssignmentBadge assignee={item.assignedTo} />
               )}
             </div>
 

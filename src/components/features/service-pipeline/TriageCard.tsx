@@ -6,12 +6,18 @@ import { CSS } from '@dnd-kit/utilities';
 import { cn, formatPhoneNumber } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import type { TriageItem } from '@/app/api/service-pipeline/route';
+import { PriorityDot } from '@/components/features/PriorityBadge';
+import { AssignmentBadge } from '@/components/features/AssignmentSelector';
 
 interface TriageCardProps {
   item: TriageItem;
   onClick?: () => void;
   onQuickAction?: (action: 'note' | 'ticket' | 'skip' | 'delete' | 'match') => void;
   isDragging?: boolean;
+  // Bulk selection support
+  isSelected?: boolean;
+  onToggleSelection?: () => void;
+  currentUserId?: string;
 }
 
 // Format date to AgencyZoom style: "Jan 22, 2026"
@@ -53,6 +59,9 @@ export default function TriageCard({
   onClick,
   onQuickAction,
   isDragging,
+  isSelected,
+  onToggleSelection,
+  currentUserId,
 }: TriageCardProps) {
   const {
     attributes,
@@ -116,18 +125,60 @@ export default function TriageCard({
         'hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600',
         isCurrentlyDragging
           ? 'opacity-50 shadow-lg border-blue-500 ring-2 ring-blue-500/20'
-          : 'border-gray-200 dark:border-gray-700'
+          : 'border-gray-200 dark:border-gray-700',
+        isSelected && 'ring-2 ring-blue-500 border-blue-500'
       )}
     >
       <div className="p-3 space-y-2">
-        {/* NCM Badge - prominent at top */}
-        {isNCM && (
-          <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
-              No Customer Match
-            </span>
+        {/* Top row: Checkbox + NCM Badge + Priority/Assignment */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {/* Selection Checkbox */}
+            {onToggleSelection && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelection();
+                }}
+                className={cn(
+                  'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
+                  isSelected
+                    ? 'bg-blue-500 border-blue-500 text-white'
+                    : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                )}
+              >
+                {isSelected && (
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            )}
+
+            {/* NCM Badge */}
+            {isNCM && (
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                NCM
+              </span>
+            )}
+
+            {/* Priority indicator */}
+            {item.priority && (
+              <PriorityDot priority={item.priority} />
+            )}
           </div>
-        )}
+
+          {/* Assignment badge */}
+          <div className="flex items-center gap-1">
+            {item.assignedTo && (
+              <AssignmentBadge
+                assignee={item.assignedTo}
+                currentUserId={currentUserId}
+                className="w-5 h-5 text-[10px]"
+              />
+            )}
+          </div>
+        </div>
 
         {/* Header: Contact Name */}
         <div className="flex items-start justify-between gap-2">

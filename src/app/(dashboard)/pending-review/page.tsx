@@ -14,6 +14,7 @@ import CustomerSearchModal from '@/components/features/CustomerSearchModal';
 import DeleteModal from '@/components/features/DeleteModal';
 import CreateServiceTicketModal, { type ServiceTicketFormData } from '@/components/features/CreateServiceTicketModal';
 import CompleteTicketModal, { type CompleteTicketFormData } from '@/components/features/CompleteTicketModal';
+import { BulkActionBar } from '@/components/features/BulkActionBar';
 import { hasFeatureAccess } from '@/lib/feature-permissions';
 
 // =============================================================================
@@ -72,6 +73,14 @@ export default function PendingReviewPage() {
   const alertIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [snoozeUntil, setSnoozeUntil] = useState<Date | null>(null);
   const [showSnoozeModal, setShowSnoozeModal] = useState(false);
+
+  // Bulk selection state (Phase 2)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+  // Filter state (Phase 2)
+  const [priorityFilter, setPriorityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
+  const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'me' | 'unassigned' | 'team'>('all');
 
   // ==========================================================================
   // DATA FETCHING
@@ -625,10 +634,117 @@ export default function PendingReviewPage() {
   };
 
   // ==========================================================================
+  // BULK SELECTION HANDLERS (Phase 2)
+  // ==========================================================================
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    const filteredItems = getFilteredTriageItems();
+    setSelectedIds(new Set(filteredItems.map((item) => item.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
+  // ==========================================================================
+  // FILTER HELPERS (Phase 2)
+  // ==========================================================================
+
+  const getFilteredTriageItems = useCallback(() => {
+    if (!pipelineData?.items.triage) return [];
+
+    return pipelineData.items.triage.filter((item) => {
+      // Priority filter
+      if (priorityFilter !== 'all' && item.priority !== priorityFilter) {
+        return false;
+      }
+
+      // Assignment filter
+      if (assignmentFilter === 'me' && item.assignedTo?.id !== currentUserId) {
+        return false;
+      }
+      if (assignmentFilter === 'unassigned' && item.assignedTo) {
+        return false;
+      }
+      if (assignmentFilter === 'team' && (!item.assignedTo || item.assignedTo.id === currentUserId)) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [pipelineData?.items.triage, priorityFilter, assignmentFilter, currentUserId]);
+
+  // ==========================================================================
+  // BULK ACTION HANDLERS (Phase 2)
+  // ==========================================================================
+
+  const handleBulkAction = async (action: 'skip' | 'delete' | 'post_note' | 'void', reason?: string) => {
+    if (selectedIds.size === 0) return;
+
+    setBulkActionLoading(true);
+    try {
+      const response = await fetch('/api/pending-review/bulk-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemIds: Array.from(selectedIds),
+          action,
+          reason,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success(data.message || `Bulk ${action} completed`);
+        clearSelection();
+        fetchPipelineDataWithScrollPreservation();
+      } else {
+        toast.error(data.error || `Bulk ${action} failed`);
+      }
+    } catch (error) {
+      console.error('Bulk action error:', error);
+      toast.error('Failed to perform bulk action');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkSkip = () => handleBulkAction('skip');
+
+  const handleBulkDelete = () => {
+    const reason = prompt('Reason for deleting these items?');
+    if (reason) {
+      handleBulkAction('delete', reason);
+    }
+  };
+
+  const handleBulkPostNotes = () => {
+    if (!confirm(`Post notes for ${selectedIds.size} selected items?`)) return;
+    handleBulkAction('post_note');
+  };
+
+  const handleBulkCreateTickets = () => {
+    toast.info('Bulk ticket creation requires individual review. Please select items one at a time.');
+  };
+
+  // ==========================================================================
   // RENDER
   // ==========================================================================
 
   // Calculate total counts
+  const filteredTriageItems = getFilteredTriageItems();
   const totalTriageCount = pipelineData?.counts.triage || 0;
   const totalTicketCount = pipelineData
     ? Object.entries(pipelineData.counts)
@@ -688,6 +804,74 @@ export default function PendingReviewPage() {
         </div>
       </div>
 
+      {/* Filter Bar (Phase 2) */}
+      <div className="px-6 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex items-center gap-4 flex-shrink-0">
+        {/* Priority Filter */}
+        <div className="flex items-center gap-1">
+          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 mr-1">Priority:</span>
+          {(['all', 'high', 'medium', 'low'] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPriorityFilter(p)}
+              className={cn(
+                'px-2 py-1 text-xs rounded-md font-medium transition-colors',
+                priorityFilter === p
+                  ? p === 'high'
+                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                    : p === 'medium'
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                      : p === 'low'
+                        ? 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              )}
+            >
+              {p === 'all' ? 'All' : p.charAt(0).toUpperCase() + p.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+
+        {/* Assignment Filter */}
+        <div className="flex items-center gap-1">
+          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 mr-1">Assigned:</span>
+          {(['all', 'me', 'unassigned', 'team'] as const).map((a) => (
+            <button
+              key={a}
+              onClick={() => setAssignmentFilter(a)}
+              className={cn(
+                'px-2 py-1 text-xs rounded-md font-medium transition-colors',
+                assignmentFilter === a
+                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              )}
+            >
+              {a === 'all' ? 'All' : a === 'me' ? 'Mine' : a === 'unassigned' ? 'Unassigned' : 'Team'}
+            </button>
+          ))}
+        </div>
+
+        {/* Filter count indicator */}
+        {(priorityFilter !== 'all' || assignmentFilter !== 'all') && (
+          <>
+            <div className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Showing {filteredTriageItems.length} of {totalTriageCount}
+            </span>
+            <button
+              onClick={() => {
+                setPriorityFilter('all');
+                setAssignmentFilter('all');
+              }}
+              className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+            >
+              Clear filters
+            </button>
+          </>
+        )}
+      </div>
+
       {/* Content */}
       <div className="flex-1 overflow-hidden p-4">
         {loading && !pipelineData ? (
@@ -715,7 +899,7 @@ export default function PendingReviewPage() {
         ) : pipelineData ? (
           <ServiceKanbanBoard
             stages={pipelineData.stages}
-            triageItems={pipelineData.items.triage}
+            triageItems={filteredTriageItems}
             tickets={{
               111160: pipelineData.items[111160] || [],
               111161: pipelineData.items[111161] || [],
@@ -728,6 +912,9 @@ export default function PendingReviewPage() {
             onItemClick={handleItemClick}
             onCreateTicketFromTriage={handleCreateTicketFromTriage}
             onCompleteTicket={handleCompleteTicket}
+            selectedIds={selectedIds}
+            onToggleSelection={toggleSelection}
+            currentUserId={currentUserId || undefined}
           />
         ) : null}
       </div>
@@ -853,6 +1040,22 @@ export default function PendingReviewPage() {
           </div>
         </div>
       )}
+
+      {/* Bulk Action Bar (Phase 2) */}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        totalCount={filteredTriageItems.length}
+        onSelectAll={selectAllFiltered}
+        onClearSelection={clearSelection}
+        onPostNotes={handleBulkPostNotes}
+        onCreateTickets={handleBulkCreateTickets}
+        onSkip={handleBulkSkip}
+        onDelete={handleBulkDelete}
+        loading={bulkActionLoading}
+        hasMatchedItems={filteredTriageItems.some(
+          (item) => item.matchStatus === 'matched' && selectedIds.has(item.id)
+        )}
+      />
     </div>
   );
 }
