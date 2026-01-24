@@ -16,10 +16,11 @@ export async function POST(
     }
 
     const { id } = await params;
+    const forceRescan = request.nextUrl.searchParams.get("force_rescan") === "true";
 
     // Create scheduler and run manual check
     const scheduler = createRiskMonitorScheduler(tenantId);
-    const result = await scheduler.checkPropertyManual(id);
+    const result = await scheduler.checkPropertyManual(id, forceRescan);
 
     if (result.error) {
       return NextResponse.json(
