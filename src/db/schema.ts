@@ -1764,6 +1764,8 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   // Completion tracking (new triage UI)
   completionAction: text('completion_action'), // 'posted', 'ticket', 'lead', 'deleted', 'skipped'
   editedSummary: text('edited_summary'), // User-edited summary before posting
+  summaryEdited: boolean('summary_edited').default(false), // Track if summary was manually edited
+  summaryEditedAt: timestamp('summary_edited_at'), // When summary was last edited
 
   // Deletion tracking
   deleteReason: text('delete_reason'), // 'spam', 'wrong_number', 'duplicate', 'test_call', 'no_action_needed', 'other'
