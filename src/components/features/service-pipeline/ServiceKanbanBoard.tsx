@@ -29,6 +29,10 @@ interface ServiceKanbanBoardProps {
   onItemClick: (item: TriageItem | ServiceTicketItem, type: 'triage' | 'ticket') => void;
   onCreateTicketFromTriage?: (item: TriageItem, targetStageId: number) => void;
   onCompleteTicket?: (ticket: ServiceTicketItem) => void;
+  // Bulk selection support
+  selectedIds?: Set<string>;
+  onToggleSelection?: (id: string) => void;
+  currentUserId?: string;
 }
 
 type DragItemType = 'triage' | 'ticket';
@@ -45,6 +49,9 @@ export default function ServiceKanbanBoard({
   onItemClick,
   onCreateTicketFromTriage,
   onCompleteTicket,
+  selectedIds,
+  onToggleSelection,
+  currentUserId,
 }: ServiceKanbanBoardProps) {
   const [localTriageItems, setLocalTriageItems] = useState<TriageItem[]>(triageItems);
   const [localTickets, setLocalTickets] = useState<Record<number, ServiceTicketItem[]>>(tickets);
@@ -288,6 +295,9 @@ export default function ServiceKanbanBoard({
               isOver={overId === `stage-${stage.id}`}
               isCollapsible={isCompleted}
               defaultCollapsed={isCompleted}
+              selectedIds={isTriage ? selectedIds : undefined}
+              onToggleSelection={isTriage ? onToggleSelection : undefined}
+              currentUserId={currentUserId}
             />
           );
         })}

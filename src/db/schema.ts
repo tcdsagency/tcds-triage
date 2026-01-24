@@ -1793,6 +1793,16 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   aiRelatedTicketId: integer('ai_related_ticket_id'), // Best matching AgencyZoom ticket ID
   aiRecommendationReason: text('ai_recommendation_reason'), // Human-readable reason for recommendation
 
+  // Priority scoring
+  priority: triagePriorityEnum('priority').default('medium'),
+  priorityScore: integer('priority_score').default(50), // 0-100 numeric score
+  priorityReasons: text('priority_reasons').array(), // Why this priority was assigned
+
+  // Assignment & Ownership
+  assignedToId: uuid('assigned_to_id').references(() => users.id),
+  assignedAt: timestamp('assigned_at'),
+  assignedById: uuid('assigned_by_id').references(() => users.id),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   completedAt: timestamp('completed_at'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -1801,7 +1811,8 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   index('wrapup_drafts_status_idx').on(table.tenantId, table.status),
   index('wrapup_drafts_match_idx').on(table.tenantId, table.matchStatus),
   index('wrapup_drafts_created_idx').on(table.tenantId, table.createdAt),
-  // wrapup_drafts_triage_idx removed - triageDecision column doesn't exist
+  index('wrapup_drafts_priority_idx').on(table.tenantId, table.priority),
+  index('wrapup_drafts_assigned_idx').on(table.assignedToId),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════

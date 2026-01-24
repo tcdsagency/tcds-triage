@@ -1,156 +1,164 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { PendingItem } from './PendingItemCard';
-
-// =============================================================================
-// TYPES
-// =============================================================================
 
 interface BulkActionBarProps {
-  selectedItems: PendingItem[];
+  selectedCount: number;
+  totalCount: number;
   onSelectAll: () => void;
   onClearSelection: () => void;
-  onBulkAction: (action: 'note' | 'ticket' | 'acknowledge' | 'skip' | 'delete') => void;
-  totalItems: number;
-  isLoading?: boolean;
+  onPostNotes: () => void;
+  onCreateTickets: () => void;
+  onSkip: () => void;
+  onDelete: () => void;
+  loading?: boolean;
+  hasMatchedItems?: boolean;
 }
 
-// =============================================================================
-// COMPONENT
-// =============================================================================
-
-export default function BulkActionBar({
-  selectedItems,
+/**
+ * Floating action bar for bulk operations on selected triage items
+ */
+export function BulkActionBar({
+  selectedCount,
+  totalCount,
   onSelectAll,
   onClearSelection,
-  onBulkAction,
-  totalItems,
-  isLoading = false,
+  onPostNotes,
+  onCreateTickets,
+  onSkip,
+  onDelete,
+  loading = false,
+  hasMatchedItems = true,
 }: BulkActionBarProps) {
-  const selectedCount = selectedItems.length;
-  const hasMatchedItems = selectedItems.some(item =>
-    item.matchStatus === 'matched' || item.agencyzoomCustomerId
-  );
-  const hasMessages = selectedItems.some(item => item.type === 'message');
-  const allSelected = selectedCount === totalItems && totalItems > 0;
+  if (selectedCount === 0) return null;
 
-  if (selectedCount === 0) {
-    return null;
-  }
+  const allSelected = selectedCount === totalCount && totalCount > 0;
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
-      <div className="flex items-center gap-4 px-4 py-3 bg-gray-900 dark:bg-gray-800 text-white rounded-xl shadow-2xl border border-gray-700">
-        {/* Selection Info */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={allSelected ? onClearSelection : onSelectAll}
-              className="w-4 h-4 rounded border-gray-500 text-blue-600 focus:ring-blue-500 bg-gray-700"
-            />
-            <span className="text-sm font-medium">
-              {selectedCount} selected
-            </span>
+    <div className="fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom duration-200">
+      <div className="bg-blue-600 dark:bg-blue-700 text-white shadow-lg border-t border-blue-500">
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex items-center justify-between gap-4">
+            {/* Selection info */}
+            <div className="flex items-center gap-3">
+              <span className="font-semibold">
+                {selectedCount} item{selectedCount !== 1 ? 's' : ''} selected
+              </span>
+
+              {!allSelected && (
+                <button
+                  onClick={onSelectAll}
+                  disabled={loading}
+                  className="text-sm text-blue-100 hover:text-white underline underline-offset-2"
+                >
+                  Select all {totalCount}
+                </button>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              {/* Post Notes (only for matched items) */}
+              {hasMatchedItems && (
+                <button
+                  onClick={onPostNotes}
+                  disabled={loading}
+                  className={cn(
+                    'px-3 py-1.5 rounded-md font-medium text-sm transition-colors',
+                    'bg-white text-blue-600 hover:bg-blue-50',
+                    'disabled:opacity-50 disabled:cursor-not-allowed'
+                  )}
+                >
+                  {loading ? '...' : 'Post Notes'}
+                </button>
+              )}
+
+              {/* Create Tickets */}
+              <button
+                onClick={onCreateTickets}
+                disabled={loading}
+                className={cn(
+                  'px-3 py-1.5 rounded-md font-medium text-sm transition-colors',
+                  'bg-white text-blue-600 hover:bg-blue-50',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                {loading ? '...' : 'Create Tickets'}
+              </button>
+
+              {/* Skip */}
+              <button
+                onClick={onSkip}
+                disabled={loading}
+                className={cn(
+                  'px-3 py-1.5 rounded-md font-medium text-sm transition-colors',
+                  'bg-blue-700 hover:bg-blue-800 text-white',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                {loading ? '...' : 'Skip All'}
+              </button>
+
+              {/* Delete */}
+              <button
+                onClick={onDelete}
+                disabled={loading}
+                className={cn(
+                  'px-3 py-1.5 rounded-md font-medium text-sm transition-colors',
+                  'bg-red-500 hover:bg-red-600 text-white',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                {loading ? '...' : 'Delete'}
+              </button>
+
+              {/* Cancel/Clear */}
+              <button
+                onClick={onClearSelection}
+                disabled={loading}
+                className={cn(
+                  'px-3 py-1.5 rounded-md font-medium text-sm transition-colors',
+                  'bg-blue-700 hover:bg-blue-800 text-white',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-
-          <button
-            onClick={onClearSelection}
-            className="text-sm text-gray-400 hover:text-white transition-colors"
-          >
-            Clear
-          </button>
-        </div>
-
-        {/* Divider */}
-        <div className="w-px h-6 bg-gray-600" />
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2">
-          {/* Post as Note - only if some items have customer match */}
-          {hasMatchedItems && (
-            <button
-              onClick={() => onBulkAction('note')}
-              disabled={isLoading}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                isLoading
-                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                  : 'bg-green-600 hover:bg-green-700 text-white'
-              )}
-            >
-              <span>📝</span>
-              <span>Post Notes</span>
-            </button>
-          )}
-
-          {/* Create Tickets - only if some items have customer match */}
-          {hasMatchedItems && (
-            <button
-              onClick={() => onBulkAction('ticket')}
-              disabled={isLoading}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                isLoading
-                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              )}
-            >
-              <span>🎫</span>
-              <span>Create Tickets</span>
-            </button>
-          )}
-
-          {/* Acknowledge - only if some items are messages */}
-          {hasMessages && (
-            <button
-              onClick={() => onBulkAction('acknowledge')}
-              disabled={isLoading}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                isLoading
-                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                  : 'bg-purple-600 hover:bg-purple-700 text-white'
-              )}
-            >
-              <span>✓</span>
-              <span>Acknowledge</span>
-            </button>
-          )}
-
-          {/* Skip/Complete */}
-          <button
-            onClick={() => onBulkAction('skip')}
-            disabled={isLoading}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-              isLoading
-                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                : 'bg-gray-600 hover:bg-gray-500 text-white'
-            )}
-          >
-            <span>↷</span>
-            <span>Skip All</span>
-          </button>
-
-          {/* Delete */}
-          <button
-            onClick={() => onBulkAction('delete')}
-            disabled={isLoading}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-              isLoading
-                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                : 'bg-red-600 hover:bg-red-700 text-white'
-            )}
-          >
-            <span>🗑</span>
-            <span>Delete</span>
-          </button>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Selection checkbox for individual items
+ */
+export function SelectionCheckbox({
+  checked,
+  onChange,
+  disabled = false,
+  className = '',
+}: {
+  checked: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      disabled={disabled}
+      className={cn(
+        'w-4 h-4 rounded border-gray-300 dark:border-gray-600',
+        'text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-400',
+        'bg-white dark:bg-gray-800',
+        disabled && 'opacity-50 cursor-not-allowed',
+        className
+      )}
+    />
   );
 }

@@ -86,6 +86,17 @@ export interface TriageItem {
   agencyzoomLeadId?: string;
   callId?: string;
   messageIds?: string[];
+  // Priority scoring (Phase 2)
+  priority: 'high' | 'medium' | 'low';
+  priorityScore?: number;
+  priorityReasons?: string[];
+  // Assignment (Phase 2)
+  assignedTo?: {
+    id: string;
+    name: string;
+    initials: string;
+  } | null;
+  assignedAt?: string | null;
 }
 
 export interface ServiceTicketItem {
@@ -192,16 +203,30 @@ export async function GET(request: NextRequest) {
             agentId: calls.agentId,
             transcript: calls.transcription,
             callStartedAt: calls.startedAt,
+            // Priority fields (Phase 2)
+            priority: wrapupDrafts.priority,
+            priorityScore: wrapupDrafts.priorityScore,
+            priorityReasons: wrapupDrafts.priorityReasons,
+            // Assignment fields (Phase 2)
+            assignedToId: wrapupDrafts.assignedToId,
+            assignedAt: wrapupDrafts.assignedAt,
           })
           .from(wrapupDrafts)
           .leftJoin(calls, eq(wrapupDrafts.callId, calls.id))
           .where(and(...whereConditions))
-          .orderBy(desc(wrapupDrafts.createdAt))
+          .orderBy(
+            // Sort by priority (high first), then by age (oldest first)
+            sql`CASE ${wrapupDrafts.priority} WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 2 END`,
+            desc(wrapupDrafts.createdAt)
+          )
           .limit(100);
 
-        // Get agent details
+        // Get agent details and assignees
         const agentIds = wrapups.map(w => w.agentId).filter(Boolean) as string[];
-        const agents = agentIds.length > 0
+        const assigneeIds = wrapups.map(w => w.assignedToId).filter(Boolean) as string[];
+        const allUserIds = [...new Set([...agentIds, ...assigneeIds])];
+
+        const allUsers = allUserIds.length > 0
           ? await db
               .select({
                 id: users.id,
@@ -211,14 +236,17 @@ export async function GET(request: NextRequest) {
                 extension: users.extension,
               })
               .from(users)
-              .where(inArray(users.id, agentIds))
+              .where(inArray(users.id, allUserIds))
           : [];
 
-        const agentMap = new Map(agents.map(a => {
+        const userMap = new Map(allUsers.map(a => {
           const name = `${a.firstName} ${a.lastName}`.trim();
           const initials = `${a.firstName?.[0] || ''}${a.lastName?.[0] || ''}`.toUpperCase();
           return [a.id, { id: a.id, name, avatar: a.avatarUrl, extension: a.extension, initials }];
         }));
+
+        // Keep agentMap for backward compatibility
+        const agentMap = userMap;
 
         for (const w of wrapups) {
           const extraction = w.aiExtraction as any || {};
@@ -231,6 +259,9 @@ export async function GET(request: NextRequest) {
           } else if (w.matchStatus === 'multiple_matches') {
             matchStatus = 'needs_review';
           }
+
+          // Get assignee info if assigned
+          const assignee = w.assignedToId ? userMap.get(w.assignedToId) : null;
 
           items.push({
             id: w.id,
@@ -250,6 +281,13 @@ export async function GET(request: NextRequest) {
             agencyzoomCustomerId: extraction.agencyZoomCustomerId,
             agencyzoomLeadId: extraction.agencyZoomLeadId,
             callId: w.callId || undefined,
+            // Priority (Phase 2)
+            priority: (w.priority as 'high' | 'medium' | 'low') || 'medium',
+            priorityScore: w.priorityScore ? Number(w.priorityScore) : undefined,
+            priorityReasons: w.priorityReasons || undefined,
+            // Assignment (Phase 2)
+            assignedTo: assignee ? { id: assignee.id, name: assignee.name, initials: assignee.initials } : null,
+            assignedAt: w.assignedAt?.toISOString() || null,
           });
         }
       }
@@ -321,11 +359,20 @@ export async function GET(request: NextRequest) {
           ageMinutes: Math.floor((now.getTime() - new Date(oldestMsg.createdAt).getTime()) / 60000),
           agencyzoomCustomerId: firstMsg.contactId || undefined,
           messageIds: phoneMessages.map(m => m.id),
+          // Priority (Phase 2) - messages default to medium, after-hours are higher
+          priority: firstMsg.isAfterHours ? 'high' : 'medium',
+          assignedTo: null,
+          assignedAt: null,
         });
       }
 
-      // Sort by timestamp descending
-      items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      // Sort by priority first, then by timestamp
+      items.sort((a, b) => {
+        const priorityOrder = { high: 0, medium: 1, low: 2 };
+        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+        if (priorityDiff !== 0) return priorityDiff;
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      });
       return items;
     }
 

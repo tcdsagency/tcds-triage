@@ -24,6 +24,10 @@ interface ServiceKanbanColumnProps {
   isOver?: boolean;
   isCollapsible?: boolean;
   defaultCollapsed?: boolean;
+  // Bulk selection support
+  selectedIds?: Set<string>;
+  onToggleSelection?: (id: string) => void;
+  currentUserId?: string;
 }
 
 // Stage color mapping
@@ -69,6 +73,9 @@ export default function ServiceKanbanColumn({
   isOver,
   isCollapsible = false,
   defaultCollapsed = false,
+  selectedIds,
+  onToggleSelection,
+  currentUserId,
 }: ServiceKanbanColumnProps) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
 
@@ -168,6 +175,9 @@ export default function ServiceKanbanColumn({
                         ? (action) => onTriageAction(item, action)
                         : undefined
                     }
+                    isSelected={selectedIds?.has(item.id)}
+                    onToggleSelection={onToggleSelection ? () => onToggleSelection(item.id) : undefined}
+                    currentUserId={currentUserId}
                   />
                 ))
               : tickets.map((ticket) => (
