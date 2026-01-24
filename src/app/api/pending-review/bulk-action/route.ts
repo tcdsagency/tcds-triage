@@ -75,11 +75,13 @@ export async function POST(request: NextRequest) {
       reviewedAt: new Date(),
     };
 
+    // Note: wrapup_status enum only has: pending_ai_processing, pending_review, completed, posted
+    // All completion actions use status 'completed', with completionAction indicating the specific action
     switch (action) {
       case 'skip':
         updateData = {
           ...updateData,
-          status: 'skipped',
+          status: 'completed',
           completionAction: 'skipped',
           completedAt: new Date(),
         };
@@ -94,7 +96,7 @@ export async function POST(request: NextRequest) {
         }
         updateData = {
           ...updateData,
-          status: 'deleted',
+          status: 'completed',
           completionAction: 'deleted',
           deleteReason: reason,
           deleteNotes: notes || null,
@@ -107,7 +109,7 @@ export async function POST(request: NextRequest) {
       case 'void':
         updateData = {
           ...updateData,
-          status: 'voided',
+          status: 'completed',
           completionAction: 'voided',
           isAutoVoided: false, // Manual void
           autoVoidReason: reason || 'manual_void',
