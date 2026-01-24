@@ -57,9 +57,9 @@ const STAGE_NAMES: Record<number, string> = {
 };
 
 interface CreateTicketRequest {
-  // Triage item reference
-  triageItemId: string;
-  triageItemType: 'wrapup' | 'message';
+  // Triage item reference (optional for manual tickets)
+  triageItemId?: string;
+  triageItemType?: 'wrapup' | 'message' | 'manual';
   messageIds?: string[];
 
   // Ticket details
@@ -87,12 +87,14 @@ export async function POST(request: NextRequest) {
     const body: CreateTicketRequest = await request.json();
 
     // Validate required fields
-    if (!body.triageItemId || !body.triageItemType) {
-      return NextResponse.json({ success: false, error: 'Missing triage item reference' }, { status: 400 });
-    }
-
     if (!body.subject || !body.customerId || !body.assigneeId) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
+    }
+
+    // For non-manual tickets, require triage item reference
+    const isManualTicket = body.triageItemType === 'manual' || !body.triageItemType;
+    if (!isManualTicket && !body.triageItemId) {
+      return NextResponse.json({ success: false, error: 'Missing triage item reference' }, { status: 400 });
     }
 
     // Create AgencyZoom client
@@ -135,7 +137,7 @@ export async function POST(request: NextRequest) {
         tenantId,
         azTicketId,
         azHouseholdId: body.customerId,
-        wrapupDraftId: body.triageItemType === 'wrapup' ? body.triageItemId : null,
+        wrapupDraftId: body.triageItemType === 'wrapup' && body.triageItemId ? body.triageItemId : null,
         subject: body.subject,
         description: body.description,
         status: 'active',
@@ -154,33 +156,35 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
-    // Mark triage item as completed
-    if (body.triageItemType === 'wrapup') {
-      await db
-        .update(wrapupDrafts)
-        .set({
-          status: 'completed',
-          reviewerDecision: 'approved',
-          outcome: 'ticket_created',
-          agencyzoomNoteId: noteId?.toString(),
-          agencyzoomTicketId: azTicketId.toString(),
-          completedAt: new Date(),
-          reviewerId: body.reviewerId,
-          reviewedAt: new Date(),
-        })
-        .where(eq(wrapupDrafts.id, body.triageItemId));
-    } else if (body.triageItemType === 'message') {
-      // Mark all related messages as acknowledged
-      const messageIdsToAck = body.messageIds?.length ? body.messageIds : [body.triageItemId];
+    // Mark triage item as completed (skip for manual tickets)
+    if (!isManualTicket && body.triageItemId) {
+      if (body.triageItemType === 'wrapup') {
+        await db
+          .update(wrapupDrafts)
+          .set({
+            status: 'completed',
+            reviewerDecision: 'approved',
+            outcome: 'ticket_created',
+            agencyzoomNoteId: noteId?.toString(),
+            agencyzoomTicketId: azTicketId.toString(),
+            completedAt: new Date(),
+            reviewerId: body.reviewerId,
+            reviewedAt: new Date(),
+          })
+          .where(eq(wrapupDrafts.id, body.triageItemId));
+      } else if (body.triageItemType === 'message') {
+        // Mark all related messages as acknowledged
+        const messageIdsToAck = body.messageIds?.length ? body.messageIds : [body.triageItemId];
 
-      await db
-        .update(messages)
-        .set({
-          isAcknowledged: true,
-          acknowledgedAt: new Date(),
-          acknowledgedById: body.reviewerId,
-        })
-        .where(inArray(messages.id, messageIdsToAck));
+        await db
+          .update(messages)
+          .set({
+            isAcknowledged: true,
+            acknowledgedAt: new Date(),
+            acknowledgedById: body.reviewerId,
+          })
+          .where(inArray(messages.id, messageIdsToAck));
+      }
     }
 
     return NextResponse.json({
