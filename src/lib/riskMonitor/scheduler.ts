@@ -226,10 +226,12 @@ export class RiskMonitorScheduler {
         await this.logEvent("rpr_lookup", policy.id, `Checking RPR: ${fullAddress}`);
         rprData = await rprClient.lookupProperty(fullAddress);
         result.rprData = rprData;
-        await this.logEvent("rpr_lookup", policy.id, "RPR check complete", {
-          hasListing: !!rprData?.listing,
-          normalizedAddress: normalizedAddr.normalizedKey,
-        });
+        // Log detailed RPR results
+        const rprStatus = rprData?.listing?.active ? "active" : rprData?.listing?.status || rprData?.currentStatus || "no_data";
+        const rprListing = rprData?.listing;
+        await this.logEvent("rpr_result", policy.id,
+          `RPR: status=${rprStatus}${rprListing ? `, price=${rprListing.price || 'N/A'}, days=${rprListing.daysOnMarket || 'N/A'}` : ''}`
+        );
       }
 
       // Check MMI using normalized address
@@ -238,12 +240,12 @@ export class RiskMonitorScheduler {
         const mmiResult = await mmiClient.lookupByAddress(fullAddress);
         mmiData = mmiResult.data ?? null;
         result.mmiData = mmiData;
-        await this.logEvent("mmi_lookup", policy.id, "MMI check complete", {
-          status: mmiData?.currentStatus,
-          success: mmiResult.success,
-          error: mmiResult.error,
-          normalizedAddress: normalizedAddr.normalizedKey,
-        });
+        // Log detailed MMI results
+        const latestListing = mmiData?.listingHistory?.[0];
+        const mmiStatus = latestListing?.STATUS || mmiData?.currentStatus || "no_data";
+        await this.logEvent("mmi_result", policy.id,
+          `MMI: status=${mmiStatus}${latestListing ? `, price=${latestListing.LIST_PRICE || 'N/A'}, listed=${latestListing.LISTING_DATE || 'N/A'}` : ''}`
+        );
       }
 
       // If no data from either source, still mark as checked but don't create alerts
