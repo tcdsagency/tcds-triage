@@ -229,8 +229,9 @@ export class RiskMonitorScheduler {
         // Log detailed RPR results
         const rprStatus = rprData?.listing?.active ? "active" : rprData?.listing?.status || rprData?.currentStatus || "no_data";
         const rprListing = rprData?.listing;
+        const rprAgent = rprListing?.agent ? `agent=${rprListing.agent}` : '';
         await this.logEvent("rpr_result", policy.id,
-          `RPR: status=${rprStatus}${rprListing ? `, price=${rprListing.price || 'N/A'}, days=${rprListing.daysOnMarket || 'N/A'}` : ''}`
+          `RPR: status=${rprStatus}${rprListing ? `, price=${rprListing.price || 'N/A'}, days=${rprListing.daysOnMarket || 'N/A'}` : ''}${rprAgent ? `, ${rprAgent}` : ''}`
         );
       }
 
@@ -240,12 +241,21 @@ export class RiskMonitorScheduler {
         const mmiResult = await mmiClient.lookupByAddress(fullAddress);
         mmiData = mmiResult.data ?? null;
         result.mmiData = mmiData;
-        // Log detailed MMI results
+        // Log detailed MMI results - listing info
         const latestListing = mmiData?.listingHistory?.[0];
         const mmiStatus = latestListing?.STATUS || mmiData?.currentStatus || "no_data";
+        const mmiAgent = latestListing?.LISTING_AGENT ? `agent=${latestListing.LISTING_AGENT}` : '';
+        const mmiBroker = latestListing?.LISTING_BROKER ? `broker=${latestListing.LISTING_BROKER}` : '';
         await this.logEvent("mmi_result", policy.id,
-          `MMI: status=${mmiStatus}${latestListing ? `, price=${latestListing.LIST_PRICE || 'N/A'}, listed=${latestListing.LISTING_DATE || 'N/A'}` : ''}`
+          `MMI: status=${mmiStatus}${latestListing ? `, price=${latestListing.LIST_PRICE || 'N/A'}, listed=${latestListing.LISTING_DATE || 'N/A'}` : ''}${mmiAgent ? `, ${mmiAgent}` : ''}${mmiBroker ? `, ${mmiBroker}` : ''}`
         );
+        // Log deed/lender info if available
+        const latestDeed = mmiData?.deedHistory?.[0];
+        if (latestDeed) {
+          await this.logEvent("mmi_deed", policy.id,
+            `MMI Deed: lender=${latestDeed.LENDER || 'N/A'}, loan=$${latestDeed.LOAN_AMOUNT || 'N/A'}, date=${latestDeed.DATE || 'N/A'}${latestDeed.BUYER_NAME ? `, buyer=${latestDeed.BUYER_NAME}` : ''}`
+          );
+        }
       }
 
       // If no data from either source, still mark as checked but don't create alerts
