@@ -1310,7 +1310,62 @@ Please review and take appropriate action.
       };
     }
 
-    return this.checkProperty(policy);
+    // Create a temporary run ID for logging if we don't have one
+    // This ensures events are tracked when called via API endpoint
+    const needsRunId = !this.currentRunId;
+    if (needsRunId) {
+      const runId = crypto.randomUUID();
+      const [logRecord] = await db
+        .insert(riskMonitorActivityLog)
+        .values({
+          tenantId: this.tenantId,
+          runId,
+          runType: "manual",
+          status: "running",
+          startedAt: new Date(),
+        })
+        .returning({ id: riskMonitorActivityLog.id });
+      this.currentRunId = logRecord.id;
+    }
+
+    try {
+      const result = await this.checkProperty(policy);
+
+      // Update the activity log if we created one
+      if (needsRunId && this.currentRunId) {
+        await db
+          .update(riskMonitorActivityLog)
+          .set({
+            status: "completed",
+            completedAt: new Date(),
+            policiesChecked: 1,
+            alertsCreated: result.alertCreated ? 1 : 0,
+            rprCallsMade: this.settings?.rprEnabled ? 1 : 0,
+            mmiCallsMade: this.settings?.mmiEnabled ? 1 : 0,
+          })
+          .where(eq(riskMonitorActivityLog.id, this.currentRunId));
+      }
+
+      return result;
+    } catch (error) {
+      // Update the activity log with error if we created one
+      if (needsRunId && this.currentRunId) {
+        await db
+          .update(riskMonitorActivityLog)
+          .set({
+            status: "failed",
+            completedAt: new Date(),
+            errorMessage: error instanceof Error ? error.message : "Unknown error",
+          })
+          .where(eq(riskMonitorActivityLog.id, this.currentRunId));
+      }
+      throw error;
+    } finally {
+      // Clean up the run ID if we created it
+      if (needsRunId) {
+        this.currentRunId = null;
+      }
+    }
   }
 
   /**
