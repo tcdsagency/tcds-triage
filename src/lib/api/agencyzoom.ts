@@ -145,6 +145,9 @@ export interface AgencyZoomLead {
   lastName: string;
   email: string | null;
   phone: string | null;
+  cellPhone?: string | null;    // Additional phone fields that may be returned by API
+  workPhone?: string | null;
+  homePhone?: string | null;
   source: string | null;
   status: string;
   createdAt: string;
@@ -631,46 +634,49 @@ export class AgencyZoomClient {
   }
 
   /**
-   * Search leads by phone number
-   * Uses searchText to find leads with matching phone
+   * Search leads by phone number (returns first match)
+   * Uses findLeadsByPhone to ensure proper phone filtering
    */
   async findLeadByPhone(phone: string): Promise<AgencyZoomLead | null> {
-    const normalized = phone.replace(/\D/g, '');
-    if (normalized.length < 10) return null;
-
-    const result = await this.getLeads({ searchText: normalized, limit: 10 });
-
-    // Filter results to find exact phone match (searchText may match other fields)
-    for (const lead of result.data) {
-      const leadPhone = lead.phone?.replace(/\D/g, '') || '';
-      if (leadPhone.includes(normalized) || normalized.includes(leadPhone)) {
-        return lead;
-      }
-    }
-
-    return null;
+    const matches = await this.findLeadsByPhone(phone, 1);
+    return matches[0] || null;
   }
 
   /**
    * Search leads by phone number (returns all matches)
+   * Uses strict last-10-digit matching to avoid false positives
+   * (AgencyZoom's searchText matches ANY field including address/notes)
    */
   async findLeadsByPhone(phone: string, limit: number = 5): Promise<AgencyZoomLead[]> {
     const normalized = phone.replace(/\D/g, '');
     if (normalized.length < 10) return [];
 
-    const result = await this.getLeads({ searchText: normalized, limit: limit * 2 });
+    // Get last 10 digits for matching (same logic as findCustomersByPhone)
+    const last10 = normalized.slice(-10);
 
-    // Filter results to find phone matches
-    const matches: AgencyZoomLead[] = [];
-    for (const lead of result.data) {
-      const leadPhone = lead.phone?.replace(/\D/g, '') || '';
-      if (leadPhone.includes(normalized) || normalized.includes(leadPhone)) {
-        matches.push(lead);
-        if (matches.length >= limit) break;
-      }
-    }
+    // Search with a larger limit since we'll filter results
+    const result = await this.getLeads({ searchText: normalized, limit: limit * 3 });
 
-    return matches;
+    // Filter to only include leads where phone actually matches (exact last 10 digits)
+    const filtered = result.data.filter(lead => {
+      // Check all possible phone fields on the lead
+      const phones = [
+        lead.phone,
+        lead.cellPhone,
+        lead.workPhone,
+        lead.homePhone,
+      ].filter(Boolean);
+
+      return phones.some(p => {
+        const pNormalized = p?.replace(/\D/g, '') || '';
+        // Match if last 10 digits are equal
+        return pNormalized.slice(-10) === last10 || last10.endsWith(pNormalized.slice(-10));
+      });
+    });
+
+    console.log(`[AgencyZoom] Lead phone search: ${result.data.length} API results -> ${filtered.length} exact matches for ${last10}`);
+
+    return filtered.slice(0, limit);
   }
 
   /**

@@ -5,6 +5,7 @@ import { cn, formatPhoneNumber } from '@/lib/utils';
 import { getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
 import { LeadQualityBadgeCompact } from '@/components/features/LeadQualityBadge';
 import { ServiceTicketBadgeCompact } from '@/components/features/ServiceTicketBadge';
+import { toast } from 'sonner';
 
 // =============================================================================
 // TOOLTIP COMPONENT
@@ -248,6 +249,7 @@ export default function PendingItemCard({
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   const [editedSummary, setEditedSummary] = useState(item.summary || '');
   const [hasBeenEdited, setHasBeenEdited] = useState(false);
+  const [savingSummary, setSavingSummary] = useState(false);
   const summaryTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Focus textarea when editing starts
@@ -258,12 +260,43 @@ export default function PendingItemCard({
     }
   }, [isEditingSummary]);
 
-  const handleSaveSummary = () => {
-    if (onEditSummary && editedSummary !== item.summary) {
-      onEditSummary(editedSummary);
-      setHasBeenEdited(true);
+  const handleSaveSummary = async () => {
+    // Skip if no changes
+    if (editedSummary === item.summary) {
+      setIsEditingSummary(false);
+      return;
     }
-    setIsEditingSummary(false);
+
+    try {
+      setSavingSummary(true);
+
+      // Save to database via API
+      const response = await fetch(`/api/pending-review/${item.id}/summary`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary: editedSummary }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setHasBeenEdited(true);
+        setIsEditingSummary(false);
+        toast.success('Summary saved');
+
+        // Also call parent handler if provided
+        if (onEditSummary) {
+          onEditSummary(editedSummary);
+        }
+      } else {
+        throw new Error(result.error || 'Failed to save summary');
+      }
+    } catch (error: unknown) {
+      console.error('Failed to save summary:', error);
+      toast.error(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setSavingSummary(false);
+    }
   };
 
   const handleCancelEdit = () => {
@@ -547,15 +580,17 @@ export default function PendingItemCard({
               <div className="flex justify-end gap-2 mt-2">
                 <button
                   onClick={handleCancelEdit}
-                  className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  disabled={savingSummary}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveSummary}
-                  className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                  disabled={savingSummary}
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
                 >
-                  Save
+                  {savingSummary ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>

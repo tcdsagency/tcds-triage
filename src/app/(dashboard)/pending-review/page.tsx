@@ -101,12 +101,33 @@ export default function PendingReviewPage() {
     }
   }, []);
 
+  // Fetch pipeline data while preserving scroll position (for action completions)
+  const fetchPipelineDataWithScrollPreservation = useCallback(async () => {
+    // Save current scroll position (both window and any scrollable containers)
+    const scrollY = window.scrollY;
+    const scrollX = window.scrollX;
+
+    // Also capture horizontal scroll of the kanban board if present
+    const kanbanContainer = document.querySelector('[data-kanban-scroll]') as HTMLElement | null;
+    const kanbanScrollLeft = kanbanContainer?.scrollLeft || 0;
+
+    await fetchPipelineData();
+
+    // Restore scroll position after next render
+    requestAnimationFrame(() => {
+      window.scrollTo(scrollX, scrollY);
+      if (kanbanContainer) {
+        kanbanContainer.scrollLeft = kanbanScrollLeft;
+      }
+    });
+  }, [fetchPipelineData]);
+
   useEffect(() => {
     fetchPipelineData();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchPipelineData, 30000);
+    // Auto-refresh every 30 seconds (use scroll-preserving version)
+    const interval = setInterval(fetchPipelineDataWithScrollPreservation, 30000);
     return () => clearInterval(interval);
-  }, [fetchPipelineData]);
+  }, [fetchPipelineData, fetchPipelineDataWithScrollPreservation]);
 
   // ==========================================================================
   // USER & PERMISSIONS
@@ -302,7 +323,7 @@ export default function PendingReviewPage() {
         setPipelineData(previousData);
         toast.error(data.error || 'Action failed');
       } else {
-        fetchPipelineData();
+        fetchPipelineDataWithScrollPreservation();
       }
     } catch (error) {
       console.error('Action error:', error);
@@ -336,7 +357,7 @@ export default function PendingReviewPage() {
       if (data.success) {
         setAssignSRItem(null);
         toast.success(`Service request created and assigned to ${assigneeName}`);
-        fetchPipelineData();
+        fetchPipelineDataWithScrollPreservation();
       } else {
         toast.error(data.error || 'Failed to create service request');
       }
@@ -384,7 +405,7 @@ export default function PendingReviewPage() {
         setPipelineData(previousData);
         toast.error(data.error || 'Failed to delete item');
       } else {
-        fetchPipelineData();
+        fetchPipelineDataWithScrollPreservation();
       }
     } catch (error) {
       console.error('Delete error:', error);
@@ -442,7 +463,7 @@ export default function PendingReviewPage() {
     const success = await handleStageChange(ticketId, stageId, stageName);
     if (success) {
       toast.success(`Moved to ${stageName}`);
-      fetchPipelineData();
+      fetchPipelineDataWithScrollPreservation();
     }
   };
 
@@ -457,7 +478,7 @@ export default function PendingReviewPage() {
       const data = await res.json();
       if (data.success) {
         toast.success(`Assigned to ${csrName}`);
-        fetchPipelineData();
+        fetchPipelineDataWithScrollPreservation();
       } else {
         toast.error(data.error || 'Failed to assign ticket');
       }
@@ -510,7 +531,7 @@ export default function PendingReviewPage() {
       if (data.success) {
         setCreateTicketItem(null);
         toast.success('Service ticket created successfully');
-        fetchPipelineData();
+        fetchPipelineDataWithScrollPreservation();
       } else {
         toast.error(data.error || 'Failed to create service ticket');
       }
@@ -550,7 +571,7 @@ export default function PendingReviewPage() {
       if (data.success) {
         setCompleteTicketItem(null);
         toast.success('Ticket completed successfully');
-        fetchPipelineData();
+        fetchPipelineDataWithScrollPreservation();
       } else {
         toast.error(data.error || 'Failed to complete ticket');
       }
@@ -591,7 +612,7 @@ export default function PendingReviewPage() {
       if (data.success) {
         setFindMatchItem(null);
         toast.success('Customer matched successfully');
-        fetchPipelineData();
+        fetchPipelineDataWithScrollPreservation();
       } else {
         toast.error(data.error || 'Match failed');
       }
@@ -725,7 +746,7 @@ export default function PendingReviewPage() {
           handleTriageAction(item, action);
           handleDetailPanelClose();
         }}
-        onTicketUpdated={fetchPipelineData}
+        onTicketUpdated={fetchPipelineDataWithScrollPreservation}
       />
 
       {/* Assignee Selection Modal for quick SR button */}

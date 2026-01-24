@@ -264,7 +264,7 @@ export default function ServiceKanbanBoard({
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex gap-4 overflow-x-auto pb-4 h-full">
+      <div className="flex gap-4 overflow-x-auto pb-4 h-full" data-kanban-scroll>
         {stages.map((stage) => {
           const isTriage = stage.id === 'triage';
           const isCompleted = stage.id === 'completed';
