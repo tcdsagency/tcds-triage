@@ -18,6 +18,7 @@ import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
 import { trestleIQClient, quickLeadCheck } from "@/lib/api/trestleiq";
 import { getServiceRequestTypeId } from "@/lib/constants/agencyzoom";
+import { findRelatedTickets, determineTriageRecommendation } from "@/lib/triage/related-tickets";
 
 // =============================================================================
 // AGENCY MAIN NUMBER
@@ -1118,6 +1119,59 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         }
       }
 
+      // 4.2.5 Smart Triage: Find related tickets for matched customers
+      let aiTriageRecommendationObj: {
+        suggestedAction: "append" | "create" | "dismiss";
+        confidence: number;
+        reasoning: string;
+        relatedTickets: Array<{
+          ticketId: number;
+          similarity: number;
+          subject: string;
+          csrName: string | null;
+        }>;
+      } | null = null;
+      let aiSimilarityScore: number | null = null;
+      let aiRelatedTicketId: number | null = null;
+      let aiRecommendationReason: string | null = null;
+
+      if (matchedAzCustomerId && analysis?.summary) {
+        try {
+          console.log(`[Call-Completed] 🔍 Finding related tickets for customer ${matchedAzCustomerId}`);
+          const relatedTickets = await findRelatedTickets(
+            parseInt(matchedAzCustomerId),
+            analysis.summary,
+            { days: 60 }
+          );
+
+          if (relatedTickets.length > 0) {
+            console.log(`[Call-Completed] 🎯 Found ${relatedTickets.length} related tickets, top match: ${relatedTickets[0].similarity}% similar`);
+          }
+
+          const triageResult = determineTriageRecommendation(relatedTickets);
+          aiSimilarityScore = triageResult.confidence;
+          aiRelatedTicketId = triageResult.relatedTicketId || null;
+          aiRecommendationReason = triageResult.reason;
+
+          // Build the recommendation object in the format expected by the UI
+          aiTriageRecommendationObj = {
+            suggestedAction: triageResult.recommendation.toLowerCase() as "append" | "create" | "dismiss",
+            confidence: triageResult.confidence / 100, // Convert 0-100 to 0-1
+            reasoning: triageResult.reason,
+            relatedTickets: relatedTickets.map(t => ({
+              ticketId: t.id,
+              similarity: t.similarity / 100, // Convert 0-100 to 0-1
+              subject: t.subject,
+              csrName: t.csrName,
+            })),
+          };
+
+          console.log(`[Call-Completed] 💡 Triage recommendation: ${triageResult.recommendation} (${aiSimilarityScore}%) - ${aiRecommendationReason}`);
+        } catch (error) {
+          console.error("[Call-Completed] Failed to determine triage recommendation:", error);
+        }
+      }
+
       // 4.3 Create wrapup draft (with transaction for data consistency)
       const serviceRequestTypeId = analysis ? getServiceRequestTypeId(analysis.serviceRequestType || analysis.callType) : null;
       const trestlePersonName = (trestleData as { person?: { name?: string } } | null)?.person?.name;
@@ -1278,6 +1332,12 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
           aiConfidence: analysis ? "0.85" : null,
           isAutoVoided: shouldAutoVoid,
           autoVoidReason: shouldAutoVoid ? autoVoidReason : null,
+          // Smart Triage fields
+          aiTriageRecommendation: aiTriageRecommendationObj,
+          aiSimilarityScore,
+          aiRelatedTicketId,
+          aiRecommendationReason,
+          similarityComputedAt: aiTriageRecommendationObj ? new Date() : null,
         };
 
         console.log(`[Call-Completed] 📝 Creating wrapup for call ${call.id} (direction: ${callDirection}, after-hours: ${isAfterHoursCall}, status: ${wrapupStatus})`);
