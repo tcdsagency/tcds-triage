@@ -259,14 +259,14 @@ class RPRClient {
 
       const result = await response.json();
 
-      if (result.success && result.token) {
-        console.log("[RPR] Token received from service (cached:", result.cached, ")");
+      if (result.token) {
+        console.log("[RPR] Token received from service");
         return {
           token: result.token,
           expiresAt: result.expiresAt,
         };
       } else {
-        console.error("[RPR] Token service returned error:", result.error);
+        console.error("[RPR] Token service returned error:", result.error || "No token in response");
         return null;
       }
     } catch (error: any) {
