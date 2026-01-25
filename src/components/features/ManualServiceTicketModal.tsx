@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { format, addDays } from 'date-fns';
 import type { Employee } from '@/app/api/service-pipeline/route';
 import {
   SERVICE_CATEGORIES,
   SERVICE_PRIORITIES,
+  SERVICE_PIPELINES,
   SERVICE_TICKET_DEFAULTS,
 } from '@/lib/api/agencyzoom-service-tickets';
 
@@ -20,7 +21,19 @@ interface CustomerResult {
   isLead: boolean;
 }
 
-const CATEGORY_OPTIONS = [
+interface ServiceTicketOptions {
+  categories: Array<{ id: number; name: string; group?: string }>;
+  priorities: Array<{ id: number; name: string }>;
+  pipelines: Array<{
+    id: number;
+    name: string;
+    stages: Array<{ id: number; name: string }>;
+  }>;
+  employees: Array<{ id: number; name: string; initials: string }>;
+}
+
+// Fallback options
+const FALLBACK_CATEGORIES = [
   { id: SERVICE_CATEGORIES.GENERAL_SERVICE, name: 'General Service', group: 'General' },
   { id: SERVICE_CATEGORIES.SERVICE_QUESTION, name: 'Service Question', group: 'General' },
   { id: SERVICE_CATEGORIES.WRONG_NUMBER_HANGUP, name: 'Wrong Number / Caller Hangup', group: 'General' },
@@ -48,16 +61,22 @@ const CATEGORY_OPTIONS = [
   { id: SERVICE_CATEGORIES.QUOTE_REQUEST, name: 'Quote Request', group: 'Other' },
 ];
 
-const PRIORITY_OPTIONS = [
+const FALLBACK_PRIORITIES = [
   { id: SERVICE_PRIORITIES.STANDARD, name: 'Standard' },
   { id: SERVICE_PRIORITIES.TWO_HOUR, name: '2 Hour' },
   { id: SERVICE_PRIORITIES.URGENT, name: 'Urgent' },
 ];
 
-const STAGE_OPTIONS = [
-  { id: 111160, name: 'New' },
-  { id: 111161, name: 'In Progress' },
-  { id: 111162, name: 'Waiting on Info' },
+const FALLBACK_PIPELINES = [
+  {
+    id: SERVICE_PIPELINES.POLICY_SERVICE,
+    name: 'Policy Service Pipeline',
+    stages: [
+      { id: 111160, name: 'New' },
+      { id: 111161, name: 'In Progress' },
+      { id: 111162, name: 'Waiting on Info' },
+    ],
+  },
 ];
 
 interface ManualServiceTicketModalProps {
@@ -88,6 +107,45 @@ export default function ManualServiceTicketModal({
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Dynamic options state
+  const [options, setOptions] = useState<ServiceTicketOptions | null>(null);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+
+  // Fetch options from API when modal opens
+  useEffect(() => {
+    if (isOpen && !options && !optionsLoading) {
+      setOptionsLoading(true);
+      fetch('/api/service-tickets/options')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.options) {
+            setOptions(data.options);
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to fetch service ticket options:', err);
+        })
+        .finally(() => {
+          setOptionsLoading(false);
+        });
+    }
+  }, [isOpen, options, optionsLoading]);
+
+  // Derive options from fetched data or fallbacks
+  const categoryOptions = useMemo(() => {
+    return options?.categories?.length ? options.categories : FALLBACK_CATEGORIES;
+  }, [options]);
+
+  const priorityOptions = useMemo(() => {
+    return options?.priorities?.length ? options.priorities : FALLBACK_PRIORITIES;
+  }, [options]);
+
+  const stageOptions = useMemo(() => {
+    const pipelines = options?.pipelines?.length ? options.pipelines : FALLBACK_PIPELINES;
+    // Get stages from first pipeline (Policy Service)
+    return pipelines[0]?.stages || FALLBACK_PIPELINES[0].stages;
+  }, [options]);
 
   const searchCustomers = useCallback(async (query: string) => {
     if (query.length < 2) {
@@ -320,11 +378,12 @@ export default function ManualServiceTicketModal({
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 >
                   {Object.entries(
-                    CATEGORY_OPTIONS.reduce((groups, cat) => {
-                      if (!groups[cat.group]) groups[cat.group] = [];
-                      groups[cat.group].push(cat);
+                    categoryOptions.reduce((groups, cat) => {
+                      const group = cat.group || 'General';
+                      if (!groups[group]) groups[group] = [];
+                      groups[group].push(cat);
                       return groups;
-                    }, {} as Record<string, typeof CATEGORY_OPTIONS>)
+                    }, {} as Record<string, typeof categoryOptions>)
                   ).map(([group, cats]) => (
                     <optgroup key={group} label={group}>
                       {cats.map((cat) => (
@@ -345,7 +404,7 @@ export default function ManualServiceTicketModal({
                   onChange={(e) => setPriorityId(parseInt(e.target.value))}
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 >
-                  {PRIORITY_OPTIONS.map((p) => (
+                  {priorityOptions.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -365,7 +424,7 @@ export default function ManualServiceTicketModal({
                   onChange={(e) => setStageId(parseInt(e.target.value))}
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 >
-                  {STAGE_OPTIONS.map((s) => (
+                  {stageOptions.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>
