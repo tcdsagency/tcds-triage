@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { format, addDays } from 'date-fns';
 import type { Employee } from '@/app/api/service-pipeline/route';
@@ -101,12 +101,13 @@ export default function ManualServiceTicketModal({
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [categoryId, setCategoryId] = useState<number>(SERVICE_TICKET_DEFAULTS.CATEGORY_ID);
   const [priorityId, setPriorityId] = useState<number>(SERVICE_TICKET_DEFAULTS.PRIORITY_ID);
-  const [assigneeId, setAssigneeId] = useState<number>(SERVICE_TICKET_DEFAULTS.DEFAULT_CSR);
+  const [assigneeId, setAssigneeId] = useState<number>(0); // No default - user must select
   const [stageId, setStageId] = useState(111160); // New
   const [dueDate, setDueDate] = useState(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false); // Ref to prevent duplicate submissions
 
   // Dynamic options state
   const [options, setOptions] = useState<ServiceTicketOptions | null>(null);
@@ -182,6 +183,12 @@ export default function ManualServiceTicketModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Prevent duplicate submissions using ref (faster than state)
+    if (submittingRef.current) {
+      return;
+    }
+
     setError(null);
 
     if (!subject.trim()) {
@@ -199,6 +206,7 @@ export default function ManualServiceTicketModal({
       return;
     }
 
+    submittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -233,6 +241,7 @@ export default function ManualServiceTicketModal({
       setDescription('');
       setCategoryId(SERVICE_TICKET_DEFAULTS.CATEGORY_ID);
       setPriorityId(SERVICE_TICKET_DEFAULTS.PRIORITY_ID);
+      setAssigneeId(0); // Reset to no default
       setStageId(111160);
       setDueDate(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
 
@@ -241,6 +250,7 @@ export default function ManualServiceTicketModal({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create ticket');
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
