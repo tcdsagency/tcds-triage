@@ -136,19 +136,38 @@ Action Required:
 [Created from Risk Monitor Alert]
     `.trim();
 
+    // Parse customer ID
+    const customerId = parseInt(policy.azContactId);
+    if (isNaN(customerId)) {
+      return NextResponse.json(
+        { error: `Invalid AgencyZoom customer ID: ${policy.azContactId}` },
+        { status: 400 }
+      );
+    }
+
     // Create the service ticket
+    console.log('[Risk Monitor] Creating service ticket with:', {
+      subject,
+      customerId,
+      pipelineId: targetPipeline.id,
+      stageId: firstStage.id,
+    });
+
     const ticketResult = await azClient.createServiceTicket({
       subject,
       description,
-      customerId: parseInt(policy.azContactId),
+      customerId,
       pipelineId: targetPipeline.id,
       stageId: firstStage.id,
       priorityId: alert.priority === "1" ? 1 : alert.priority === "2" ? 2 : 3,
     });
 
-    if (!ticketResult.success) {
+    console.log('[Risk Monitor] Service ticket result:', ticketResult);
+
+    if (!ticketResult.success || !ticketResult.serviceTicketId) {
+      const errorMsg = (ticketResult as any)?.error || 'Failed to create service ticket in AgencyZoom';
       return NextResponse.json(
-        { error: "Failed to create service ticket in AgencyZoom" },
+        { error: errorMsg, details: ticketResult },
         { status: 500 }
       );
     }
