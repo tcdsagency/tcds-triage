@@ -86,8 +86,24 @@ export async function POST(request: NextRequest) {
 
     const body: CreateTicketRequest = await request.json();
 
+    // Log incoming request for debugging
+    console.log('[Service Tickets] Incoming request body:', JSON.stringify({
+      subject: body.subject,
+      customerId: body.customerId,
+      assigneeId: body.assigneeId,
+      categoryId: body.categoryId,
+      priorityId: body.priorityId,
+      stageId: body.stageId,
+      triageItemType: body.triageItemType,
+    }, null, 2));
+
     // Validate required fields
     if (!body.subject || !body.customerId || !body.assigneeId) {
+      console.error('[Service Tickets] Missing required fields:', {
+        hasSubject: !!body.subject,
+        hasCustomerId: !!body.customerId,
+        hasAssigneeId: !!body.assigneeId
+      });
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
 
