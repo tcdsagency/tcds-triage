@@ -1348,22 +1348,28 @@ export class AgencyZoomClient {
     categoryId?: number;
     csrId?: number;
     dueDate?: string;
-  }): Promise<{ success: boolean; serviceTicketId?: number }> {
-    return this.request('/v1/api/serviceTicket/service-tickets/create', {
+  }): Promise<{ success: boolean; serviceTicketId?: number; error?: string }> {
+    const payload = {
+      subject: ticket.subject,
+      serviceDesc: ticket.description,
+      customerId: ticket.customerId,
+      householdId: ticket.customerId,
+      workflowId: ticket.pipelineId,
+      workflowStageId: ticket.stageId,
+      priorityId: ticket.priorityId || 2,
+      categoryId: ticket.categoryId,
+      csr: ticket.csrId,
+      dueDate: ticket.dueDate,
+    };
+    console.log('[AgencyZoom] Creating service ticket with payload:', JSON.stringify(payload, null, 2));
+
+    const result = await this.request('/v1/api/serviceTicket/service-tickets/create', {
       method: 'POST',
-      body: JSON.stringify({
-        subject: ticket.subject,
-        serviceDesc: ticket.description,
-        customerId: ticket.customerId, // AgencyZoom expects customerId
-        householdId: ticket.customerId, // Also include householdId for backwards compatibility
-        workflowId: ticket.pipelineId,
-        workflowStageId: ticket.stageId,
-        priorityId: ticket.priorityId || 2,
-        categoryId: ticket.categoryId,
-        csr: ticket.csrId,
-        dueDate: ticket.dueDate,
-      }),
+      body: JSON.stringify(payload),
     });
+
+    console.log('[AgencyZoom] Service ticket create response:', JSON.stringify(result, null, 2));
+    return result;
   }
 
   /**

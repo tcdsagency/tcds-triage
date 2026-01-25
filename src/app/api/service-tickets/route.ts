@@ -124,8 +124,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (!ticketResult.success || !ticketResult.serviceTicketId) {
-      console.error('[Service Tickets] AgencyZoom create failed:', ticketResult);
-      return NextResponse.json({ success: false, error: 'Failed to create ticket in AgencyZoom' }, { status: 500 });
+      console.error('[Service Tickets] AgencyZoom create failed:', JSON.stringify(ticketResult, null, 2));
+      console.error('[Service Tickets] Request payload was:', JSON.stringify({
+        subject: body.subject,
+        customerId: body.customerId,
+        pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
+        stageId: body.stageId,
+        priorityId: body.priorityId,
+        categoryId: body.categoryId,
+        csrId: body.assigneeId,
+      }, null, 2));
+      const errorMsg = (ticketResult as any)?.error || (ticketResult as any)?.message || 'Failed to create ticket in AgencyZoom';
+      return NextResponse.json({ success: false, error: errorMsg, details: ticketResult }, { status: 500 });
     }
 
     const azTicketId = ticketResult.serviceTicketId;
@@ -194,8 +204,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('[Service Tickets] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Failed to create ticket' },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }
