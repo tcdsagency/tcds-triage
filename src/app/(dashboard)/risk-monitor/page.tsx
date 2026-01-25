@@ -26,6 +26,7 @@ import {
   MapPin,
   DollarSign,
   User,
+  FileText,
 } from 'lucide-react';
 import { FloodZoneBadge, FloodRisk } from '@/components/ui/flood-zone-indicator';
 
@@ -48,6 +49,7 @@ interface Alert {
   resolvedAt?: string;
   assignedTo?: string;
   notes?: string;
+  serviceTicketId?: string;
   policy?: {
     id: string;
     policyNumber: string;
@@ -59,6 +61,8 @@ interface Alert {
     state?: string;
     zipCode?: string;
     listingPrice?: number;
+    azContactId?: string;
+    currentStatus?: string;
   };
 }
 
@@ -334,6 +338,24 @@ export default function RiskMonitorPage() {
       await fetchStats();
     } catch (error) {
       console.error('Error checking property:', error);
+    }
+  };
+
+  const handleCreateServiceRequest = async (alertId: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await fetch(`/api/risk-monitor/alerts/${alertId}/create-service-request`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchAlerts();
+        return { success: true, message: data.message || 'Service request created' };
+      } else {
+        return { success: false, message: data.error || 'Failed to create service request' };
+      }
+    } catch (error) {
+      console.error('Error creating service request:', error);
+      return { success: false, message: error instanceof Error ? error.message : 'Failed to create service request' };
     }
   };
 
@@ -617,6 +639,7 @@ export default function RiskMonitorPage() {
             setAlertFilter(f);
           }}
           onAction={handleAlertAction}
+          onCreateServiceRequest={handleCreateServiceRequest}
         />
       )}
 
@@ -919,14 +942,31 @@ function AlertsTab({
   filter,
   onFilterChange,
   onAction,
+  onCreateServiceRequest,
 }: {
   alerts: Alert[];
   counts: Record<string, number>;
   filter: string;
   onFilterChange: (f: string) => void;
   onAction: (ids: string[], action: string) => void;
+  onCreateServiceRequest: (alertId: string) => Promise<{ success: boolean; message: string }>;
 }) {
+  const [creatingTicket, setCreatingTicket] = useState<string | null>(null);
+  const [ticketMessage, setTicketMessage] = useState<{ alertId: string; success: boolean; message: string } | null>(null);
   const statuses = ['', 'new', 'acknowledged', 'in_progress', 'resolved', 'dismissed'];
+
+  const handleCreateTicket = async (alertId: string) => {
+    setCreatingTicket(alertId);
+    setTicketMessage(null);
+    try {
+      const result = await onCreateServiceRequest(alertId);
+      setTicketMessage({ alertId, ...result });
+      // Auto-hide message after 5 seconds
+      setTimeout(() => setTicketMessage(null), 5000);
+    } finally {
+      setCreatingTicket(null);
+    }
+  };
 
   // Format phone number for display
   const formatPhone = (phone: string) => {
@@ -1079,6 +1119,13 @@ function AlertsTab({
                   </div>
                 </div>
 
+                {/* Ticket status message */}
+                {ticketMessage?.alertId === alert.id && (
+                  <div className={`px-4 py-2 text-xs ${ticketMessage.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                    {ticketMessage.message}
+                  </div>
+                )}
+
                 {/* Quick Actions Footer */}
                 <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
                   {/* Contact buttons */}
@@ -1100,6 +1147,27 @@ function AlertsTab({
                         <Mail className="h-3.5 w-3.5" />
                         Email
                       </a>
+                    )}
+                    {/* Create Service Request button - show for active/pending status alerts with AZ customer ID */}
+                    {alert.policy?.azContactId && !alert.serviceTicketId &&
+                     (alert.newStatus === 'active' || alert.newStatus === 'pending') &&
+                     alert.status !== 'resolved' && alert.status !== 'dismissed' && (
+                      <button
+                        onClick={() => handleCreateTicket(alert.id)}
+                        disabled={creatingTicket === alert.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-100 rounded-lg hover:bg-purple-200 transition-colors disabled:opacity-50"
+                        title="Create a service request in AgencyZoom"
+                      >
+                        <FileText className={`h-3.5 w-3.5 ${creatingTicket === alert.id ? 'animate-pulse' : ''}`} />
+                        {creatingTicket === alert.id ? 'Creating...' : 'Service Request'}
+                      </button>
+                    )}
+                    {/* Show linked ticket ID if already created */}
+                    {alert.serviceTicketId && (
+                      <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg">
+                        <FileText className="h-3.5 w-3.5" />
+                        Ticket #{alert.serviceTicketId}
+                      </span>
                     )}
                   </div>
 

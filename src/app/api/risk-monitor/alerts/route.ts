@@ -46,6 +46,8 @@ export async function GET(request: NextRequest) {
           state: riskMonitorPolicies.state,
           zipCode: riskMonitorPolicies.zipCode,
           listingPrice: riskMonitorPolicies.listingPrice,
+          azContactId: riskMonitorPolicies.azContactId,
+          currentStatus: riskMonitorPolicies.currentStatus,
         },
       })
       .from(riskMonitorAlerts)
