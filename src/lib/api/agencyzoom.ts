@@ -1354,7 +1354,8 @@ export class AgencyZoomClient {
       body: JSON.stringify({
         subject: ticket.subject,
         serviceDesc: ticket.description,
-        householdId: ticket.customerId,
+        customerId: ticket.customerId, // AgencyZoom expects customerId
+        householdId: ticket.customerId, // Also include householdId for backwards compatibility
         workflowId: ticket.pipelineId,
         workflowStageId: ticket.stageId,
         priorityId: ticket.priorityId || 2,
@@ -1432,7 +1433,7 @@ export class AgencyZoomClient {
   }
 
   /**
-   * Get service ticket pipelines (workflows)
+   * Get service ticket pipelines (workflows) with stages
    * GET /v1/api/serviceTicket/service-tickets/pipelines
    */
   async getServiceTicketPipelines(): Promise<any[]> {
@@ -1442,6 +1443,40 @@ export class AgencyZoomClient {
       return result;
     }
     return result.pipelines || result.data || [];
+  }
+
+  /**
+   * Get service ticket categories
+   * GET /v1/api/serviceTicket/service-tickets/categories
+   */
+  async getServiceTicketCategories(): Promise<Array<{ id: number; name: string }>> {
+    try {
+      const result = await this.request<any>('/v1/api/serviceTicket/service-tickets/categories');
+      if (Array.isArray(result)) {
+        return result;
+      }
+      return result.categories || result.data || [];
+    } catch (error) {
+      console.error('[AgencyZoom] Failed to fetch categories:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get service ticket priorities
+   * GET /v1/api/serviceTicket/service-tickets/priorities
+   */
+  async getServiceTicketPriorities(): Promise<Array<{ id: number; name: string }>> {
+    try {
+      const result = await this.request<any>('/v1/api/serviceTicket/service-tickets/priorities');
+      if (Array.isArray(result)) {
+        return result;
+      }
+      return result.priorities || result.data || [];
+    } catch (error) {
+      console.error('[AgencyZoom] Failed to fetch priorities:', error);
+      return [];
+    }
   }
 
   // --------------------------------------------------------------------------

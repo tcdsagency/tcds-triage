@@ -4280,3 +4280,21 @@ export const lienHoldersRelations = relations(lienHolders, ({ one, many }) => ({
   clauses: many(mortgageeClauses),
 }));
 
+// =============================================================================
+// SYSTEM CACHE
+// =============================================================================
+
+/**
+ * Generic key-value cache for system-wide data like API options.
+ * Used for caching AgencyZoom options (categories, priorities, etc.)
+ */
+export const systemCache = pgTable('system_cache', {
+  key: varchar('key', { length: 255 }).primaryKey(),
+  value: jsonb('value').notNull(),
+  expiresAt: timestamp('expires_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  expiresIdx: index('system_cache_expires_idx').on(table.expiresAt),
+}));
+
