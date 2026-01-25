@@ -1363,7 +1363,7 @@ export class AgencyZoomClient {
     };
     console.log('[AgencyZoom] Creating service ticket with payload:', JSON.stringify(payload, null, 2));
 
-    const result = await this.request('/v1/api/serviceTicket/service-tickets/create', {
+    const result = await this.request<{ success: boolean; serviceTicketId?: number; error?: string }>('/v1/api/serviceTicket/service-tickets/create', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
