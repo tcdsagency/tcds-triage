@@ -157,30 +157,45 @@ export async function POST(request: NextRequest) {
     const azTicketId = ticketResult.serviceTicketId;
 
     // Save to local database
-    const [newTicket] = await db
-      .insert(serviceTickets)
-      .values({
-        tenantId,
+    let newTicket;
+    try {
+      const [inserted] = await db
+        .insert(serviceTickets)
+        .values({
+          tenantId,
+          azTicketId,
+          azHouseholdId: body.customerId,
+          wrapupDraftId: body.triageItemType === 'wrapup' && body.triageItemId ? body.triageItemId : null,
+          subject: body.subject,
+          description: body.description,
+          status: 'active',
+          pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
+          pipelineName: 'Policy Service Pipeline',
+          stageId: body.stageId,
+          stageName: STAGE_NAMES[body.stageId] || 'New',
+          categoryId: body.categoryId,
+          categoryName: CATEGORY_NAMES[body.categoryId] || 'General Service',
+          priorityId: body.priorityId,
+          priorityName: PRIORITY_NAMES[body.priorityId] || 'Standard',
+          csrId: body.assigneeId,
+          csrName: null, // Will be filled by sync or we could add it to the request
+          dueDate: body.dueDate || null,
+          azCreatedAt: new Date(),
+        })
+        .returning();
+      newTicket = inserted;
+    } catch (dbError) {
+      console.error('[Service Tickets] Database insert failed:', dbError);
+      // Ticket was created in AgencyZoom but failed to save locally
+      // Return success since the AZ ticket exists
+      return NextResponse.json({
+        success: true,
+        ticketId: null,
         azTicketId,
-        azHouseholdId: body.customerId,
-        wrapupDraftId: body.triageItemType === 'wrapup' && body.triageItemId ? body.triageItemId : null,
-        subject: body.subject,
-        description: body.description,
-        status: 'active',
-        pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
-        pipelineName: 'Policy Service Pipeline',
-        stageId: body.stageId,
-        stageName: STAGE_NAMES[body.stageId] || 'New',
-        categoryId: body.categoryId,
-        categoryName: CATEGORY_NAMES[body.categoryId] || 'General Service',
-        priorityId: body.priorityId,
-        priorityName: PRIORITY_NAMES[body.priorityId] || 'Standard',
-        csrId: body.assigneeId,
-        csrName: null, // Will be filled by sync or we could add it to the request
-        dueDate: body.dueDate || null,
-        azCreatedAt: new Date(),
-      })
-      .returning();
+        warning: 'Ticket created in AgencyZoom but failed to save locally',
+        dbError: dbError instanceof Error ? dbError.message : String(dbError),
+      });
+    }
 
     // Mark triage item as completed (skip for manual tickets)
     if (!isManualTicket && body.triageItemId) {
@@ -215,7 +230,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      ticketId: newTicket.id,
+      ticketId: newTicket?.id,
       azTicketId,
     });
   } catch (error) {
