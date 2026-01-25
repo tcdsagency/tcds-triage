@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/db";
-import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, triageItems, messages, liveTranscriptSegments } from "@/db/schema";
+import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, triageItems, messages, liveTranscriptSegments, reviewRequests, googleReviews } from "@/db/schema";
 import { eq, or, ilike, and, gte, lte, desc, isNotNull, asc } from "drizzle-orm";
 import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
@@ -84,6 +84,55 @@ async function withTimeout<T>(
     setTimeout(() => resolve(fallback), timeoutMs)
   );
   return Promise.race([promise, timeout]);
+}
+
+// =============================================================================
+// REVIEW REQUEST SCHEDULING
+// Calculate next business hour for review request SMS (Mon-Fri, 9am-6pm CST)
+// =============================================================================
+
+function getNextBusinessHour(): Date {
+  const now = new Date();
+  // Convert to CST (UTC-6)
+  const cstOffset = -6 * 60;
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const cstMinutes = utcMinutes + cstOffset;
+  const cstHour = Math.floor(((cstMinutes % 1440) + 1440) % 1440 / 60);
+  const dayOfWeek = now.getUTCDay();
+
+  // Adjust day of week for CST
+  let cstDay = dayOfWeek;
+  if (cstMinutes < 0) cstDay = (dayOfWeek + 6) % 7;
+  if (cstMinutes >= 1440) cstDay = (dayOfWeek + 1) % 7;
+
+  const scheduledDate = new Date(now);
+
+  // Business hours: 9am-6pm CST, Monday(1) - Friday(5)
+  const isBusinessDay = cstDay >= 1 && cstDay <= 5;
+  const isBusinessHours = cstHour >= 9 && cstHour < 18;
+
+  if (isBusinessDay && isBusinessHours) {
+    // Within business hours - schedule for 1 hour from now
+    scheduledDate.setTime(now.getTime() + 60 * 60 * 1000);
+  } else if (isBusinessDay && cstHour < 9) {
+    // Before business hours on a weekday - schedule for 9am CST today
+    scheduledDate.setUTCHours(9 + 6, 0, 0, 0); // 9am CST = 15:00 UTC
+  } else {
+    // After hours or weekend - find next business day at 9am CST
+    let daysToAdd = 1;
+    let nextDay = (cstDay + 1) % 7;
+
+    // Skip to Monday if weekend
+    while (nextDay === 0 || nextDay === 6) {
+      daysToAdd++;
+      nextDay = (nextDay + 1) % 7;
+    }
+
+    scheduledDate.setTime(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+    scheduledDate.setUTCHours(9 + 6, 0, 0, 0); // 9am CST = 15:00 UTC
+  }
+
+  return scheduledDate;
 }
 
 // =============================================================================
@@ -1490,6 +1539,86 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
 
       // Note: Triage items removed - wrapup_drafts is the single source of truth
       // All call review happens through /pending-review using wrapup_drafts table
+
+      // =========================================================================
+      // AUTO-CREATE REVIEW REQUEST FOR POSITIVE SENTIMENT CALLS
+      // Creates a pending_approval review request for manual approval in /reviews
+      // =========================================================================
+      if (
+        txResult.wrapup &&
+        analysis?.sentiment === "positive" &&
+        phoneForLookup &&
+        !shouldAutoVoid
+      ) {
+        try {
+          // Check if customer already has a Google review (suppress if so)
+          const normalizedPhone = normalizePhone(phoneForLookup);
+          const phoneDigits = normalizedPhone.replace(/\D/g, "").slice(-10);
+
+          const [existingReview] = await db
+            .select({ id: googleReviews.id })
+            .from(googleReviews)
+            .where(
+              and(
+                eq(googleReviews.tenantId, tenantId),
+                ilike(googleReviews.matchedCustomerPhone, `%${phoneDigits}`)
+              )
+            )
+            .limit(1);
+
+          // Check if there's already a pending review request for this phone
+          const [existingRequest] = await db
+            .select({ id: reviewRequests.id })
+            .from(reviewRequests)
+            .where(
+              and(
+                eq(reviewRequests.tenantId, tenantId),
+                eq(reviewRequests.customerPhone, normalizedPhone),
+                or(
+                  eq(reviewRequests.status, "pending_approval"),
+                  eq(reviewRequests.status, "pending")
+                )
+              )
+            )
+            .limit(1);
+
+          if (existingRequest) {
+            console.log(`[Call-Completed] ⏭️ Review request skipped - already pending for ${normalizedPhone}`);
+          } else if (existingReview) {
+            // Create suppressed review request (for tracking)
+            await db.insert(reviewRequests).values({
+              tenantId,
+              callId: call.id,
+              customerName: txResult.wrapup.customerName || "Unknown",
+              customerPhone: normalizedPhone,
+              customerId: matchedAzCustomerId?.toString() || null,
+              sentiment: "positive",
+              scheduledFor: getNextBusinessHour(),
+              status: "suppressed",
+              suppressed: true,
+              suppressionReason: "existing_review",
+              googleReviewId: existingReview.id,
+            });
+            console.log(`[Call-Completed] 📝 Review request created (suppressed - customer has existing review)`);
+          } else {
+            // Create pending_approval review request
+            await db.insert(reviewRequests).values({
+              tenantId,
+              callId: call.id,
+              customerName: txResult.wrapup.customerName || "Unknown",
+              customerPhone: normalizedPhone,
+              customerId: matchedAzCustomerId?.toString() || null,
+              sentiment: "positive",
+              scheduledFor: getNextBusinessHour(),
+              status: "pending_approval",
+            });
+            console.log(`[Call-Completed] 📝 Review request created (pending_approval) for ${txResult.wrapup.customerName || normalizedPhone}`);
+          }
+        } catch (reviewError) {
+          // Don't fail the webhook if review request creation fails
+          console.error(`[Call-Completed] ⚠️ Failed to create review request:`, reviewError);
+        }
+      }
     } else {
       // No analysis and not a hangup - log why we're skipping wrapup creation
       console.log(`[Call-Completed] ⏭️ Skipping wrapup creation for call ${call.id}: no analysis and not detected as hangup (duration: ${body.duration}s, transcript length: ${transcript?.length || 0})`);
