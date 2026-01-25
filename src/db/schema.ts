@@ -2391,6 +2391,9 @@ export const riskMonitorAlerts = pgTable('risk_monitor_alerts', {
   resolution: text('resolution'), // Notes on how it was resolved
   resolutionType: varchar('resolution_type', { length: 50 }), // 'customer_moving', 'false_positive', 'policy_updated', etc.
 
+  // AgencyZoom integration
+  serviceTicketId: varchar('service_ticket_id', { length: 50 }), // AgencyZoom service ticket ID
+
   // Email notification tracking
   emailSentAt: timestamp('email_sent_at'),
   emailRecipients: jsonb('email_recipients'),
