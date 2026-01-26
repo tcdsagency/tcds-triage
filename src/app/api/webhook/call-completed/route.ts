@@ -12,7 +12,16 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/db";
-import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, triageItems, messages, liveTranscriptSegments, reviewRequests, googleReviews } from "@/db/schema";
+import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, triageItems, messages, liveTranscriptSegments, reviewRequests, googleReviews, serviceTickets, tenants } from "@/db/schema";
+import {
+  SERVICE_PIPELINES,
+  PIPELINE_STAGES,
+  SERVICE_CATEGORIES,
+  SERVICE_PRIORITIES,
+  EMPLOYEE_IDS,
+  SPECIAL_HOUSEHOLDS,
+  getDefaultDueDate,
+} from "@/lib/api/agencyzoom-service-tickets";
 import { eq, or, ilike, and, gte, lte, desc, isNotNull, asc } from "drizzle-orm";
 import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
@@ -1617,6 +1626,125 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         } catch (reviewError) {
           // Don't fail the webhook if review request creation fails
           console.error(`[Call-Completed] ⚠️ Failed to create review request:`, reviewError);
+        }
+      }
+
+      // =========================================================================
+      // AUTO-CREATE SERVICE TICKET FOR INBOUND CALLS
+      // Creates a service ticket in AgencyZoom assigned to AI Agent
+      // Feature toggle: autoCreateServiceTickets in tenant features
+      // =========================================================================
+      if (
+        txResult.wrapup &&
+        analysis &&
+        direction === "inbound" &&
+        !shouldAutoVoid
+      ) {
+        try {
+          // Check if feature is enabled
+          const [tenantData] = await db
+            .select({ features: tenants.features })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+
+          const features = tenantData?.features as Record<string, unknown> | undefined;
+          const autoCreateEnabled = features?.autoCreateServiceTickets === true;
+
+          if (autoCreateEnabled) {
+            // Determine customer ID - use matched AZ customer or NCM placeholder
+            const azCustomerId = matchedAzCustomerId ? parseInt(String(matchedAzCustomerId)) : SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER;
+
+            // Build ticket description
+            let ticketDescription = `📞 Inbound Call - AI Processed\n\n`;
+            ticketDescription += `Summary: ${analysis.summary || 'No summary available'}\n\n`;
+
+            if (analysis.actionItems && analysis.actionItems.length > 0) {
+              ticketDescription += `Action Items:\n`;
+              analysis.actionItems.forEach((item: string) => {
+                ticketDescription += `• ${item}\n`;
+              });
+              ticketDescription += '\n';
+            }
+
+            if (analysis.extractedData) {
+              const extracted = analysis.extractedData as Record<string, string | undefined>;
+              if (extracted.customerName) ticketDescription += `Customer: ${extracted.customerName}\n`;
+              if (extracted.policyNumber) ticketDescription += `Policy: ${extracted.policyNumber}\n`;
+              if (extracted.reason) ticketDescription += `Reason: ${extracted.reason}\n`;
+            }
+
+            ticketDescription += `\nCall Duration: ${body.duration}s`;
+            ticketDescription += `\nCaller: ${phoneForLookup || 'Unknown'}`;
+
+            // If using NCM, append original caller info
+            if (!matchedAzCustomerId && phoneForLookup) {
+              ticketDescription += `\n\n--- Original Caller Info ---`;
+              ticketDescription += `\nPhone: ${phoneForLookup}`;
+              if (txResult.wrapup.customerName) {
+                ticketDescription += `\nName: ${txResult.wrapup.customerName}`;
+              }
+            }
+
+            // Determine category based on AI analysis
+            const serviceRequestType = analysis.serviceRequestType || 'general';
+            const categoryId = SERVICE_CATEGORIES.GENERAL_SERVICE;
+
+            // Create service ticket via AgencyZoom API
+            const azClient = getAgencyZoomClient();
+            const ticketResult = await azClient.createServiceTicket({
+              subject: `Inbound Call: ${analysis.serviceRequestType || 'General Inquiry'} - ${txResult.wrapup.customerName || phoneForLookup || 'Unknown Caller'}`,
+              description: ticketDescription,
+              customerId: azCustomerId,
+              pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
+              stageId: PIPELINE_STAGES.POLICY_SERVICE_NEW,
+              priorityId: SERVICE_PRIORITIES.STANDARD,
+              categoryId: categoryId,
+              csrId: EMPLOYEE_IDS.AI_AGENT,
+              dueDate: getDefaultDueDate(),
+            });
+
+            if (ticketResult.success || ticketResult.serviceTicketId) {
+              const azTicketId = ticketResult.serviceTicketId;
+              console.log(`[Call-Completed] 🎫 Service ticket created: ${azTicketId} (assigned to AI Agent)`);
+
+              // Store ticket locally
+              if (typeof azTicketId === 'number' && azTicketId > 0) {
+                try {
+                  await db.insert(serviceTickets).values({
+                    tenantId,
+                    azTicketId: azTicketId,
+                    azHouseholdId: azCustomerId,
+                    customerId: call.customerId || null,
+                    subject: `Inbound Call: ${analysis.serviceRequestType || 'General Inquiry'}`,
+                    description: ticketDescription,
+                    status: 'active',
+                    pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
+                    pipelineName: 'Policy Service',
+                    stageId: PIPELINE_STAGES.POLICY_SERVICE_NEW,
+                    stageName: 'New',
+                    categoryId: categoryId,
+                    categoryName: 'General Service',
+                    priorityId: SERVICE_PRIORITIES.STANDARD,
+                    priorityName: 'Standard',
+                    csrId: EMPLOYEE_IDS.AI_AGENT,
+                    dueDate: getDefaultDueDate(),
+                    azCreatedAt: new Date(),
+                    source: 'inbound_call',
+                    lastSyncedFromAz: new Date(),
+                  });
+                  console.log(`[Call-Completed] 🎫 Ticket stored locally`);
+                } catch (localDbError) {
+                  console.error(`[Call-Completed] ⚠️ Failed to store ticket locally:`, localDbError);
+                }
+              }
+            } else {
+              console.error(`[Call-Completed] ⚠️ Failed to create service ticket:`, ticketResult);
+            }
+          }
+        } catch (ticketError) {
+          // Don't fail the webhook if service ticket creation fails
+          console.error(`[Call-Completed] ⚠️ Failed to create service ticket:`, ticketError);
         }
       }
     } else {
