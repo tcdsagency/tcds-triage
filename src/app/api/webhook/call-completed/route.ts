@@ -22,7 +22,7 @@ import {
   SPECIAL_HOUSEHOLDS,
   getDefaultDueDate,
 } from "@/lib/api/agencyzoom-service-tickets";
-import { eq, or, ilike, and, gte, lte, desc, isNotNull, asc } from "drizzle-orm";
+import { eq, or, ilike, and, gte, lte, desc, isNotNull, asc, sql } from "drizzle-orm";
 import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
 import { trestleIQClient, quickLeadCheck } from "@/lib/api/trestleiq";
@@ -1071,11 +1071,47 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         }
       }
 
-      // Only do AgencyZoom phone lookup if no screen pop match (with 10s total timeout)
-      if (customerMatchStatus === "unmatched") {
+      // Only do phone lookup if no screen pop match
+      if (customerMatchStatus === "unmatched" && phoneForLookup) {
+        // FIRST: Search local customers table (faster and more reliable than AZ API)
         try {
-          const azClient = getAgencyZoomClient(); // Sync - no timeout needed
-          if (azClient && phoneForLookup) {
+          const phoneDigits = phoneForLookup.replace(/\D/g, "").slice(-10);
+          const localMatches = await db
+            .select({
+              id: customers.id,
+              agencyzoomId: customers.agencyzoomId,
+              firstName: customers.firstName,
+              lastName: customers.lastName,
+              phone: customers.phone,
+            })
+            .from(customers)
+            .where(
+              sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '(', ''), ')', ''), '-', ''), ' ', '') LIKE ${'%' + phoneDigits}`
+            )
+            .limit(5);
+
+          if (localMatches.length === 1 && localMatches[0].agencyzoomId) {
+            customerMatchStatus = "matched";
+            matchedAzCustomerId = localMatches[0].agencyzoomId;
+            matchedCustomerName = `${localMatches[0].firstName || ""} ${localMatches[0].lastName || ""}`.trim() || null;
+            matchType = "customer";
+            console.log(`[Call-Completed] Local DB match: ${matchedCustomerName} (AZ: ${matchedAzCustomerId})`);
+          } else if (localMatches.length > 1) {
+            customerMatchStatus = "multiple_matches";
+            matchType = "customer";
+            console.log(`[Call-Completed] Local DB multiple matches: ${localMatches.length}`);
+          } else {
+            console.log(`[Call-Completed] No local DB match for ${phoneDigits}`);
+          }
+        } catch (localError) {
+          console.error("[Call-Completed] Local customer lookup error:", localError);
+        }
+
+        // FALLBACK: Try AgencyZoom API if no local match (with timeout)
+        if (customerMatchStatus === "unmatched") {
+          try {
+            const azClient = getAgencyZoomClient(); // Sync - no timeout needed
+            if (azClient) {
             // First search customers (with timeout)
             azMatches = await withTimeout(
               azClient.findCustomersByPhone(phoneForLookup, 5),
@@ -1102,35 +1138,36 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
           } else {
             matchType = "customer";
           }
-        }
-        } catch (error) {
-          console.error("[Call-Completed] AgencyZoom lookup error:", error);
-        }
+          }
+          } catch (error) {
+            console.error("[Call-Completed] AgencyZoom lookup error:", error);
+          }
 
-        // Determine match status from phone lookup - check customers first, then leads
-        if (azMatches.length === 1 && azMatches[0]) {
-          customerMatchStatus = "matched";
-          matchedAzCustomerId = azMatches[0].id.toString();
-          matchedCustomerName = `${azMatches[0].firstName || ""} ${azMatches[0].lastName || ""}`.trim() || null;
-          matchType = "customer";
-          console.log(`[Call-Completed] Single customer match: AZ customer ${matchedAzCustomerId}`);
-        } else if (azMatches.length > 1) {
-          customerMatchStatus = "multiple_matches";
-          matchType = "customer";
-          console.log(`[Call-Completed] Multiple customer matches: ${azMatches.length} customers`);
-        } else if (azLeadMatches.length === 1 && azLeadMatches[0]) {
-          // Single lead match
-          customerMatchStatus = "matched";
-          matchedLeadId = azLeadMatches[0].id.toString();
-          matchedCustomerName = `${azLeadMatches[0].firstName || ""} ${azLeadMatches[0].lastName || ""}`.trim() || null;
-          matchType = "lead";
-          console.log(`[Call-Completed] Single lead match: AZ lead ${matchedLeadId}`);
-        } else if (azLeadMatches.length > 1) {
-          customerMatchStatus = "multiple_matches";
-          matchType = "lead";
-          console.log(`[Call-Completed] Multiple lead matches: ${azLeadMatches.length} leads`);
-        }
-      } // end if (customerMatchStatus === "unmatched") - AgencyZoom lookup block
+          // Determine match status from AZ API lookup - check customers first, then leads
+          if (azMatches.length === 1 && azMatches[0]) {
+            customerMatchStatus = "matched";
+            matchedAzCustomerId = azMatches[0].id.toString();
+            matchedCustomerName = `${azMatches[0].firstName || ""} ${azMatches[0].lastName || ""}`.trim() || null;
+            matchType = "customer";
+            console.log(`[Call-Completed] Single customer match: AZ customer ${matchedAzCustomerId}`);
+          } else if (azMatches.length > 1) {
+            customerMatchStatus = "multiple_matches";
+            matchType = "customer";
+            console.log(`[Call-Completed] Multiple customer matches: ${azMatches.length} customers`);
+          } else if (azLeadMatches.length === 1 && azLeadMatches[0]) {
+            // Single lead match
+            customerMatchStatus = "matched";
+            matchedLeadId = azLeadMatches[0].id.toString();
+            matchedCustomerName = `${azLeadMatches[0].firstName || ""} ${azLeadMatches[0].lastName || ""}`.trim() || null;
+            matchType = "lead";
+            console.log(`[Call-Completed] Single lead match: AZ lead ${matchedLeadId}`);
+          } else if (azLeadMatches.length > 1) {
+            customerMatchStatus = "multiple_matches";
+            matchType = "lead";
+            console.log(`[Call-Completed] Multiple lead matches: ${azLeadMatches.length} leads`);
+          }
+        } // end if (customerMatchStatus === "unmatched") - AgencyZoom API fallback
+      } // end if (customerMatchStatus === "unmatched" && phoneForLookup) - phone lookup block
 
       // 4.2 Trestle IQ lookup for unmatched calls (with 5s timeout)
       if (customerMatchStatus === "unmatched") {
