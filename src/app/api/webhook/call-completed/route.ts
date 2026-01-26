@@ -1686,6 +1686,14 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
               }
             }
 
+            // Append full transcription at the bottom
+            if (transcript && transcript.length > 0) {
+              ticketDescription += `\n\n═══════════════════════════════════════\n`;
+              ticketDescription += `CALL TRANSCRIPTION\n`;
+              ticketDescription += `═══════════════════════════════════════\n\n`;
+              ticketDescription += transcript;
+            }
+
             // Determine category based on AI analysis
             const serviceRequestType = analysis.serviceRequestType || 'general';
             const categoryId = SERVICE_CATEGORIES.GENERAL_SERVICE;
