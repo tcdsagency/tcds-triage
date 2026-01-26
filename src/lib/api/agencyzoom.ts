@@ -1351,7 +1351,7 @@ export class AgencyZoomClient {
   }): Promise<{ success: boolean; serviceTicketId?: number; error?: string }> {
     const payload = {
       subject: ticket.subject,
-      serviceDesc: ticket.description,
+      description: ticket.description,  // API uses 'description' not 'serviceDesc'
       customerId: ticket.customerId,
       householdId: ticket.customerId,
       workflowId: ticket.pipelineId,
