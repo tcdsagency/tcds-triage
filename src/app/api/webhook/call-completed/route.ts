@@ -1777,10 +1777,34 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
               }
             }
 
+            // Generate a more descriptive subject from the AI summary
+            // Truncate to ~60 chars for readability, extract key reason for call
+            let callReason = analysis.summary || '';
+            // Take first sentence or first 60 chars, whichever is shorter
+            const firstSentenceEnd = callReason.search(/[.!?]/);
+            if (firstSentenceEnd > 0 && firstSentenceEnd < 80) {
+              callReason = callReason.substring(0, firstSentenceEnd);
+            } else if (callReason.length > 60) {
+              // Truncate at word boundary
+              callReason = callReason.substring(0, 60).replace(/\s+\S*$/, '');
+            }
+            // Clean up and ensure it starts with lowercase for natural flow
+            callReason = callReason.trim().replace(/^(the\s+)?(caller\s+)?(called\s+)?(about\s+)?/i, '');
+            if (!callReason || callReason.length < 5) {
+              callReason = analysis.serviceRequestType || 'general inquiry';
+            }
+
+            // Only add customer name for NCM tickets (unmatched callers)
+            const isNCMTicket = !matchedAzCustomerId;
+            const subjectSuffix = isNCMTicket
+              ? ` - ${txResult.wrapup.customerName || phoneForLookup || 'Unknown Caller'}`
+              : '';
+            const ticketSubject = `Inbound Call: ${callReason}${subjectSuffix}`;
+
             // Create service ticket via AgencyZoom API
             const azClient = getAgencyZoomClient();
             const ticketResult = await azClient.createServiceTicket({
-              subject: `Inbound Call: ${analysis.serviceRequestType || 'General Inquiry'} - ${txResult.wrapup.customerName || phoneForLookup || 'Unknown Caller'}`,
+              subject: ticketSubject,
               description: ticketDescription,
               customerId: azCustomerId,
               pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
@@ -1803,7 +1827,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
                     azTicketId: azTicketId,
                     azHouseholdId: azCustomerId,
                     customerId: call.customerId || null,
-                    subject: `Inbound Call: ${analysis.serviceRequestType || 'General Inquiry'}`,
+                    subject: ticketSubject,
                     description: ticketDescription,
                     status: 'active',
                     pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
