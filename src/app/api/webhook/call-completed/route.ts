@@ -1735,6 +1735,35 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             const serviceRequestType = analysis.serviceRequestType || 'general';
             const categoryId = SERVICE_CATEGORIES.GENERAL_SERVICE;
 
+            // Determine CSR assignment - prefer call's agent, fallback to AI Agent
+            let assignedCsrId: number = EMPLOYEE_IDS.AI_AGENT;
+            let assignedCsrName = 'AI Agent';
+
+            if (call.agentId) {
+              try {
+                const [agentData] = await db
+                  .select({
+                    firstName: users.firstName,
+                    lastName: users.lastName,
+                    agencyzoomId: users.agencyzoomId,
+                  })
+                  .from(users)
+                  .where(eq(users.id, call.agentId))
+                  .limit(1);
+
+                if (agentData?.agencyzoomId) {
+                  const azCsrId = parseInt(agentData.agencyzoomId, 10);
+                  if (!isNaN(azCsrId) && azCsrId > 0) {
+                    assignedCsrId = azCsrId;
+                    assignedCsrName = `${agentData.firstName || ''} ${agentData.lastName || ''}`.trim() || 'Agent';
+                    console.log(`[Call-Completed] 🎫 Assigning ticket to call agent: ${assignedCsrName} (CSR ID: ${assignedCsrId})`);
+                  }
+                }
+              } catch (agentLookupError) {
+                console.error(`[Call-Completed] ⚠️ Failed to look up agent CSR ID, using AI Agent:`, agentLookupError);
+              }
+            }
+
             // Create service ticket via AgencyZoom API
             const azClient = getAgencyZoomClient();
             const ticketResult = await azClient.createServiceTicket({
@@ -1745,13 +1774,13 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
               stageId: PIPELINE_STAGES.POLICY_SERVICE_NEW,
               priorityId: SERVICE_PRIORITIES.STANDARD,
               categoryId: categoryId,
-              csrId: EMPLOYEE_IDS.AI_AGENT,
+              csrId: assignedCsrId,
               dueDate: getDefaultDueDate(),
             });
 
             if (ticketResult.success || ticketResult.serviceTicketId) {
               const azTicketId = ticketResult.serviceTicketId;
-              console.log(`[Call-Completed] 🎫 Service ticket created: ${azTicketId} (assigned to AI Agent)`);
+              console.log(`[Call-Completed] 🎫 Service ticket created: ${azTicketId} (assigned to ${assignedCsrName})`);
 
               // Store ticket locally
               if (typeof azTicketId === 'number' && azTicketId > 0) {
@@ -1772,7 +1801,8 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
                     categoryName: 'General Service',
                     priorityId: SERVICE_PRIORITIES.STANDARD,
                     priorityName: 'Standard',
-                    csrId: EMPLOYEE_IDS.AI_AGENT,
+                    csrId: assignedCsrId,
+                    csrName: assignedCsrName,
                     dueDate: getDefaultDueDate(),
                     azCreatedAt: new Date(),
                     source: 'inbound_call',
