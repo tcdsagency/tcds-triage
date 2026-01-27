@@ -1689,6 +1689,19 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
           const autoCreateEnabled = features?.autoCreateServiceTickets === true;
 
           if (autoCreateEnabled) {
+            // Skip internal/test calls - don't create tickets for these
+            const callerDigits = (phoneForLookup || '').replace(/\D/g, '');
+            const isInternalOrTestCall =
+              !phoneForLookup ||
+              phoneForLookup === 'Unknown' ||
+              phoneForLookup === 'PlayFile' ||
+              phoneForLookup.toLowerCase().includes('playfile') ||
+              callerDigits.length < 7 ||  // Too short to be a real phone number
+              callerDigits.length > 11;   // Too long to be a valid phone number
+
+            if (isInternalOrTestCall) {
+              console.log(`[Call-Completed] Skipping ticket creation for internal/test call: ${phoneForLookup}`);
+            } else {
             // Determine customer ID - use matched AZ customer or NCM placeholder
             const azCustomerId = matchedAzCustomerId ? parseInt(String(matchedAzCustomerId)) : SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER;
 
@@ -1816,6 +1829,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             } else {
               console.error(`[Call-Completed] ⚠️ Failed to create service ticket:`, ticketResult);
             }
+            } // end else (not internal/test call)
           }
         } catch (ticketError) {
           // Don't fail the webhook if service ticket creation fails
