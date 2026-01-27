@@ -98,6 +98,28 @@ export const quoteStatusEnum = pgEnum('quote_status', [
   'expired',
 ]);
 
+export const correctionTypeEnum = pgEnum('correction_type', [
+  'wrong_value',
+  'missing_value',
+  'extra_value',
+  'format_issue',
+  'context_error',
+]);
+
+export const evaluationRunStatusEnum = pgEnum('evaluation_run_status', [
+  'pending',
+  'running',
+  'completed',
+  'failed',
+]);
+
+export const promptVersionStatusEnum = pgEnum('prompt_version_status', [
+  'draft',
+  'testing',
+  'active',
+  'archived',
+]);
+
 export const policyStatusEnum = pgEnum('policy_status', [
   'active',
   'pending',
@@ -1797,6 +1819,15 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   priority: triagePriorityEnum('priority').default('medium'),
   priorityScore: integer('priority_score').default(50), // 0-100 numeric score
   priorityReasons: text('priority_reasons').array(), // Why this priority was assigned
+
+  // Multi-intent detection
+  intentCount: integer('intent_count').default(1),
+  multiIntentDetected: boolean('multi_intent_detected').default(false),
+  multiIntentWarningAcknowledged: boolean('multi_intent_warning_acknowledged').default(false),
+
+  // Correction tracking
+  hasCorrections: boolean('has_corrections').default(false),
+  correctionCount: integer('correction_count').default(0),
 
   // Assignment & Ownership
   assignedToId: uuid('assigned_to_id').references(() => users.id),
@@ -4299,5 +4330,279 @@ export const systemCache = pgTable('system_cache', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
   expiresIdx: index('system_cache_expires_idx').on(table.expiresAt),
+}));
+
+// =============================================================================
+// AI CORRECTIONS (Tracking agent corrections to AI outputs)
+// =============================================================================
+
+/**
+ * Tracks corrections made by agents to AI-generated outputs.
+ * Used for prompt improvement and evaluation.
+ */
+export const aiCorrections = pgTable('ai_corrections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  wrapupDraftId: uuid('wrapup_draft_id').references(() => wrapupDrafts.id, { onDelete: 'set null' }),
+  callId: uuid('call_id').references(() => calls.id, { onDelete: 'set null' }),
+
+  // Correction details
+  fieldName: text('field_name').notNull(),
+  aiValue: text('ai_value'),
+  agentValue: text('agent_value'),
+  correctionType: correctionTypeEnum('correction_type').notNull(),
+  transcriptExcerpt: text('transcript_excerpt'),
+  fullTranscript: text('full_transcript'),
+
+  // Who corrected
+  correctedById: uuid('corrected_by_id').references(() => users.id),
+  correctedAt: timestamp('corrected_at').defaultNow().notNull(),
+
+  // Evaluation tracking
+  usedInEvaluation: boolean('used_in_evaluation').default(false),
+  evaluationBatchId: uuid('evaluation_batch_id'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('ai_corrections_tenant_idx').on(table.tenantId),
+  wrapupIdx: index('ai_corrections_wrapup_idx').on(table.wrapupDraftId),
+  fieldIdx: index('ai_corrections_field_idx').on(table.tenantId, table.fieldName),
+  dateIdx: index('ai_corrections_date_idx').on(table.tenantId, table.correctedAt),
+  evalIdx: index('ai_corrections_eval_idx').on(table.usedInEvaluation),
+}));
+
+// =============================================================================
+// CALL INTENTS (Multi-intent detection for calls)
+// =============================================================================
+
+/**
+ * Stores individual intents detected in a call.
+ * Supports multi-intent calls where a customer has multiple requests.
+ */
+export const callIntents = pgTable('call_intents', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  wrapupDraftId: uuid('wrapup_draft_id').notNull().references(() => wrapupDrafts.id, { onDelete: 'cascade' }),
+  callId: uuid('call_id').references(() => calls.id, { onDelete: 'set null' }),
+
+  // Intent details
+  intentNumber: integer('intent_number').notNull(),
+  summary: text('summary'),
+  requestType: text('request_type'),
+  categoryId: integer('category_id'),
+  priorityId: integer('priority_id'),
+  description: text('description'),
+  transcriptExcerpt: text('transcript_excerpt'),
+  confidence: decimal('confidence', { precision: 3, scale: 2 }),
+
+  // Ticket tracking
+  ticketCreated: boolean('ticket_created').default(false),
+  ticketId: uuid('ticket_id').references(() => serviceTickets.id, { onDelete: 'set null' }),
+  azTicketId: integer('az_ticket_id'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('call_intents_tenant_idx').on(table.tenantId),
+  wrapupIdx: index('call_intents_wrapup_idx').on(table.wrapupDraftId),
+  callIdx: index('call_intents_call_idx').on(table.callId),
+  wrapupIntentUnique: uniqueIndex('call_intents_wrapup_intent_unique').on(table.wrapupDraftId, table.intentNumber),
+}));
+
+// =============================================================================
+// PROMPT VERSIONS (Versioned prompts for AI extraction)
+// =============================================================================
+
+/**
+ * Stores versioned prompts for AI extraction.
+ * Supports A/B testing and gradual rollout of new prompts.
+ */
+export const promptVersions = pgTable('prompt_versions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Version info
+  version: integer('version').notNull(),
+  name: text('name').notNull(),
+  promptType: text('prompt_type').notNull(), // 'extraction', 'summary', 'intent_detection'
+
+  // Prompt content
+  systemPrompt: text('system_prompt').notNull(),
+  userPromptTemplate: text('user_prompt_template').notNull(),
+
+  // Status
+  status: promptVersionStatusEnum('status').default('draft').notNull(),
+
+  // Evaluation results
+  evaluationResults: jsonb('evaluation_results'),
+  suggestedImprovements: text('suggested_improvements'),
+
+  // Audit
+  createdById: uuid('created_by_id').references(() => users.id),
+  activatedById: uuid('activated_by_id').references(() => users.id),
+  activatedAt: timestamp('activated_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('prompt_versions_tenant_idx').on(table.tenantId),
+  typeStatusIdx: index('prompt_versions_type_status_idx').on(table.promptType, table.status),
+  typeVersionUnique: uniqueIndex('prompt_versions_type_version_unique').on(table.tenantId, table.promptType, table.version),
+}));
+
+// =============================================================================
+// EVALUATION RUNS (Prompt evaluation tracking)
+// =============================================================================
+
+/**
+ * Tracks evaluation runs for prompt versions.
+ * Compares prompt performance against baselines.
+ */
+export const evaluationRuns = pgTable('evaluation_runs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }),
+
+  // Prompt versions being evaluated
+  promptVersionId: uuid('prompt_version_id').notNull().references(() => promptVersions.id, { onDelete: 'cascade' }),
+  baselinePromptVersionId: uuid('baseline_prompt_version_id').references(() => promptVersions.id),
+
+  // Evaluation dataset
+  evaluationDatasetSize: integer('evaluation_dataset_size').notNull(),
+  correctionIds: uuid('correction_ids').array(),
+
+  // Status
+  status: evaluationRunStatusEnum('status').default('pending').notNull(),
+
+  // Results
+  results: jsonb('results'),
+  overallAccuracy: decimal('overall_accuracy', { precision: 5, scale: 4 }),
+  fieldAccuracies: jsonb('field_accuracies'),
+  improvementDelta: decimal('improvement_delta', { precision: 5, scale: 4 }),
+  errorMessage: text('error_message'),
+
+  // Timing
+  startedAt: timestamp('started_at'),
+  completedAt: timestamp('completed_at'),
+
+  // Trigger info
+  triggeredById: uuid('triggered_by_id').references(() => users.id),
+  triggerType: text('trigger_type'), // 'manual', 'scheduled', 'correction_threshold'
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('evaluation_runs_tenant_idx').on(table.tenantId),
+  promptIdx: index('evaluation_runs_prompt_idx').on(table.promptVersionId),
+  statusIdx: index('evaluation_runs_status_idx').on(table.status),
+}));
+
+// =============================================================================
+// SERVICE REQUEST EXTRACTIONS (Cache AI extraction results for autofill)
+// =============================================================================
+
+/**
+ * Caches AI extraction results for service ticket auto-fill.
+ * Stores field-level confidence scores and extraction metadata.
+ */
+export const serviceRequestExtractions = pgTable('service_request_extractions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  wrapupDraftId: uuid('wrapup_draft_id').notNull().references(() => wrapupDrafts.id, { onDelete: 'cascade' }),
+
+  // Extracted fields with confidence scores (0.0 - 1.0)
+  summary: text('summary'),
+  summaryConfidence: real('summary_confidence'),
+  categoryId: integer('category_id'),
+  categoryConfidence: real('category_confidence'),
+  priorityId: integer('priority_id'),
+  priorityConfidence: real('priority_confidence'),
+  description: text('description'),
+  descriptionConfidence: real('description_confidence'),
+
+  // Additional extracted data
+  requestType: text('request_type'),
+  urgency: text('urgency'), // 'low', 'medium', 'high', 'urgent'
+  actionItems: jsonb('action_items').$type<string[]>(),
+
+  // Extraction metadata
+  modelUsed: text('model_used'),
+  tokensUsed: integer('tokens_used'),
+  processingMs: integer('processing_ms'),
+  extractionVersion: integer('extraction_version').default(1).notNull(),
+
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('service_request_extractions_tenant_idx').on(table.tenantId),
+  wrapupIdx: uniqueIndex('service_request_extractions_wrapup_unique').on(table.wrapupDraftId),
+}));
+
+// =============================================================================
+// AUTOFILL USAGE STATS (Track acceptance rates for analytics)
+// =============================================================================
+
+/**
+ * Tracks field-level acceptance/edit rates for AI autofill suggestions.
+ * Used to measure autofill accuracy and identify improvement opportunities.
+ */
+export const autofillUsageStats = pgTable('autofill_usage_stats', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  wrapupDraftId: uuid('wrapup_draft_id').notNull().references(() => wrapupDrafts.id, { onDelete: 'cascade' }),
+  extractionId: uuid('extraction_id').references(() => serviceRequestExtractions.id, { onDelete: 'set null' }),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+
+  // Field being tracked
+  fieldName: text('field_name').notNull(), // 'summary', 'category', 'priority', 'description'
+
+  // AI suggestion data
+  aiSuggestedValue: text('ai_suggested_value'),
+  aiConfidence: real('ai_confidence'),
+
+  // Final outcome
+  finalValue: text('final_value'),
+  wasAccepted: boolean('was_accepted').notNull(), // true if user kept AI value
+  wasEdited: boolean('was_edited').notNull(), // true if user modified AI value
+
+  // Timing
+  timeToDecisionMs: integer('time_to_decision_ms'), // Time from modal open to submit
+
+  // Timestamp
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('autofill_usage_stats_tenant_idx').on(table.tenantId),
+  wrapupIdx: index('autofill_usage_stats_wrapup_idx').on(table.wrapupDraftId),
+  fieldIdx: index('autofill_usage_stats_field_idx').on(table.tenantId, table.fieldName),
+  dateIdx: index('autofill_usage_stats_date_idx').on(table.tenantId, table.createdAt),
+}));
+
+// Relations for extraction tables
+export const serviceRequestExtractionsRelations = relations(serviceRequestExtractions, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [serviceRequestExtractions.tenantId],
+    references: [tenants.id],
+  }),
+  wrapupDraft: one(wrapupDrafts, {
+    fields: [serviceRequestExtractions.wrapupDraftId],
+    references: [wrapupDrafts.id],
+  }),
+}));
+
+export const autofillUsageStatsRelations = relations(autofillUsageStats, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [autofillUsageStats.tenantId],
+    references: [tenants.id],
+  }),
+  wrapupDraft: one(wrapupDrafts, {
+    fields: [autofillUsageStats.wrapupDraftId],
+    references: [wrapupDrafts.id],
+  }),
+  extraction: one(serviceRequestExtractions, {
+    fields: [autofillUsageStats.extractionId],
+    references: [serviceRequestExtractions.id],
+  }),
+  user: one(users, {
+    fields: [autofillUsageStats.userId],
+    references: [users.id],
+  }),
 }));
 
