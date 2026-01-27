@@ -15,6 +15,42 @@ import {
 // TYPES
 // =============================================================================
 
+// Extraction API response types
+interface ExtractionField<T> {
+  value: T;
+  confidence: number;
+  source?: 'ai' | 'keyword' | 'default';
+}
+
+interface ServiceRequestExtraction {
+  summary: ExtractionField<string>;
+  category: ExtractionField<{ id: number; name: string } | null>;
+  priority: ExtractionField<{ id: number; name: string } | null>;
+  description: ExtractionField<string>;
+  requestType: string | null;
+  urgency: string | null;
+  actionItems: string[];
+  extractedAt: string;
+  extractionVersion: number;
+  cached: boolean;
+}
+
+// Field confidence state
+interface FieldConfidence {
+  subject: number | null;
+  category: number | null;
+  priority: number | null;
+  description: number | null;
+}
+
+// Initial AI values for tracking
+interface InitialAIValues {
+  subject: string;
+  categoryId: number;
+  priorityId: number;
+  description: string;
+}
+
 interface CustomerResult {
   id: string;
   firstName: string;
@@ -187,6 +223,119 @@ const STAGE_OPTIONS = [
   { id: 111162, name: 'Waiting on Info' },
 ];
 
+// =============================================================================
+// CONFIDENCE BADGE COMPONENT
+// =============================================================================
+
+interface ConfidenceBadgeProps {
+  confidence: number | null;
+  isDirty: boolean;
+  className?: string;
+}
+
+function ConfidenceBadge({ confidence, isDirty, className }: ConfidenceBadgeProps) {
+  // Hide badge if field is dirty (user edited it)
+  if (isDirty || confidence === null) {
+    return null;
+  }
+
+  // Determine color based on confidence level
+  const confidencePercent = Math.round(confidence * 100);
+  let colorClasses: string;
+  let label: string;
+
+  if (confidencePercent >= 90) {
+    colorClasses = 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300';
+    label = 'High';
+  } else if (confidencePercent >= 70) {
+    colorClasses = 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300';
+    label = 'Med';
+  } else {
+    colorClasses = 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300';
+    label = 'Low';
+  }
+
+  return (
+    <span
+      className={cn(
+        'ml-2 px-1.5 py-0.5 text-xs font-medium rounded',
+        colorClasses,
+        className
+      )}
+      title={`AI confidence: ${confidencePercent}%`}
+    >
+      {confidencePercent}%
+    </span>
+  );
+}
+
+// =============================================================================
+// AI-ASSISTED BANNER COMPONENT
+// =============================================================================
+
+interface AIBannerProps {
+  isExtracting: boolean;
+  hasExtraction: boolean;
+  editedCount: number;
+  onRefresh: () => void;
+}
+
+function AIAssistedBanner({ isExtracting, hasExtraction, editedCount, onRefresh }: AIBannerProps) {
+  if (!hasExtraction && !isExtracting) {
+    return null;
+  }
+
+  return (
+    <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🤖</span>
+          <div>
+            <span className="font-medium text-blue-800 dark:text-blue-300">
+              AI-Assisted Auto-Fill
+            </span>
+            <p className="text-xs text-blue-600 dark:text-blue-400">
+              {isExtracting
+                ? 'Analyzing transcript...'
+                : editedCount > 0
+                  ? `${editedCount} field${editedCount > 1 ? 's' : ''} edited`
+                  : 'Please review before submitting'
+              }
+            </p>
+          </div>
+        </div>
+        {hasExtraction && !isExtracting && (
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 rounded hover:bg-blue-200 dark:hover:bg-blue-900 transition-colors flex items-center gap-1"
+          >
+            <span>🔄</span> Refresh
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// HELPER: Get field border class based on confidence
+// =============================================================================
+
+function getConfidenceBorderClass(confidence: number | null, isDirty: boolean): string {
+  if (isDirty || confidence === null) {
+    return 'border-gray-300 dark:border-gray-600';
+  }
+
+  const confidencePercent = confidence * 100;
+  if (confidencePercent >= 90) {
+    return 'border-green-400 dark:border-green-600';
+  } else if (confidencePercent >= 70) {
+    return 'border-yellow-400 dark:border-yellow-600';
+  }
+  return 'border-gray-300 dark:border-gray-600';
+}
+
 interface CreateServiceTicketModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -233,6 +382,27 @@ export default function CreateServiceTicketModal({
   const [stageId, setStageId] = useState(targetStageId);
   const [dueDate, setDueDate] = useState(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
   const [description, setDescription] = useState('');
+
+  // AI Extraction state
+  const [extraction, setExtraction] = useState<ServiceRequestExtraction | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
+
+  // Confidence scores per field
+  const [fieldConfidence, setFieldConfidence] = useState<FieldConfidence>({
+    subject: null,
+    category: null,
+    priority: null,
+    description: null,
+  });
+
+  // Dirty tracking (fields user edited)
+  const [dirtyFields, setDirtyFields] = useState<Set<string>>(new Set());
+
+  // Initial AI values (for tracking acceptance/edits)
+  const [initialAIValues, setInitialAIValues] = useState<InitialAIValues | null>(null);
+
+  // Modal open timestamp (for time-to-decision tracking)
+  const modalOpenTime = useRef<number>(0);
 
   // Trestle lookup state
   const [trestleResult, setTrestleResult] = useState<TrestleLookupResult | null>(null);
@@ -326,9 +496,162 @@ export default function CreateServiceTicketModal({
     }
   };
 
+  // ==========================================================================
+  // AI EXTRACTION INTEGRATION
+  // ==========================================================================
+
+  // Fetch extraction data from API
+  const fetchExtraction = useCallback(async (wrapupId: string, refresh = false) => {
+    setIsExtracting(true);
+    try {
+      const url = `/api/wrapups/${wrapupId}/extract${refresh ? '?refresh=true' : ''}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.success && data.data) {
+        const ext = data.data as ServiceRequestExtraction;
+        setExtraction(ext);
+
+        // Set confidence scores
+        setFieldConfidence({
+          subject: ext.summary.confidence,
+          category: ext.category.confidence,
+          priority: ext.priority.confidence,
+          description: ext.description.confidence,
+        });
+
+        // Apply extraction values to non-dirty fields (or all fields if refresh)
+        if (refresh) {
+          setDirtyFields(new Set());
+        }
+
+        const currentDirty = refresh ? new Set<string>() : dirtyFields;
+
+        // Apply summary to subject if not dirty
+        if (!currentDirty.has('subject') && ext.summary.value) {
+          const contactName = triageItem.contactName || 'Unknown';
+          const summaryPreview = ext.summary.value.length > 100
+            ? ext.summary.value.substring(0, 100) + '...'
+            : ext.summary.value;
+          const newSubject = `${contactName}: ${summaryPreview}`;
+          setSubject(newSubject);
+        }
+
+        // Apply category if not dirty
+        if (!currentDirty.has('category') && ext.category.value) {
+          setCategoryId(ext.category.value.id);
+        }
+
+        // Apply priority if not dirty
+        if (!currentDirty.has('priority') && ext.priority.value) {
+          setPriorityId(ext.priority.value.id);
+        }
+
+        // Apply description if not dirty
+        if (!currentDirty.has('description') && ext.description.value) {
+          setDescription(ext.description.value);
+        }
+
+        // Store initial AI values for tracking
+        setInitialAIValues({
+          subject: ext.summary.value,
+          categoryId: ext.category.value?.id || SERVICE_TICKET_DEFAULTS.CATEGORY_ID,
+          priorityId: ext.priority.value?.id || SERVICE_TICKET_DEFAULTS.PRIORITY_ID,
+          description: ext.description.value,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch extraction:', error);
+    } finally {
+      setIsExtracting(false);
+    }
+  }, [triageItem?.contactName, dirtyFields]);
+
+  // Mark a field as dirty (user edited)
+  const markFieldDirty = useCallback((fieldName: string) => {
+    setDirtyFields(prev => {
+      const next = new Set(prev);
+      next.add(fieldName);
+      return next;
+    });
+  }, []);
+
+  // Handle refresh button click
+  const handleRefreshExtraction = useCallback(() => {
+    if (triageItem?.id) {
+      fetchExtraction(triageItem.id, true);
+    }
+  }, [triageItem?.id, fetchExtraction]);
+
+  // Track autofill usage on submit
+  const trackAutofillUsage = useCallback(async () => {
+    if (!triageItem?.id || !initialAIValues) return;
+
+    const timeToDecision = Date.now() - modalOpenTime.current;
+
+    const fields = [
+      {
+        fieldName: 'summary' as const,
+        aiSuggestedValue: initialAIValues.subject,
+        aiConfidence: fieldConfidence.subject,
+        finalValue: subject,
+        wasAccepted: subject === `${triageItem.contactName || 'Unknown'}: ${initialAIValues.subject.length > 100 ? initialAIValues.subject.substring(0, 100) + '...' : initialAIValues.subject}`,
+        wasEdited: dirtyFields.has('subject'),
+      },
+      {
+        fieldName: 'category' as const,
+        aiSuggestedValue: String(initialAIValues.categoryId),
+        aiConfidence: fieldConfidence.category,
+        finalValue: String(categoryId),
+        wasAccepted: categoryId === initialAIValues.categoryId,
+        wasEdited: dirtyFields.has('category'),
+      },
+      {
+        fieldName: 'priority' as const,
+        aiSuggestedValue: String(initialAIValues.priorityId),
+        aiConfidence: fieldConfidence.priority,
+        finalValue: String(priorityId),
+        wasAccepted: priorityId === initialAIValues.priorityId,
+        wasEdited: dirtyFields.has('priority'),
+      },
+      {
+        fieldName: 'description' as const,
+        aiSuggestedValue: initialAIValues.description,
+        aiConfidence: fieldConfidence.description,
+        finalValue: description,
+        wasAccepted: description === initialAIValues.description,
+        wasEdited: dirtyFields.has('description'),
+      },
+    ];
+
+    try {
+      await fetch('/api/autofill-stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wrapupDraftId: triageItem.id,
+          fields,
+          timeToDecisionMs: timeToDecision,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to track autofill usage:', error);
+    }
+  }, [triageItem?.id, triageItem?.contactName, initialAIValues, fieldConfidence, subject, categoryId, priorityId, description, dirtyFields]);
+
   // Initialize form from triage item with AI prefill
   useEffect(() => {
     if (isOpen && triageItem) {
+      // Record modal open time for tracking
+      modalOpenTime.current = Date.now();
+
+      // Reset extraction state
+      setExtraction(null);
+      setIsExtracting(false);
+      setFieldConfidence({ subject: null, category: null, priority: null, description: null });
+      setDirtyFields(new Set());
+      setInitialAIValues(null);
+
       // =========================================================================
       // AI PREFILL: Extract contact name and generate summary
       // =========================================================================
@@ -431,8 +754,15 @@ export default function CreateServiceTicketModal({
 
       // Reset due date to tomorrow
       setDueDate(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
+
+      // =========================================================================
+      // FETCH AI EXTRACTION (after initial form setup)
+      // =========================================================================
+      if (triageItem.id) {
+        fetchExtraction(triageItem.id, false);
+      }
     }
-  }, [isOpen, triageItem, targetStageId, searchByPhone]);
+  }, [isOpen, triageItem, targetStageId, searchByPhone, fetchExtraction]);
 
   // Search for customers with confidence scoring
   const searchCustomers = async (query: string) => {
@@ -510,6 +840,9 @@ export default function CreateServiceTicketModal({
       return;
     }
 
+    // Track autofill usage before submitting
+    await trackAutofillUsage();
+
     await onSubmit({
       subject: subject.trim(),
       customerId,
@@ -555,6 +888,14 @@ export default function CreateServiceTicketModal({
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
           <div className="p-6 space-y-5">
+            {/* AI-Assisted Banner */}
+            <AIAssistedBanner
+              isExtracting={isExtracting}
+              hasExtraction={extraction !== null}
+              editedCount={dirtyFields.size}
+              onRefresh={handleRefreshExtraction}
+            />
+
             {/* NCM Warning */}
             {isNCM && (
               <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
@@ -570,14 +911,24 @@ export default function CreateServiceTicketModal({
 
             {/* Subject */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Summary <span className="text-red-500">*</span>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
+                Summary <span className="text-red-500 ml-0.5">*</span>
+                <ConfidenceBadge
+                  confidence={fieldConfidence.subject}
+                  isDirty={dirtyFields.has('subject')}
+                />
               </label>
               <input
                 type="text"
                 value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                onChange={(e) => {
+                  setSubject(e.target.value);
+                  markFieldDirty('subject');
+                }}
+                className={cn(
+                  'w-full px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+                  getConfidenceBorderClass(fieldConfidence.subject, dirtyFields.has('subject'))
+                )}
                 placeholder="Brief description of the request"
                 required
               />
@@ -812,13 +1163,23 @@ export default function CreateServiceTicketModal({
             {/* Row: Category + Priority */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Category <span className="text-red-500">*</span>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
+                  Category <span className="text-red-500 ml-0.5">*</span>
+                  <ConfidenceBadge
+                    confidence={fieldConfidence.category}
+                    isDirty={dirtyFields.has('category')}
+                  />
                 </label>
                 <select
                   value={categoryId}
-                  onChange={(e) => setCategoryId(parseInt(e.target.value))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  onChange={(e) => {
+                    setCategoryId(parseInt(e.target.value));
+                    markFieldDirty('category');
+                  }}
+                  className={cn(
+                    'w-full px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+                    getConfidenceBorderClass(fieldConfidence.category, dirtyFields.has('category'))
+                  )}
                 >
                   {Object.entries(
                     CATEGORY_OPTIONS.reduce((groups, cat) => {
@@ -838,13 +1199,23 @@ export default function CreateServiceTicketModal({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Priority <span className="text-red-500">*</span>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
+                  Priority <span className="text-red-500 ml-0.5">*</span>
+                  <ConfidenceBadge
+                    confidence={fieldConfidence.priority}
+                    isDirty={dirtyFields.has('priority')}
+                  />
                 </label>
                 <select
                   value={priorityId}
-                  onChange={(e) => setPriorityId(parseInt(e.target.value))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  onChange={(e) => {
+                    setPriorityId(parseInt(e.target.value));
+                    markFieldDirty('priority');
+                  }}
+                  className={cn(
+                    'w-full px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+                    getConfidenceBorderClass(fieldConfidence.priority, dirtyFields.has('priority'))
+                  )}
                 >
                   {PRIORITY_OPTIONS.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -890,14 +1261,24 @@ export default function CreateServiceTicketModal({
 
             {/* Description */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
                 Description
+                <ConfidenceBadge
+                  confidence={fieldConfidence.description}
+                  isDirty={dirtyFields.has('description')}
+                />
               </label>
               <textarea
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  markFieldDirty('description');
+                }}
                 rows={4}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                className={cn(
+                  'w-full px-4 py-2 rounded-lg border bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none',
+                  getConfidenceBorderClass(fieldConfidence.description, dirtyFields.has('description'))
+                )}
                 placeholder="Full description or transcript..."
               />
             </div>
