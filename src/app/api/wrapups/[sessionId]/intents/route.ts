@@ -3,9 +3,9 @@
  * ================
  * Manage intents for multi-intent calls.
  *
- * GET /api/wrapups/[id]/intents - Get all intents for a wrapup
- * PATCH /api/wrapups/[id]/intents - Update intent details
- * POST /api/wrapups/[id]/intents/batch-create - Create tickets for selected intents
+ * GET /api/wrapups/[sessionId]/intents - Get all intents for a wrapup
+ * PATCH /api/wrapups/[sessionId]/intents - Update intent details
+ * POST /api/wrapups/[sessionId]/intents/batch-create - Create tickets for selected intents
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -27,10 +27,10 @@ import {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const { id: wrapupId } = await params;
+    const { sessionId: wrapupId } = await params;
     const tenantId = process.env.DEFAULT_TENANT_ID;
 
     if (!tenantId) {
@@ -98,10 +98,10 @@ interface UpdateIntentRequest {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const { id: wrapupId } = await params;
+    const { sessionId: wrapupId } = await params;
     const tenantId = process.env.DEFAULT_TENANT_ID;
 
     if (!tenantId) {
@@ -191,10 +191,10 @@ interface BatchCreateRequest {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const { id: wrapupId } = await params;
+    const { sessionId: wrapupId } = await params;
     const tenantId = process.env.DEFAULT_TENANT_ID;
 
     if (!tenantId) {

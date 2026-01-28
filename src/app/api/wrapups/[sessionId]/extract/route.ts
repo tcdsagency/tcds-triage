@@ -3,7 +3,7 @@
  * ===============================
  * Extracts and caches AI-powered field suggestions for service ticket auto-fill.
  *
- * GET /api/wrapups/[id]/extract - Get extraction with confidence scores
+ * GET /api/wrapups/[sessionId]/extract - Get extraction with confidence scores
  *   ?refresh=true - Force re-extraction (bypass cache)
  */
 
@@ -141,12 +141,12 @@ function detectPriority(text: string, urgency?: string | null): { priorityId: nu
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const startTime = Date.now();
 
   try {
-    const { id: wrapupId } = await params;
+    const { sessionId: wrapupId } = await params;
     const tenantId = process.env.DEFAULT_TENANT_ID;
     const refresh = request.nextUrl.searchParams.get('refresh') === 'true';
 
