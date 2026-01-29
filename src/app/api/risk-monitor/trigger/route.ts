@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { ignoreWindow = false, maxProperties } = body;
+    const { ignoreWindow = false, maxProperties, forceRecheck = false } = body;
 
     // Create scheduler
     const scheduler = createRiskMonitorScheduler(tenantId);
@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
             scheduleStartHour: cstHour,
             scheduleEndHour: (cstHour + 1) % 24,
             ...(maxProperties && { dailyRequestBudget: maxProperties }),
+            ...(forceRecheck && { recheckDays: 0 }),
           })
           .where(eq(riskMonitorSettings.tenantId, tenantId));
       } else {
@@ -99,6 +100,7 @@ export async function POST(request: NextRequest) {
           scheduleStartHour: cstHour,
           scheduleEndHour: (cstHour + 1) % 24,
           dailyRequestBudget: maxProperties || 100,
+          ...(forceRecheck && { recheckDays: 0 }),
         });
       }
     }
@@ -107,12 +109,13 @@ export async function POST(request: NextRequest) {
     const result = await scheduler.run(true);
 
     // If we modified settings, restore them
-    if (ignoreWindow) {
+    if (ignoreWindow || forceRecheck) {
       await db
         .update(riskMonitorSettings)
         .set({
           scheduleStartHour: 21,
           scheduleEndHour: 4,
+          ...(forceRecheck && { recheckDays: 7 }),
         })
         .where(eq(riskMonitorSettings.tenantId, tenantId));
     }
