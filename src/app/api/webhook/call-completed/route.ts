@@ -662,6 +662,10 @@ function extractPhoneFromSIP(sipUri: string | undefined): string {
 // MAIN WEBHOOK HANDLER
 // =============================================================================
 
+// Give after() enough time to complete all background processing
+// (AI analysis, customer matching, wrapup creation, auto-ticket creation)
+export const maxDuration = 60;
+
 // Background processing - return immediately, process async
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -1671,6 +1675,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       // Creates a service ticket in AgencyZoom assigned to AI Agent
       // Feature toggle: autoCreateServiceTickets in tenant features
       // =========================================================================
+      console.log(`[Call-Completed] 🎫 Auto-ticket check: wrapup=${!!txResult.wrapup}, analysis=${!!analysis}, direction=${direction}, shouldAutoVoid=${shouldAutoVoid}`);
       if (
         txResult.wrapup &&
         analysis &&
@@ -1689,6 +1694,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
           const autoCreateEnabled = features?.autoCreateServiceTickets === true;
 
           if (autoCreateEnabled) {
+            console.log(`[Call-Completed] 🎫 Auto-ticket feature enabled, checking phone: ${phoneForLookup}`);
             // Skip internal/test calls - don't create tickets for these
             const callerDigits = (phoneForLookup || '').replace(/\D/g, '');
             const isInternalOrTestCall =
@@ -1700,8 +1706,10 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
               callerDigits.length > 11;   // Too long to be a valid phone number
 
             if (isInternalOrTestCall) {
-              console.log(`[Call-Completed] Skipping ticket creation for internal/test call: ${phoneForLookup}`);
+              console.log(`[Call-Completed] Skipping ticket creation for internal/test call: ${phoneForLookup} (digits: ${callerDigits.length})`);
             } else {
+            console.log(`[Call-Completed] 🎫 Creating auto-ticket for ${phoneForLookup} (matchedAZ: ${matchedAzCustomerId || 'NCM'})`);
+
             // Determine customer ID - use matched AZ customer or NCM placeholder
             const azCustomerId = matchedAzCustomerId ? parseInt(String(matchedAzCustomerId)) : SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER;
 
@@ -1826,6 +1834,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
                     tenantId,
                     azTicketId: azTicketId,
                     azHouseholdId: azCustomerId,
+                    wrapupDraftId: txResult.wrapup!.id,
                     customerId: call.customerId || null,
                     subject: ticketSubject,
                     description: ticketDescription,
@@ -1857,8 +1866,10 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
           }
         } catch (ticketError) {
           // Don't fail the webhook if service ticket creation fails
-          console.error(`[Call-Completed] ⚠️ Failed to create service ticket:`, ticketError);
+          console.error(`[Call-Completed] ⚠️ Failed to create service ticket:`, ticketError instanceof Error ? ticketError.message : ticketError);
         }
+      } else {
+        console.log(`[Call-Completed] 🎫 Auto-ticket skipped: wrapup=${!!txResult.wrapup}, analysis=${!!analysis}, direction=${direction}, shouldAutoVoid=${shouldAutoVoid}`);
       }
     } else {
       // No analysis and not a hangup - log why we're skipping wrapup creation
