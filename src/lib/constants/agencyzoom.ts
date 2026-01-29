@@ -76,52 +76,58 @@ export const DEFAULT_LEAD = {
  * This map converts those to your AgencyZoom service request type IDs.
  */
 export const SERVICE_REQUEST_TYPE_MAP: Record<string, number> = {
-  // BILLING - Update ID to match your AgencyZoom billing service type
-  "billing inquiry": 1,
-  "billing": 1,
-  "payment": 1,
+  // BILLING
+  "billing inquiry": 82579,  // SERVICE_BILLING_QUESTIONS
+  "billing": 82579,
+  "billing_question": 82579,
+  "payment": 82578,          // SERVICE_BILLING_PAYMENTS
 
-  // POLICY CHANGES - Update ID to match your AgencyZoom endorsement/change type
-  "policy change": 2,
-  "endorsement": 2,
+  // POLICY CHANGES
+  "policy change": 37342,    // SERVICE_COVERAGE_CHANGE
+  "endorsement": 37342,
+  "policy_change": 37342,
+  "coverage change": 37342,
+  "address change": 37342,
 
   // VEHICLE CHANGES
-  "add vehicle": 3,
-  "remove vehicle": 3,
+  "add vehicle": 82565,      // SERVICE_VEHICLE
+  "remove vehicle": 82565,
 
   // DRIVER CHANGES
-  "add driver": 4,
-  "remove driver": 4,
+  "add driver": 37337,       // SERVICE_DRIVER
+  "remove driver": 37337,
 
-  // CLAIMS - Update ID to match your AgencyZoom claims type
-  "claims": 5,
-  "claim": 5,
-  "accident": 5,
+  // CLAIMS
+  "claims": 37332,           // CLAIMS_NOT_FILED
+  "claim": 37332,
+  "accident": 37332,
 
   // RENEWALS
-  "renewal": 6,
+  "renewal": 37335,          // RENEWAL_PERSONAL
 
   // QUOTES/NEW BUSINESS
-  "quote request": 7,
-  "quote": 7,
-  "new business": 7,
+  "quote request": 115762,   // QUOTE_REQUEST
+  "quote": 115762,
+  "new business": 115762,
+  "new_quote": 115762,
 
   // CANCELLATIONS
-  "cancel": 8,
-  "cancellation": 8,
+  "cancel": 37340,           // SERVICE_CLIENT_CANCELLING
+  "cancellation": 37340,
 
   // CERTIFICATES
-  "certificate": 9,
-  "coi": 9,
+  "certificate": 37341,      // SERVICE_COI
+  "coi": 37341,
 
   // ID CARDS
-  "id card": 10,
-  "proof of insurance": 10,
+  "id card": 82568,          // SERVICE_ID_CARDS
+  "proof of insurance": 82568,
 
-  // GENERAL/OTHER - Catch-all for unclassified requests
-  "general inquiry": 11,
-  "question": 11,
-  "other": 11,
+  // GENERAL/OTHER
+  "general inquiry": 37345,  // GENERAL_SERVICE / SERVICE_QUESTION
+  "general_inquiry": 37345,
+  "question": 37345,
+  "other": 37345,
 } as const;
 
 /**

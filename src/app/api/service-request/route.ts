@@ -87,7 +87,7 @@ export const PRIORITY_TYPES: Record<string, { id: number; name: string }> = {
 };
 
 // Default values
-const DEFAULT_CATEGORY_ID = 82573;   // "UPDATE ME!" as fallback
+const DEFAULT_CATEGORY_ID = 37345;   // General Service / Service Question
 const DEFAULT_PRIORITY_ID = 27902;   // Standard priority
 
 // =============================================================================
@@ -204,12 +204,26 @@ ${body.leadStage ? `Stage: ${body.leadStage}` : ""}`.trim();
       categoryId = SERVICE_REQUEST_TYPES[body.category].id;
     }
 
+    // Validate category ID - reject old placeholder IDs (1-11) from stale extractions
+    const validCategoryIds = new Set(Object.values(SERVICE_REQUEST_TYPES).map(t => t.id));
+    if (!validCategoryIds.has(categoryId)) {
+      console.warn(`[ServiceRequest] Invalid category ID ${categoryId}, falling back to default ${DEFAULT_CATEGORY_ID}`);
+      categoryId = DEFAULT_CATEGORY_ID;
+    }
+
     // Determine priority ID (prefer new fields, fall back to legacy)
     let priorityId = DEFAULT_PRIORITY_ID;
     if (body.priorityId) {
       priorityId = body.priorityId;
     } else if (body.priority && PRIORITY_TYPES[body.priority]) {
       priorityId = PRIORITY_TYPES[body.priority].id;
+    }
+
+    // Validate priority ID - reject old placeholder IDs (1-4) from stale extractions
+    const validPriorityIds = new Set(Object.values(PRIORITY_TYPES).map(t => t.id));
+    if (!validPriorityIds.has(priorityId)) {
+      console.warn(`[ServiceRequest] Invalid priority ID ${priorityId}, falling back to default ${DEFAULT_PRIORITY_ID}`);
+      priorityId = DEFAULT_PRIORITY_ID;
     }
 
     // Determine Subject (use AI-detected type name or fallback)
