@@ -1859,6 +1859,22 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
                   console.error(`[Call-Completed] ⚠️ Failed to store ticket locally:`, localDbError);
                 }
               }
+
+              // Mark wrapup as completed - auto-created tickets don't need pending review
+              try {
+                await db
+                  .update(wrapupDrafts)
+                  .set({
+                    status: 'completed',
+                    outcome: 'ticket',
+                    agencyzoomTicketId: azTicketId?.toString() || null,
+                    completedAt: new Date(),
+                  })
+                  .where(eq(wrapupDrafts.id, txResult.wrapup!.id));
+                console.log(`[Call-Completed] 🎫 Wrapup ${txResult.wrapup!.id} marked completed (auto-ticket created)`);
+              } catch (wrapupUpdateError) {
+                console.error(`[Call-Completed] ⚠️ Failed to mark wrapup completed:`, wrapupUpdateError);
+              }
             } else {
               console.error(`[Call-Completed] ⚠️ Failed to create service ticket:`, ticketResult);
             }
