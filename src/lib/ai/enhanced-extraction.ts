@@ -49,34 +49,48 @@ export interface EnhancedExtractionResult {
 
 // Service request type to AgencyZoom category mapping
 export const REQUEST_TYPE_TO_CATEGORY: Record<string, number> = {
-  'billing inquiry': 1,     // Billing
-  'policy change': 2,       // Policy Change
-  'add vehicle': 2,         // Policy Change
-  'remove vehicle': 2,      // Policy Change
-  'add driver': 2,          // Policy Change
-  'remove driver': 2,       // Policy Change
-  'claims': 3,              // Claims
-  'renewal': 4,             // Renewal
-  'quote request': 5,       // Quote
-  'cancel': 6,              // Cancellation
-  'certificate': 7,         // Certificate Request
-  'id card': 8,             // ID Card Request
-  'general inquiry': 9,     // General Inquiry
-  'address change': 2,      // Policy Change
-  'coverage change': 2,     // Policy Change
+  'billing inquiry': 82579,     // SERVICE_BILLING_QUESTIONS
+  'billing_question': 82579,
+  'policy change': 37342,       // SERVICE_COVERAGE_CHANGE
+  'policy_change': 37342,
+  'add vehicle': 82565,         // SERVICE_VEHICLE
+  'remove vehicle': 82565,
+  'add driver': 37337,          // SERVICE_DRIVER
+  'remove driver': 37337,
+  'claims': 37332,              // CLAIMS_NOT_FILED
+  'renewal': 37335,             // RENEWAL_PERSONAL
+  'quote request': 115762,      // QUOTE_REQUEST
+  'new_quote': 115762,
+  'cancel': 37340,              // SERVICE_CLIENT_CANCELLING
+  'certificate': 37341,         // SERVICE_COI
+  'id card': 82568,             // SERVICE_ID_CARDS
+  'general inquiry': 37345,     // GENERAL_SERVICE
+  'general_inquiry': 37345,
+  'address change': 37342,      // SERVICE_COVERAGE_CHANGE
+  'coverage change': 37342,
 };
 
-// Default priority mapping
+// Default priority mapping (AgencyZoom priority IDs)
 export const REQUEST_TYPE_TO_PRIORITY: Record<string, number> = {
-  'cancel': 1,              // High priority
-  'claims': 1,              // High priority
-  'billing inquiry': 2,     // Medium priority
-  'policy change': 2,       // Medium priority
-  'renewal': 2,             // Medium priority
-  'add vehicle': 3,         // Normal priority
-  'remove vehicle': 3,      // Normal priority
-  'quote request': 3,       // Normal priority
-  'general inquiry': 4,     // Low priority
+  'cancel': 27900,              // Urgent
+  'claims': 27900,              // Urgent
+  'billing inquiry': 27902,     // Standard
+  'billing_question': 27902,    // Standard
+  'policy change': 27902,       // Standard
+  'policy_change': 27902,       // Standard
+  'renewal': 27902,             // Standard
+  'add vehicle': 27902,         // Standard
+  'remove vehicle': 27902,      // Standard
+  'add driver': 27902,          // Standard
+  'remove driver': 27902,       // Standard
+  'quote request': 27902,       // Standard
+  'new_quote': 27902,           // Standard
+  'certificate': 27902,         // Standard
+  'id card': 27902,             // Standard
+  'general inquiry': 27902,     // Standard
+  'general_inquiry': 27902,     // Standard
+  'address change': 27902,      // Standard
+  'coverage change': 27902,     // Standard
 };
 
 // =============================================================================
@@ -250,7 +264,7 @@ function mapToEnhancedResult(raw: RawExtractionResponse): EnhancedExtractionResu
     summary: intent.summary || '',
     requestType: intent.requestType || 'general inquiry',
     categoryId: REQUEST_TYPE_TO_CATEGORY[intent.requestType?.toLowerCase() || ''] || null,
-    priorityId: REQUEST_TYPE_TO_PRIORITY[intent.requestType?.toLowerCase() || ''] || 3,
+    priorityId: REQUEST_TYPE_TO_PRIORITY[intent.requestType?.toLowerCase() || ''] || 27902,
     description: intent.description || intent.summary || '',
     transcriptExcerpt: intent.transcriptExcerpt || '',
     confidence: intent.confidence || 0.5,
@@ -263,7 +277,7 @@ function mapToEnhancedResult(raw: RawExtractionResponse): EnhancedExtractionResu
       summary: raw.overallSummary || 'Call summary not available',
       requestType: 'general inquiry',
       categoryId: REQUEST_TYPE_TO_CATEGORY['general inquiry'],
-      priorityId: REQUEST_TYPE_TO_PRIORITY['general inquiry'],
+      priorityId: REQUEST_TYPE_TO_PRIORITY['general inquiry'] || 27902,
       description: raw.overallSummary || '',
       transcriptExcerpt: '',
       confidence: 0.5,
