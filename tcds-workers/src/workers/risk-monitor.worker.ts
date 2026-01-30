@@ -119,20 +119,18 @@ interface CheckResult {
   alertType?: string;
 }
 
-async function checkProperty(propertyId: string): Promise<CheckResult> {
-  logger.debug({ propertyId }, 'Checking property for risk indicators');
+async function checkProperty(propertyId: string, forceRescan: boolean = false): Promise<CheckResult> {
+  logger.debug({ propertyId, forceRescan }, 'Checking property for risk indicators');
 
   // Call main app API which has the RPR/MMI integration
-  const response = await fetch(
-    `${config.app.url}/api/risk-monitor/policies/${propertyId}/check`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.app.internalKey}`,
-      },
-    }
-  );
+  const url = `${config.app.url}/api/risk-monitor/policies/${propertyId}/check${forceRescan ? '?force_rescan=true' : ''}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.app.internalKey}`,
+    },
+  });
 
   if (!response.ok) {
     if (response.status === 404) {
@@ -152,7 +150,8 @@ async function checkProperty(propertyId: string): Promise<CheckResult> {
 
 async function checkBatchProperties(
   propertyIds: string[],
-  job: Job<RiskMonitorJobData>
+  job: Job<RiskMonitorJobData>,
+  forceRescan: boolean = false
 ): Promise<{ checked: number; alerts: number; errors: number }> {
   let checked = 0;
   let alerts = 0;
@@ -163,7 +162,7 @@ async function checkBatchProperties(
     const propertyId = propertyIds[i];
 
     try {
-      const result = await checkProperty(propertyId);
+      const result = await checkProperty(propertyId, forceRescan);
       checked++;
       if (result.alertCreated) alerts++;
 
@@ -227,9 +226,9 @@ async function runFullScan(
 
   logger.info({ count: allPolicies.length }, 'Checking properties');
 
-  // Process all properties
+  // Process all properties with force_rescan to bypass recheck interval
   const propertyIds = allPolicies.map((p) => p.id);
-  return checkBatchProperties(propertyIds, job);
+  return checkBatchProperties(propertyIds, job, true);
 }
 
 function sleep(ms: number): Promise<void> {
