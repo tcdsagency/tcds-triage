@@ -188,32 +188,47 @@ async function runFullScan(
 ): Promise<{ checked: number; alerts: number; errors: number }> {
   logger.info('Starting full risk monitor scan');
 
-  // First, get list of all properties to check
-  const listResponse = await fetch(
-    `${config.app.url}/api/risk-monitor/policies?status=active&limit=1000`,
-    {
-      headers: {
-        Authorization: `Bearer ${config.app.internalKey}`,
-      },
-    }
-  );
+  // Fetch all actively monitored policies, paginating through results
+  const allPolicies: Array<{ id: string }> = [];
+  const pageSize = 500;
+  let offset = 0;
+  let hasMore = true;
 
-  if (!listResponse.ok) {
-    throw new Error(`Failed to fetch property list: ${listResponse.status}`);
+  while (hasMore) {
+    const listResponse = await fetch(
+      `${config.app.url}/api/risk-monitor/policies?isActive=true&limit=${pageSize}&offset=${offset}`,
+      {
+        headers: {
+          Authorization: `Bearer ${config.app.internalKey}`,
+        },
+      }
+    );
+
+    if (!listResponse.ok) {
+      throw new Error(`Failed to fetch property list: ${listResponse.status}`);
+    }
+
+    const policiesData = await listResponse.json() as { policies?: Array<{ id: string }>; total?: number };
+    const { policies } = policiesData;
+
+    if (!policies || policies.length === 0) {
+      hasMore = false;
+    } else {
+      allPolicies.push(...policies);
+      offset += policies.length;
+      hasMore = policies.length === pageSize;
+    }
   }
 
-  const policiesData = await listResponse.json() as { policies?: Array<{ id: string }> };
-  const { policies } = policiesData;
-
-  if (!policies || policies.length === 0) {
+  if (allPolicies.length === 0) {
     logger.info('No active policies to check');
     return { checked: 0, alerts: 0, errors: 0 };
   }
 
-  logger.info({ count: policies.length }, 'Checking properties');
+  logger.info({ count: allPolicies.length }, 'Checking properties');
 
   // Process all properties
-  const propertyIds = policies.map((p) => p.id);
+  const propertyIds = allPolicies.map((p) => p.id);
   return checkBatchProperties(propertyIds, job);
 }
 
