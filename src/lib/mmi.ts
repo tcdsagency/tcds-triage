@@ -2,8 +2,9 @@
 // Uses token service on GCP VM for authentication
 // Base URL: https://api.mmi.run/api/v2
 
-// Token service configuration
-const TOKEN_SERVICE_URL = process.env.TOKEN_SERVICE_URL || "http://75.37.55.209:3000";
+// Token service configuration — sanitize URL from env (Vercel CLI export can leave trailing \n or /token suffix)
+const TOKEN_SERVICE_URL = (process.env.TOKEN_SERVICE_URL || "http://75.37.55.209:8899")
+  .replace(/\\n$/, '').replace(/\n$/, '').replace(/\/+$/, '').replace(/\/token$/, '');
 const TOKEN_SERVICE_SECRET = process.env.TOKEN_SERVICE_SECRET || "tcds_token_service_2025";
 
 // 2FA callback - set by the app to handle 2FA prompts
@@ -114,89 +115,97 @@ class MMIClient {
   }
 
   /**
-   * Fetch token from token service on GCP VM
+   * Fetch token from token service on GCP VM (single attempt)
    * Handles 2FA challenges if needed
    */
-  private async extractToken(): Promise<TokenData | null> {
-    try {
-      console.log("[MMI] Fetching token from token service...");
+  private async extractTokenOnce(): Promise<TokenData | null> {
+    const response = await fetch(`${TOKEN_SERVICE_URL}/tokens/mmi`, {
+      headers: {
+        Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
+      },
+      signal: AbortSignal.timeout(120000),
+    });
 
-      const response = await fetch(`${TOKEN_SERVICE_URL}/tokens/mmi`, {
-        headers: {
-          Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
-        },
-        // 2 minute timeout for token extraction (browser automation takes time)
-        signal: AbortSignal.timeout(120000),
-      });
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Token service error: ${response.status} - ${error}`);
+    }
 
-      if (!response.ok) {
-        const error = await response.text();
-        console.error(`[MMI] Token service error: ${response.status} - ${error}`);
-        return null;
-      }
+    const result = await response.json();
 
-      const result = await response.json();
+    // Check if 2FA is required
+    if (result.requires_2fa && result.session_id) {
+      console.log("[MMI] 2FA required, session:", result.session_id);
 
-      // Check if 2FA is required
-      if (result.requires_2fa && result.session_id) {
-        console.log("[MMI] 2FA required, session:", result.session_id);
+      if (twoFACallback) {
+        const code = await twoFACallback(result.session_id);
 
-        // If we have a callback, use it to get the 2FA code
-        if (twoFACallback) {
-          const code = await twoFACallback(result.session_id);
+        if (code) {
+          const twoFAResponse = await fetch(`${TOKEN_SERVICE_URL}/tokens/mmi/2fa`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              session_id: result.session_id,
+              code: code,
+            }),
+            signal: AbortSignal.timeout(60000),
+          });
 
-          if (code) {
-            // Submit the 2FA code
-            const twoFAResponse = await fetch(`${TOKEN_SERVICE_URL}/tokens/mmi/2fa`, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                session_id: result.session_id,
-                code: code,
-              }),
-              signal: AbortSignal.timeout(60000),
-            });
+          const twoFAResult = await twoFAResponse.json();
 
-            const twoFAResult = await twoFAResponse.json();
-
-            if (twoFAResult.success && twoFAResult.token) {
-              console.log("[MMI] 2FA successful, token received");
-              return {
-                token: twoFAResult.token,
-                expiresAt: twoFAResult.expiresAt,
-              };
-            } else {
-              console.error("[MMI] 2FA failed:", twoFAResult.error);
-              return null;
-            }
-          } else {
-            console.log("[MMI] 2FA cancelled by user");
-            return null;
+          if (twoFAResult.success && twoFAResult.token) {
+            console.log("[MMI] 2FA successful, token received");
+            return {
+              token: twoFAResult.token,
+              expiresAt: twoFAResult.expiresAt,
+            };
           }
-        } else {
-          console.log("[MMI] 2FA required but no callback registered");
-          // Store the session ID for later - could be retrieved via API
-          return null;
+          throw new Error(`2FA failed: ${twoFAResult.error}`);
         }
-      }
-
-      if (result.token) {
-        console.log("[MMI] Token received from service");
-        return {
-          token: result.token,
-          expiresAt: result.expiresAt,
-        };
-      } else {
-        console.error("[MMI] Token service returned error:", result.error || "No token in response");
+        console.log("[MMI] 2FA cancelled by user");
         return null;
       }
-    } catch (error: any) {
-      console.error("[MMI] Failed to fetch token from service:", error.message);
+      console.log("[MMI] 2FA required but no callback registered");
       return null;
     }
+
+    if (result.token) {
+      return {
+        token: result.token,
+        expiresAt: result.expiresAt,
+      };
+    }
+
+    throw new Error(result.error || "No token in response");
+  }
+
+  /**
+   * Fetch token with retry + exponential backoff
+   */
+  private async extractToken(): Promise<TokenData | null> {
+    const delays = [5000, 10000, 20000]; // 5s, 10s, 20s
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      try {
+        console.log(`[MMI] Fetching token from token service (attempt ${attempt + 1}/${delays.length})...`);
+        const result = await this.extractTokenOnce();
+        if (result) {
+          console.log("[MMI] Token received from service");
+          return result;
+        }
+        return null; // 2FA cancelled — don't retry
+      } catch (error: any) {
+        console.error(`[MMI] Token fetch attempt ${attempt + 1} failed:`, error.message);
+        if (attempt < delays.length - 1) {
+          console.log(`[MMI] Retrying in ${delays[attempt] / 1000}s...`);
+          await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+        }
+      }
+    }
+    console.error("[MMI] All token fetch attempts failed");
+    return null;
   }
 
   /**
@@ -222,35 +231,43 @@ class MMIClient {
   }
 
   /**
-   * Make authenticated API request
+   * Make authenticated API request (retries once on 401)
    */
   private async apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T | null> {
-    const token = await this.getToken();
-    if (!token) {
-      console.error("[MMI] No valid token available");
-      return null;
-    }
-
-    const url = `${this.baseUrl}${endpoint}`;
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`[MMI] API error: ${response.status} ${response.statusText}`);
-      if (response.status === 401) {
-        // Token expired, clear it
-        this.tokenData = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = await this.getToken();
+      if (!token) {
+        console.error("[MMI] No valid token available");
+        return null;
       }
-      return null;
-    }
 
-    return response.json();
+      const url = `${this.baseUrl}${endpoint}`;
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          ...options.headers,
+        },
+      });
+
+      if (!response.ok) {
+        console.error(`[MMI] API error: ${response.status} ${response.statusText}`);
+        if (response.status === 401 && attempt === 0) {
+          console.log("[MMI] 401 received, clearing token and retrying...");
+          this.tokenData = null;
+          this.tokenPromise = null;
+          continue;
+        }
+        if (response.status === 401) {
+          this.tokenData = null;
+        }
+        return null;
+      }
+
+      return response.json();
+    }
+    return null;
   }
 
   /**

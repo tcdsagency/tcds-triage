@@ -2,8 +2,9 @@
 // Uses token service on GCP VM for authentication
 // Base URL: https://webapi.narrpr.com
 
-// Token service configuration
-const TOKEN_SERVICE_URL = process.env.TOKEN_SERVICE_URL || "http://75.37.55.209:3000";
+// Token service configuration — sanitize URL from env (Vercel CLI export can leave trailing \n or /token suffix)
+const TOKEN_SERVICE_URL = (process.env.TOKEN_SERVICE_URL || "http://75.37.55.209:8899")
+  .replace(/\\n$/, '').replace(/\n$/, '').replace(/\/+$/, '').replace(/\/token$/, '');
 const TOKEN_SERVICE_SECRET = process.env.TOKEN_SERVICE_SECRET || "tcds_token_service_2025";
 
 // =============================================================================
@@ -237,42 +238,56 @@ class RPRClient {
   }
 
   /**
-   * Fetch token from token service on GCP VM
+   * Fetch token from token service on GCP VM (single attempt)
+   */
+  private async extractTokenOnce(): Promise<TokenData | null> {
+    const response = await fetch(`${TOKEN_SERVICE_URL}/tokens/rpr`, {
+      headers: {
+        Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
+      },
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Token service error: ${response.status} - ${error}`);
+    }
+
+    const result = await response.json();
+
+    if (result.token) {
+      return {
+        token: result.token,
+        expiresAt: result.expiresAt,
+      };
+    }
+
+    throw new Error(result.error || "No token in response");
+  }
+
+  /**
+   * Fetch token from token service with retry + exponential backoff
    */
   private async extractToken(): Promise<TokenData | null> {
-    try {
-      console.log("[RPR] Fetching token from token service...");
-
-      const response = await fetch(`${TOKEN_SERVICE_URL}/tokens/rpr`, {
-        headers: {
-          Authorization: `Bearer ${TOKEN_SERVICE_SECRET}`,
-        },
-        // 2 minute timeout for token extraction
-        signal: AbortSignal.timeout(120000),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        console.error(`[RPR] Token service error: ${response.status} - ${error}`);
-        return null;
+    const delays = [5000, 10000, 20000]; // 5s, 10s, 20s
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      try {
+        console.log(`[RPR] Fetching token from token service (attempt ${attempt + 1}/${delays.length})...`);
+        const result = await this.extractTokenOnce();
+        if (result) {
+          console.log("[RPR] Token received from service");
+          return result;
+        }
+      } catch (error: any) {
+        console.error(`[RPR] Token fetch attempt ${attempt + 1} failed:`, error.message);
+        if (attempt < delays.length - 1) {
+          console.log(`[RPR] Retrying in ${delays[attempt] / 1000}s...`);
+          await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+        }
       }
-
-      const result = await response.json();
-
-      if (result.token) {
-        console.log("[RPR] Token received from service");
-        return {
-          token: result.token,
-          expiresAt: result.expiresAt,
-        };
-      } else {
-        console.error("[RPR] Token service returned error:", result.error || "No token in response");
-        return null;
-      }
-    } catch (error: any) {
-      console.error("[RPR] Failed to fetch token from service:", error.message);
-      return null;
     }
+    console.error("[RPR] All token fetch attempts failed");
+    return null;
   }
 
   /**
@@ -296,38 +311,47 @@ class RPRClient {
   }
 
   /**
-   * Make authenticated API request
+   * Make authenticated API request (retries once on 401)
    */
   private async apiRequest<T>(endpoint: string, params?: Record<string, string>): Promise<T | null> {
-    const token = await this.getToken();
-    if (!token) {
-      console.error("[RPR] No valid token available");
-      return null;
-    }
-
-    const url = new URL(`${this.baseUrl}${endpoint}`);
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        url.searchParams.append(key, value);
-      });
-    }
-
-    const response = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`[RPR] API error: ${response.status} ${response.statusText}`);
-      if (response.status === 401) {
-        this.tokenData = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = await this.getToken();
+      if (!token) {
+        console.error("[RPR] No valid token available");
+        return null;
       }
-      return null;
-    }
 
-    return response.json();
+      const url = new URL(`${this.baseUrl}${endpoint}`);
+      if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+          url.searchParams.append(key, value);
+        });
+      }
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        console.error(`[RPR] API error: ${response.status} ${response.statusText}`);
+        if (response.status === 401 && attempt === 0) {
+          console.log("[RPR] 401 received, clearing token and retrying...");
+          this.tokenData = null;
+          this.tokenPromise = null;
+          continue;
+        }
+        if (response.status === 401) {
+          this.tokenData = null;
+        }
+        return null;
+      }
+
+      return response.json();
+    }
+    return null;
   }
 
   /**
