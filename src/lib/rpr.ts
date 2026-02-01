@@ -606,6 +606,27 @@ class RPRClient {
         currentStatus = "active";
       }
 
+      // Extract listing data from common response (RPR returns these fields for listings)
+      const sr = commonData?.searchResult as any;
+      let listing: RPRPropertyData["listing"] | undefined;
+
+      if (currentStatus === "active" || currentStatus === "pending" || isListing) {
+        const price = sr?.listPrice || sr?.price || sr?.currentPrice || 0;
+        const dom = sr?.daysOnMarket || sr?.dom || sr?.cumulativeDaysOnMarket || 0;
+        const agent = sr?.listingAgentName || sr?.listingAgent || sr?.agentName || "";
+        const listingStatus = commonStatus || status || (currentStatus === "active" ? "Active" : "Pending");
+
+        listing = {
+          active: currentStatus === "active",
+          price,
+          daysOnMarket: dom,
+          agent,
+          status: listingStatus,
+        };
+
+        console.log(`[RPR] Listing data: price=${price}, DOM=${dom}, agent=${agent || 'N/A'}`);
+      }
+
       console.log(`[RPR] Lookup succeeded, status: ${currentStatus}`);
 
       // Build property data from API responses
@@ -631,25 +652,62 @@ class RPRClient {
         // Lot info
         lotSqft: commonData?.searchResult?.lotSizeSqFt || 0,
         lotAcres: commonData?.searchResult?.lotSizeAcres || 0,
-        roofType: "Unknown",
-        foundation: "Unknown",
-        exteriorWalls: "Unknown",
-        hvac: "Unknown",
-        ownerName: "Property Owner",
-        ownerOccupied: true,
-        mailingAddress: "",
-        assessedValue: 0,
-        estimatedValue: 0,
-        taxAmount: 0,
-        lastSaleDate: "",
-        lastSalePrice: 0,
+        roofType: detailsData?.property?.roofType || "Unknown",
+        roofMaterial: detailsData?.property?.roofMaterial,
+        foundation: detailsData?.property?.foundation || "Unknown",
+        foundationType: detailsData?.property?.foundationType,
+        exteriorWalls: detailsData?.property?.exteriorWalls || "Unknown",
+        constructionType: detailsData?.property?.constructionType,
+        hvac: [detailsData?.property?.heatingType, detailsData?.property?.coolingType].filter(Boolean).join(" / ") || "Unknown",
+        heatingType: detailsData?.property?.heatingType,
+        coolingType: detailsData?.property?.coolingType,
+        hasCooling: detailsData?.property?.hasCooling,
+        // Features
+        hasPool: detailsData?.features?.hasPool,
+        pool: detailsData?.features?.pool,
+        poolType: detailsData?.features?.poolType,
+        garageSpaces: detailsData?.features?.garageSpaces,
+        garageType: detailsData?.features?.garageType,
+        parkingSpaces: detailsData?.features?.parkingSpaces,
+        fireplaces: detailsData?.features?.fireplaces,
+        hasFireplace: detailsData?.features?.hasFireplace,
+        basement: detailsData?.features?.basement,
+        basementType: detailsData?.features?.basementType,
+        basementSqft: detailsData?.features?.basementSqft,
+        // Owner information
+        ownerName: commonData?.owner?.name || "Property Owner",
+        ownerOccupied: commonData?.owner?.occupied ?? true,
+        mailingAddress: commonData?.owner?.mailingAddress || "",
+        // Valuation & Tax
+        assessedValue: commonData?.tax?.assessedValue || 0,
+        estimatedValue: commonData?.valuation?.estimatedValue || 0,
+        valuationRangeLow: commonData?.valuation?.valuationRangeLow,
+        valuationRangeHigh: commonData?.valuation?.valuationRangeHigh,
+        taxAmount: commonData?.tax?.taxAmount || 0,
+        taxYear: commonData?.tax?.assessedYear,
+        lastSaleDate: commonData?.searchResult?.lastSaleDate || "",
+        lastSalePrice: commonData?.searchResult?.lastSalePrice || 0,
+        // Risk factors
+        floodZone: detailsData?.flood?.floodZone,
+        floodRisk: detailsData?.flood?.floodRisk,
+        // HOA
+        hasHoa: detailsData?.hoa?.hasHoa,
+        hoaFee: detailsData?.hoa?.hoaFee,
+        hoaFrequency: detailsData?.hoa?.hoaFrequency,
+        // Schools
         schools: {
-          district: "Unknown",
-          elementary: "Unknown",
-          middle: "Unknown",
-          high: "Unknown",
+          district: detailsData?.schools?.schoolDistrict || "Unknown",
+          elementary: detailsData?.schools?.elementarySchool || "Unknown",
+          middle: detailsData?.schools?.middleSchool || "Unknown",
+          high: detailsData?.schools?.highSchool || "Unknown",
         },
-        // The important part - listing status
+        // Location
+        coordinates: commonData?.centroid ? {
+          latitude: commonData.centroid.latitude,
+          longitude: commonData.centroid.longitude,
+        } : undefined,
+        // Listing data
+        listing,
         currentStatus,
       };
     } catch (error: any) {
