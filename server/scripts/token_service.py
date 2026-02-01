@@ -323,19 +323,19 @@ async def save_storage_state(context, provider):
 
 
 async def check_already_authenticated(page, provider):
-    """Check if we're already logged in (session still valid from storageState)."""
+    """Check if we're already logged in (session still valid from storageState).
+    Uses domcontentloaded instead of networkidle because sites like narrpr.com
+    have long-polling requests that prevent networkidle from ever firing."""
     try:
         if provider == "mmi":
-            await page.goto("https://new.mmi.run/dashboard", wait_until="networkidle", timeout=20000)
-            await asyncio.sleep(2)
-            # If we're NOT redirected to login, we're authenticated
+            await page.goto("https://new.mmi.run/dashboard", wait_until="domcontentloaded", timeout=20000)
+            await asyncio.sleep(3)
             if "/login" not in page.url.lower():
                 print(f"[MMI] Already authenticated at {page.url}", file=sys.stderr)
                 return True
         elif provider == "rpr":
-            await page.goto("https://www.narrpr.com/home", wait_until="networkidle", timeout=20000)
-            await asyncio.sleep(2)
-            # If we reach the home/dashboard without login redirect
+            await page.goto("https://www.narrpr.com/home", wait_until="domcontentloaded", timeout=20000)
+            await asyncio.sleep(3)
             current = page.url.lower()
             if "login" not in current and "sso" not in current and "signin" not in current:
                 print(f"[RPR] Already authenticated at {page.url}", file=sys.stderr)
@@ -858,7 +858,7 @@ async def extract_rpr_token():
 
                 # Navigate to trigger API calls
                 try:
-                    await page.goto("https://www.narrpr.com/search", wait_until="networkidle", timeout=20000)
+                    await page.goto("https://www.narrpr.com/search", wait_until="domcontentloaded", timeout=20000)
                     await asyncio.sleep(3)
                 except:
                     pass
@@ -870,7 +870,7 @@ async def extract_rpr_token():
 
             # Full login flow
             print("[RPR] Navigating to RPR login...", file=sys.stderr)
-            await page.goto("https://www.narrpr.com/home", wait_until="networkidle", timeout=45000)
+            await page.goto("https://www.narrpr.com/home", wait_until="domcontentloaded", timeout=30000)
             print(f"[RPR] Current URL: {page.url}", file=sys.stderr)
 
             # Check if we need to click login button
@@ -879,7 +879,7 @@ async def extract_rpr_token():
                 if login_btn:
                     print("[RPR] Clicking login button...", file=sys.stderr)
                     await login_btn.click()
-                    await page.wait_for_load_state("networkidle", timeout=30000)
+                    await page.wait_for_load_state("domcontentloaded", timeout=30000)
 
             # Wait for email input
             print("[RPR] Waiting for email input...", file=sys.stderr)
@@ -949,14 +949,14 @@ async def extract_rpr_token():
                 await page.keyboard.press("Enter")
 
             print("[RPR] Waiting for login completion...", file=sys.stderr)
-            await page.wait_for_load_state("networkidle", timeout=45000)
+            await page.wait_for_load_state("domcontentloaded", timeout=30000)
             await asyncio.sleep(5)
 
             print(f"[RPR] Final URL: {page.url}", file=sys.stderr)
 
             if not captured_token:
                 try:
-                    await page.goto("https://www.narrpr.com/search", wait_until="networkidle", timeout=20000)
+                    await page.goto("https://www.narrpr.com/search", wait_until="domcontentloaded", timeout=20000)
                     await asyncio.sleep(3)
                 except:
                     pass
