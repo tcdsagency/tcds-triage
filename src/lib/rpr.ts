@@ -606,15 +606,21 @@ class RPRClient {
         currentStatus = "active";
       }
 
-      // Extract listing data from common response (RPR returns these fields for listings)
+      // Extract listing data from common response
+      // RPR returns price as "primaryPrice" ($205,000 formatted string) and days as "daysInRpr"
       const sr = commonData?.searchResult as any;
+      const topLevel = commonData as any; // Some fields are at the top level, not nested in searchResult
       let listing: RPRPropertyData["listing"] | undefined;
 
       if (currentStatus === "active" || currentStatus === "pending" || isListing) {
-        const price = sr?.listPrice || sr?.price || sr?.currentPrice || 0;
-        const dom = sr?.daysOnMarket || sr?.dom || sr?.cumulativeDaysOnMarket || 0;
+        // Parse price: try numeric fields first, then parse formatted string like "$205,000"
+        let price = sr?.listPrice || sr?.price || sr?.currentPrice || 0;
+        if (!price && sr?.primaryPrice) {
+          price = parseInt(String(sr.primaryPrice).replace(/[^0-9]/g, ""), 10) || 0;
+        }
+        const dom = topLevel?.daysInRpr || sr?.daysOnMarket || sr?.dom || sr?.cumulativeDaysOnMarket || 0;
         const agent = sr?.listingAgentName || sr?.listingAgent || sr?.agentName || "";
-        const listingStatus = commonStatus || status || (currentStatus === "active" ? "Active" : "Pending");
+        const listingStatus = commonStatus || sr?.status || status || (currentStatus === "active" ? "Active" : "Pending");
 
         listing = {
           active: currentStatus === "active",
@@ -624,7 +630,7 @@ class RPRClient {
           status: listingStatus,
         };
 
-        console.log(`[RPR] Listing data: price=${price}, DOM=${dom}, agent=${agent || 'N/A'}`);
+        console.log(`[RPR] Listing data: price=${price}, DOM=${dom}, agent=${agent || 'N/A'}, status=${listingStatus}`);
       }
 
       console.log(`[RPR] Lookup succeeded, status: ${currentStatus}`);
@@ -650,8 +656,8 @@ class RPRClient {
         propertySubtype: commonData?.searchResult?.propertySubtype,
         style: commonData?.searchResult?.style,
         // Lot info
-        lotSqft: commonData?.searchResult?.lotSizeSqFt || 0,
-        lotAcres: commonData?.searchResult?.lotSizeAcres || 0,
+        lotSqft: topLevel?.lotSizeInSqFt || commonData?.searchResult?.lotSizeSqFt || 0,
+        lotAcres: topLevel?.lotSizeInAcres || commonData?.searchResult?.lotSizeAcres || 0,
         roofType: detailsData?.property?.roofType || "Unknown",
         roofMaterial: detailsData?.property?.roofMaterial,
         foundation: detailsData?.property?.foundation || "Unknown",
@@ -675,12 +681,12 @@ class RPRClient {
         basementType: detailsData?.features?.basementType,
         basementSqft: detailsData?.features?.basementSqft,
         // Owner information
-        ownerName: commonData?.owner?.name || "Property Owner",
+        ownerName: sr?.ownerName1 || commonData?.owner?.name || "Property Owner",
         ownerOccupied: commonData?.owner?.occupied ?? true,
         mailingAddress: commonData?.owner?.mailingAddress || "",
         // Valuation & Tax
         assessedValue: commonData?.tax?.assessedValue || 0,
-        estimatedValue: commonData?.valuation?.estimatedValue || 0,
+        estimatedValue: topLevel?.estimatedValue || commonData?.valuation?.estimatedValue || 0,
         valuationRangeLow: commonData?.valuation?.valuationRangeLow,
         valuationRangeHigh: commonData?.valuation?.valuationRangeHigh,
         taxAmount: commonData?.tax?.taxAmount || 0,
