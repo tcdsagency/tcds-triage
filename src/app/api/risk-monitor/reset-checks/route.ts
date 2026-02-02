@@ -14,28 +14,26 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { onlyActive = false } = body;
+    const { onlyActive = false, onlyUnknown = false } = body;
+
+    // Build the WHERE clause based on filters
+    let whereClause;
+    if (onlyUnknown) {
+      whereClause = sql`${riskMonitorPolicies.tenantId} = ${tenantId} AND ${riskMonitorPolicies.isActive} = true AND ${riskMonitorPolicies.currentStatus} = 'unknown'`;
+    } else if (onlyActive) {
+      whereClause = sql`${riskMonitorPolicies.tenantId} = ${tenantId} AND ${riskMonitorPolicies.isActive} = true`;
+    } else {
+      whereClause = eq(riskMonitorPolicies.tenantId, tenantId);
+    }
 
     // Reset lastCheckedAt to null for policies
-    let query = db
+    const query = db
       .update(riskMonitorPolicies)
       .set({
         lastCheckedAt: null,
         updatedAt: new Date(),
       })
-      .where(eq(riskMonitorPolicies.tenantId, tenantId));
-
-    if (onlyActive) {
-      query = db
-        .update(riskMonitorPolicies)
-        .set({
-          lastCheckedAt: null,
-          updatedAt: new Date(),
-        })
-        .where(
-          sql`${riskMonitorPolicies.tenantId} = ${tenantId} AND ${riskMonitorPolicies.isActive} = true`
-        );
-    }
+      .where(whereClause);
 
     const result = await query;
 

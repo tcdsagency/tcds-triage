@@ -251,8 +251,23 @@ function normalizeAddressLine(line: string): string {
 
   let normalized = line
     .trim()
+    .replace(/,/g, " ") // Remove commas (city is a separate field)
     .replace(/\s+/g, " ") // Collapse multiple spaces
     .replace(/[^\w\s#.-]/g, "") // Keep alphanumeric, spaces, #, dots, hyphens
+    .trim();
+
+  // Pre-process multi-word patterns before word-by-word normalization
+  normalized = normalized
+    .replace(/\bCO\.\s*RD\.?\b/gi, "COUNTY ROAD")
+    .replace(/\bCO\s+RD\b/gi, "COUNTY ROAD")
+    .replace(/\bCO\.\s+ROAD\b/gi, "COUNTY ROAD")
+    .replace(/\bCOUNTY\s+RD\b/gi, "COUNTY ROAD")
+    .replace(/\bU\.S\.\s*/gi, "US ")
+    .replace(/\bALABAMA\s+(\d)/gi, "AL HWY $1")
+    .replace(/\bSTATE\s+ROUTE\b/gi, "STATE RTE")
+    .replace(/\bSTATE\s+RD\b/gi, "STATE ROAD");
+
+  normalized = normalized
     .replace(/\./g, " ") // Replace dots with spaces
     .replace(/\s+/g, " ") // Collapse spaces again
     .trim();
