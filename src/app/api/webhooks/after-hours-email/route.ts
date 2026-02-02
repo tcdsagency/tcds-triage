@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { customers, triageItems } from "@/db/schema";
 import { eq, and, or, gte, desc, ilike } from "drizzle-orm";
 import OpenAI from "openai";
+import { createAfterHoursServiceTicket } from "@/lib/api/after-hours-ticket";
 
 // =============================================================================
 // TYPES
@@ -613,6 +614,24 @@ async function createAfterHoursTriageItem(
     agencyzoomId,
     isUrgent,
     urgencyKeywords: parsedData?.urgencyKeywords,
+  });
+
+  // Auto-create AgencyZoom service ticket (non-blocking, never fails the webhook)
+  await createAfterHoursServiceTicket({
+    tenantId,
+    callerName: customerName || parsedData?.name || null,
+    callerPhone: phone,
+    reason: parsedData?.reason || null,
+    agencyzoomCustomerId: agencyzoomId || null,
+    localCustomerId: customerId || null,
+    isUrgent,
+    urgencyKeywords: parsedData?.urgencyKeywords,
+    transcript: twilioData?.TranscriptionText || null,
+    emailBody: parsedData?.reason || emailData.body || null,
+    aiSummary: mergedContent.summary || null,
+    actionItems: mergedContent.actionItems,
+    triageItemId: triageItem.id,
+    source: 'after_hours_email',
   });
 
   return triageItem;

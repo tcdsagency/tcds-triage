@@ -28,6 +28,7 @@ import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } fro
 import { trestleIQClient, quickLeadCheck } from "@/lib/api/trestleiq";
 import { getServiceRequestTypeId } from "@/lib/constants/agencyzoom";
 import { findRelatedTickets, determineTriageRecommendation } from "@/lib/triage/related-tickets";
+import { createAfterHoursServiceTicket } from "@/lib/api/after-hours-ticket";
 
 // =============================================================================
 // AGENCY MAIN NUMBER
@@ -1577,6 +1578,24 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         mergedWithAfterHours = true;
         mergedTriageItemId = txResult.triageItemId;
         console.log(`[Call-Completed] ✅ Merged with existing after-hours triage item ${mergedTriageItemId} - no duplicate wrapup created`);
+
+        // Create AZ service ticket for the merged after-hours call
+        // The helper's duplicate check prevents double-creation if email webhook already created one
+        await createAfterHoursServiceTicket({
+          tenantId,
+          callerName: analysis?.extractedData?.customerName || null,
+          callerPhone: phoneForLookup || 'Unknown',
+          reason: analysis?.summary || null,
+          agencyzoomCustomerId: matchedAzCustomerId || null,
+          localCustomerId: call.customerId || null,
+          isUrgent: false,
+          transcript: transcript || null,
+          emailBody: null,
+          aiSummary: analysis?.summary || null,
+          actionItems: analysis?.actionItems || [],
+          triageItemId: mergedTriageItemId,
+          source: 'after_hours_call',
+        });
       } else if (txResult.wrapup) {
         wrapupId = txResult.wrapup.id;
         console.log(`[Call-Completed] Created wrap-up draft: ${wrapupId} (matchStatus: ${customerMatchStatus}${shouldAutoVoid ? ", auto-voided: " + hangupReason : ""})`);
@@ -1707,6 +1726,42 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
 
             if (isInternalOrTestCall) {
               console.log(`[Call-Completed] Skipping ticket creation for internal/test call: ${phoneForLookup} (digits: ${callerDigits.length})`);
+            } else if (call.disposition === "after_hours") {
+              // After-hours unmerged call — use the shared after-hours ticket helper
+              console.log(`[Call-Completed] 🎫 After-hours unmerged call - using after-hours ticket helper for ${phoneForLookup}`);
+              const afterHoursTicketId = await createAfterHoursServiceTicket({
+                tenantId,
+                callerName: txResult.wrapup!.customerName || analysis.extractedData?.customerName || null,
+                callerPhone: phoneForLookup || 'Unknown',
+                reason: analysis.summary || null,
+                agencyzoomCustomerId: matchedAzCustomerId || null,
+                localCustomerId: call.customerId || null,
+                isUrgent: false,
+                transcript: transcript || null,
+                emailBody: null,
+                aiSummary: analysis.summary || null,
+                actionItems: analysis.actionItems || [],
+                wrapupDraftId: txResult.wrapup!.id,
+                source: 'after_hours_call',
+              });
+
+              if (afterHoursTicketId) {
+                // Mark wrapup as completed — same pattern as inbound call tickets
+                try {
+                  await db
+                    .update(wrapupDrafts)
+                    .set({
+                      status: 'completed',
+                      outcome: 'ticket',
+                      agencyzoomTicketId: afterHoursTicketId.toString(),
+                      completedAt: new Date(),
+                    })
+                    .where(eq(wrapupDrafts.id, txResult.wrapup!.id));
+                  console.log(`[Call-Completed] 🎫 Wrapup ${txResult.wrapup!.id} marked completed (after-hours auto-ticket created)`);
+                } catch (wrapupUpdateError) {
+                  console.error(`[Call-Completed] ⚠️ Failed to mark wrapup completed:`, wrapupUpdateError);
+                }
+              }
             } else {
             console.log(`[Call-Completed] 🎫 Creating auto-ticket for ${phoneForLookup} (matchedAZ: ${matchedAzCustomerId || 'NCM'})`);
 
