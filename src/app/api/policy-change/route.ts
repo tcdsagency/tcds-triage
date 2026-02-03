@@ -11,6 +11,7 @@ import {
   PIPELINE_STAGES,
   getDefaultDueDate,
 } from "@/lib/api/agencyzoom-service-tickets";
+import { outlookClient } from "@/lib/outlook";
 
 // =============================================================================
 // AGENCYZOOM INTEGRATION
@@ -47,8 +48,11 @@ const NO_MATCH_CUSTOMER = {
   name: "No Customer Match",
 };
 
-// Default assignee (CSR)
-const DEFAULT_CSR_ID = 5461;
+// Default assignee - Lee Tidwell
+const DEFAULT_CSR_ID = 94007;
+
+// Fallback email when AZ ticket creation fails
+const FALLBACK_EMAIL = "lee.tidwell@tcdsagency.com";
 
 // =============================================================================
 // TYPES
@@ -212,11 +216,18 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Build description with full details
-      let ticketDescription = `📋 Policy Change Request\n\n${summary}\n\nPolicy: ${body.policyNumber}\nEffective Date: ${effectiveDate}`;
+      // Build description with full form details
+      let ticketDescription = `📋 Policy Change Request\n\nType: ${getChangeTypeLabel(body.changeType)}\nPolicy: ${body.policyNumber}\nEffective Date: ${effectiveDate}`;
+
+      if (customerName) {
+        ticketDescription += `\nCustomer: ${customerName}`;
+        if (customerPhone) ticketDescription += ` | ${customerPhone}`;
+      }
+
+      ticketDescription += `\n\n--- Form Details ---\n${formatFormData(body.changeType, body.data)}`;
 
       if (notes) {
-        ticketDescription += `\n\nNotes: ${notes}`;
+        ticketDescription += `\n\nAdditional Notes: ${notes}`;
       }
 
       // If using No Match, append original customer info
@@ -229,7 +240,8 @@ export async function POST(request: NextRequest) {
       // Get category and priority
       const categoryId = CHANGE_TYPE_TO_CATEGORY[body.changeType] || 115762;
       const priorityId = body.changeType === 'cancel_policy' ? PRIORITY_IDS.urgent : PRIORITY_IDS.standard;
-      const assigneeId = body.assigneeId || DEFAULT_CSR_ID;
+      // Always assign to Lee Tidwell
+      const assigneeId = DEFAULT_CSR_ID;
 
       // Calculate due date (today for urgent cancellations, tomorrow otherwise)
       const dueDate = body.changeType === 'cancel_policy'
@@ -297,10 +309,13 @@ export async function POST(request: NextRequest) {
         }
       } else {
         console.error('[PolicyChange] AgencyZoom API error:', ticketResult);
+        // AZ returned non-success — send email fallback
+        await sendFallbackEmail(body.changeType, body.policyNumber, effectiveDate, customerName, customerPhone, body.data, notes, 'AgencyZoom API returned non-success response');
       }
     } catch (azError) {
       console.error('[PolicyChange] AgencyZoom API error:', azError);
-      // Don't fail the request if AgencyZoom fails - the change request is already saved
+      // AZ failed — send email fallback so nothing is lost
+      await sendFallbackEmail(body.changeType, body.policyNumber, effectiveDate, customerName, customerPhone, body.data, notes, azError instanceof Error ? azError.message : 'Unknown AZ error');
     }
 
     return NextResponse.json({
@@ -448,6 +463,95 @@ function generateChangeSummary(changeType: ChangeType, data: Record<string, any>
 
     default:
       return 'Policy change request';
+  }
+}
+
+// Format all form data fields into a readable string for the ticket description
+function formatFormData(changeType: ChangeType, data: Record<string, any>): string {
+  // Skip meta fields that are already shown elsewhere
+  const skipKeys = new Set(['effectiveDate', 'notes']);
+  const lines: string[] = [];
+
+  const labelMap: Record<string, string> = {
+    year: 'Year', make: 'Make', model: 'Model', vin: 'VIN', trim: 'Trim',
+    bodyStyle: 'Body Style', usage: 'Usage', annualMileage: 'Annual Mileage',
+    garagingAddress: 'Garaging Address', garagingCity: 'City', garagingState: 'State', garagingZip: 'ZIP',
+    isFinanced: 'Financed/Leased', lienholderName: 'Lienholder', lienholderAddress: 'Lienholder Address',
+    vehicleToRemove: 'Vehicle to Remove', selectedVehicleId: 'Vehicle ID',
+    removalReason: 'Reason for Removal', newOwnerInfo: 'New Owner Info',
+    isReplacing: 'Replacing Existing Vehicle', replacingVehicleId: 'Vehicle Being Replaced',
+    replacingVehicle: 'Vehicle Being Replaced', stillInPossession: 'Still in Possession',
+    outOfPossessionDate: 'Out of Possession Date',
+    firstName: 'First Name', lastName: 'Last Name', dob: 'Date of Birth',
+    licenseNumber: 'License Number', licenseState: 'License State',
+    relationship: 'Relationship', maritalStatus: 'Marital Status', gender: 'Gender',
+    driverToRemove: 'Driver to Remove', selectedDriverId: 'Driver ID',
+    driverRemovalReason: 'Reason for Removal',
+    newAddress: 'New Address', newCity: 'City', newState: 'State', newZip: 'ZIP',
+    moveDate: 'Move Date', previousAddress: 'Previous Address',
+    vehicleOrProperty: 'Vehicle/Property', mortgageeAddress: 'Mortgagee Address',
+    loanNumber: 'Loan Number',
+    coverageType: 'Coverage Type', currentLimit: 'Current Limit', newLimit: 'New Limit',
+    deductible: 'Deductible', reason: 'Reason',
+    cancellationDate: 'Cancellation Date', cancellationReason: 'Reason',
+    oldVehicle: 'Old Vehicle', newYear: 'New Year', newMake: 'New Make', newModel: 'New Model',
+    newVin: 'New VIN',
+  };
+
+  for (const [key, value] of Object.entries(data)) {
+    if (skipKeys.has(key)) continue;
+    if (value === null || value === undefined || value === '') continue;
+    const label = labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+    lines.push(`${label}: ${value}`);
+  }
+
+  return lines.length > 0 ? lines.join('\n') : 'No additional details provided';
+}
+
+// Send fallback email when AgencyZoom ticket creation fails
+async function sendFallbackEmail(
+  changeType: ChangeType,
+  policyNumber: string,
+  effectiveDate: string,
+  customerName: string | null,
+  customerPhone: string | null,
+  formData: Record<string, any>,
+  notes: string | null,
+  errorReason: string,
+) {
+  try {
+    const subject = `[ACTION REQUIRED] Policy Change Request - ${getChangeTypeLabel(changeType)} - ${policyNumber}`;
+    const body = [
+      `A policy change request was submitted but the AgencyZoom service ticket could NOT be created.`,
+      `Error: ${errorReason}`,
+      ``,
+      `=== Request Details ===`,
+      `Type: ${getChangeTypeLabel(changeType)}`,
+      `Policy: ${policyNumber}`,
+      `Effective Date: ${effectiveDate}`,
+      customerName ? `Customer: ${customerName}` : null,
+      customerPhone ? `Phone: ${customerPhone}` : null,
+      ``,
+      `=== Form Data ===`,
+      formatFormData(changeType, formData),
+      notes ? `\nAdditional Notes: ${notes}` : null,
+      ``,
+      `Please create the service ticket manually in AgencyZoom.`,
+    ].filter(Boolean).join('\n');
+
+    const result = await outlookClient.sendEmail({
+      to: FALLBACK_EMAIL,
+      subject,
+      body,
+    });
+
+    if (result.success) {
+      console.log(`[PolicyChange] Fallback email sent to ${FALLBACK_EMAIL}`);
+    } else {
+      console.error(`[PolicyChange] Fallback email failed:`, result.error);
+    }
+  } catch (emailError) {
+    console.error('[PolicyChange] Fallback email error:', emailError);
   }
 }
 
