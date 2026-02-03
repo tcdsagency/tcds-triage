@@ -9,6 +9,8 @@ import {
   riskMonitorSettings,
   riskMonitorActivityLog,
   riskMonitorActivityEvents,
+  customers,
+  users,
 } from "@/db/schema";
 import { eq, and, lte, desc, isNull, sql, not, inArray, or, lt } from "drizzle-orm";
 import { rprClient, type RPRPropertyData } from "@/lib/rpr";
@@ -1003,6 +1005,49 @@ Detected: ${new Date().toLocaleString()}
   }
 
   /**
+   * Look up CSR and Producer email addresses for a policy via the customers table
+   */
+  private async getAgentEmailsForPolicy(
+    policy: typeof riskMonitorPolicies.$inferSelect
+  ): Promise<string[]> {
+    if (!policy.azContactId) return [];
+
+    try {
+      // Find the customer record by agencyzoom_id
+      const [customer] = await db
+        .select({
+          producerId: customers.producerId,
+          csrId: customers.csrId,
+        })
+        .from(customers)
+        .where(eq(customers.agencyzoomId, policy.azContactId))
+        .limit(1);
+
+      if (!customer) return [];
+
+      // Collect unique user IDs to look up
+      const userIds = new Set<string>();
+      if (customer.producerId) userIds.add(customer.producerId);
+      if (customer.csrId) userIds.add(customer.csrId);
+
+      if (userIds.size === 0) return [];
+
+      // Query users table for their email addresses
+      const agentUsers = await db
+        .select({ id: users.id, email: users.email })
+        .from(users)
+        .where(inArray(users.id, Array.from(userIds)));
+
+      return agentUsers
+        .map((u) => u.email)
+        .filter((email): email is string => Boolean(email));
+    } catch (err: any) {
+      console.error(`[RiskMonitor] Error looking up agent emails for policy ${policy.id}: ${err.message}`);
+      return [];
+    }
+  }
+
+  /**
    * Send email alert for critical events
    */
   private async sendEmailAlert(
@@ -1010,7 +1055,16 @@ Detected: ${new Date().toLocaleString()}
     alertType: string,
     result: PropertyCheckResult
   ): Promise<void> {
-    if (!this.settings?.alertEmailAddresses?.length) return;
+    // Look up agent emails for this policy (CSR + Producer)
+    const agentEmails = await this.getAgentEmailsForPolicy(policy);
+    const staticRecipients = this.settings?.alertEmailAddresses ?? [];
+
+    // Merge static recipients + agent emails, dedup
+    const allRecipients = Array.from(
+      new Set([...staticRecipients, ...agentEmails].map((e) => e.toLowerCase()))
+    );
+
+    if (allRecipients.length === 0) return;
 
     const latestListing = result.mmiData?.listingHistory?.[0];
     const listPrice = latestListing?.LIST_PRICE || result.rprData?.listing?.price;
@@ -1068,7 +1122,7 @@ Please review and take appropriate action.
 
     try {
       const sendResult = await outlookClient.sendEmail({
-        to: this.settings.alertEmailAddresses,
+        to: allRecipients,
         subject: `🚨 ${title}`,
         body: emailBody,
         isHtml: false,
@@ -1076,17 +1130,18 @@ Please review and take appropriate action.
 
       if (sendResult.success) {
         await this.logEvent("email_sent", policy.id, `Email alert sent for ${alertType}`, {
-          recipients: this.settings.alertEmailAddresses,
+          recipients: allRecipients,
+          agentEmails: agentEmails.length > 0 ? agentEmails : undefined,
           messageId: sendResult.messageId,
         });
       } else {
         await this.logEvent("email_failed", policy.id, `Failed to send email: ${sendResult.error}`, {
-          recipients: this.settings.alertEmailAddresses,
+          recipients: allRecipients,
         });
       }
     } catch (err: any) {
       await this.logEvent("email_failed", policy.id, `Email send error: ${err.message}`, {
-        recipients: this.settings.alertEmailAddresses,
+        recipients: allRecipients,
       });
     }
   }

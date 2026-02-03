@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Shield,
   AlertTriangle,
@@ -14,25 +14,58 @@ import {
   X,
   Clock,
   ExternalLink,
+  ChevronDown,
   ChevronRight,
   Bell,
-  TrendingUp,
   Building2,
   Eye,
   Play,
-  Droplets,
   Phone,
   Mail,
   MapPin,
   DollarSign,
   User,
   FileText,
+  ChevronUp,
 } from 'lucide-react';
 import { FloodZoneBadge, FloodRisk } from '@/components/ui/flood-zone-indicator';
 
 // =============================================================================
 // TYPES
 // =============================================================================
+
+interface PolicyRecord {
+  id: string;
+  policyNumber?: string;
+  azContactId?: string;
+  azPolicyId?: string;
+  contactName: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  carrier?: string;
+  policyType?: string;
+  currentStatus: string;
+  previousStatus?: string;
+  lastStatusChange?: string;
+  listingPrice?: number;
+  listingDate?: string;
+  daysOnMarket?: number;
+  lastSalePrice?: number;
+  lastSaleDate?: string;
+  estimatedValue?: number;
+  floodZone?: string;
+  isActive: boolean;
+  lastCheckedAt?: string;
+  checkErrorCount?: number;
+  lastCheckError?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 interface Alert {
   id: string;
@@ -47,8 +80,6 @@ interface Alert {
   createdAt: string;
   acknowledgedAt?: string;
   resolvedAt?: string;
-  assignedTo?: string;
-  notes?: string;
   serviceTicketId?: string;
   policy?: {
     id: string;
@@ -66,38 +97,20 @@ interface Alert {
   };
 }
 
-interface Policy {
-  id: string;
-  policyNumber: string;
-  customerId?: string;
-  customerName: string;
-  customerEmail?: string;
-  customerPhone?: string;
-  propertyAddress: string;
-  policyType: string;
-  currentStatus: string;
-  isActive: boolean;
-  lastCheckedAt?: string;
-  listingDetectedAt?: string;
-  listingPrice?: number;
-  createdAt: string;
-  // Flood zone data from RPR
-  floodZone?: string;
-  floodRisk?: string;
-}
-
 interface ActivityLog {
   id: string;
+  runId: string;
   runType: string;
   status: string;
   startedAt: string;
   completedAt?: string;
-  propertiesChecked: number;
+  policiesChecked: number;
   alertsCreated: number;
-  errorCount: number;
+  errorsEncountered: number;
+  errorMessage?: string;
 }
 
-interface Settings {
+interface SettingsData {
   schedulerEnabled: boolean;
   checkIntervalDays: number;
   windowStartHour: number;
@@ -133,32 +146,30 @@ interface Stats {
 }
 
 // =============================================================================
-// COMPONENT
+// MAIN COMPONENT
 // =============================================================================
 
 export default function RiskMonitorPage() {
-  // Tab state
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'alerts' | 'policies' | 'activity' | 'settings'>('dashboard');
-
   // Data state
   const [stats, setStats] = useState<Stats | null>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [alertCounts, setAlertCounts] = useState<Record<string, number>>({});
-  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [policies, setPolicies] = useState<PolicyRecord[]>([]);
   const [policyCounts, setPolicyCounts] = useState<Record<string, number>>({});
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<SettingsData | null>(null);
 
   // UI state
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [alertFilter, setAlertFilter] = useState<string>('');
-  const [policyFilter, setPolicyFilter] = useState<string>('');
-  const [policySearch, setPolicySearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showActivity, setShowActivity] = useState(false);
   const [showAddPolicy, setShowAddPolicy] = useState(false);
   const [triggeringRun, setTriggeringRun] = useState(false);
+  const [checkingProperty, setCheckingProperty] = useState<string | null>(null);
 
-  // Run status state for status bar
+  // Run status bar
   const [runStatus, setRunStatus] = useState<{
     show: boolean;
     status: 'running' | 'success' | 'error';
@@ -181,6 +192,10 @@ export default function RiskMonitorPage() {
     policyType: 'homeowners',
   });
 
+  // Alert inline action state
+  const [creatingTicket, setCreatingTicket] = useState<string | null>(null);
+  const [ticketMessage, setTicketMessage] = useState<{ alertId: string; success: boolean; message: string } | null>(null);
+
   // =============================================================================
   // DATA FETCHING
   // =============================================================================
@@ -189,34 +204,18 @@ export default function RiskMonitorPage() {
     try {
       const res = await fetch('/api/risk-monitor/stats');
       const data = await res.json();
-      if (data.success) {
-        setStats(data.stats);
-      }
+      if (data.success) setStats(data.stats);
     } catch (error) {
       console.error('Error fetching stats:', error);
     }
   }, []);
 
-  const fetchAlerts = useCallback(async () => {
-    try {
-      const params = new URLSearchParams();
-      if (alertFilter) params.set('status', alertFilter);
-      const res = await fetch(`/api/risk-monitor/alerts?${params}`);
-      const data = await res.json();
-      if (data.success) {
-        setAlerts(data.alerts);
-        setAlertCounts(data.counts);
-      }
-    } catch (error) {
-      console.error('Error fetching alerts:', error);
-    }
-  }, [alertFilter]);
-
   const fetchPolicies = useCallback(async () => {
     try {
       const params = new URLSearchParams();
-      if (policyFilter) params.set('status', policyFilter);
-      if (policySearch) params.set('search', policySearch);
+      if (statusFilter) params.set('status', statusFilter);
+      if (searchQuery) params.set('search', searchQuery);
+      params.set('limit', '200');
       const res = await fetch(`/api/risk-monitor/policies?${params}`);
       const data = await res.json();
       if (data.success) {
@@ -226,15 +225,23 @@ export default function RiskMonitorPage() {
     } catch (error) {
       console.error('Error fetching policies:', error);
     }
-  }, [policyFilter, policySearch]);
+  }, [statusFilter, searchQuery]);
+
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/risk-monitor/alerts?limit=100');
+      const data = await res.json();
+      if (data.success) setAlerts(data.alerts);
+    } catch (error) {
+      console.error('Error fetching alerts:', error);
+    }
+  }, []);
 
   const fetchActivity = useCallback(async () => {
     try {
-      const res = await fetch('/api/risk-monitor/activity');
+      const res = await fetch('/api/risk-monitor/activity?limit=5');
       const data = await res.json();
-      if (data.success) {
-        setActivityLogs(data.logs);
-      }
+      if (data.success) setActivityLogs(data.logs);
     } catch (error) {
       console.error('Error fetching activity:', error);
     }
@@ -244,9 +251,7 @@ export default function RiskMonitorPage() {
     try {
       const res = await fetch('/api/risk-monitor/settings');
       const data = await res.json();
-      if (data.success) {
-        setSettings(data.settings);
-      }
+      if (data.success) setSettings(data.settings);
     } catch (error) {
       console.error('Error fetching settings:', error);
     }
@@ -256,116 +261,28 @@ export default function RiskMonitorPage() {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([
-        fetchStats(),
-        fetchAlerts(),
-        fetchPolicies(),
-        fetchActivity(),
-        fetchSettings(),
-      ]);
+      await Promise.all([fetchStats(), fetchPolicies(), fetchAlerts(), fetchActivity(), fetchSettings()]);
       setLoading(false);
     };
     loadData();
-  }, [fetchStats, fetchAlerts, fetchPolicies, fetchActivity, fetchSettings]);
+  }, [fetchStats, fetchPolicies, fetchAlerts, fetchActivity, fetchSettings]);
 
-  // Refresh on tab change
+  // Refetch policies when filter/search changes
   useEffect(() => {
-    if (activeTab === 'dashboard') fetchStats();
-    if (activeTab === 'alerts') fetchAlerts();
-    if (activeTab === 'policies') fetchPolicies();
-    if (activeTab === 'activity') fetchActivity();
-    if (activeTab === 'settings') fetchSettings();
-  }, [activeTab, fetchStats, fetchAlerts, fetchPolicies, fetchActivity, fetchSettings]);
+    fetchPolicies();
+  }, [fetchPolicies]);
 
   // =============================================================================
   // ACTIONS
   // =============================================================================
 
   const handleRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([fetchStats(), fetchAlerts(), fetchPolicies(), fetchActivity()]);
-    setRefreshing(false);
-  };
-
-  const handleAlertAction = async (alertIds: string[], action: string) => {
-    try {
-      await fetch('/api/risk-monitor/alerts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ alertIds, action }),
-      });
-      await fetchAlerts();
-      await fetchStats();
-    } catch (error) {
-      console.error('Error updating alert:', error);
-    }
-  };
-
-  const handleAddPolicy = async () => {
-    if (!newPolicy.policyNumber || !newPolicy.customerName || !newPolicy.propertyAddress) {
-      return;
-    }
-    try {
-      const res = await fetch('/api/risk-monitor/policies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPolicy),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setShowAddPolicy(false);
-        setNewPolicy({
-          policyNumber: '',
-          customerName: '',
-          customerEmail: '',
-          customerPhone: '',
-          propertyAddress: '',
-          policyType: 'homeowners',
-        });
-        await fetchPolicies();
-        await fetchStats();
-      }
-    } catch (error) {
-      console.error('Error adding policy:', error);
-    }
-  };
-
-  const handleCheckProperty = async (policyId: string) => {
-    try {
-      await fetch(`/api/risk-monitor/policies/${policyId}/check`, { method: 'POST' });
-      await fetchPolicies();
-      await fetchAlerts();
-      await fetchStats();
-    } catch (error) {
-      console.error('Error checking property:', error);
-    }
-  };
-
-  const handleCreateServiceRequest = async (alertId: string): Promise<{ success: boolean; message: string }> => {
-    try {
-      const res = await fetch(`/api/risk-monitor/alerts/${alertId}/create-service-request`, {
-        method: 'POST',
-      });
-      const data = await res.json();
-      if (data.success) {
-        await fetchAlerts();
-        return { success: true, message: data.message || 'Service request created' };
-      } else {
-        return { success: false, message: data.error || 'Failed to create service request' };
-      }
-    } catch (error) {
-      console.error('Error creating service request:', error);
-      return { success: false, message: error instanceof Error ? error.message : 'Failed to create service request' };
-    }
+    await Promise.all([fetchStats(), fetchPolicies(), fetchAlerts(), fetchActivity()]);
   };
 
   const handleTriggerRun = async () => {
     setTriggeringRun(true);
-    setRunStatus({
-      show: true,
-      status: 'running',
-      message: 'Running property check...',
-    });
+    setRunStatus({ show: true, status: 'running', message: 'Running property check...' });
 
     try {
       const res = await fetch('/api/risk-monitor/trigger', {
@@ -395,15 +312,9 @@ export default function RiskMonitorPage() {
         });
       }
 
-      await fetchActivity();
-      await fetchStats();
-
-      // Auto-hide success status after 10 seconds
-      setTimeout(() => {
-        setRunStatus((prev) => (prev?.status === 'success' ? null : prev));
-      }, 10000);
+      await Promise.all([fetchStats(), fetchPolicies(), fetchAlerts(), fetchActivity()]);
+      setTimeout(() => setRunStatus((prev) => (prev?.status === 'success' ? null : prev)), 10000);
     } catch (error) {
-      console.error('Error triggering run:', error);
       setRunStatus({
         show: true,
         status: 'error',
@@ -413,7 +324,65 @@ export default function RiskMonitorPage() {
     setTriggeringRun(false);
   };
 
-  const handleSaveSettings = async (updates: Partial<Settings>) => {
+  const handleCheckProperty = async (policyId: string) => {
+    setCheckingProperty(policyId);
+    try {
+      await fetch(`/api/risk-monitor/policies/${policyId}/check`, { method: 'POST' });
+      await Promise.all([fetchPolicies(), fetchAlerts(), fetchStats()]);
+    } catch (error) {
+      console.error('Error checking property:', error);
+    }
+    setCheckingProperty(null);
+  };
+
+  const handleAlertAction = async (alertIds: string[], action: string) => {
+    try {
+      await fetch('/api/risk-monitor/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alertIds, action }),
+      });
+      await Promise.all([fetchAlerts(), fetchStats()]);
+    } catch (error) {
+      console.error('Error updating alert:', error);
+    }
+  };
+
+  const handleCreateServiceRequest = async (alertId: string) => {
+    setCreatingTicket(alertId);
+    setTicketMessage(null);
+    try {
+      const res = await fetch(`/api/risk-monitor/alerts/${alertId}/create-service-request`, { method: 'POST' });
+      const data = await res.json();
+      setTicketMessage({ alertId, success: data.success, message: data.message || data.error || 'Done' });
+      if (data.success) await fetchAlerts();
+      setTimeout(() => setTicketMessage(null), 5000);
+    } catch (error) {
+      setTicketMessage({ alertId, success: false, message: 'Failed to create service request' });
+    }
+    setCreatingTicket(null);
+  };
+
+  const handleAddPolicy = async () => {
+    if (!newPolicy.policyNumber || !newPolicy.customerName || !newPolicy.propertyAddress) return;
+    try {
+      const res = await fetch('/api/risk-monitor/policies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPolicy),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowAddPolicy(false);
+        setNewPolicy({ policyNumber: '', customerName: '', customerEmail: '', customerPhone: '', propertyAddress: '', policyType: 'homeowners' });
+        await Promise.all([fetchPolicies(), fetchStats()]);
+      }
+    } catch (error) {
+      console.error('Error adding policy:', error);
+    }
+  };
+
+  const handleSaveSettings = async (updates: Partial<SettingsData>) => {
     try {
       await fetch('/api/risk-monitor/settings', {
         method: 'PUT',
@@ -430,67 +399,34 @@ export default function RiskMonitorPage() {
   // HELPERS
   // =============================================================================
 
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+
+  const formatPhone = (phone: string) => {
+    const cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length === 10) return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+    return phone;
   };
 
-  const formatDateTime = (date: string) => {
-    return new Date(date).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
+  const formatDate = (date: string) =>
+    new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'off_market':
-        return 'bg-gray-100 text-gray-700';
-      case 'active':
-        return 'bg-yellow-100 text-yellow-700';
-      case 'pending':
-        return 'bg-orange-100 text-orange-700';
-      case 'sold':
-        return 'bg-red-100 text-red-700';
-      default:
-        return 'bg-gray-100 text-gray-700';
-    }
-  };
+  const formatDateTime = (date: string) =>
+    new Date(date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-  const getAlertStatusColor = (status: string) => {
-    switch (status) {
-      case 'new':
-        return 'bg-red-100 text-red-700';
-      case 'acknowledged':
-        return 'bg-yellow-100 text-yellow-700';
-      case 'in_progress':
-        return 'bg-blue-100 text-blue-700';
-      case 'resolved':
-        return 'bg-green-100 text-green-700';
-      case 'dismissed':
-        return 'bg-gray-100 text-gray-700';
-      default:
-        return 'bg-gray-100 text-gray-700';
-    }
-  };
+  // Get unresolved alerts for a given policy
+  const getAlertsForPolicy = (policyId: string) =>
+    alerts.filter((a) => a.policyId === policyId && a.status !== 'resolved' && a.status !== 'dismissed');
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case '1':
-        return 'text-red-600';
-      case '2':
-        return 'text-orange-600';
-      case '3':
-        return 'text-yellow-600';
-      default:
-        return 'text-gray-600';
-    }
-  };
+  // Sort policies: active/pending/sold first, then off_market
+  const statusPriority: Record<string, number> = { active: 0, pending: 1, sold: 2, off_market: 3, unknown: 4 };
+
+  const sortedPolicies = [...policies].sort((a, b) => {
+    const pa = statusPriority[a.currentStatus] ?? 4;
+    const pb = statusPriority[b.currentStatus] ?? 4;
+    if (pa !== pb) return pa - pb;
+    return a.contactName.localeCompare(b.contactName);
+  });
 
   // =============================================================================
   // RENDER
@@ -504,45 +440,48 @@ export default function RiskMonitorPage() {
     );
   }
 
+  const totalMonitored = stats?.policies.total ?? 0;
+  const activeCount = stats?.policies.byStatus.active ?? 0;
+  const pendingCount = stats?.policies.byStatus.pending ?? 0;
+  const soldCount = stats?.policies.byStatus.sold ?? 0;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-4">
+      {/* ─── Header ─── */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Property Risk Monitor</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Monitor insured properties for listing and sale activity
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-semibold text-gray-900">Risk Monitor</h1>
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            onClick={() => setShowAddPolicy(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
           >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
+            <Plus className="h-4 w-4" /> Add
           </button>
           <button
             onClick={handleTriggerRun}
             disabled={triggeringRun}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
           >
             <Play className={`h-4 w-4 ${triggeringRun ? 'animate-pulse' : ''}`} />
             Run Now
           </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
+            title="Settings"
+          >
+            <Settings className="h-5 w-5" />
+          </button>
         </div>
       </div>
 
-      {/* Run Status Bar */}
+      {/* ─── Run Status Bar ─── */}
       {runStatus?.show && (
         <div
-          className={`rounded-lg border p-4 flex items-center justify-between ${
-            runStatus.status === 'running'
-              ? 'bg-blue-50 border-blue-200'
-              : runStatus.status === 'success'
-              ? 'bg-green-50 border-green-200'
-              : 'bg-red-50 border-red-200'
+          className={`rounded-lg border p-3 flex items-center justify-between ${
+            runStatus.status === 'running' ? 'bg-blue-50 border-blue-200' :
+            runStatus.status === 'success' ? 'bg-green-50 border-green-200' :
+            'bg-red-50 border-red-200'
           }`}
         >
           <div className="flex items-center gap-3">
@@ -554,169 +493,266 @@ export default function RiskMonitorPage() {
               <AlertTriangle className="h-5 w-5 text-red-600" />
             )}
             <div>
-              <p
-                className={`text-sm font-medium ${
-                  runStatus.status === 'running'
-                    ? 'text-blue-900'
-                    : runStatus.status === 'success'
-                    ? 'text-green-900'
-                    : 'text-red-900'
-                }`}
-              >
+              <p className={`text-sm font-medium ${
+                runStatus.status === 'running' ? 'text-blue-900' :
+                runStatus.status === 'success' ? 'text-green-900' :
+                'text-red-900'
+              }`}>
                 {runStatus.message}
               </p>
               {runStatus.details && (
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-gray-600 mt-0.5">
                   {runStatus.details.alertsCreated > 0 && (
                     <span className="font-medium text-orange-600">
-                      {runStatus.details.alertsCreated} new alert{runStatus.details.alertsCreated !== 1 && 's'}
+                      {runStatus.details.alertsCreated} new alert{runStatus.details.alertsCreated !== 1 && 's'} &bull;{' '}
                     </span>
                   )}
-                  {runStatus.details.alertsCreated > 0 && ' • '}
                   Duration: {(runStatus.details.duration / 1000).toFixed(1)}s
                   {runStatus.details.errors.length > 0 && (
-                    <span className="text-red-600"> • {runStatus.details.errors.length} error{runStatus.details.errors.length !== 1 && 's'}</span>
+                    <span className="text-red-600"> &bull; {runStatus.details.errors.length} error{runStatus.details.errors.length !== 1 && 's'}</span>
                   )}
                 </p>
               )}
             </div>
           </div>
           {runStatus.status !== 'running' && (
-            <button
-              onClick={() => setRunStatus(null)}
-              className="text-gray-400 hover:text-gray-600"
-            >
+            <button onClick={() => setRunStatus(null)} className="text-gray-400 hover:text-gray-600">
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          {[
-            { id: 'dashboard', label: 'Dashboard', icon: TrendingUp },
-            { id: 'alerts', label: 'Alerts', icon: Bell, count: stats?.alerts.unresolved },
-            { id: 'policies', label: 'Policies', icon: Building2, count: stats?.policies.total },
-            { id: 'activity', label: 'Activity Log', icon: Activity },
-            { id: 'settings', label: 'Settings', icon: Settings },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === tab.id
-                  ? 'border-emerald-500 text-emerald-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <tab.icon className="h-4 w-4" />
-              {tab.label}
-              {tab.count !== undefined && tab.count > 0 && (
-                <span className="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs">
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
+      {/* ─── Summary Cards ─── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard label="Monitored" value={totalMonitored} icon={Building2} color="gray" />
+        <StatCard label="Active" value={activeCount} icon={Home} color="yellow" />
+        <StatCard label="Pending" value={pendingCount} icon={Clock} color="orange" />
+        <StatCard label="Sold" value={soldCount} icon={DollarSign} color="red" />
       </div>
 
-      {/* Tab Content */}
-      {activeTab === 'dashboard' && (
-        <DashboardTab stats={stats} onViewAlert={(id) => {
-          setActiveTab('alerts');
-        }} />
-      )}
+      {/* ─── Filter Bar ─── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          {[
+            { value: '', label: 'All' },
+            { value: 'active', label: 'Active' },
+            { value: 'pending', label: 'Pending' },
+            { value: 'sold', label: 'Sold' },
+            { value: 'off_market', label: 'Off Market' },
+          ].map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setStatusFilter(f.value)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                statusFilter === f.value
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {f.label}
+              {f.value && policyCounts[f.value] ? ` (${policyCounts[f.value]})` : ''}
+            </button>
+          ))}
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search name, address..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 w-64"
+          />
+        </div>
+      </div>
 
-      {activeTab === 'alerts' && (
-        <AlertsTab
-          alerts={alerts}
-          counts={alertCounts}
-          filter={alertFilter}
-          onFilterChange={(f) => {
-            setAlertFilter(f);
-          }}
-          onAction={handleAlertAction}
-          onCreateServiceRequest={handleCreateServiceRequest}
+      {/* ─── Property Table ─── */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        {/* Table header */}
+        <div className="hidden md:grid grid-cols-[auto_1fr_1fr_100px_70px_90px_140px] gap-2 px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <div className="w-20">Status</div>
+          <div>Customer</div>
+          <div>Address</div>
+          <div className="text-right">Price</div>
+          <div className="text-right">DOM</div>
+          <div>Checked</div>
+          <div className="text-right">Actions</div>
+        </div>
+
+        {/* Table rows */}
+        {sortedPolicies.length === 0 ? (
+          <div className="px-4 py-12 text-center">
+            <Building2 className="mx-auto h-12 w-12 text-gray-300" />
+            <p className="mt-2 text-sm text-gray-500">No properties found</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {sortedPolicies.map((policy) => {
+              const policyAlerts = getAlertsForPolicy(policy.id);
+              const hasAlert = policyAlerts.length > 0;
+              const isExpanded = expandedRow === policy.id;
+
+              return (
+                <div key={policy.id}>
+                  {/* Main row */}
+                  <div
+                    className={`grid grid-cols-1 md:grid-cols-[auto_1fr_1fr_100px_70px_90px_140px] gap-2 px-4 py-3 items-center cursor-pointer hover:bg-gray-50 transition-colors ${
+                      hasAlert ? 'bg-amber-50/50' : ''
+                    }`}
+                    onClick={() => setExpandedRow(isExpanded ? null : policy.id)}
+                  >
+                    {/* Status */}
+                    <div className="w-20">
+                      <StatusBadge status={policy.currentStatus} />
+                      {hasAlert && (
+                        <span className="ml-1.5 inline-flex h-2 w-2 rounded-full bg-red-500" title={`${policyAlerts.length} unresolved alert${policyAlerts.length > 1 ? 's' : ''}`} />
+                      )}
+                    </div>
+
+                    {/* Customer */}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{policy.contactName}</p>
+                      <p className="text-xs text-gray-500 truncate">{policy.policyNumber || 'No policy #'}</p>
+                    </div>
+
+                    {/* Address */}
+                    <div className="min-w-0">
+                      <p className="text-sm text-gray-700 truncate">{policy.addressLine1}</p>
+                      <p className="text-xs text-gray-400 truncate">{policy.city}, {policy.state} {policy.zipCode}</p>
+                    </div>
+
+                    {/* Price */}
+                    <div className="text-right text-sm text-gray-700">
+                      {policy.listingPrice ? formatCurrency(policy.listingPrice) : '-'}
+                    </div>
+
+                    {/* DOM */}
+                    <div className="text-right text-sm text-gray-500">
+                      {policy.daysOnMarket != null ? `${policy.daysOnMarket}d` : '-'}
+                    </div>
+
+                    {/* Last Checked */}
+                    <div className="text-xs text-gray-500">
+                      {policy.lastCheckedAt ? formatDate(policy.lastCheckedAt) : 'Never'}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => handleCheckProperty(policy.id)}
+                        disabled={checkingProperty === policy.id}
+                        className="p-1.5 text-gray-400 hover:text-emerald-600 rounded hover:bg-emerald-50 transition-colors"
+                        title="Check now"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${checkingProperty === policy.id ? 'animate-spin' : ''}`} />
+                      </button>
+                      {policy.contactEmail && (
+                        <a
+                          href={`mailto:${policy.contactEmail}?subject=Regarding Your Property at ${policy.addressLine1}`}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50 transition-colors"
+                          title="Email customer"
+                        >
+                          <Mail className="h-4 w-4" />
+                        </a>
+                      )}
+                      {policy.azContactId && (
+                        <a
+                          href={`https://app.agencyzoom.com/customer/index?id=${policy.azContactId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 text-gray-400 hover:text-purple-600 rounded hover:bg-purple-50 transition-colors"
+                          title="Open in AgencyZoom"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      )}
+                      <ChevronRight className={`h-4 w-4 text-gray-300 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    </div>
+                  </div>
+
+                  {/* Expanded detail panel */}
+                  {isExpanded && (
+                    <ExpandedPropertyPanel
+                      policy={policy}
+                      alerts={policyAlerts}
+                      onAlertAction={handleAlertAction}
+                      onCreateServiceRequest={handleCreateServiceRequest}
+                      creatingTicket={creatingTicket}
+                      ticketMessage={ticketMessage}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Collapsible Activity Log ─── */}
+      <div className="bg-white rounded-lg border border-gray-200">
+        <button
+          onClick={() => { setShowActivity(!showActivity); if (!showActivity) fetchActivity(); }}
+          className="w-full px-4 py-3 flex items-center justify-between text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-gray-400" />
+            Recent Activity
+          </div>
+          {showActivity ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+        </button>
+        {showActivity && (
+          <div className="border-t border-gray-100 divide-y divide-gray-50">
+            {activityLogs.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-gray-400">No recent runs</div>
+            ) : (
+              activityLogs.map((log) => (
+                <div key={log.id} className="px-4 py-3 flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-3">
+                    <span className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                      log.status === 'completed' ? 'bg-green-500' :
+                      log.status === 'running' ? 'bg-blue-500 animate-pulse' :
+                      log.status === 'failed' ? 'bg-red-500' : 'bg-gray-400'
+                    }`} />
+                    <div>
+                      <span className="font-medium text-gray-900">
+                        {log.runType === 'scheduled' ? 'Scheduled' : 'Manual'} Run
+                      </span>
+                      <span className="text-gray-400 ml-2">{formatDateTime(log.startedAt)}</span>
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {log.policiesChecked} checked &bull; {log.alertsCreated} alerts
+                    {log.errorsEncountered > 0 && <span className="text-red-500"> &bull; {log.errorsEncountered} errors</span>}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Settings Slide-out ─── */}
+      {showSettings && settings && (
+        <SettingsPanel
+          settings={settings}
+          onSave={handleSaveSettings}
+          onClose={() => setShowSettings(false)}
         />
       )}
 
-      {activeTab === 'policies' && (
-        <PoliciesTab
-          policies={policies}
-          counts={policyCounts}
-          filter={policyFilter}
-          search={policySearch}
-          onFilterChange={setPolicyFilter}
-          onSearchChange={setPolicySearch}
-          onSearch={fetchPolicies}
-          onAdd={() => setShowAddPolicy(true)}
-          onCheck={handleCheckProperty}
-        />
-      )}
-
-      {activeTab === 'activity' && (
-        <ActivityTab logs={activityLogs} />
-      )}
-
-      {activeTab === 'settings' && settings && (
-        <SettingsTab settings={settings} onSave={handleSaveSettings} />
-      )}
-
-      {/* Add Policy Modal */}
+      {/* ─── Add Policy Modal ─── */}
       {showAddPolicy && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-full max-w-md bg-white rounded-lg shadow-xl p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Property to Monitor</h3>
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Policy Number *</label>
-                <input
-                  type="text"
-                  value={newPolicy.policyNumber}
-                  onChange={(e) => setNewPolicy({ ...newPolicy, policyNumber: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name *</label>
-                <input
-                  type="text"
-                  value={newPolicy.customerName}
-                  onChange={(e) => setNewPolicy({ ...newPolicy, customerName: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Property Address *</label>
-                <input
-                  type="text"
-                  value={newPolicy.propertyAddress}
-                  onChange={(e) => setNewPolicy({ ...newPolicy, propertyAddress: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-                />
-              </div>
+              <InputField label="Policy Number *" value={newPolicy.policyNumber} onChange={(v) => setNewPolicy({ ...newPolicy, policyNumber: v })} />
+              <InputField label="Customer Name *" value={newPolicy.customerName} onChange={(v) => setNewPolicy({ ...newPolicy, customerName: v })} />
+              <InputField label="Property Address *" value={newPolicy.propertyAddress} onChange={(v) => setNewPolicy({ ...newPolicy, propertyAddress: v })} />
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={newPolicy.customerEmail}
-                    onChange={(e) => setNewPolicy({ ...newPolicy, customerEmail: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                  <input
-                    type="tel"
-                    value={newPolicy.customerPhone}
-                    onChange={(e) => setNewPolicy({ ...newPolicy, customerPhone: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-                  />
-                </div>
+                <InputField label="Email" value={newPolicy.customerEmail} onChange={(v) => setNewPolicy({ ...newPolicy, customerEmail: v })} type="email" />
+                <InputField label="Phone" value={newPolicy.customerPhone} onChange={(v) => setNewPolicy({ ...newPolicy, customerPhone: v })} type="tel" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Policy Type</label>
@@ -732,16 +768,10 @@ export default function RiskMonitorPage() {
               </div>
             </div>
             <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => setShowAddPolicy(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
+              <button onClick={() => setShowAddPolicy(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
                 Cancel
               </button>
-              <button
-                onClick={handleAddPolicy}
-                className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
-              >
+              <button onClick={handleAddPolicy} className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700">
                 Add Property
               </button>
             </div>
@@ -756,981 +786,398 @@ export default function RiskMonitorPage() {
 // SUB-COMPONENTS
 // =============================================================================
 
-function DashboardTab({ stats, onViewAlert }: { stats: Stats | null; onViewAlert: (id: string) => void }) {
-  if (!stats) return null;
-
-  // Calculate some derived insights
-  const totalAtRisk = (stats.policies.byStatus.active || 0) + (stats.policies.byStatus.pending || 0);
-  const atRiskPercentage = stats.policies.total > 0
-    ? Math.round((totalAtRisk / stats.policies.total) * 100)
-    : 0;
+function StatCard({ label, value, icon: Icon, color }: { label: string; value: number; icon: any; color: string }) {
+  const colorMap: Record<string, { border: string; bg: string; text: string; iconBg: string }> = {
+    gray: { border: '', bg: '', text: 'text-gray-900', iconBg: 'bg-gray-100 text-gray-500' },
+    yellow: { border: 'border-l-4 border-l-yellow-400', bg: '', text: 'text-yellow-700', iconBg: 'bg-yellow-100 text-yellow-600' },
+    orange: { border: 'border-l-4 border-l-orange-400', bg: '', text: 'text-orange-700', iconBg: 'bg-orange-100 text-orange-600' },
+    red: { border: 'border-l-4 border-l-red-400', bg: '', text: 'text-red-700', iconBg: 'bg-red-100 text-red-600' },
+  };
+  const c = colorMap[color] || colorMap.gray;
 
   return (
-    <div className="space-y-6">
-      {/* Stats Cards - Enhanced with insights */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Total Properties</p>
-              <p className="text-2xl font-semibold text-gray-900">{stats.policies.total}</p>
-              <p className="text-xs text-gray-400 mt-1">
-                {stats.policies.byStatus.off_market || 0} off market
-              </p>
-            </div>
-            <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center">
-              <Building2 className="h-6 w-6 text-gray-500" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg border border-l-4 border-l-blue-500 border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Active Listings</p>
-              <p className="text-2xl font-semibold text-blue-600">{stats.policies.byStatus.active || 0}</p>
-              <p className="text-xs text-blue-600 mt-1">
-                Monitor for changes
-              </p>
-            </div>
-            <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
-              <Home className="h-6 w-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg border border-l-4 border-l-amber-500 border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Pending Sales</p>
-              <p className="text-2xl font-semibold text-amber-600">{stats.policies.byStatus.pending || 0}</p>
-              <p className="text-xs text-amber-600 mt-1">
-                Needs attention
-              </p>
-            </div>
-            <div className="h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center">
-              <Clock className="h-6 w-6 text-amber-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg border border-l-4 border-l-red-500 border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Unresolved Alerts</p>
-              <p className="text-2xl font-semibold text-red-600">{stats.alerts.unresolved}</p>
-              <p className="text-xs text-red-600 mt-1">
-                {stats.alerts.byStatus?.new || 0} new
-              </p>
-            </div>
-            <div className="h-12 w-12 rounded-full bg-red-100 flex items-center justify-center">
-              <AlertTriangle className="h-6 w-6 text-red-600" />
-            </div>
-          </div>
-        </div>
+    <div className={`bg-white rounded-lg border border-gray-200 ${c.border} p-4 flex items-center justify-between`}>
+      <div>
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{label}</p>
+        <p className={`text-2xl font-semibold mt-0.5 ${c.text}`}>{value}</p>
       </div>
-
-      {/* At-Risk Summary */}
-      {totalAtRisk > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600" />
-            <div>
-              <p className="text-sm font-medium text-amber-800">
-                {totalAtRisk} {totalAtRisk === 1 ? 'property' : 'properties'} at risk ({atRiskPercentage}% of portfolio)
-              </p>
-              <p className="text-xs text-amber-600 mt-0.5">
-                Properties with active listings or pending sales may need policy review
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Recent Alerts - Enhanced with customer info */}
-      <div className="bg-white rounded-lg border border-gray-200">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-900">Recent Alerts</h3>
-          {stats.alerts.recent.length > 0 && (
-            <button
-              onClick={() => onViewAlert('')}
-              className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-            >
-              View All
-            </button>
-          )}
-        </div>
-        <div className="divide-y divide-gray-100">
-          {stats.alerts.recent.length === 0 ? (
-            <div className="px-4 py-8 text-center">
-              <Shield className="mx-auto h-10 w-10 text-gray-300" />
-              <p className="mt-2 text-sm text-gray-500">No recent alerts</p>
-              <p className="text-xs text-gray-400">Properties are being monitored</p>
-            </div>
-          ) : (
-            stats.alerts.recent.map((alert) => (
-              <div
-                key={alert.id}
-                className={`px-4 py-3 flex items-center justify-between hover:bg-gray-50 border-l-4 ${
-                  alert.priority === '1' ? 'border-l-red-500' :
-                  alert.priority === '2' ? 'border-l-amber-500' :
-                  'border-l-blue-500'
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <User className="h-8 w-8 p-1.5 bg-gray-100 rounded-full text-gray-500 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {alert.policy?.contactName || 'Unknown Customer'}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">{alert.title}</p>
-                    <p className="text-xs text-gray-400">
-                      {new Date(alert.createdAt).toLocaleDateString()} • {alert.policy?.policyNumber || 'N/A'}
-                    </p>
-                  </div>
-                </div>
-                <span className={`px-2 py-1 text-xs font-medium rounded-full flex-shrink-0 ml-2 ${
-                  alert.status === 'new' ? 'bg-red-100 text-red-700' :
-                  alert.status === 'acknowledged' ? 'bg-yellow-100 text-yellow-700' :
-                  alert.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
-                  'bg-gray-100 text-gray-700'
-                }`}>
-                  {alert.status.replace('_', ' ')}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Scheduler Status */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Scheduler Status</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <p className="text-gray-500">Status</p>
-            <p className={`font-medium flex items-center gap-1.5 ${stats.scheduler.enabled ? 'text-green-600' : 'text-gray-600'}`}>
-              <span className={`h-2 w-2 rounded-full ${stats.scheduler.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
-              {stats.scheduler.enabled ? 'Enabled' : 'Disabled'}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500">Last Run</p>
-            <p className="font-medium text-gray-900">
-              {stats.scheduler.lastRunAt ? new Date(stats.scheduler.lastRunAt).toLocaleDateString() : 'Never'}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500">Properties Checked</p>
-            <p className="font-medium text-gray-900">{stats.scheduler.lastRunPropertiesChecked}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Needs Check</p>
-            <p className={`font-medium ${stats.policies.needsCheck > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
-              {stats.policies.needsCheck}
-            </p>
-          </div>
-        </div>
+      <div className={`h-10 w-10 rounded-full flex items-center justify-center ${c.iconBg}`}>
+        <Icon className="h-5 w-5" />
       </div>
     </div>
   );
 }
 
-function AlertsTab({
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { dot: string; bg: string; text: string; label: string }> = {
+    active: { dot: 'bg-yellow-400', bg: 'bg-yellow-50', text: 'text-yellow-700', label: 'Active' },
+    pending: { dot: 'bg-orange-400', bg: 'bg-orange-50', text: 'text-orange-700', label: 'Pending' },
+    sold: { dot: 'bg-red-400', bg: 'bg-red-50', text: 'text-red-700', label: 'Sold' },
+    off_market: { dot: 'bg-gray-300', bg: 'bg-gray-50', text: 'text-gray-600', label: 'Off Market' },
+    unknown: { dot: 'bg-gray-300', bg: 'bg-gray-50', text: 'text-gray-500', label: 'Unknown' },
+  };
+  const c = config[status] || config.unknown;
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded-full ${c.bg} ${c.text}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
+      {c.label}
+    </span>
+  );
+}
+
+function ExpandedPropertyPanel({
+  policy,
   alerts,
-  counts,
-  filter,
-  onFilterChange,
-  onAction,
+  onAlertAction,
   onCreateServiceRequest,
+  creatingTicket,
+  ticketMessage,
 }: {
+  policy: PolicyRecord;
   alerts: Alert[];
-  counts: Record<string, number>;
-  filter: string;
-  onFilterChange: (f: string) => void;
-  onAction: (ids: string[], action: string) => void;
-  onCreateServiceRequest: (alertId: string) => Promise<{ success: boolean; message: string }>;
+  onAlertAction: (ids: string[], action: string) => void;
+  onCreateServiceRequest: (id: string) => void;
+  creatingTicket: string | null;
+  ticketMessage: { alertId: string; success: boolean; message: string } | null;
 }) {
-  const [creatingTicket, setCreatingTicket] = useState<string | null>(null);
-  const [ticketMessage, setTicketMessage] = useState<{ alertId: string; success: boolean; message: string } | null>(null);
-  const statuses = ['', 'new', 'acknowledged', 'in_progress', 'resolved', 'dismissed'];
-
-  const handleCreateTicket = async (alertId: string) => {
-    setCreatingTicket(alertId);
-    setTicketMessage(null);
-    try {
-      const result = await onCreateServiceRequest(alertId);
-      setTicketMessage({ alertId, ...result });
-      // Auto-hide message after 5 seconds
-      setTimeout(() => setTicketMessage(null), 5000);
-    } finally {
-      setCreatingTicket(null);
-    }
-  };
-
-  // Format phone number for display
-  const formatPhone = (phone: string) => {
-    const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 10) {
-      return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
-    }
-    return phone;
-  };
-
-  // Format currency
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
-
-  // Get priority border color
-  const getPriorityBorderColor = (priority: string) => {
-    switch (priority) {
-      case '1':
-        return 'border-l-red-500'; // High - Urgent (sold)
-      case '2':
-        return 'border-l-amber-500'; // Medium - Needs attention (pending)
-      case '3':
-        return 'border-l-blue-500'; // Low - Monitor (active listing)
-      default:
-        return 'border-l-gray-300';
-    }
-  };
-
-  // Get priority label
-  const getPriorityLabel = (priority: string) => {
-    switch (priority) {
-      case '1':
-        return { label: 'Urgent', color: 'bg-red-100 text-red-700' };
-      case '2':
-        return { label: 'High', color: 'bg-amber-100 text-amber-700' };
-      case '3':
-        return { label: 'Medium', color: 'bg-blue-100 text-blue-700' };
-      default:
-        return { label: 'Low', color: 'bg-gray-100 text-gray-700' };
-    }
-  };
-
   return (
-    <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {statuses.map((status) => (
-          <button
-            key={status}
-            onClick={() => onFilterChange(status)}
-            className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-              filter === status
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {status || 'All'}
-            {status && counts[status] ? ` (${counts[status]})` : ''}
-          </button>
-        ))}
-      </div>
-
-      {/* Alerts List */}
-      <div className="space-y-3">
-        {alerts.length === 0 ? (
-          <div className="bg-white rounded-lg border border-gray-200 px-4 py-12 text-center">
-            <Shield className="mx-auto h-12 w-12 text-gray-300" />
-            <p className="mt-2 text-sm text-gray-500">No alerts found</p>
-          </div>
-        ) : (
-          alerts.map((alert) => {
-            const priorityInfo = getPriorityLabel(alert.priority);
-            return (
-              <div
-                key={alert.id}
-                className={`bg-white rounded-lg border border-gray-200 border-l-4 ${getPriorityBorderColor(alert.priority)} overflow-hidden`}
+    <div className="px-4 pb-4 bg-gray-50 border-t border-gray-100">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3">
+        {/* Contact Info */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</h4>
+          <div className="space-y-1.5 text-sm">
+            <div className="flex items-center gap-2 text-gray-700">
+              <User className="h-3.5 w-3.5 text-gray-400" />
+              {policy.contactName}
+            </div>
+            {policy.contactPhone && (
+              <a href={`tel:${policy.contactPhone}`} className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700">
+                <Phone className="h-3.5 w-3.5" />
+                {formatPhoneNum(policy.contactPhone)}
+              </a>
+            )}
+            {policy.contactEmail && (
+              <a href={`mailto:${policy.contactEmail}`} className="flex items-center gap-2 text-blue-600 hover:text-blue-700 truncate">
+                <Mail className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="truncate">{policy.contactEmail}</span>
+              </a>
+            )}
+            {policy.azContactId && (
+              <a
+                href={`https://app.agencyzoom.com/customer/index?id=${policy.azContactId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-purple-600 hover:text-purple-700"
               >
-                {/* Header with customer name and status */}
-                <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <User className="h-5 w-5 text-gray-400" />
-                    <div>
-                      <p className="font-semibold text-gray-900">
-                        {alert.policy?.contactName || 'Unknown Customer'}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Policy: {alert.policy?.policyNumber || 'N/A'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${priorityInfo.color}`}>
-                      {priorityInfo.label}
-                    </span>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                      alert.status === 'new' ? 'bg-red-100 text-red-700' :
-                      alert.status === 'acknowledged' ? 'bg-yellow-100 text-yellow-700' :
-                      alert.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
-                      alert.status === 'resolved' ? 'bg-green-100 text-green-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      {alert.status.replace('_', ' ')}
-                    </span>
-                  </div>
-                </div>
+                <ExternalLink className="h-3.5 w-3.5" />
+                AgencyZoom Profile
+              </a>
+            )}
+          </div>
+        </div>
 
-                {/* Alert content */}
-                <div className="px-4 py-3">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className={`h-5 w-5 mt-0.5 flex-shrink-0 ${
-                      alert.priority === '1' ? 'text-red-500' :
-                      alert.priority === '2' ? 'text-amber-500' :
-                      'text-blue-500'
-                    }`} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{alert.title}</p>
-                      <p className="mt-1 text-sm text-gray-600">{alert.description}</p>
-
-                      {/* Property info */}
-                      {alert.policy && (
-                        <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
-                          <div className="flex items-center gap-1.5 text-gray-600">
-                            <MapPin className="h-4 w-4 text-gray-400" />
-                            <span>
-                              {alert.policy.addressLine1}
-                              {alert.policy.city && `, ${alert.policy.city}`}
-                              {alert.policy.state && `, ${alert.policy.state}`}
-                              {alert.policy.zipCode && ` ${alert.policy.zipCode}`}
-                            </span>
-                          </div>
-                          {alert.policy.listingPrice && alert.policy.listingPrice > 0 && (
-                            <div className="flex items-center gap-1.5 text-gray-600">
-                              <DollarSign className="h-4 w-4 text-gray-400" />
-                              <span className="font-medium">{formatCurrency(alert.policy.listingPrice)}</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <p className="mt-2 text-xs text-gray-400">
-                        Detected: {new Date(alert.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Ticket status message */}
-                {ticketMessage?.alertId === alert.id && (
-                  <div className={`px-4 py-2 text-xs ${ticketMessage.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                    {ticketMessage.message}
-                  </div>
-                )}
-
-                {/* Quick Actions Footer */}
-                <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
-                  {/* Contact buttons */}
-                  <div className="flex items-center gap-2">
-                    {alert.policy?.contactPhone && (
-                      <a
-                        href={`tel:${alert.policy.contactPhone}`}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-100 rounded-lg hover:bg-emerald-200 transition-colors"
-                      >
-                        <Phone className="h-3.5 w-3.5" />
-                        {formatPhone(alert.policy.contactPhone)}
-                      </a>
-                    )}
-                    {alert.policy?.contactEmail && (
-                      <a
-                        href={`mailto:${alert.policy.contactEmail}?subject=Regarding Your Property at ${alert.policy?.addressLine1 || ''}`}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors"
-                      >
-                        <Mail className="h-3.5 w-3.5" />
-                        Email
-                      </a>
-                    )}
-                    {/* Create Service Request button - show for active/pending status alerts with AZ customer ID */}
-                    {alert.policy?.azContactId && !alert.serviceTicketId &&
-                     (alert.newStatus === 'active' || alert.newStatus === 'pending') &&
-                     alert.status !== 'resolved' && alert.status !== 'dismissed' && (
-                      <button
-                        onClick={() => handleCreateTicket(alert.id)}
-                        disabled={creatingTicket === alert.id}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-100 rounded-lg hover:bg-purple-200 transition-colors disabled:opacity-50"
-                        title="Create a service request in AgencyZoom"
-                      >
-                        <FileText className={`h-3.5 w-3.5 ${creatingTicket === alert.id ? 'animate-pulse' : ''}`} />
-                        {creatingTicket === alert.id ? 'Creating...' : 'Service Request'}
-                      </button>
-                    )}
-                    {/* Show linked ticket ID if already created */}
-                    {alert.serviceTicketId && (
-                      <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg">
-                        <FileText className="h-3.5 w-3.5" />
-                        Ticket #{alert.serviceTicketId}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Status actions */}
-                  {alert.status !== 'resolved' && alert.status !== 'dismissed' && (
-                    <div className="flex items-center gap-2">
-                      {alert.status === 'new' && (
-                        <button
-                          onClick={() => onAction([alert.id], 'acknowledge')}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-                        >
-                          <Eye className="h-3.5 w-3.5" /> Acknowledge
-                        </button>
-                      )}
-                      {(alert.status === 'new' || alert.status === 'acknowledged') && (
-                        <button
-                          onClick={() => onAction([alert.id], 'start')}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-50"
-                        >
-                          <Play className="h-3.5 w-3.5" /> Working
-                        </button>
-                      )}
-                      <button
-                        onClick={() => onAction([alert.id], 'resolve')}
-                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
-                      >
-                        <Check className="h-3.5 w-3.5" /> Resolve
-                      </button>
-                      <button
-                        onClick={() => onAction([alert.id], 'dismiss')}
-                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800"
-                        title="Dismiss as false positive"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
+        {/* Property Details */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Property</h4>
+          <div className="space-y-1.5 text-sm text-gray-700">
+            <div className="flex items-center gap-2">
+              <MapPin className="h-3.5 w-3.5 text-gray-400" />
+              {policy.addressLine1}{policy.addressLine2 ? `, ${policy.addressLine2}` : ''}
+            </div>
+            <p className="pl-5 text-xs text-gray-500">{policy.city}, {policy.state} {policy.zipCode}</p>
+            {policy.carrier && <p className="text-xs text-gray-500">Carrier: {policy.carrier}</p>}
+            {policy.policyType && <p className="text-xs text-gray-500">Type: {policy.policyType}</p>}
+            {policy.floodZone && (
+              <div className="pt-1">
+                <FloodZoneBadge zone={policy.floodZone} risk={'Unknown' as FloodRisk} />
               </div>
-            );
-          })
-        )}
+            )}
+          </div>
+        </div>
+
+        {/* Listing Details */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Listing</h4>
+          <div className="space-y-1.5 text-sm text-gray-700">
+            {policy.listingPrice != null && policy.listingPrice > 0 && (
+              <p>List Price: <span className="font-medium">{formatCurrencyNum(policy.listingPrice)}</span></p>
+            )}
+            {policy.lastSalePrice != null && policy.lastSalePrice > 0 && (
+              <p>Sale Price: <span className="font-medium">{formatCurrencyNum(policy.lastSalePrice)}</span></p>
+            )}
+            {policy.listingDate && <p className="text-xs text-gray-500">Listed: {new Date(policy.listingDate).toLocaleDateString()}</p>}
+            {policy.lastSaleDate && <p className="text-xs text-gray-500">Sold: {new Date(policy.lastSaleDate).toLocaleDateString()}</p>}
+            {policy.daysOnMarket != null && <p className="text-xs text-gray-500">Days on Market: {policy.daysOnMarket}</p>}
+            {policy.estimatedValue != null && policy.estimatedValue > 0 && (
+              <p className="text-xs text-gray-500">Est. Value: {formatCurrencyNum(policy.estimatedValue)}</p>
+            )}
+            {policy.lastCheckedAt && (
+              <p className="text-xs text-gray-400 pt-1">Last checked: {new Date(policy.lastCheckedAt).toLocaleString()}</p>
+            )}
+            {policy.checkErrorCount != null && policy.checkErrorCount > 0 && (
+              <p className="text-xs text-red-500">{policy.checkErrorCount} consecutive errors</p>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
-  );
-}
 
-function PoliciesTab({
-  policies,
-  counts,
-  filter,
-  search,
-  onFilterChange,
-  onSearchChange,
-  onSearch,
-  onAdd,
-  onCheck,
-}: {
-  policies: Policy[];
-  counts: Record<string, number>;
-  filter: string;
-  search: string;
-  onFilterChange: (f: string) => void;
-  onSearchChange: (s: string) => void;
-  onSearch: () => void;
-  onAdd: () => void;
-  onCheck: (id: string) => void;
-}) {
-  const statuses = ['', 'off_market', 'active', 'pending', 'sold'];
-
-  return (
-    <div className="space-y-4">
-      {/* Search & Filters */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {statuses.map((status) => (
-            <button
-              key={status}
-              onClick={() => onFilterChange(status)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-                filter === status
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+      {/* Inline Alerts */}
+      {alerts.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Unresolved Alerts</h4>
+          {alerts.map((alert) => (
+            <div
+              key={alert.id}
+              className={`rounded-lg border p-3 ${
+                alert.priority === '1' ? 'border-red-200 bg-red-50' :
+                alert.priority === '2' ? 'border-amber-200 bg-amber-50' :
+                'border-blue-200 bg-blue-50'
               }`}
             >
-              {status || 'All'}
-              {status && counts[status] ? ` (${counts[status]})` : ''}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={search}
-              onChange={(e) => onSearchChange(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && onSearch()}
-              className="pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-            />
-          </div>
-          <button
-            onClick={onAdd}
-            className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
-          >
-            <Plus className="h-4 w-4" /> Add Property
-          </button>
-        </div>
-      </div>
-
-      {/* Policies List */}
-      <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-        {policies.length === 0 ? (
-          <div className="px-4 py-12 text-center">
-            <Building2 className="mx-auto h-12 w-12 text-gray-300" />
-            <p className="mt-2 text-sm text-gray-500">No properties being monitored</p>
-          </div>
-        ) : (
-          policies.map((policy) => (
-            <div key={policy.id} className="px-4 py-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{policy.customerName}</p>
-                  <p className="text-sm text-gray-500">{policy.propertyAddress}</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <p className="text-xs text-gray-400">
-                      Policy: {policy.policyNumber} • {policy.policyType}
-                    </p>
-                    {policy.floodZone && (
-                      <FloodZoneBadge
-                        zone={policy.floodZone}
-                        risk={(policy.floodRisk as FloodRisk) || 'Unknown'}
-                      />
-                    )}
-                  </div>
-                  {policy.lastCheckedAt && (
-                    <p className="text-xs text-gray-400">
-                      Last checked: {new Date(policy.lastCheckedAt).toLocaleDateString()}
-                    </p>
-                  )}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{alert.title}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {new Date(alert.createdAt).toLocaleString()} &bull;{' '}
+                    <span className={
+                      alert.status === 'new' ? 'text-red-600 font-medium' :
+                      alert.status === 'acknowledged' ? 'text-yellow-600' :
+                      'text-blue-600'
+                    }>
+                      {alert.status.replace('_', ' ')}
+                    </span>
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    policy.currentStatus === 'off_market' ? 'bg-gray-100 text-gray-700' :
-                    policy.currentStatus === 'active' ? 'bg-yellow-100 text-yellow-700' :
-                    policy.currentStatus === 'pending' ? 'bg-orange-100 text-orange-700' :
-                    policy.currentStatus === 'sold' ? 'bg-red-100 text-red-700' :
-                    'bg-gray-100 text-gray-700'
-                  }`}>
-                    {policy.currentStatus || 'unknown'}
-                  </span>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {alert.status === 'new' && (
+                    <button
+                      onClick={() => onAlertAction([alert.id], 'acknowledge')}
+                      className="px-2 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                    >
+                      Ack
+                    </button>
+                  )}
                   <button
-                    onClick={() => onCheck(policy.id)}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
-                    title="Check now"
+                    onClick={() => onAlertAction([alert.id], 'resolve')}
+                    className="px-2 py-1 text-xs font-medium text-white bg-emerald-600 rounded hover:bg-emerald-700"
                   >
-                    <RefreshCw className="h-4 w-4" />
+                    Resolve
+                  </button>
+                  {alert.policy?.azContactId && !alert.serviceTicketId &&
+                   (alert.newStatus === 'active' || alert.newStatus === 'pending') && (
+                    <button
+                      onClick={() => onCreateServiceRequest(alert.id)}
+                      disabled={creatingTicket === alert.id}
+                      className="px-2 py-1 text-xs font-medium text-purple-700 bg-purple-100 rounded hover:bg-purple-200 disabled:opacity-50"
+                    >
+                      {creatingTicket === alert.id ? '...' : 'SR'}
+                    </button>
+                  )}
+                  {alert.serviceTicketId && (
+                    <span className="px-2 py-1 text-xs text-gray-500 bg-gray-100 rounded">
+                      #{alert.serviceTicketId}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => onAlertAction([alert.id], 'dismiss')}
+                    className="p-1 text-gray-400 hover:text-gray-600"
+                    title="Dismiss"
+                  >
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
+              {/* Ticket creation message */}
+              {ticketMessage?.alertId === alert.id && (
+                <p className={`mt-1.5 text-xs ${ticketMessage.success ? 'text-green-600' : 'text-red-600'}`}>
+                  {ticketMessage.message}
+                </p>
+              )}
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function ActivityTab({ logs }: { logs: ActivityLog[] }) {
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-        {logs.length === 0 ? (
-          <div className="px-4 py-12 text-center">
-            <Activity className="mx-auto h-12 w-12 text-gray-300" />
-            <p className="mt-2 text-sm text-gray-500">No activity logs yet</p>
-          </div>
-        ) : (
-          logs.map((log) => (
-            <div key={log.id} className="px-4 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`h-2 w-2 rounded-full ${
-                    log.status === 'completed' ? 'bg-green-500' :
-                    log.status === 'running' ? 'bg-blue-500 animate-pulse' :
-                    log.status === 'failed' ? 'bg-red-500' :
-                    'bg-gray-400'
-                  }`} />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {log.runType === 'scheduled' ? 'Scheduled Run' : 'Manual Run'}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(log.startedAt).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right text-sm">
-                  <p className="text-gray-900">{log.propertiesChecked} checked</p>
-                  <p className="text-xs text-gray-500">
-                    {log.alertsCreated} alerts • {log.errorCount} errors
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface DebugLog {
-  id: string;
-  runId: string;
-  runType: string;
-  status: string;
-  startedAt: string;
-  completedAt?: string;
-  policiesChecked: number;
-  alertsCreated: number;
-  errorsEncountered: number;
-  errorMessage?: string;
-}
-
-interface DebugEvent {
-  id: string;
-  eventType: string;
-  description: string;
-  policyId?: string;
-  createdAt: string;
-}
-
-function SettingsTab({
+function SettingsPanel({
   settings,
   onSave,
+  onClose,
 }: {
-  settings: Settings;
-  onSave: (updates: Partial<Settings>) => void;
+  settings: SettingsData;
+  onSave: (updates: Partial<SettingsData>) => void;
+  onClose: () => void;
 }) {
-  const [localSettings, setLocalSettings] = useState(settings);
-  const [showLogs, setShowLogs] = useState(false);
-  const [debugLogs, setDebugLogs] = useState<DebugLog[]>([]);
-  const [selectedLog, setSelectedLog] = useState<string | null>(null);
-  const [logEvents, setLogEvents] = useState<DebugEvent[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState(false);
-  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [local, setLocal] = useState(settings);
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  const fetchDebugLogs = async () => {
-    setLoadingLogs(true);
-    try {
-      const res = await fetch('/api/risk-monitor/activity?limit=10');
-      const data = await res.json();
-      if (data.success) {
-        setDebugLogs(data.logs);
-      }
-    } catch (err) {
-      console.error('Error fetching logs:', err);
-    }
-    setLoadingLogs(false);
-  };
-
-  const fetchLogEvents = async (logId: string) => {
-    setLoadingEvents(true);
-    setSelectedLog(logId);
-    try {
-      const res = await fetch(`/api/risk-monitor/activity?logId=${logId}`);
-      const data = await res.json();
-      if (data.success) {
-        setLogEvents(data.events || []);
-      }
-    } catch (err) {
-      console.error('Error fetching events:', err);
-    }
-    setLoadingEvents(false);
-  };
-
-  const handleToggle = (key: keyof Settings) => {
-    const newValue = !localSettings[key];
-    setLocalSettings({ ...localSettings, [key]: newValue });
+  const handleToggle = (key: keyof SettingsData) => {
+    const newValue = !local[key];
+    setLocal({ ...local, [key]: newValue });
     onSave({ [key]: newValue });
   };
 
-  const handleChange = (key: keyof Settings, value: any) => {
-    setLocalSettings({ ...localSettings, [key]: value });
+  const handleChange = (key: keyof SettingsData, value: any) => {
+    setLocal({ ...local, [key]: value });
   };
 
   const handleSave = () => {
-    onSave(localSettings);
+    onSave(local);
+    onClose();
   };
 
   return (
-    <div className="space-y-6">
-      {/* Scheduler Settings */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Scheduler Settings</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Enable Scheduler</p>
-              <p className="text-xs text-gray-500">Automatically check properties on schedule</p>
-            </div>
-            <button
-              onClick={() => handleToggle('schedulerEnabled')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                localSettings.schedulerEnabled ? 'bg-emerald-600' : 'bg-gray-200'
-              }`}
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                localSettings.schedulerEnabled ? 'translate-x-6' : 'translate-x-1'
-              }`} />
-            </button>
-          </div>
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Check Interval (days)</label>
-              <input
-                type="number"
-                min="1"
-                max="30"
-                value={localSettings.checkIntervalDays}
-                onChange={(e) => handleChange('checkIntervalDays', parseInt(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Max Properties Per Run</label>
-              <input
-                type="number"
-                min="10"
-                max="500"
-                value={localSettings.maxPropertiesPerRun}
-                onChange={(e) => handleChange('maxPropertiesPerRun', parseInt(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Window Start (hour CST)</label>
-              <input
-                type="number"
-                min="0"
-                max="23"
-                value={localSettings.windowStartHour}
-                onChange={(e) => handleChange('windowStartHour', parseInt(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Window End (hour CST)</label>
-              <input
-                type="number"
-                min="0"
-                max="23"
-                value={localSettings.windowEndHour}
-                onChange={(e) => handleChange('windowEndHour', parseInt(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Data Sources */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Data Sources</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-900">RPR (Realtors Property Resource)</p>
-              <p className="text-xs text-gray-500">
-                {settings.rprConfigured ? '✓ Credentials configured' : '✗ Credentials not configured'}
-              </p>
-            </div>
-            <button
-              onClick={() => handleToggle('rprEnabled')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                localSettings.rprEnabled ? 'bg-emerald-600' : 'bg-gray-200'
-              }`}
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                localSettings.rprEnabled ? 'translate-x-6' : 'translate-x-1'
-              }`} />
-            </button>
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-900">MMI (Market Data)</p>
-              <p className="text-xs text-gray-500">
-                {settings.mmiConfigured ? '✓ Credentials configured' : '✗ Credentials not configured'}
-              </p>
-            </div>
-            <button
-              onClick={() => handleToggle('mmiEnabled')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                localSettings.mmiEnabled ? 'bg-emerald-600' : 'bg-gray-200'
-              }`}
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                localSettings.mmiEnabled ? 'translate-x-6' : 'translate-x-1'
-              }`} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Email Notifications */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Email Notifications</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Enable Email Alerts</p>
-              <p className="text-xs text-gray-500">Send email for high-priority alerts</p>
-            </div>
-            <button
-              onClick={() => handleToggle('emailAlertsEnabled')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                localSettings.emailAlertsEnabled ? 'bg-emerald-600' : 'bg-gray-200'
-              }`}
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                localSettings.emailAlertsEnabled ? 'translate-x-6' : 'translate-x-1'
-              }`} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Debug Logs */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Debug Logs</h3>
-          <button
-            onClick={() => {
-              setShowLogs(!showLogs);
-              if (!showLogs && debugLogs.length === 0) {
-                fetchDebugLogs();
-              }
-            }}
-            className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
-          >
-            {showLogs ? 'Hide Logs' : 'View Logs'}
+      {/* Panel */}
+      <div
+        ref={panelRef}
+        className="fixed right-0 top-0 z-50 h-full w-full max-w-md bg-white shadow-xl overflow-y-auto"
+      >
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Settings</h2>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {showLogs && (
-          <div className="space-y-4">
-            {/* Refresh button */}
-            <div className="flex justify-end">
-              <button
-                onClick={fetchDebugLogs}
-                disabled={loadingLogs}
-                className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
-              >
-                <RefreshCw className={`h-3 w-3 ${loadingLogs ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
+        <div className="p-6 space-y-6">
+          {/* Scheduler */}
+          <Section title="Scheduler">
+            <ToggleRow label="Enable Scheduler" description="Automatically check properties on schedule" checked={local.schedulerEnabled} onToggle={() => handleToggle('schedulerEnabled')} />
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <NumberField label="Recheck Interval (days)" value={local.checkIntervalDays} min={1} max={30} onChange={(v) => handleChange('checkIntervalDays', v)} />
+              <NumberField label="Max Per Run" value={local.maxPropertiesPerRun} min={10} max={500} onChange={(v) => handleChange('maxPropertiesPerRun', v)} />
             </div>
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <NumberField label="Start Hour (CST)" value={local.windowStartHour} min={0} max={23} onChange={(v) => handleChange('windowStartHour', v)} />
+              <NumberField label="End Hour (CST)" value={local.windowEndHour} min={0} max={23} onChange={(v) => handleChange('windowEndHour', v)} />
+            </div>
+          </Section>
 
-            {/* Logs list */}
-            {loadingLogs ? (
-              <div className="text-center py-4 text-gray-500">Loading logs...</div>
-            ) : debugLogs.length === 0 ? (
-              <div className="text-center py-4 text-gray-500">No logs found</div>
-            ) : (
-              <div className="space-y-2">
-                {debugLogs.map((log) => (
-                  <div
-                    key={log.id}
-                    className={`border rounded-lg p-3 cursor-pointer transition-colors ${
-                      selectedLog === log.id
-                        ? 'border-emerald-500 bg-emerald-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    onClick={() => fetchLogEvents(log.id)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className={`h-2 w-2 rounded-full ${
-                          log.status === 'completed' ? 'bg-green-500' :
-                          log.status === 'failed' ? 'bg-red-500' :
-                          log.status === 'running' ? 'bg-blue-500 animate-pulse' :
-                          'bg-gray-400'
-                        }`} />
-                        <span className="text-sm font-medium text-gray-900">
-                          {log.runType === 'manual' ? 'Manual Run' : 'Scheduled Run'}
-                        </span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          log.status === 'completed' ? 'bg-green-100 text-green-700' :
-                          log.status === 'failed' ? 'bg-red-100 text-red-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {log.status}
-                        </span>
-                      </div>
-                      <span className="text-xs text-gray-500">
-                        {new Date(log.startedAt).toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      {log.policiesChecked} checked • {log.alertsCreated} alerts • {log.errorsEncountered} errors
-                    </div>
-                    {log.errorMessage && (
-                      <div className="mt-2 p-2 bg-red-50 rounded text-xs text-red-700 font-mono overflow-x-auto">
-                        {log.errorMessage}
-                      </div>
-                    )}
-                  </div>
-                ))}
+          {/* Email */}
+          <Section title="Email Notifications">
+            <ToggleRow label="Email Alerts" description="Send email for property status changes" checked={local.emailAlertsEnabled} onToggle={() => handleToggle('emailAlertsEnabled')} />
+            {local.emailAlertsEnabled && (
+              <div className="mt-3">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Static Recipients</label>
+                <textarea
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
+                  rows={3}
+                  placeholder="one@example.com&#10;two@example.com"
+                  value={(local.alertEmailAddresses || []).join('\n')}
+                  onChange={(e) => handleChange('alertEmailAddresses', e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))}
+                />
+                <p className="text-xs text-gray-400 mt-1">CSR and Producer on the account are also emailed automatically.</p>
               </div>
             )}
+          </Section>
 
-            {/* Selected log events */}
-            {selectedLog && (
-              <div className="mt-4 border-t pt-4">
-                <h4 className="text-sm font-medium text-gray-900 mb-2">Run Events</h4>
-                {loadingEvents ? (
-                  <div className="text-center py-4 text-gray-500">Loading events...</div>
-                ) : logEvents.length === 0 ? (
-                  <div className="text-center py-4 text-gray-500 text-sm">No events recorded for this run</div>
-                ) : (
-                  <div className="bg-gray-900 rounded-lg p-3 max-h-64 overflow-y-auto">
-                    <div className="space-y-1 font-mono text-xs">
-                      {logEvents.map((event) => (
-                        <div key={event.id} className="flex gap-2">
-                          <span className="text-gray-500 shrink-0">
-                            {new Date(event.createdAt).toLocaleTimeString()}
-                          </span>
-                          <span className={`shrink-0 ${
-                            event.eventType === 'error' ? 'text-red-400' :
-                            event.eventType === 'alert_created' ? 'text-yellow-400' :
-                            event.eventType === 'run_started' ? 'text-blue-400' :
-                            event.eventType === 'run_completed' ? 'text-green-400' :
-                            'text-gray-400'
-                          }`}>
-                            [{event.eventType}]
-                          </span>
-                          <span className="text-gray-300">{event.description}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+          {/* Data Sources */}
+          <Section title="Data Sources">
+            <ToggleRow
+              label="RPR (Realtors Property Resource)"
+              description={settings.rprConfigured ? 'Credentials configured' : 'Not configured'}
+              checked={local.rprEnabled}
+              onToggle={() => handleToggle('rprEnabled')}
+            />
+            <ToggleRow
+              label="MMI (Market Data)"
+              description={settings.mmiConfigured ? 'Credentials configured' : 'Not configured'}
+              checked={local.mmiEnabled}
+              onToggle={() => handleToggle('mmiEnabled')}
+              className="mt-3"
+            />
+          </Section>
+        </div>
 
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
-        >
-          Save Settings
-        </button>
+        {/* Save Footer */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4">
+          <button
+            onClick={handleSave}
+            className="w-full px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+          >
+            Save Settings
+          </button>
+        </div>
       </div>
+    </>
+  );
+}
+
+// =============================================================================
+// SMALL SHARED COMPONENTS
+// =============================================================================
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>
+      {children}
     </div>
   );
+}
+
+function ToggleRow({ label, description, checked, onToggle, className }: { label: string; description: string; checked: boolean; onToggle: () => void; className?: string }) {
+  return (
+    <div className={`flex items-center justify-between ${className || ''}`}>
+      <div>
+        <p className="text-sm font-medium text-gray-900">{label}</p>
+        <p className="text-xs text-gray-500">{description}</p>
+      </div>
+      <button
+        onClick={onToggle}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${checked ? 'bg-emerald-600' : 'bg-gray-200'}`}
+      >
+        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
+      </button>
+    </div>
+  );
+}
+
+function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value) || min)}
+        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
+      />
+    </div>
+  );
+}
+
+function InputField({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
+      />
+    </div>
+  );
+}
+
+// Helper functions used by sub-components
+function formatPhoneNum(phone: string) {
+  const cleaned = phone.replace(/\D/g, '');
+  if (cleaned.length === 10) return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+  return phone;
+}
+
+function formatCurrencyNum(amount: number) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
 }
