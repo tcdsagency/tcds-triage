@@ -21,15 +21,37 @@ function computeAction(wrapup: {
   isAutoVoided: boolean | null;
   noteAutoPosted: boolean | null;
   completionAction: string | null;
+  outcome: string | null;
+  wrapupStatus: string | null;
+  agencyzoomTicketId: string | null;
+  agencyzoomNoteId: string | null;
+  agencyzoomLeadId: string | null;
 } | null): TriageAction {
   if (!wrapup) return "no_wrapup";
   if (wrapup.isAutoVoided) return "auto_voided";
   if (wrapup.noteAutoPosted) return "auto_posted";
+
+  // Check completionAction first (set by some code paths)
   if (wrapup.completionAction === "ticket") return "ticket_created";
   if (wrapup.completionAction === "lead") return "lead_created";
   if (wrapup.completionAction === "deleted") return "deleted";
   if (wrapup.completionAction === "skipped") return "skipped";
   if (wrapup.completionAction === "posted") return "auto_posted";
+  if (wrapup.completionAction === "voided") return "auto_voided";
+
+  // Fallback: check outcome field (set by other code paths that don't set completionAction)
+  if (wrapup.outcome === "ticket_created" || wrapup.outcome === "ticket_appended" || wrapup.outcome === "ticket") return "ticket_created";
+  if (wrapup.outcome === "lead_created") return "lead_created";
+  if (wrapup.outcome === "note_posted" || wrapup.outcome === "lead_note_posted" || wrapup.outcome === "ncm_posted") return "auto_posted";
+  if (wrapup.outcome === "deleted") return "deleted";
+  if (wrapup.outcome === "skipped") return "skipped";
+  if (wrapup.outcome === "voided") return "auto_voided";
+
+  // Fallback: check if AZ artifacts exist (ticket/note/lead were created but fields weren't set)
+  if (wrapup.agencyzoomTicketId) return "ticket_created";
+  if (wrapup.agencyzoomLeadId) return "lead_created";
+  if (wrapup.agencyzoomNoteId && wrapup.wrapupStatus === "completed") return "auto_posted";
+
   // Wrapup exists but no completion action yet
   return "pending";
 }
@@ -157,6 +179,7 @@ export async function GET(request: NextRequest) {
         ticketType: wrapupDrafts.ticketType,
         leadType: wrapupDrafts.leadType,
         agencyzoomLeadId: wrapupDrafts.agencyzoomLeadId,
+        wrapupOutcome: wrapupDrafts.outcome,
       })
       .from(calls)
       .leftJoin(wrapupDrafts, eq(calls.id, wrapupDrafts.callId))
@@ -196,6 +219,11 @@ export async function GET(request: NextRequest) {
             isAutoVoided: row.isAutoVoided,
             noteAutoPosted: row.noteAutoPosted,
             completionAction: row.completionAction,
+            outcome: row.wrapupOutcome,
+            wrapupStatus: row.wrapupStatus,
+            agencyzoomTicketId: row.agencyzoomTicketId,
+            agencyzoomNoteId: row.wrapupNoteId,
+            agencyzoomLeadId: row.agencyzoomLeadId,
           }
         : null;
       const triageAction = computeAction(wrapup);
