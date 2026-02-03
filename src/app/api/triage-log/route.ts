@@ -211,8 +211,18 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(calls.startedAt))
       .limit(500); // Fetch more for stats, then paginate
 
+    // Filter out internal calls (both from and to are extensions / short numbers)
+    const isExtensionNumber = (num: string | null) => {
+      if (!num) return false;
+      const digits = num.replace(/\D/g, "");
+      return digits.length > 0 && digits.length <= 4;
+    };
+    const externalRows = rows.filter(
+      (row) => !(isExtensionNumber(row.fromNumber) && isExtensionNumber(row.toNumber))
+    );
+
     // Compute action for each row and build entries
-    const rawEntries = rows.map((row) => {
+    const rawEntries = externalRows.map((row) => {
       const dir = row.direction || row.directionLive || "inbound";
       const wrapup = row.wrapupId
         ? {
