@@ -631,6 +631,45 @@ export function ChangeFormStep() {
               </div>
 
               <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormSelect
+                    label="Lives in Household"
+                    value={formData.driver.livesInHousehold}
+                    onChange={(v) => updateNestedField('driver', 'livesInHousehold', v)}
+                    options={[
+                      { value: '', label: 'Select...' },
+                      { value: 'yes', label: 'Yes' },
+                      { value: 'no', label: 'No' },
+                    ]}
+                  />
+                  <FormSelect
+                    label="Primary Vehicle"
+                    value={formData.driver.primaryVehicle}
+                    onChange={(v) => {
+                      updateNestedField('driver', 'primaryVehicle', v);
+                      if (v !== 'other') {
+                        updateNestedField('driver', 'otherVehicleVin', '');
+                      }
+                    }}
+                    options={[
+                      { value: '', label: 'Select vehicle...' },
+                      ...policyVehicles.map((v) => ({ value: v.id, label: v.displayName })),
+                      { value: 'other', label: 'Other Vehicle' },
+                    ]}
+                  />
+                  {formData.driver.primaryVehicle === 'other' && (
+                    <FormField
+                      label="Other Vehicle VIN"
+                      value={formData.driver.otherVehicleVin}
+                      onChange={(v) => updateNestedField('driver', 'otherVehicleVin', v.toUpperCase())}
+                      placeholder="1HGCM82633A123456"
+                      className="sm:col-span-2"
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
                 <label className="flex items-center gap-3 cursor-pointer mb-4">
                   <input
                     type="checkbox"

@@ -102,9 +102,11 @@ export interface DriverData {
   licenseState: string;
   relationship: string;
   yearsLicensed: string;
+  livesInHousehold: string;
   hasViolations: boolean;
   violationDetails: string;
   primaryVehicle: string;
+  otherVehicleVin: string;
 }
 
 export interface AddressData {
@@ -267,9 +269,11 @@ export const initialDriverData: DriverData = {
   licenseState: '',
   relationship: '',
   yearsLicensed: '',
+  livesInHousehold: '',
   hasViolations: false,
   violationDetails: '',
   primaryVehicle: '',
+  otherVehicleVin: '',
 };
 
 export const initialAddressData: AddressData = {
