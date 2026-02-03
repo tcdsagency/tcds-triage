@@ -90,8 +90,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });
     }
 
+    // effectiveDate and notes may be at top level or nested inside data (frontend sends them inside data)
+    const effectiveDate = body.effectiveDate || body.data?.effectiveDate;
+    const notes = body.notes || body.data?.notes || null;
+
     // Validate required fields
-    if (!body.policyNumber || !body.changeType || !body.effectiveDate) {
+    if (!body.policyNumber || !body.changeType || !effectiveDate) {
       return NextResponse.json(
         { error: "Missing required fields: policyNumber, changeType, effectiveDate" },
         { status: 400 }
@@ -159,9 +163,9 @@ export async function POST(request: NextRequest) {
         policyNumber: body.policyNumber,
         customerId,
         changeType: body.changeType,
-        effectiveDate: body.effectiveDate,
+        effectiveDate: effectiveDate,
         formData: body.data,
-        notes: body.notes || null,
+        notes: notes,
         status: 'pending',
       })
       .returning({ id: policyChangeRequests.id });
@@ -171,7 +175,7 @@ export async function POST(request: NextRequest) {
       id: changeRequest.id,
       type: body.changeType,
       policy: body.policyNumber,
-      effective: body.effectiveDate,
+      effective: effectiveDate,
     });
 
     // Generate summary based on change type
@@ -209,10 +213,10 @@ export async function POST(request: NextRequest) {
       }
 
       // Build description with full details
-      let ticketDescription = `📋 Policy Change Request\n\n${summary}\n\nPolicy: ${body.policyNumber}\nEffective Date: ${body.effectiveDate}`;
+      let ticketDescription = `📋 Policy Change Request\n\n${summary}\n\nPolicy: ${body.policyNumber}\nEffective Date: ${effectiveDate}`;
 
-      if (body.notes) {
-        ticketDescription += `\n\nNotes: ${body.notes}`;
+      if (notes) {
+        ticketDescription += `\n\nNotes: ${notes}`;
       }
 
       // If using No Match, append original customer info
