@@ -112,7 +112,8 @@ export async function GET(request: NextRequest) {
       const dobMonth = dobParts ? dobParts[1] : null;
       const dobDay = dobParts ? dobParts[2] : null;
 
-      const addr = c.address as { street: string; city: string; state: string; zip: string };
+      const addr = c.address as { street?: string; city?: string; state?: string; zip?: string } | null;
+      const hasCompleteAddress = Boolean(addr && addr.street && addr.city && addr.state && addr.zip);
 
       // Calculate days until birthday (for all birthdays view)
       let daysUntilBirthday: number | null = null;
@@ -143,13 +144,16 @@ export async function GET(request: NextRequest) {
         birthMonth: dobMonth,
         age: dobYear ? year - dobYear : null,
         daysUntilBirthday,
-        address: {
-          street: addr.street,
-          city: addr.city,
-          state: addr.state,
-          zip: addr.zip,
-          formatted: `${addr.street}\n${addr.city}, ${addr.state} ${addr.zip}`,
-        },
+        hasAddress: hasCompleteAddress,
+        address: hasCompleteAddress
+          ? {
+              street: addr!.street!,
+              city: addr!.city!,
+              state: addr!.state!,
+              zip: addr!.zip!,
+              formatted: `${addr!.street}\n${addr!.city}, ${addr!.state} ${addr!.zip}`,
+            }
+          : null,
       };
     });
 

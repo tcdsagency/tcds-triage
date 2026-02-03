@@ -41,13 +41,14 @@ interface BirthdayCustomer {
   birthMonth?: number;
   age?: number;
   daysUntilBirthday?: number | null;
-  address: {
+  address?: {
     street: string;
     city: string;
     state: string;
     zip: string;
     formatted: string;
-  };
+  } | null;
+  hasAddress?: boolean;
   // Local tracking (not persisted)
   cardPrepared?: boolean;
   cardMailed?: boolean;
@@ -96,8 +97,8 @@ export default function BirthdayCardsPage() {
 
     try {
       const url = viewMode === "all"
-        ? `/api/customers/birthdays?all=true&year=${selectedYear}`
-        : `/api/customers/birthdays?month=${selectedMonth}&year=${selectedYear}`;
+        ? `/api/customers/birthdays?all=true&year=${selectedYear}&includeNoAddress=true`
+        : `/api/customers/birthdays?month=${selectedMonth}&year=${selectedYear}&includeNoAddress=true`;
 
       const res = await fetch(url);
       const data = await res.json();
@@ -143,9 +144,12 @@ export default function BirthdayCardsPage() {
   // CARD FLOW HANDLERS
   // ==========================================================================
 
+  // Customers with addresses for the card writing flow
+  const customersWithAddress = customers.filter((c) => c.hasAddress !== false && c.address);
+
   const startCardFlow = () => {
-    if (customers.length === 0) {
-      toast.error("No customers with birthdays this month");
+    if (customersWithAddress.length === 0) {
+      toast.error("No customers with mailing addresses for card flow");
       return;
     }
     setCurrentIndex(0);
@@ -164,7 +168,7 @@ export default function BirthdayCardsPage() {
   };
 
   const handleNext = async () => {
-    const customer = customers[currentIndex];
+    const customer = customersWithAddress[currentIndex];
     const customerId = customer.agencyzoomId || customer.id;
 
     // Only post "prepared" note if not already prepared
@@ -192,7 +196,7 @@ export default function BirthdayCardsPage() {
     }
 
     // Advance to next or exit
-    if (currentIndex < customers.length - 1) {
+    if (currentIndex < customersWithAddress.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
       toast.success("All cards prepared!");
@@ -279,14 +283,14 @@ export default function BirthdayCardsPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isCardMode, actionLoading, currentIndex, customers, preparedIds]);
+  }, [isCardMode, actionLoading, currentIndex, customersWithAddress, preparedIds]);
 
   // ==========================================================================
   // RENDER - CARD WRITING MODE
   // ==========================================================================
 
-  if (isCardMode && customers.length > 0) {
-    const customer = customers[currentIndex];
+  if (isCardMode && customersWithAddress.length > 0) {
+    const customer = customersWithAddress[currentIndex];
     const isPrepared = preparedIds.has(customer.id);
     const isMailed = mailedIds.has(customer.id);
 
@@ -305,7 +309,7 @@ export default function BirthdayCardsPage() {
 
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-lg px-3 py-1">
-                {currentIndex + 1} / {customers.length}
+                {currentIndex + 1} / {customersWithAddress.length}
               </Badge>
             </div>
 
@@ -365,18 +369,20 @@ export default function BirthdayCardsPage() {
               <div className="border-t border-gray-200 dark:border-gray-700 my-8" />
 
               {/* Mailing Address */}
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Mailing Address
-                </p>
-                <div className="text-2xl font-medium text-gray-900 dark:text-white leading-relaxed">
-                  <p>{customer.address.street}</p>
-                  <p>
-                    {customer.address.city}, {customer.address.state}{" "}
-                    {customer.address.zip}
+              {customer.address && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Mailing Address
                   </p>
+                  <div className="text-2xl font-medium text-gray-900 dark:text-white leading-relaxed">
+                    <p>{customer.address.street}</p>
+                    <p>
+                      {customer.address.city}, {customer.address.state}{" "}
+                      {customer.address.zip}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Status Badges */}
               <div className="mt-8 flex items-center justify-center gap-3">
@@ -430,7 +436,7 @@ export default function BirthdayCardsPage() {
             >
               {actionLoading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
-              ) : currentIndex === customers.length - 1 ? (
+              ) : currentIndex === customersWithAddress.length - 1 ? (
                 "Finish"
               ) : (
                 <>
@@ -556,11 +562,11 @@ export default function BirthdayCardsPage() {
               <div className="flex items-center gap-3">
                 <Button
                   onClick={startCardFlow}
-                  disabled={loading || customers.length === 0}
+                  disabled={loading || customersWithAddress.length === 0}
                   className="bg-pink-600 hover:bg-pink-700"
                 >
                   <Mail className="w-4 h-4 mr-2" />
-                  Start Card Flow
+                  Start Card Flow ({customersWithAddress.length})
                 </Button>
 
                 {preparedIds.size > 0 && preparedIds.size > mailedIds.size && (
@@ -750,13 +756,20 @@ export default function BirthdayCardsPage() {
                                   </Badge>
                                 )}
                               </div>
-                              <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-1">
-                                <MapPin className="w-4 h-4 shrink-0" />
-                                <span className="truncate">
-                                  {customer.address.street}, {customer.address.city},{" "}
-                                  {customer.address.state} {customer.address.zip}
-                                </span>
-                              </p>
+                              {customer.address ? (
+                                <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-1">
+                                  <MapPin className="w-4 h-4 shrink-0" />
+                                  <span className="truncate">
+                                    {customer.address.street}, {customer.address.city},{" "}
+                                    {customer.address.state} {customer.address.zip}
+                                  </span>
+                                </p>
+                              ) : (
+                                <p className="text-sm text-amber-500 dark:text-amber-400 flex items-center gap-1 mt-1">
+                                  <AlertCircle className="w-4 h-4 shrink-0" />
+                                  No mailing address on file
+                                </p>
+                              )}
                             </div>
 
                             {/* Actions */}
@@ -834,6 +847,7 @@ export default function BirthdayCardsPage() {
                           </Badge>
                         )}
                       </div>
+                      {customer.address ? (
                       <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 mt-1">
                         <MapPin className="w-4 h-4 shrink-0" />
                         <span className="truncate">
@@ -841,6 +855,12 @@ export default function BirthdayCardsPage() {
                           {customer.address.state} {customer.address.zip}
                         </span>
                       </p>
+                    ) : (
+                      <p className="text-sm text-amber-500 dark:text-amber-400 flex items-center gap-1 mt-1">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        No mailing address on file
+                      </p>
+                    )}
                     </div>
 
                     {/* Actions */}
