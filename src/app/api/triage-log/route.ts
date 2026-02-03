@@ -387,7 +387,49 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        // Merge data from all records in the cluster into the best one
         best.duplicateCount = group.length;
+
+        // Merge transcripts: combine unique transcripts from all records
+        const transcripts: string[] = [];
+        for (const entry of group) {
+          if (entry.transcript && !transcripts.includes(entry.transcript)) {
+            transcripts.push(entry.transcript);
+          }
+        }
+        if (transcripts.length > 0) {
+          best.transcript = transcripts.length === 1
+            ? transcripts[0]
+            : transcripts.join('\n\n--- Merged Transcript ---\n\n');
+          best.hasTranscript = true;
+        }
+
+        // Merge summaries: pick the longest/best summary available
+        if (!best.summary) {
+          for (const entry of group) {
+            if (entry.summary && (!best.summary || entry.summary.length > best.summary.length)) {
+              best.summary = entry.summary;
+            }
+          }
+        }
+
+        // Merge recording: if best has no recording but another does, take it
+        if (!best.hasRecording) {
+          for (const entry of group) {
+            if (entry.hasRecording) {
+              best.hasRecording = true;
+              break;
+            }
+          }
+        }
+
+        // Use longest duration from the cluster
+        for (const entry of group) {
+          if (entry.durationSeconds > best.durationSeconds) {
+            best.durationSeconds = entry.durationSeconds;
+          }
+        }
+
         allEntries.push(best);
         duplicatesRemoved += group.length - 1;
       }
