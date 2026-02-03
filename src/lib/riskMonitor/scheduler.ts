@@ -676,6 +676,24 @@ export class RiskMonitorScheduler {
       return false;
     }
 
+    // Suppress alerts for new home purchases: if the property activity occurred
+    // before or within 1 week of the policy effective date, this likely reflects
+    // the customer's own purchase rather than a future move.
+    if (policy.effectiveDate) {
+      const activityDate = saleDate || policy.lastSaleDate || policy.listingDate;
+      if (activityDate) {
+        const cutoff = new Date(policy.effectiveDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+        if (activityDate <= cutoff) {
+          console.log(
+            `[RiskMonitor] Suppressing ${newStatus} alert for ${policy.addressLine1} - ` +
+            `activity date (${activityDate.toISOString()}) is within 1 week of ` +
+            `policy effective date (${policy.effectiveDate.toISOString()})`
+          );
+          return false;
+        }
+      }
+    }
+
     // For active/pending listings - always alert
     if (newStatus === "active" || newStatus === "pending") {
       return true;
