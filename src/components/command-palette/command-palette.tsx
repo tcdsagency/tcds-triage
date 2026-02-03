@@ -236,13 +236,13 @@ export function CommandPalette({
       onSelect: () => router.push('/'),
     },
     {
-      id: 'nav-pending-review',
-      label: 'Pending Review',
+      id: 'nav-triage-log',
+      label: 'Triage Log',
       icon: <InboxIcon />,
       category: 'page',
       shortcut: 'Cmd+2',
-      keywords: ['inbox', 'queue', 'triage', 'review'],
-      onSelect: () => router.push('/pending-review'),
+      keywords: ['log', 'triage', 'calls', 'outcomes'],
+      onSelect: () => router.push('/triage-log'),
     },
     {
       id: 'nav-lead-queue',

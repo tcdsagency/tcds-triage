@@ -29,10 +29,9 @@ import {
   Star,
   Headphones,
   FilePen,
-  ClipboardCheck,
   Bell,
   Link2,
-  Inbox,
+  ScrollText,
   Moon,
   Cake,
   Landmark,
@@ -45,8 +44,7 @@ import {
 const ROUTE_FEATURE_MAP: Record<string, string> = {
   // Core
   '/dashboard': 'dashboard',
-  '/triage-inbox': 'pendingReview', // Uses same permission as pending-review
-  '/pending-review': 'pendingReview',
+  '/triage-log': 'triageLog',
   '/after-hours': 'afterHours',
   '/messages': 'messages',
   '/calls': 'calls',
@@ -76,7 +74,6 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   '/training': 'training',
   // Admin
   '/supervisor': 'supervisor',
-  '/wrapup-review': 'wrapupReview',
   '/my-settings': 'mySettings',
   '/agency-settings': 'agencySettings',
   '/settings/users': 'userManagement',
@@ -91,8 +88,7 @@ const dashboardNav = [
 // Intake & Reception section (base items - Supervisor added conditionally)
 const getIntakeNav = (canAccessSupervisor: boolean) => {
   const baseItems = [
-    { name: 'Triage Inbox', href: '/triage-inbox', icon: Inbox },
-    { name: 'Pending Review', href: '/pending-review', icon: ClipboardCheck },
+    { name: 'Triage Log', href: '/triage-log', icon: ScrollText },
     { name: 'Lead Queue', href: '/leads', icon: UserPlus },
     { name: 'Calls', href: '/calls', icon: Phone },
   ];

@@ -25,12 +25,12 @@ export const FEATURES: FeatureConfig[] = [
     route: '/dashboard',
   },
   {
-    key: 'pendingReview',
-    label: 'Pending Review',
-    description: 'Review calls, messages, and leads awaiting action',
+    key: 'triageLog',
+    label: 'Triage Log',
+    description: 'View call triage outcomes and automated actions',
     category: 'core',
     defaultEnabled: true,
-    route: '/pending-review',
+    route: '/triage-log',
   },
   {
     key: 'afterHours',
@@ -253,14 +253,6 @@ export const FEATURES: FeatureConfig[] = [
     route: '/supervisor',
   },
   {
-    key: 'wrapupReview',
-    label: 'Wrapup Review',
-    description: 'Review call wrapups and agent performance',
-    category: 'admin',
-    defaultEnabled: false,
-    route: '/wrapup-review',
-  },
-  {
     key: 'mySettings',
     label: 'My Settings',
     description: 'Personal settings and preferences',
@@ -296,13 +288,6 @@ export const FEATURES: FeatureConfig[] = [
   // =============================================================================
   // SPECIAL FEATURES - Non-page features
   // =============================================================================
-  {
-    key: 'pendingReviewAlerts',
-    label: 'Pending Review Alerts',
-    description: 'Audio alert when items wait > 90 seconds',
-    category: 'advanced',
-    defaultEnabled: false,
-  },
 ];
 
 // Get default permissions object

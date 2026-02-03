@@ -712,49 +712,33 @@ export default function DashboardPage() {
             </div>
           </Link>
 
-          {/* Pending Review */}
-          <Link href="/pending-review">
+          {/* Triage Log */}
+          <Link href="/triage-log">
             <div className={cn(
               "bg-white dark:bg-gray-800 rounded-xl border p-4 hover:shadow-md transition-all cursor-pointer",
-              (stats?.pendingReview || 0) > 0
-                ? "border-amber-300 dark:border-amber-600"
-                : "border-gray-200 dark:border-gray-700"
+              "border-gray-200 dark:border-gray-700"
             )}>
               <div className="flex items-center gap-3">
                 <div className={cn(
                   "w-12 h-12 rounded-lg flex items-center justify-center",
-                  (stats?.pendingReview || 0) > 0
-                    ? "bg-amber-100 dark:bg-amber-900/30"
-                    : "bg-gray-100 dark:bg-gray-700"
+                  "bg-emerald-100 dark:bg-emerald-900/30"
                 )}>
-                  <ClipboardList className={cn(
-                    "w-6 h-6",
-                    (stats?.pendingReview || 0) > 0
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-gray-500"
-                  )} />
+                  <ClipboardList className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Pending Review</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Triage Log</p>
                   {statsLoading ? (
                     <div className="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
                   ) : (
-                    <p className={cn(
-                      "text-3xl font-bold",
-                      (stats?.pendingReview || 0) > 0
-                        ? "text-amber-600 dark:text-amber-400"
-                        : "text-gray-900 dark:text-white"
-                    )}>
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white">
                       {stats?.pendingReview || 0}
                     </p>
                   )}
                 </div>
               </div>
-              {!statsLoading && (stats?.pendingReview || 0) > 0 && (
-                <div className="mt-3 text-sm text-amber-600 dark:text-amber-400 font-medium">
-                  Items need attention →
-                </div>
-              )}
+              <div className="mt-3 text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+                View call log →
+              </div>
             </div>
           </Link>
         </section>
@@ -1161,11 +1145,11 @@ export default function DashboardPage() {
         {/* QUICK LINKS */}
         {/* ================================================================= */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Link href="/pending-review">
+          <Link href="/triage-log">
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:scale-[1.02] transition-all">
-              <AlertCircle className="w-6 h-6 text-amber-500 mb-2" />
-              <p className="font-semibold text-gray-900 dark:text-white">Pending Review</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Triage queue</p>
+              <AlertCircle className="w-6 h-6 text-emerald-500 mb-2" />
+              <p className="font-semibold text-gray-900 dark:text-white">Triage Log</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Call outcomes</p>
             </div>
           </Link>
           <Link href="/leads">

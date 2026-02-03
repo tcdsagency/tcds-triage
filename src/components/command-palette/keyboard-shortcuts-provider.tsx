@@ -198,7 +198,7 @@ export function KeyboardShortcutsProvider({
   // Navigation routes
   const routes = [
     '/',              // Cmd+1
-    '/pending-review', // Cmd+2
+    '/triage-log',    // Cmd+2
     '/lead-queue',    // Cmd+3
     '/calls',         // Cmd+4
     '/customers',     // Cmd+5

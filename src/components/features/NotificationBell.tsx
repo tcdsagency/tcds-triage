@@ -26,7 +26,6 @@ export function NotificationBell({ className }: NotificationBellProps) {
 
   // Track previous counts for comparison
   const prevSmsCount = useRef<number>(0);
-  const prevReviewCount = useRef<number>(0);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -51,14 +50,6 @@ export function NotificationBell({ className }: NotificationBellProps) {
         newSmsCount = smsData.total || smsData.messages?.length || 0;
       }
 
-      // Check for pending review items
-      const reviewRes = await fetch("/api/pending-review?limit=1");
-      let newReviewCount = 0;
-      if (reviewRes.ok) {
-        const reviewData = await reviewRes.json();
-        newReviewCount = reviewData.counts?.total || reviewData.items?.length || 0;
-      }
-
       // Show notification if counts increased
       if (permission === "granted") {
         if (newSmsCount > prevSmsCount.current) {
@@ -67,19 +58,11 @@ export function NotificationBell({ className }: NotificationBellProps) {
             tag: "sms-poll",
           });
         }
-
-        if (newReviewCount > prevReviewCount.current) {
-          showNotification("New Item for Review", {
-            body: `You have ${newReviewCount} item${newReviewCount > 1 ? "s" : ""} pending review`,
-            tag: "review-poll",
-          });
-        }
       }
 
       // Update counts
       prevSmsCount.current = newSmsCount;
-      prevReviewCount.current = newReviewCount;
-      setUnreadCount(newSmsCount + newReviewCount);
+      setUnreadCount(newSmsCount);
       setLastChecked(new Date());
     } catch (error) {
       console.error("[NotificationBell] Error checking for new items:", error);
