@@ -33,6 +33,8 @@ import {
   Copy,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import CustomerSearchModal from "@/components/features/CustomerSearchModal";
+import { UserPlus } from "lucide-react";
 
 // =============================================================================
 // TYPES
@@ -637,10 +639,15 @@ function EntryRow({
 function DetailSidebar({
   entry,
   onClose,
+  onMatch,
 }: {
   entry: TriageEntry;
   onClose: () => void;
+  onMatch: (callId: string) => void;
 }) {
+  const canMatch = entry.action === "pending" || entry.action === "no_wrapup" ||
+    (entry.hasWrapup && !entry.noteAutoPosted && !entry.agencyzoomTicketId && !entry.agencyzoomNoteId);
+
   return (
     <div className="fixed right-0 top-0 bottom-0 w-[480px] bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 z-50 overflow-y-auto">
       {/* Header */}
@@ -691,6 +698,17 @@ function DetailSidebar({
           </span>
           <ActionBadge action={entry.action} />
         </div>
+
+        {/* Match Customer Button */}
+        {canMatch && (
+          <button
+            onClick={() => onMatch(entry.id)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <UserPlus className="h-4 w-4" />
+            Match Customer & Post Note
+          </button>
+        )}
 
         {/* Call Info Grid */}
         <div className="grid grid-cols-2 gap-3">
@@ -951,6 +969,8 @@ export default function TriageLogPage() {
   const [agents, setAgents] = useState<Agent[]>([{ id: "all", name: "All Agents" }]);
   const [loading, setLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<TriageEntry | null>(null);
+  const [matchCallId, setMatchCallId] = useState<string | null>(null);
+  const [matchLoading, setMatchLoading] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -987,6 +1007,30 @@ export default function TriageLogPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const handleMatchCustomer = async (customer: { id: string; displayName: string }) => {
+    if (!matchCallId) return;
+    setMatchLoading(true);
+    try {
+      const res = await fetch("/api/triage-log/match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ callId: matchCallId, customerId: customer.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMatchCallId(null);
+        setSelectedEntry(null);
+        fetchData(); // Refresh the list
+      } else {
+        alert(`Match failed: ${data.error}`);
+      }
+    } catch (err) {
+      alert("Failed to match customer");
+    } finally {
+      setMatchLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -1162,9 +1206,19 @@ export default function TriageLogPage() {
           <DetailSidebar
             entry={selectedEntry}
             onClose={() => setSelectedEntry(null)}
+            onMatch={(callId) => setMatchCallId(callId)}
           />
         </>
       )}
+
+      {/* Customer Match Modal */}
+      <CustomerSearchModal
+        isOpen={!!matchCallId}
+        onClose={() => setMatchCallId(null)}
+        onSelect={handleMatchCustomer}
+        initialPhone={selectedEntry?.customerPhone || selectedEntry?.fromNumber || undefined}
+        title="Match Customer & Post Note"
+      />
     </div>
   );
 }

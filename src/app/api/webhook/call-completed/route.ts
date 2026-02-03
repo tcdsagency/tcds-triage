@@ -1698,7 +1698,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       if (
         txResult.wrapup &&
         analysis &&
-        direction === "inbound" &&
+        direction !== "outbound" &&
         !shouldAutoVoid
       ) {
         try {
@@ -1948,38 +1948,50 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
     }
 
     // 5. Auto-post note to AgencyZoom for matched customers with AI summaries
-    // txResult is only available when (analysis || isHangup) was true, so guard on analysis
+    // Use matchedAzCustomerId (from phone lookup) since call.customerId is often null
     if (
       analysis?.summary &&
-      call.customerId &&
+      matchedAzCustomerId &&
       customerMatchStatus === "matched"
     ) {
-      // Re-check if a wrapup was created (txResult is scoped above but we can query it)
       try {
         const [wrapupForPost] = await db
-          .select({ id: wrapupDrafts.id, isAutoVoided: wrapupDrafts.isAutoVoided, noteAutoPosted: wrapupDrafts.noteAutoPosted })
+          .select({
+            id: wrapupDrafts.id,
+            isAutoVoided: wrapupDrafts.isAutoVoided,
+            noteAutoPosted: wrapupDrafts.noteAutoPosted,
+            agencyzoomTicketId: wrapupDrafts.agencyzoomTicketId,
+          })
           .from(wrapupDrafts)
           .where(eq(wrapupDrafts.callId, call.id))
           .limit(1);
 
-        if (wrapupForPost && !wrapupForPost.isAutoVoided && !wrapupForPost.noteAutoPosted) {
-          const posted = await postToAgencyZoom(
-            call.customerId,
-            analysis.summary,
-            direction,
-            body.agentName || "Unknown Agent",
-            new Date()
-          );
-          if (posted) {
-            await db
-              .update(wrapupDrafts)
-              .set({
-                noteAutoPosted: true,
-                noteAutoPostedAt: new Date(),
-                completionAction: "posted",
-              })
-              .where(eq(wrapupDrafts.id, wrapupForPost.id));
-            console.log(`[Call-Completed] ✅ Auto-posted note to AgencyZoom for wrapup ${wrapupForPost.id}`);
+        // Skip if already posted, voided, or already has a ticket
+        if (wrapupForPost && !wrapupForPost.isAutoVoided && !wrapupForPost.noteAutoPosted && !wrapupForPost.agencyzoomTicketId) {
+          const azClient = getAgencyZoomClient();
+          if (azClient) {
+            const now = new Date();
+            const formattedDate = now.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+            const formattedTime = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+            const noteText = `📞 ${direction === "inbound" ? "Inbound" : "Outbound"} Call - ${formattedDate} ${formattedTime}\n\n${analysis.summary}\n\nAgent: ${body.agentName || "Unknown Agent"}`;
+
+            const result = await azClient.addNote(parseInt(matchedAzCustomerId), noteText);
+            if (result.success) {
+              await db
+                .update(wrapupDrafts)
+                .set({
+                  noteAutoPosted: true,
+                  noteAutoPostedAt: now,
+                  completionAction: "posted",
+                  status: "completed",
+                  completedAt: now,
+                  agencyzoomNoteId: result.id?.toString() || null,
+                })
+                .where(eq(wrapupDrafts.id, wrapupForPost.id));
+              console.log(`[Call-Completed] ✅ Auto-posted note to AgencyZoom for wrapup ${wrapupForPost.id} (AZ customer: ${matchedAzCustomerId})`);
+            } else {
+              console.warn(`[Call-Completed] ⚠️ AZ note post returned non-success for wrapup ${wrapupForPost.id}`);
+            }
           }
         }
       } catch (autoPostError) {
