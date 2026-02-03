@@ -213,15 +213,24 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(calls.startedAt))
       .limit(500); // Fetch more for stats, then paginate
 
-    // Filter out internal calls (both from and to are extensions / short numbers)
+    // Filter out internal / phantom calls
     const isExtensionNumber = (num: string | null) => {
       if (!num) return false;
       const digits = num.replace(/\D/g, "");
       return digits.length > 0 && digits.length <= 4;
     };
-    const externalRows = rows.filter(
-      (row) => !(isExtensionNumber(row.fromNumber) && isExtensionNumber(row.toNumber))
-    );
+    const hasRealPhone = (num: string | null) => {
+      if (!num) return false;
+      const digits = num.replace(/\D/g, "");
+      return digits.length >= 7; // real phone numbers have 7+ digits
+    };
+    const externalRows = rows.filter((row) => {
+      // Skip internal ext-to-ext calls (e.g. 110 -> 103)
+      if (isExtensionNumber(row.fromNumber) && isExtensionNumber(row.toNumber)) return false;
+      // Skip phantom 3CX events: "Unknown" -> extension, 0s duration, no real caller
+      if (!hasRealPhone(row.fromNumber) && !hasRealPhone(row.toNumber) && (row.durationSeconds || 0) === 0) return false;
+      return true;
+    });
 
     // Compute action for each row and build entries
     const rawEntries = externalRows.map((row) => {
