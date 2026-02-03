@@ -62,11 +62,17 @@ function scoreRow(entry: {
   customerId: string | null;
   hasTranscript: boolean;
   durationSeconds: number;
+  action: TriageAction;
+  summary: string | null;
 }): number {
   let score = 0;
   if (entry.hasWrapup) score += 100;
   if (entry.customerId) score += 50;
   if (entry.hasTranscript) score += 20;
+  if (entry.summary) score += 30;
+  // Prefer entries with completed actions over pending/no_wrapup
+  if (entry.action === "auto_posted" || entry.action === "ticket_created" || entry.action === "lead_created") score += 200;
+  if (entry.action === "auto_voided" || entry.action === "skipped" || entry.action === "deleted") score += 150;
   score += Math.min(entry.durationSeconds, 100); // cap duration contribution
   return score;
 }
@@ -77,12 +83,8 @@ function normalizePhone(phone: string | null): string {
   return phone.replace(/\D/g, "").slice(-10);
 }
 
-// Create a 60-second time bucket key from ISO string
-function timeBucket(isoString: string): string {
-  const d = new Date(isoString);
-  const bucketMs = Math.floor(d.getTime() / 60000) * 60000;
-  return new Date(bucketMs).toISOString();
-}
+// Max gap between records in a dedup cluster (2 minutes)
+const DEDUP_GAP_MS = 2 * 60 * 1000;
 
 export async function GET(request: NextRequest) {
   try {
@@ -313,58 +315,73 @@ export async function GET(request: NextRequest) {
 
     // =========================================================================
     // DEDUPLICATION
-    // Group by externalCallId (when present), fallback to phone+extension+time bucket
-    // Pick the "best" record per group
+    // Group by normalized customer phone, then cluster records within 2 minutes.
+    // This handles the same physical call arriving with different externalCallIds
+    // from 3CX (numeric), VM Bridge (CA-prefix), and transcript worker (null),
+    // as well as different extensions from call transfers.
     // =========================================================================
-    const groups = new Map<string, typeof rawEntries>();
-    let totalBeforeDedup = rawEntries.length;
-
-    for (const entry of rawEntries) {
-      let groupKey: string;
-
-      if (entry.externalCallId) {
-        groupKey = `ext:${entry.externalCallId}`;
-      } else {
-        // Fallback: normalized phone + extension + 60-second time bucket
-        const phone = normalizePhone(entry.customerPhone);
-        const ext = entry.toNumber || "";
-        const bucket = timeBucket(entry.startedAt);
-        groupKey = `fb:${phone}:${ext}:${bucket}`;
-      }
-
-      const existing = groups.get(groupKey);
-      if (existing) {
-        existing.push(entry);
-      } else {
-        groups.set(groupKey, [entry]);
-      }
-    }
-
-    // Pick best from each group
     const allEntries: typeof rawEntries = [];
     let duplicatesRemoved = 0;
 
-    for (const [, group] of groups) {
-      if (group.length === 1) {
-        allEntries.push(group[0]);
+    // Partition entries by normalized customer phone
+    const phoneGroups = new Map<string, typeof rawEntries>();
+    for (const entry of rawEntries) {
+      const phone = normalizePhone(entry.customerPhone);
+      if (!phone) {
+        // No phone — can't dedup, keep as-is
+        allEntries.push(entry);
         continue;
       }
+      const existing = phoneGroups.get(phone);
+      if (existing) existing.push(entry);
+      else phoneGroups.set(phone, [entry]);
+    }
 
-      // Score each entry, pick the best
-      let best = group[0];
-      let bestScore = scoreRow(best);
+    // Within each phone group, cluster entries within DEDUP_GAP_MS of each other
+    for (const [, phoneGroup] of phoneGroups) {
+      // Sort by time ascending
+      phoneGroup.sort(
+        (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+      );
 
-      for (let i = 1; i < group.length; i++) {
-        const s = scoreRow(group[i]);
-        if (s > bestScore) {
-          best = group[i];
-          bestScore = s;
+      const clusters: (typeof rawEntries)[] = [];
+      let cluster = [phoneGroup[0]];
+
+      for (let i = 1; i < phoneGroup.length; i++) {
+        const prevTime = new Date(cluster[cluster.length - 1].startedAt).getTime();
+        const currTime = new Date(phoneGroup[i].startedAt).getTime();
+
+        if (currTime - prevTime <= DEDUP_GAP_MS) {
+          cluster.push(phoneGroup[i]);
+        } else {
+          clusters.push(cluster);
+          cluster = [phoneGroup[i]];
         }
       }
+      clusters.push(cluster);
 
-      best.duplicateCount = group.length;
-      allEntries.push(best);
-      duplicatesRemoved += group.length - 1;
+      // Pick the best record from each cluster
+      for (const group of clusters) {
+        if (group.length === 1) {
+          allEntries.push(group[0]);
+          continue;
+        }
+
+        let best = group[0];
+        let bestScore = scoreRow(best);
+
+        for (let i = 1; i < group.length; i++) {
+          const s = scoreRow(group[i]);
+          if (s > bestScore) {
+            best = group[i];
+            bestScore = s;
+          }
+        }
+
+        best.duplicateCount = group.length;
+        allEntries.push(best);
+        duplicatesRemoved += group.length - 1;
+      }
     }
 
     // Sort by startedAt desc (groups may have shuffled order)
