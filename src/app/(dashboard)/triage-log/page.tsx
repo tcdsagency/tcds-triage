@@ -710,6 +710,26 @@ function DetailSidebar({
           </button>
         )}
 
+        {/* Call ID */}
+        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Call ID</p>
+            <p className="text-sm font-mono text-gray-700 dark:text-gray-300 truncate max-w-[320px]">
+              {entry.id}
+            </p>
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText(entry.id);
+            }}
+            className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+            title="Copy Call ID"
+          >
+            <Copy className="h-3.5 w-3.5 text-gray-400" />
+          </button>
+        </div>
+
         {/* Call Info Grid */}
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
