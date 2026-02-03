@@ -47,7 +47,6 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   '/triage-log': 'triageLog',
   '/after-hours': 'afterHours',
   '/messages': 'messages',
-  '/calls': 'calls',
   '/customers': 'customers',
   '/leads': 'leads',
   '/quotes': 'quotes',
@@ -90,7 +89,6 @@ const getIntakeNav = (canAccessSupervisor: boolean) => {
   const baseItems = [
     { name: 'Triage Log', href: '/triage-log', icon: ScrollText },
     { name: 'Lead Queue', href: '/leads', icon: UserPlus },
-    { name: 'Calls', href: '/calls', icon: Phone },
   ];
 
   if (canAccessSupervisor) {

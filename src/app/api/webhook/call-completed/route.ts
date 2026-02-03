@@ -1947,9 +1947,45 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       console.log(`[Call-Completed] ⏭️ Skipping wrapup creation for call ${call.id}: no analysis and not detected as hangup (duration: ${body.duration}s, transcript length: ${transcript?.length || 0})`);
     }
 
-    // 5. NOTE: Auto-posting to AgencyZoom removed
-    // All CRM posting is now handled through the Wrapup Review UI
-    // This ensures agents can review/edit summaries before posting and avoids duplicate notes
+    // 5. Auto-post note to AgencyZoom for matched customers with AI summaries
+    // txResult is only available when (analysis || isHangup) was true, so guard on analysis
+    if (
+      analysis?.summary &&
+      call.customerId &&
+      customerMatchStatus === "matched"
+    ) {
+      // Re-check if a wrapup was created (txResult is scoped above but we can query it)
+      try {
+        const [wrapupForPost] = await db
+          .select({ id: wrapupDrafts.id, isAutoVoided: wrapupDrafts.isAutoVoided, noteAutoPosted: wrapupDrafts.noteAutoPosted })
+          .from(wrapupDrafts)
+          .where(eq(wrapupDrafts.callId, call.id))
+          .limit(1);
+
+        if (wrapupForPost && !wrapupForPost.isAutoVoided && !wrapupForPost.noteAutoPosted) {
+          const posted = await postToAgencyZoom(
+            call.customerId,
+            analysis.summary,
+            direction,
+            body.agentName || "Unknown Agent",
+            new Date()
+          );
+          if (posted) {
+            await db
+              .update(wrapupDrafts)
+              .set({
+                noteAutoPosted: true,
+                noteAutoPostedAt: new Date(),
+                completionAction: "posted",
+              })
+              .where(eq(wrapupDrafts.id, wrapupForPost.id));
+            console.log(`[Call-Completed] ✅ Auto-posted note to AgencyZoom for wrapup ${wrapupForPost.id}`);
+          }
+        }
+      } catch (autoPostError) {
+        console.error(`[Call-Completed] ⚠️ Auto-post to AgencyZoom failed (non-fatal):`, autoPostError instanceof Error ? autoPostError.message : autoPostError);
+      }
+    }
 
     // 6. Log for E&O compliance (only for matched calls with a customer)
     // Unmatched calls are tracked via wrapup_drafts with match_status='unmatched'

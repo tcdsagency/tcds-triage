@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Search,
   RefreshCw,
@@ -21,6 +21,16 @@ import {
   ScrollText,
   Loader2,
   Minus,
+  Volume2,
+  MessageSquare,
+  HelpCircle,
+  MapPin,
+  Mail,
+  Smartphone,
+  Building2,
+  AlertCircle,
+  BarChart3,
+  Copy,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -44,6 +54,9 @@ interface TriageEntry {
   status: string;
   customerName: string;
   customerPhone: string | null;
+  fromNumber: string | null;
+  toNumber: string | null;
+  customerId: string | null;
   agentName: string;
   agentId: string;
   startedAt: string;
@@ -53,6 +66,15 @@ interface TriageEntry {
   disposition: string | null;
   action: TriageAction;
   matchStatus: string | null;
+  // Media fields
+  hasRecording: boolean;
+  hasTranscript: boolean;
+  transcript: string | null;
+  aiSentiment: number | null;
+  qualityScore: number | null;
+  predictedReason: string | null;
+  duplicateCount: number;
+  // Detail fields
   hasWrapup: boolean;
   isAutoVoided: boolean;
   autoVoidReason: string | null;
@@ -79,6 +101,7 @@ interface TriageStats {
   deleted: number;
   skipped: number;
   noWrapup: number;
+  duplicatesRemoved: number;
 }
 
 interface Agent {
@@ -122,6 +145,226 @@ function formatPhoneNumber(phone: string | undefined | null): string {
     return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
   }
   return phone.replace(/^\+1/, "");
+}
+
+function getSentimentColor(sentiment: number | null | undefined): string {
+  if (sentiment == null) return "text-gray-400 dark:text-gray-500";
+  if (sentiment >= 0.5) return "text-green-600 dark:text-green-400";
+  if (sentiment >= 0) return "text-yellow-600 dark:text-yellow-400";
+  return "text-red-600 dark:text-red-400";
+}
+
+function getSentimentLabel(sentiment: number | null | undefined): string {
+  if (sentiment == null) return "N/A";
+  if (sentiment >= 0.5) return "Positive";
+  if (sentiment >= 0) return "Neutral";
+  return "Negative";
+}
+
+// =============================================================================
+// TRESTLE CALLER INFO HOVER
+// =============================================================================
+
+interface TrestleLookupResult {
+  success: boolean;
+  phone: string;
+  overview?: {
+    isValid: boolean;
+    lineType: string;
+    carrier: string;
+    activityScore: number;
+    leadGrade: string;
+    confidence?: number;
+  };
+  owner?: {
+    name: string;
+    firstName?: string;
+    lastName?: string;
+    age?: number;
+    gender?: string;
+    isBusiness?: boolean;
+    industry?: string;
+  } | null;
+  contact?: {
+    currentAddress?: {
+      street: string;
+      city: string;
+      state: string;
+      zip: string;
+    } | null;
+    emails?: string[];
+    alternatePhones?: string[];
+  };
+  verification?: {
+    isSpam: boolean;
+    spamScore?: number;
+  };
+}
+
+const trestleCache = new Map<string, TrestleLookupResult>();
+
+function TrestleCallerHover({ phoneNumber, children }: { phoneNumber: string; children: React.ReactNode }) {
+  const [isHovering, setIsHovering] = useState(false);
+  const [trestleData, setTrestleData] = useState<TrestleLookupResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchTrestleData = useCallback(async () => {
+    if (!phoneNumber) return;
+    const cached = trestleCache.get(phoneNumber);
+    if (cached) {
+      setTrestleData(cached);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/trestle/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phoneNumber })
+      });
+      const data = await res.json();
+      if (data.success) {
+        trestleCache.set(phoneNumber, data);
+        setTrestleData(data);
+      }
+    } catch (error) {
+      console.error('Trestle lookup failed:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [phoneNumber]);
+
+  const handleMouseEnter = () => {
+    hoverTimeoutRef.current = setTimeout(() => {
+      setIsHovering(true);
+      if (!trestleData && !loading) {
+        fetchTrestleData();
+      }
+    }, 300);
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    setIsHovering(false);
+  };
+
+  const getGradeColor = (grade: string) => {
+    switch (grade) {
+      case 'A': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300';
+      case 'B': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300';
+      case 'C': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300';
+      case 'D': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300';
+      case 'F': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
+      default: return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+    }
+  };
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {children}
+
+      {isHovering && (
+        <div className="absolute left-0 top-full mt-2 z-50 w-72 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+            <HelpCircle className="h-4 w-4 text-indigo-500" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Possible Caller Info</span>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
+              <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">Looking up caller...</span>
+            </div>
+          ) : trestleData ? (
+            <div className="space-y-3">
+              {trestleData.owner ? (
+                <div className="flex items-start gap-2">
+                  {trestleData.owner.isBusiness ? (
+                    <Building2 className="h-4 w-4 text-gray-400 mt-0.5" />
+                  ) : (
+                    <User className="h-4 w-4 text-gray-400 mt-0.5" />
+                  )}
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">{trestleData.owner.name}</p>
+                    {trestleData.owner.age && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Age: ~{trestleData.owner.age}</p>
+                    )}
+                    {trestleData.owner.industry && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{trestleData.owner.industry}</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-gray-400">
+                  <User className="h-4 w-4" />
+                  <span className="text-sm">No owner info found</span>
+                </div>
+              )}
+
+              {trestleData.contact?.currentAddress && (
+                <div className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 text-gray-400 mt-0.5" />
+                  <div className="text-sm text-gray-600 dark:text-gray-300">
+                    <p>{trestleData.contact.currentAddress.street}</p>
+                    <p>{trestleData.contact.currentAddress.city}, {trestleData.contact.currentAddress.state} {trestleData.contact.currentAddress.zip}</p>
+                  </div>
+                </div>
+              )}
+
+              {trestleData.contact?.emails && trestleData.contact.emails.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm text-gray-600 dark:text-gray-300 truncate">{trestleData.contact.emails[0]}</span>
+                </div>
+              )}
+
+              {trestleData.overview && (
+                <div className="flex items-center gap-2">
+                  <Smartphone className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm text-gray-600 dark:text-gray-300 capitalize">
+                    {trestleData.overview.lineType} - {trestleData.overview.carrier}
+                  </span>
+                </div>
+              )}
+
+              {trestleData.overview && (
+                <div className="flex items-center gap-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Lead Grade:</span>
+                    <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${getGradeColor(trestleData.overview.leadGrade)}`}>
+                      {trestleData.overview.leadGrade}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Activity:</span>
+                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{trestleData.overview.activityScore}%</span>
+                  </div>
+                </div>
+              )}
+
+              {trestleData.verification?.isSpam && (
+                <div className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-md">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <span className="text-xs text-red-700 dark:text-red-300 font-medium">Potential Spam Caller</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+              No data available
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // =============================================================================
@@ -259,9 +502,9 @@ function StatsBar({ stats }: { stats: TriageStats }) {
     { label: "Auto-Voided", value: stats.autoVoided, color: "text-gray-500" },
     { label: "Pending", value: stats.pending, color: "text-amber-600 dark:text-amber-400" },
     {
-      label: "Deleted/Skipped",
-      value: stats.deleted + stats.skipped,
-      color: "text-red-600 dark:text-red-400",
+      label: "Dupes Merged",
+      value: stats.duplicatesRemoved,
+      color: "text-indigo-600 dark:text-indigo-400",
     },
   ];
 
@@ -297,6 +540,8 @@ function EntryRow({
   isSelected: boolean;
   onSelect: () => void;
 }) {
+  const isUnknown = entry.customerName === "Unknown" && !entry.customerId;
+
   return (
     <tr
       onClick={onSelect}
@@ -320,12 +565,30 @@ function EntryRow({
         </div>
       </td>
       <td className="px-4 py-3">
-        <p className="text-sm font-medium text-gray-900 dark:text-white">
-          {entry.customerName}
-        </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {formatPhoneNumber(entry.customerPhone)}
-        </p>
+        {isUnknown && entry.customerPhone ? (
+          <TrestleCallerHover phoneNumber={entry.customerPhone}>
+            <div className="cursor-help">
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  {entry.customerName}
+                </p>
+                <HelpCircle className="h-3.5 w-3.5 text-gray-400" />
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {formatPhoneNumber(entry.customerPhone)}
+              </p>
+            </div>
+          </TrestleCallerHover>
+        ) : (
+          <div>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              {entry.customerName}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {formatPhoneNumber(entry.customerPhone)}
+            </p>
+          </div>
+        )}
       </td>
       <td className="px-4 py-3">
         <span className="text-sm text-gray-700 dark:text-gray-300">{entry.agentName}</span>
@@ -340,6 +603,22 @@ function EntryRow({
       </td>
       <td className="px-4 py-3">
         <ActionBadge action={entry.action} />
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          {entry.hasRecording && (
+            <Volume2 className="h-4 w-4 text-gray-400" />
+          )}
+          {entry.hasTranscript && (
+            <MessageSquare className="h-4 w-4 text-gray-400" />
+          )}
+          {entry.duplicateCount > 1 && (
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full">
+              <Copy className="h-2.5 w-2.5" />
+              x{entry.duplicateCount}
+            </span>
+          )}
+        </div>
       </td>
       <td className="px-4 py-3">
         <MatchBadge status={entry.matchStatus} />
@@ -395,6 +674,16 @@ function DetailSidebar({
           </div>
         </div>
 
+        {/* Duplicate Merge Notice */}
+        {entry.duplicateCount > 1 && (
+          <div className="flex items-center gap-2 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+            <Copy className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+            <span className="text-sm text-indigo-700 dark:text-indigo-300">
+              {entry.duplicateCount} duplicate records merged into this entry
+            </span>
+          </div>
+        )}
+
         {/* Action Taken */}
         <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
           <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
@@ -446,6 +735,60 @@ function DetailSidebar({
           </div>
         </div>
 
+        {/* AI Analysis: Sentiment + QA Score */}
+        {(entry.aiSentiment != null || entry.qualityScore != null) && (
+          <div>
+            <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              AI Analysis
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              {entry.aiSentiment != null && (
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Sentiment</p>
+                  <p className={`font-medium ${getSentimentColor(entry.aiSentiment)}`}>
+                    {getSentimentLabel(entry.aiSentiment)}
+                  </p>
+                </div>
+              )}
+              {entry.qualityScore != null && (
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">QA Score</p>
+                  <p
+                    className={`font-medium ${
+                      entry.qualityScore >= 90
+                        ? "text-green-600 dark:text-green-400"
+                        : entry.qualityScore >= 70
+                        ? "text-yellow-600 dark:text-yellow-400"
+                        : "text-red-600 dark:text-red-400"
+                    }`}
+                  >
+                    {entry.qualityScore}/100
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Media Indicators */}
+        {(entry.hasRecording || entry.hasTranscript) && (
+          <div className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+            {entry.hasRecording && (
+              <span className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300">
+                <Volume2 className="h-4 w-4 text-emerald-500" />
+                Recording available
+              </span>
+            )}
+            {entry.hasTranscript && (
+              <span className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300">
+                <MessageSquare className="h-4 w-4 text-blue-500" />
+                Transcript available
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Summary */}
         {entry.summary && (
           <div>
@@ -456,6 +799,29 @@ function DetailSidebar({
             <p className="text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 whitespace-pre-wrap">
               {entry.summary}
             </p>
+          </div>
+        )}
+
+        {/* Predicted Reason */}
+        {entry.predictedReason && (
+          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Predicted Reason</p>
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {entry.predictedReason}
+            </p>
+          </div>
+        )}
+
+        {/* Transcript */}
+        {entry.hasTranscript && entry.transcript && (
+          <div>
+            <h4 className="font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              Transcript
+            </h4>
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 max-h-64 overflow-y-auto text-sm whitespace-pre-wrap">
+              <p className="text-gray-700 dark:text-gray-300">{entry.transcript}</p>
+            </div>
           </div>
         )}
 
@@ -580,6 +946,7 @@ export default function TriageLogPage() {
     deleted: 0,
     skipped: 0,
     noWrapup: 0,
+    duplicatesRemoved: 0,
   });
   const [agents, setAgents] = useState<Agent[]>([{ id: "all", name: "All Agents" }]);
   const [loading, setLoading] = useState(true);
@@ -627,10 +994,10 @@ export default function TriageLogPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
           <ScrollText className="h-7 w-7 text-emerald-600" />
-          Triage Log
+          Call History & Triage
         </h1>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
-          View every call and what the system did with it
+          View every call with recordings, transcripts, and triage outcomes
         </p>
       </div>
 
@@ -720,7 +1087,7 @@ export default function TriageLogPage() {
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
-            <span className="ml-3 text-gray-500 dark:text-gray-400">Loading triage log...</span>
+            <span className="ml-3 text-gray-500 dark:text-gray-400">Loading call history...</span>
           </div>
         ) : (
           <table className="w-full">
@@ -743,6 +1110,9 @@ export default function TriageLogPage() {
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                   Action
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                  Media
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                   Match

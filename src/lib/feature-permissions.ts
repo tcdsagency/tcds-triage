@@ -49,14 +49,6 @@ export const FEATURES: FeatureConfig[] = [
     route: '/messages',
   },
   {
-    key: 'calls',
-    label: 'Calls',
-    description: 'View call history and recordings',
-    category: 'core',
-    defaultEnabled: true,
-    route: '/calls',
-  },
-  {
     key: 'customers',
     label: 'Customers',
     description: 'View and manage customer profiles',

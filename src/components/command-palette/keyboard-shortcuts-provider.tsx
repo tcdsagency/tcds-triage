@@ -91,7 +91,7 @@ function ShortcutsHelpModal({ isOpen, onClose }: ShortcutsHelpModalProps) {
       { keys: `${cmdKey}+1`, description: 'Go to Dashboard' },
       { keys: `${cmdKey}+2`, description: 'Go to Pending Review' },
       { keys: `${cmdKey}+3`, description: 'Go to Lead Queue' },
-      { keys: `${cmdKey}+4`, description: 'Go to Calls' },
+      { keys: `${cmdKey}+4`, description: 'Go to Call History & Triage' },
       { keys: `${cmdKey}+5`, description: 'Go to Customers' },
     ]},
     { category: 'Actions', items: [
@@ -200,7 +200,7 @@ export function KeyboardShortcutsProvider({
     '/',              // Cmd+1
     '/triage-log',    // Cmd+2
     '/lead-queue',    // Cmd+3
-    '/calls',         // Cmd+4
+    '/triage-log',    // Cmd+4 (was /calls)
     '/customers',     // Cmd+5
     '/quotes',        // Cmd+6
     '/messages',      // Cmd+7

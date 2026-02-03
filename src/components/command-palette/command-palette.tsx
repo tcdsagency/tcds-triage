@@ -255,12 +255,12 @@ export function CommandPalette({
     },
     {
       id: 'nav-calls',
-      label: 'Calls',
+      label: 'Call History & Triage',
       icon: <PhoneIcon />,
       category: 'page',
       shortcut: 'Cmd+4',
-      keywords: ['phone', 'recordings', 'call log'],
-      onSelect: () => router.push('/calls'),
+      keywords: ['phone', 'recordings', 'call log', 'calls', 'triage'],
+      onSelect: () => router.push('/triage-log'),
     },
     {
       id: 'nav-customers',

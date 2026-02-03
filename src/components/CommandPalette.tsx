@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 const NAVIGATION_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: '📊', href: '/dashboard', shortcut: '1' },
   { id: 'triage-log', label: 'Triage Log', icon: '📋', href: '/triage-log', shortcut: '2' },
-  { id: 'calls', label: 'Call History', icon: '📞', href: '/calls', shortcut: '3' },
+  { id: 'calls', label: 'Call History & Triage', icon: '📞', href: '/triage-log', shortcut: '3' },
   { id: 'customers', label: 'Customers', icon: '👥', href: '/customers', shortcut: '4' },
   { id: 'risk-monitor', label: 'Property Risk Monitor', icon: '🏠', href: '/risk-monitor', shortcut: '5' },
   { id: 'leads', label: 'Leads', icon: '📈', href: '/leads', shortcut: '6' },

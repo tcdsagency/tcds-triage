@@ -1,5 +1,6 @@
 // API Route: /api/triage-log
 // Returns every call with its triage outcome (joined with wrapup_drafts)
+// Deduplicates by externalCallId or phone+time bucket
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
@@ -31,6 +32,34 @@ function computeAction(wrapup: {
   if (wrapup.completionAction === "posted") return "auto_posted";
   // Wrapup exists but no completion action yet
   return "pending";
+}
+
+// Score a row for dedup "best record" selection
+function scoreRow(entry: {
+  hasWrapup: boolean;
+  customerId: string | null;
+  hasTranscript: boolean;
+  durationSeconds: number;
+}): number {
+  let score = 0;
+  if (entry.hasWrapup) score += 100;
+  if (entry.customerId) score += 50;
+  if (entry.hasTranscript) score += 20;
+  score += Math.min(entry.durationSeconds, 100); // cap duration contribution
+  return score;
+}
+
+// Normalize phone to last 10 digits for dedup grouping
+function normalizePhone(phone: string | null): string {
+  if (!phone) return "";
+  return phone.replace(/\D/g, "").slice(-10);
+}
+
+// Create a 60-second time bucket key from ISO string
+function timeBucket(isoString: string): string {
+  const d = new Date(isoString);
+  const bucketMs = Math.floor(d.getTime() / 60000) * 60000;
+  return new Date(bucketMs).toISOString();
 }
 
 export async function GET(request: NextRequest) {
@@ -81,11 +110,13 @@ export async function GET(request: NextRequest) {
       .select({
         // Call fields
         id: calls.id,
+        externalCallId: calls.externalCallId,
         direction: calls.directionFinal,
         directionLive: calls.directionLive,
         status: calls.status,
         fromNumber: calls.fromNumber,
         toNumber: calls.toNumber,
+        extension: calls.extension,
         customerId: calls.customerId,
         agentId: calls.agentId,
         startedAt: calls.startedAt,
@@ -94,6 +125,11 @@ export async function GET(request: NextRequest) {
         aiSummary: calls.aiSummary,
         disposition: calls.disposition,
         agencyzoomNoteId: calls.agencyzoomNoteId,
+        recordingUrl: calls.recordingUrl,
+        transcription: calls.transcription,
+        aiSentiment: calls.aiSentiment,
+        qualityScore: calls.qualityScore,
+        predictedReason: calls.predictedReason,
         // Customer fields
         customerFirstName: customers.firstName,
         customerLastName: customers.lastName,
@@ -152,8 +188,8 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(calls.startedAt))
       .limit(500); // Fetch more for stats, then paginate
 
-    // Compute action for each row and filter
-    const allEntries = rows.map((row) => {
+    // Compute action for each row and build entries
+    const rawEntries = rows.map((row) => {
       const dir = row.direction || row.directionLive || "inbound";
       const wrapup = row.wrapupId
         ? {
@@ -174,13 +210,13 @@ export async function GET(request: NextRequest) {
         return num.replace(/\D/g, "").length >= 10;
       };
 
-      let customerPhone: string | null;
+      let customerPhoneResolved: string | null;
       if (isExternalNumber(row.fromNumber) && isExtension(row.toNumber)) {
-        customerPhone = row.fromNumber;
+        customerPhoneResolved = row.fromNumber;
       } else if (isExternalNumber(row.toNumber) && isExtension(row.fromNumber)) {
-        customerPhone = row.toNumber;
+        customerPhoneResolved = row.toNumber;
       } else {
-        customerPhone = dir === "inbound" ? row.fromNumber : row.toNumber;
+        customerPhoneResolved = dir === "inbound" ? row.fromNumber : row.toNumber;
       }
 
       const customerName =
@@ -190,10 +226,14 @@ export async function GET(request: NextRequest) {
 
       return {
         id: row.id,
+        externalCallId: row.externalCallId || null,
         direction: dir,
         status: row.status || "completed",
         customerName,
-        customerPhone: customerPhone || row.wrapupCustomerPhone || null,
+        customerPhone: customerPhoneResolved || row.wrapupCustomerPhone || null,
+        fromNumber: row.fromNumber || null,
+        toNumber: row.toNumber || null,
+        customerId: row.customerId || null,
         agentName:
           row.agentFirstName && row.agentLastName
             ? `${row.agentFirstName} ${row.agentLastName}`
@@ -206,6 +246,13 @@ export async function GET(request: NextRequest) {
         disposition: row.disposition,
         action: triageAction,
         matchStatus: row.matchStatus || null,
+        // Media fields
+        hasRecording: !!row.recordingUrl,
+        hasTranscript: !!(row.transcription && row.transcription.length > 0),
+        transcript: row.transcription || null,
+        aiSentiment: row.aiSentiment != null ? Number(row.aiSentiment) : null,
+        qualityScore: row.qualityScore != null ? Number(row.qualityScore) : null,
+        predictedReason: row.predictedReason || null,
         // Detail fields
         hasWrapup: !!row.wrapupId,
         isAutoVoided: row.isAutoVoided || false,
@@ -221,8 +268,69 @@ export async function GET(request: NextRequest) {
         requestType: row.requestType || null,
         ticketType: row.ticketType || null,
         leadType: row.leadType || null,
+        // Dedup tracking (set below)
+        duplicateCount: 1,
       };
     });
+
+    // =========================================================================
+    // DEDUPLICATION
+    // Group by externalCallId (when present), fallback to phone+extension+time bucket
+    // Pick the "best" record per group
+    // =========================================================================
+    const groups = new Map<string, typeof rawEntries>();
+    let totalBeforeDedup = rawEntries.length;
+
+    for (const entry of rawEntries) {
+      let groupKey: string;
+
+      if (entry.externalCallId) {
+        groupKey = `ext:${entry.externalCallId}`;
+      } else {
+        // Fallback: normalized phone + extension + 60-second time bucket
+        const phone = normalizePhone(entry.customerPhone);
+        const ext = entry.toNumber || "";
+        const bucket = timeBucket(entry.startedAt);
+        groupKey = `fb:${phone}:${ext}:${bucket}`;
+      }
+
+      const existing = groups.get(groupKey);
+      if (existing) {
+        existing.push(entry);
+      } else {
+        groups.set(groupKey, [entry]);
+      }
+    }
+
+    // Pick best from each group
+    const allEntries: typeof rawEntries = [];
+    let duplicatesRemoved = 0;
+
+    for (const [, group] of groups) {
+      if (group.length === 1) {
+        allEntries.push(group[0]);
+        continue;
+      }
+
+      // Score each entry, pick the best
+      let best = group[0];
+      let bestScore = scoreRow(best);
+
+      for (let i = 1; i < group.length; i++) {
+        const s = scoreRow(group[i]);
+        if (s > bestScore) {
+          best = group[i];
+          bestScore = s;
+        }
+      }
+
+      best.duplicateCount = group.length;
+      allEntries.push(best);
+      duplicatesRemoved += group.length - 1;
+    }
+
+    // Sort by startedAt desc (groups may have shuffled order)
+    allEntries.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
 
     // Filter by action if specified
     const filtered = action && action !== "all"
@@ -240,6 +348,7 @@ export async function GET(request: NextRequest) {
       deleted: allEntries.filter((e) => e.action === "deleted").length,
       skipped: allEntries.filter((e) => e.action === "skipped").length,
       noWrapup: allEntries.filter((e) => e.action === "no_wrapup").length,
+      duplicatesRemoved,
     };
 
     // Paginate

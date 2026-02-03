@@ -594,7 +594,7 @@ export default function DashboardPage() {
         {/* ================================================================= */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Total Calls */}
-          <Link href="/calls">
+          <Link href="/triage-log">
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-600 transition-all cursor-pointer">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
@@ -640,7 +640,7 @@ export default function DashboardPage() {
           </Link>
 
           {/* Avg Call Duration */}
-          <Link href="/calls">
+          <Link href="/triage-log">
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all cursor-pointer">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
@@ -1159,10 +1159,10 @@ export default function DashboardPage() {
               <p className="text-xs text-gray-500 dark:text-gray-400">Sales pipeline</p>
             </div>
           </Link>
-          <Link href="/calls">
+          <Link href="/triage-log">
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:scale-[1.02] transition-all">
               <Phone className="w-6 h-6 text-emerald-500 mb-2" />
-              <p className="font-semibold text-gray-900 dark:text-white">Call History</p>
+              <p className="font-semibold text-gray-900 dark:text-white">Call History & Triage</p>
               <p className="text-xs text-gray-500 dark:text-gray-400">Recent calls</p>
             </div>
           </Link>
