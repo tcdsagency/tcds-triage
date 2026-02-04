@@ -59,6 +59,34 @@ export function filterRenewalTransactions(
 }
 
 /**
+ * Partition transactions into renewals and non-renewals.
+ * Returns both arrays so non-renewals can be archived.
+ */
+export function partitionTransactions(
+  transactions: AL3ParsedTransaction[],
+  carrierRenewalTypes?: string[],
+  defaults: string[] = DEFAULT_RENEWAL_TRANSACTION_TYPES
+): { renewals: AL3ParsedTransaction[]; nonRenewals: AL3ParsedTransaction[] } {
+  const renewalTypes = new Set(
+    (carrierRenewalTypes && carrierRenewalTypes.length > 0 ? carrierRenewalTypes : defaults)
+      .map((t) => t.toUpperCase())
+  );
+
+  const renewals: AL3ParsedTransaction[] = [];
+  const nonRenewals: AL3ParsedTransaction[] = [];
+
+  for (const t of transactions) {
+    if (renewalTypes.has(t.header.transactionType.toUpperCase())) {
+      renewals.push(t);
+    } else {
+      nonRenewals.push(t);
+    }
+  }
+
+  return { renewals, nonRenewals };
+}
+
+/**
  * Deduplicate renewals by carrier+policy+effectiveDate.
  * Keeps the most recent (last in file order, which is typically most recent).
  */

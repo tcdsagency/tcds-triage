@@ -133,9 +133,10 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
     // Update batch with file count
     await patchBatch(batchId, { status: 'filtering', totalAl3FilesFound: al3Files.length });
 
-    // Parse each file and filter for renewals
+    // Parse each file and partition into renewals vs non-renewals
     let totalTransactions = 0;
     const allRenewals: Array<{ header: Record<string, unknown>; rawContent: string; _fileName: string }> = [];
+    const allNonRenewals: Array<{ header: Record<string, unknown>; rawContent: string; _fileName: string }> = [];
 
     for (const file of al3Files) {
       // Parse AL3 file
@@ -148,20 +149,28 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
 
       totalTransactions += parseData.transactions.length;
 
-      // Filter for renewals
-      const filterRes = await internalFetch('/api/renewals/internal/parse', {
+      // Partition into renewals and non-renewals
+      const partitionRes = await internalFetch('/api/renewals/internal/parse', {
         method: 'POST',
-        body: JSON.stringify({ action: 'filter-renewals', transactions: parseData.transactions }),
+        body: JSON.stringify({ action: 'partition-transactions', transactions: parseData.transactions }),
       });
-      const filterData = await filterRes.json() as { success: boolean; unique: any[]; duplicatesRemoved: number };
-      if (!filterData.success) continue;
+      const partitionData = await partitionRes.json() as {
+        success: boolean;
+        unique: any[];
+        duplicatesRemoved: number;
+        nonRenewals: any[];
+      };
+      if (!partitionData.success) continue;
 
-      for (const r of filterData.unique) {
+      for (const r of partitionData.unique) {
         allRenewals.push({ ...r, _fileName: file.fileName });
+      }
+      for (const nr of partitionData.nonRenewals) {
+        allNonRenewals.push({ ...nr, _fileName: file.fileName });
       }
     }
 
-    // Global dedup across files
+    // Global dedup across files (renewals only)
     const deduped = new Map<string, typeof allRenewals[0]>();
     let duplicatesRemoved = 0;
     for (const r of allRenewals) {
@@ -174,13 +183,45 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
     }
     const unique = Array.from(deduped.values());
 
+    // Archive non-renewal transactions
+    let totalArchived = 0;
+    if (allNonRenewals.length > 0) {
+      try {
+        const archiveRes = await internalFetch('/api/renewals/internal/archive', {
+          method: 'POST',
+          body: JSON.stringify({
+            tenantId,
+            batchId,
+            transactions: allNonRenewals.map((nr) => ({
+              transactionType: (nr.header as any)?.transactionType,
+              policyNumber: (nr.header as any)?.policyNumber,
+              carrierCode: (nr.header as any)?.carrierCode,
+              carrierName: (nr.header as any)?.carrierName,
+              lineOfBusiness: (nr.header as any)?.lineOfBusiness,
+              effectiveDate: (nr.header as any)?.effectiveDate,
+              insuredName: (nr.header as any)?.insuredName,
+              al3FileName: nr._fileName,
+              rawAl3Content: nr.rawContent,
+            })),
+          }),
+        });
+        const archiveData = await archiveRes.json() as { success: boolean; archived: number };
+        if (archiveData.success) {
+          totalArchived = archiveData.archived;
+        }
+      } catch (err) {
+        logger.warn({ batchId, error: err }, 'Failed to archive non-renewal transactions');
+      }
+    }
+
     logger.info({
       batchId,
       totalTransactions,
       totalRenewals: allRenewals.length,
       uniqueRenewals: unique.length,
       duplicatesRemoved,
-    }, 'Renewals filtered');
+      nonRenewalsArchived: totalArchived,
+    }, 'Renewals filtered and non-renewals archived');
 
     // Update batch stats
     await patchBatch(batchId, {
@@ -189,6 +230,7 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
       totalRenewalTransactions: allRenewals.length,
       duplicatesRemoved,
       totalCandidatesCreated: unique.length,
+      totalArchivedTransactions: totalArchived,
     });
 
     // Create candidate records and queue individual processing

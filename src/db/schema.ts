@@ -4820,6 +4820,7 @@ export const renewalBatches = pgTable('renewal_batches', {
   totalRenewalTransactions: integer('total_renewal_transactions').default(0),
   totalCandidatesCreated: integer('total_candidates_created').default(0),
   duplicatesRemoved: integer('duplicates_removed').default(0),
+  totalArchivedTransactions: integer('total_archived_transactions').default(0),
 
   // Result counts
   candidatesCompleted: integer('candidates_completed').default(0),
@@ -4977,6 +4978,45 @@ export const renewalCandidatesRelations = relations(renewalCandidates, ({ one })
   comparison: one(renewalComparisons, {
     fields: [renewalCandidates.comparisonId],
     references: [renewalComparisons.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AL3 TRANSACTION ARCHIVE - Non-renewal transactions stored for reference
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const al3TransactionArchive = pgTable('al3_transaction_archive', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  batchId: uuid('batch_id').notNull().references(() => renewalBatches.id, { onDelete: 'cascade' }),
+
+  transactionType: varchar('transaction_type', { length: 10 }),
+  policyNumber: varchar('policy_number', { length: 50 }),
+  carrierCode: varchar('carrier_code', { length: 20 }),
+  carrierName: varchar('carrier_name', { length: 100 }),
+  lineOfBusiness: varchar('line_of_business', { length: 50 }),
+  effectiveDate: timestamp('effective_date'),
+  insuredName: text('insured_name'),
+
+  al3FileName: varchar('al3_file_name', { length: 255 }),
+  rawAl3Content: text('raw_al3_content'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('al3_archive_tenant_idx').on(table.tenantId),
+  index('al3_archive_batch_idx').on(table.batchId),
+  index('al3_archive_type_idx').on(table.transactionType),
+  index('al3_archive_policy_idx').on(table.policyNumber),
+]);
+
+export const al3TransactionArchiveRelations = relations(al3TransactionArchive, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [al3TransactionArchive.tenantId],
+    references: [tenants.id],
+  }),
+  batch: one(renewalBatches, {
+    fields: [al3TransactionArchive.batchId],
+    references: [renewalBatches.id],
   }),
 }));
 

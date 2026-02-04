@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractAL3FilesFromZip } from '@/lib/al3/zip-extractor';
 import { parseAL3File } from '@/lib/al3/parser';
-import { filterRenewalTransactions, deduplicateRenewals } from '@/lib/al3/filter';
+import { filterRenewalTransactions, deduplicateRenewals, partitionTransactions } from '@/lib/al3/filter';
 import { buildRenewalSnapshot } from '@/lib/al3/snapshot-builder';
 
 export async function POST(request: NextRequest) {
@@ -38,6 +38,12 @@ export async function POST(request: NextRequest) {
         const renewals = filterRenewalTransactions(body.transactions);
         const { unique, duplicatesRemoved } = deduplicateRenewals(renewals);
         return NextResponse.json({ success: true, unique, duplicatesRemoved });
+      }
+
+      case 'partition-transactions': {
+        const { renewals, nonRenewals } = partitionTransactions(body.transactions);
+        const { unique, duplicatesRemoved } = deduplicateRenewals(renewals);
+        return NextResponse.json({ success: true, unique, duplicatesRemoved, nonRenewals });
       }
 
       case 'build-snapshot': {
