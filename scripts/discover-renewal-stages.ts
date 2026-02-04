@@ -7,7 +7,8 @@
  * Usage: npx tsx scripts/discover-renewal-stages.ts
  */
 
-import 'dotenv/config';
+import { config as dotenvConfig } from 'dotenv';
+dotenvConfig({ path: '.env.local' });
 import { db } from '../src/db';
 import { azPipelineStageConfig, tenants } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
@@ -84,10 +85,18 @@ async function main() {
   console.log(`Tenant: ${tenant.id}\n`);
 
   // Fetch pipelines from AZ
-  console.log('Fetching service ticket pipelines from AgencyZoom...');
+  console.log('Fetching pipelines from AgencyZoom...');
   let pipelines: any;
   try {
-    pipelines = await azClient.getServiceTicketPipelines();
+    // Try service ticket pipelines endpoint first, fall back to general pipelines
+    try {
+      pipelines = await azClient.getServiceTicketPipelines();
+      console.log('Used service ticket pipelines endpoint');
+    } catch {
+      console.log('Service ticket pipelines endpoint failed, trying general pipelines...');
+      pipelines = await azClient.getPipelines();
+      console.log('Used general pipelines endpoint');
+    }
   } catch (error) {
     console.error('ERROR fetching pipelines:', error);
     process.exit(1);
