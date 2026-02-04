@@ -374,7 +374,7 @@ async function executeRetryOperation(
         await azClient.updateServiceTicket(payload.srId as number, {
           status: 2,
           resolutionId: SERVICE_RESOLUTIONS.STANDARD,
-          resolutionDesc: "Renewal review completed",
+          resolutionDesc: (payload.resolutionDesc as string) || "Renewal review completed",
         });
       } else {
         await azClient.updateServiceTicket(payload.srId as number, {

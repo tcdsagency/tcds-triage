@@ -57,7 +57,8 @@ export async function moveRenewalToStage(
   renewalId: string,
   targetStage: RenewalCanonicalStage,
   performedBy: string,
-  performedByUserId?: string
+  performedByUserId?: string,
+  resolutionDesc?: string
 ): Promise<MoveStageResult> {
   // Get current renewal
   const [renewal] = await db
@@ -107,7 +108,7 @@ export async function moveRenewalToStage(
           await azClient.updateServiceTicket(renewal.agencyzoomSrId, {
             status: 2, // completed
             resolutionId: SERVICE_RESOLUTIONS.STANDARD,
-            resolutionDesc: `Renewal review completed`,
+            resolutionDesc: resolutionDesc || 'Renewal review completed',
           });
         } else {
           await azClient.updateServiceTicket(renewal.agencyzoomSrId, {
@@ -128,6 +129,7 @@ export async function moveRenewalToStage(
             targetStageId,
             targetStage,
             isComplete: targetStage === 'completed',
+            resolutionDesc: resolutionDesc || 'Renewal review completed',
           },
         }, errorMessage);
       } catch (retryError) {
@@ -292,7 +294,7 @@ export async function handleAgentDecision(
   const noteContent = `Decision: ${decision.replace(/_/g, ' ').toUpperCase()}${notes ? `\nNotes: ${notes}` : ''}`;
   const noteResult = await addRenewalNote(tenantId, renewalId, noteContent, userName, userId);
 
-  // Move SR to appropriate stage
+  // Move SR to appropriate stage with decision-specific resolution descriptions
   let moveResult: MoveStageResult = { success: true };
   const stageMap: Record<AgentDecision, RenewalCanonicalStage | null> = {
     renew_as_is: 'completed',
@@ -303,9 +305,20 @@ export async function handleAgentDecision(
     bound_new_policy: 'completed',
   };
 
+  // AZ resolution descriptions that match the dropdown values and trigger automations
+  const resolutionDescMap: Record<AgentDecision, string> = {
+    renew_as_is: 'Completed – Accepted As-Is',
+    reshop: '',
+    contact_customer: '',
+    needs_more_info: '',
+    no_better_option: 'Completed – No Better Option Found',
+    bound_new_policy: 'Completed – Bound New Policy',
+  };
+
   const targetStage = stageMap[decision];
   if (targetStage) {
-    moveResult = await moveRenewalToStage(tenantId, renewalId, targetStage, userName, userId);
+    const resDesc = resolutionDescMap[decision] || undefined;
+    moveResult = await moveRenewalToStage(tenantId, renewalId, targetStage, userName, userId, resDesc);
   }
 
   // Combine warnings
