@@ -1127,6 +1127,23 @@ ${alertType === "sold" ? `• Sale Date: ${saleDate}` : ""}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+WHAT THIS MEANS
+${alertType === "listing_detected" ? "This customer's insured property has been listed for sale. This may indicate they are planning to move and could cancel or need changes to their policy." : alertType === "pending_sale" ? "This customer's insured property is under contract. A sale is likely imminent. Policy changes or cancellation may be needed soon." : "This customer's insured property has sold. They may need to cancel their homeowners policy or transfer coverage to a new address."}
+
+SUGGESTED ACTIONS
+${alertType === "listing_detected" ? `1. Reach out to confirm they are selling
+2. Ask if they have a new home that needs coverage
+3. Discuss any policy changes needed during the listing period
+4. Set a follow-up reminder to check back in 30 days` : alertType === "pending_sale" ? `1. Contact the customer to confirm the pending sale
+2. Ask about the closing date and whether they need coverage through closing
+3. Discuss coverage for their next home
+4. Prepare for policy cancellation or transfer at closing` : `1. Confirm the sale has closed
+2. Process policy cancellation or update the insured property address
+3. Check if they need coverage for a new home
+4. Review their remaining policies for any cross-sell opportunities`}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 QUICK LINKS
 • AgencyZoom Profile: ${policy.azContactId ? `https://app.agencyzoom.com/customer/index?id=${policy.azContactId}` : "N/A"}
 • TCDS App: ${policy.azContactId ? `https://tcds-triage.vercel.app/customers/${policy.azContactId}?azId=${policy.azContactId}` : "N/A"}
