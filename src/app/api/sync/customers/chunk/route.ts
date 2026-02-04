@@ -11,12 +11,31 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { customers, syncLogs } from '@/db/schema';
+import { customers, users, syncLogs } from '@/db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { getAgencyZoomClient, type AgencyZoomCustomer } from '@/lib/api/agencyzoom';
 
 const TENANT_ID = process.env.DEFAULT_TENANT_ID || 'demo-tenant';
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
+
+// Agent lookup caches for producer/CSR resolution
+let agentMap: Map<string, string> | null = null;
+let agentNameMap: Map<string, string> | null = null;
+
+async function ensureAgentCache() {
+  if (agentMap) return;
+  const allUsers = await db.select({ id: users.id, agencyzoomId: users.agencyzoomId, firstName: users.firstName, lastName: users.lastName })
+    .from(users).where(eq(users.tenantId, TENANT_ID));
+  agentMap = new Map();
+  agentNameMap = new Map();
+  for (const u of allUsers) {
+    if (u.agencyzoomId) agentMap.set(u.agencyzoomId, u.id);
+    if (u.firstName && u.lastName) {
+      agentNameMap.set(`${u.firstName} ${u.lastName}`.toLowerCase().trim(), u.id);
+    }
+  }
+  console.log(`[ChunkedSync] Agent cache: ${agentMap.size} ID mappings, ${agentNameMap.size} name mappings`);
+}
 
 // Max batch size per request - keep small to avoid timeout
 const MAX_BATCH_SIZE = 25;
@@ -76,6 +95,7 @@ export async function POST(request: NextRequest) {
  * Sync a chunk of customers from AgencyZoom
  */
 async function syncAgencyZoomChunk(page: number, batchSize: number) {
+  await ensureAgentCache();
   const client = getAgencyZoomClient();
   const startTime = Date.now();
 
@@ -201,6 +221,19 @@ async function upsertCustomer(azCustomer: AgencyZoomCustomer): Promise<'created'
     ),
   });
 
+  // Resolve producer from agentId (AZ API field) and CSR by name lookup
+  const azProducerId = raw.agentid || raw.agentId || raw.producerid || raw.producerId;
+  const resolvedProducerId = azProducerId && agentMap ? agentMap.get(azProducerId.toString()) || null : null;
+  const azCsrId = raw.csrid || raw.csrId;
+  let resolvedCsrId = azCsrId && agentMap ? agentMap.get(azCsrId.toString()) || null : null;
+  if (!resolvedCsrId && agentNameMap) {
+    const csrFirst = (raw.csrfirstname || raw.csrFirstname) as string | null;
+    const csrLast = (raw.csrlastname || raw.csrLastname) as string | null;
+    if (csrFirst && csrLast) {
+      resolvedCsrId = agentNameMap.get(`${csrFirst} ${csrLast}`.toLowerCase().trim()) || null;
+    }
+  }
+
   const customerData = {
     tenantId: TENANT_ID,
     agencyzoomId: azCustomer.id.toString(),
@@ -218,6 +251,8 @@ async function upsertCustomer(azCustomer: AgencyZoomCustomer): Promise<'created'
       zip,
     } : undefined,
     dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+    producerId: resolvedProducerId || existing?.producerId || undefined,
+    csrId: resolvedCsrId || existing?.csrId || undefined,
     pipelineStage: pipelineStage || undefined,
     leadSource: leadSource || undefined,
     lastSyncedFromAz: new Date(),

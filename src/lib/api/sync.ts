@@ -5,9 +5,27 @@
  */
 
 import { db } from '@/db';
-import { customers } from '@/db/schema';
+import { customers, users } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getAgencyZoomClient, type AgencyZoomCustomer } from '@/lib/api/agencyzoom';
+
+// Agent lookup caches for producer/CSR resolution
+let syncAgentMap: Map<string, string> | null = null;
+let syncAgentNameMap: Map<string, string> | null = null;
+
+async function ensureSyncAgentCache(tenantId: string) {
+  if (syncAgentMap) return;
+  const allUsers = await db.select({ id: users.id, agencyzoomId: users.agencyzoomId, firstName: users.firstName, lastName: users.lastName })
+    .from(users).where(eq(users.tenantId, tenantId));
+  syncAgentMap = new Map();
+  syncAgentNameMap = new Map();
+  for (const u of allUsers) {
+    if (u.agencyzoomId) syncAgentMap.set(u.agencyzoomId, u.id);
+    if (u.firstName && u.lastName) {
+      syncAgentNameMap.set(`${u.firstName} ${u.lastName}`.toLowerCase().trim(), u.id);
+    }
+  }
+}
 
 export interface SyncResult {
   created: number;
@@ -76,6 +94,8 @@ async function upsertCustomer(
   tenantId: string,
   azCustomer: AgencyZoomCustomer
 ): Promise<'created' | 'updated'> {
+  await ensureSyncAgentCache(tenantId);
+
   // Check if customer exists
   const existing = await db.query.customers.findFirst({
     where: and(
@@ -83,6 +103,20 @@ async function upsertCustomer(
       eq(customers.agencyzoomId, azCustomer.id.toString())
     ),
   });
+
+  // Resolve producer from agentId (AZ API field) and CSR by name
+  const raw = azCustomer as any;
+  const azProducerId = raw.agentid || raw.agentId || raw.producerid || azCustomer.producerId;
+  const resolvedProducerId = azProducerId && syncAgentMap ? syncAgentMap.get(azProducerId.toString()) || null : null;
+  const azCsrId = raw.csrid || azCustomer.csrId;
+  let resolvedCsrId = azCsrId && syncAgentMap ? syncAgentMap.get(azCsrId.toString()) || null : null;
+  if (!resolvedCsrId && syncAgentNameMap) {
+    const csrFirst = raw.csrfirstname || raw.csrFirstname;
+    const csrLast = raw.csrlastname || raw.csrLastname;
+    if (csrFirst && csrLast) {
+      resolvedCsrId = syncAgentNameMap.get(`${csrFirst} ${csrLast}`.toLowerCase().trim()) || null;
+    }
+  }
 
   const customerData = {
     tenantId,
@@ -99,6 +133,8 @@ async function upsertCustomer(
       zip: azCustomer.zip || '',
     } : null,
     dateOfBirth: azCustomer.dateOfBirth ? new Date(azCustomer.dateOfBirth) : null,
+    producerId: resolvedProducerId || existing?.producerId || null,
+    csrId: resolvedCsrId || existing?.csrId || null,
     pipelineStage: azCustomer.pipelineStage,
     leadSource: azCustomer.leadSource,
     lastSyncedFromAz: new Date(),

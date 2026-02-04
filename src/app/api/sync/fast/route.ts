@@ -29,14 +29,18 @@ export async function POST(request: NextRequest) {
   try {
     log('Starting fast sync...');
 
-    // Build agent cache
-    const allUsers = await db.select({ id: users.id, agencyzoomId: users.agencyzoomId })
+    // Build agent cache (by AZ ID and by name for CSR matching)
+    const allUsers = await db.select({ id: users.id, agencyzoomId: users.agencyzoomId, firstName: users.firstName, lastName: users.lastName })
       .from(users).where(eq(users.tenantId, tenantId));
     const agentMap = new Map<string, string>();
+    const agentNameMap = new Map<string, string>();
     for (const u of allUsers) {
       if (u.agencyzoomId) agentMap.set(u.agencyzoomId, u.id);
+      if (u.firstName && u.lastName) {
+        agentNameMap.set(`${u.firstName} ${u.lastName}`.toLowerCase().trim(), u.id);
+      }
     }
-    log(`Agent cache: ${agentMap.size} users`);
+    log(`Agent cache: ${agentMap.size} ID mappings, ${agentNameMap.size} name mappings`);
 
     // Get existing customers for fast lookup
     const existingCustomers = await db.select({ id: customers.id, agencyzoomId: customers.agencyzoomId })
@@ -134,8 +138,19 @@ export async function POST(request: NextRequest) {
             state: raw.state || c.state || '',
             zip: raw.zip || c.zip || '',
           } : null,
-          producerId: (raw.producerid || c.producerId) ? agentMap.get((raw.producerid || c.producerId).toString()) || null : null,
-          csrId: (raw.csrid || c.csrId) ? agentMap.get((raw.csrid || c.csrId).toString()) || null : null,
+          producerId: (() => {
+            const azProdId = raw.agentid || raw.agentId || raw.producerid || c.producerId;
+            return azProdId ? agentMap.get(azProdId.toString()) || null : null;
+          })(),
+          csrId: (() => {
+            const azCsrId = raw.csrid || c.csrId;
+            if (azCsrId) return agentMap.get(azCsrId.toString()) || null;
+            // Fall back to CSR name lookup (AZ returns csrFirstname/csrLastname but no csrId)
+            const csrFirst = raw.csrfirstname || raw.csrFirstname;
+            const csrLast = raw.csrlastname || raw.csrLastname;
+            if (csrFirst && csrLast) return agentNameMap.get(`${csrFirst} ${csrLast}`.toLowerCase().trim()) || null;
+            return null;
+          })(),
           pipelineStage: raw.pipelinestage || c.pipelineStage || null,
           leadSource: raw.leadsource || c.leadSource || null,
           isLead: false,

@@ -45,29 +45,37 @@ const NO_MATCH_EMAIL = '4e80kxy3@robot.zapier.com';
 
 // Cache agent lookups during sync to avoid repeated queries
 let agentCacheByAzId: Map<string, string | null> = new Map();
+let agentCacheByName: Map<string, string | null> = new Map();
 let agentCacheInitialized = false;
 
 /**
  * Initialize agent lookup cache for a tenant
  * Maps AgencyZoom user IDs to internal user UUIDs
+ * Also builds a name-based lookup for CSR matching (AZ API returns CSR name but no ID)
  */
 async function initAgentCache(tenantId: string): Promise<void> {
   if (agentCacheInitialized) return;
-  
+
   const allUsers = await db.query.users.findMany({
     where: eq(users.tenantId, tenantId),
-    columns: { id: true, agencyzoomId: true },
+    columns: { id: true, agencyzoomId: true, firstName: true, lastName: true },
   });
-  
+
   agentCacheByAzId = new Map();
+  agentCacheByName = new Map();
   for (const user of allUsers) {
     if (user.agencyzoomId) {
       agentCacheByAzId.set(user.agencyzoomId, user.id);
     }
+    // Build name-based lookup (lowercase "firstname lastname" -> user id)
+    if (user.firstName && user.lastName) {
+      const nameKey = `${user.firstName} ${user.lastName}`.toLowerCase().trim();
+      agentCacheByName.set(nameKey, user.id);
+    }
   }
-  
+
   agentCacheInitialized = true;
-  console.log(`[CustomerSync] Agent cache initialized with ${agentCacheByAzId.size} mappings`);
+  console.log(`[CustomerSync] Agent cache initialized with ${agentCacheByAzId.size} ID mappings, ${agentCacheByName.size} name mappings`);
 }
 
 /**
@@ -75,6 +83,7 @@ async function initAgentCache(tenantId: string): Promise<void> {
  */
 function clearAgentCache(): void {
   agentCacheByAzId.clear();
+  agentCacheByName.clear();
   agentCacheInitialized = false;
 }
 
@@ -84,6 +93,16 @@ function clearAgentCache(): void {
 function lookupAgentByAzId(azUserId: number | null | undefined): string | null {
   if (!azUserId) return null;
   return agentCacheByAzId.get(azUserId.toString()) || null;
+}
+
+/**
+ * Lookup internal user UUID by first + last name
+ * Used for CSR matching since AZ API returns csrFirstname/csrLastname but no csrId
+ */
+function lookupAgentByName(firstName: string | null | undefined, lastName: string | null | undefined): string | null {
+  if (!firstName || !lastName) return null;
+  const nameKey = `${firstName} ${lastName}`.toLowerCase().trim();
+  return agentCacheByName.get(nameKey) || null;
 }
 
 // ============================================================================
@@ -619,12 +638,14 @@ async function upsertFromAgencyZoom(
 
   const existing = existingByAzId || existingByHsId;
 
-  // Resolve producer and CSR from AgencyZoom IDs to internal user UUIDs
-  // Check both lowercase and camelCase for producer/csr IDs
-  const azProducerId = raw.producerid || raw.producerId || azCustomer.producerId;
-  const azCsrId = raw.csrid || raw.csrId || azCustomer.csrId;
+  // Resolve producer and CSR from AgencyZoom data to internal user UUIDs
+  // AZ API returns agentId for producer (not producerId), and CSR name but no csrId
+  const azProducerId = raw.agentid || raw.agentId || raw.producerid || raw.producerId || azCustomer.producerId;
   const producerId = lookupAgentByAzId(azProducerId);
-  const csrId = lookupAgentByAzId(azCsrId);
+  // CSR: try csrId first, then fall back to name-based lookup
+  const azCsrId = raw.csrid || raw.csrId || azCustomer.csrId;
+  const csrId = lookupAgentByAzId(azCsrId)
+    || lookupAgentByName(raw.csrfirstname || raw.csrFirstname, raw.csrlastname || raw.csrLastname);
 
   // Extract other fields with lowercase fallbacks
   // Note: email already defined above for name fallback
