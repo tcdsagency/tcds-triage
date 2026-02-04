@@ -15,6 +15,9 @@ import type {
   AL3Vehicle,
   AL3Driver,
   AL3Location,
+  AL3Discount,
+  AL3Claim,
+  AL3Endorsement,
 } from '@/types/renewal.types';
 import {
   AL3_GROUP_CODES,
@@ -22,6 +25,9 @@ import {
   CVG_FIELDS,
   VEH_FIELDS,
   DRV_FIELDS,
+  DSC_FIELDS,
+  CLM_FIELDS,
+  END_FIELDS,
   LOB_CODES,
 } from './constants';
 
@@ -135,6 +141,9 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
   const drivers: AL3Driver[] = [];
   const locations: AL3Location[] = [];
   const remarks: string[] = [];
+  const claims: AL3Claim[] = [];
+  const endorsementRecords: AL3Endorsement[] = [];
+  const discountRecords: AL3Discount[] = [];
 
   let currentVehicle: AL3Vehicle | null = null;
   let confidence = 0.7; // Base confidence
@@ -180,6 +189,24 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
         break;
       }
 
+      case AL3_GROUP_CODES.DISCOUNT: {
+        const disc = parseDiscount(line);
+        if (disc) discountRecords.push(disc);
+        break;
+      }
+
+      case AL3_GROUP_CODES.CLAIM: {
+        const clm = parseClaim(line);
+        if (clm) claims.push(clm);
+        break;
+      }
+
+      case AL3_GROUP_CODES.ENDORSEMENT: {
+        const end = parseEndorsement(line);
+        if (end) endorsementRecords.push(end);
+        break;
+      }
+
       case AL3_GROUP_CODES.PREMIUM: {
         // Try to extract total premium from premium record
         const premiumStr = line.substring(4).trim();
@@ -208,6 +235,9 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
     drivers,
     locations,
     remarks,
+    claims,
+    endorsementRecords,
+    discountRecords,
     rawContent: lines.join('\n'),
     parseConfidence: confidence,
   };
@@ -306,5 +336,52 @@ function parseLocation(line: string): AL3Location | null {
     city: content.substring(60, 90).trim() || undefined,
     state: content.substring(90, 92).trim() || undefined,
     zip: content.substring(92, 102).trim() || undefined,
+  };
+}
+
+/**
+ * Parse a discount record (5DSC).
+ */
+function parseDiscount(line: string): AL3Discount | null {
+  const code = extractField(line, DSC_FIELDS.DISCOUNT_CODE);
+  if (!code) return null;
+
+  return {
+    code,
+    description: extractField(line, DSC_FIELDS.DESCRIPTION) || undefined,
+    amount: parseAL3Number(extractField(line, DSC_FIELDS.AMOUNT)),
+    percent: parseAL3Number(extractField(line, DSC_FIELDS.PERCENT)),
+  };
+}
+
+/**
+ * Parse a claim record (5CLM).
+ */
+function parseClaim(line: string): AL3Claim | null {
+  const claimNumber = extractField(line, CLM_FIELDS.CLAIM_NUMBER);
+  const claimType = extractField(line, CLM_FIELDS.CLAIM_TYPE);
+  if (!claimNumber && !claimType) return null;
+
+  return {
+    claimNumber: claimNumber || undefined,
+    claimDate: parseAL3Date(extractField(line, CLM_FIELDS.CLAIM_DATE)),
+    claimType: claimType || undefined,
+    amount: parseAL3Number(extractField(line, CLM_FIELDS.AMOUNT)),
+    status: extractField(line, CLM_FIELDS.STATUS) || undefined,
+  };
+}
+
+/**
+ * Parse an endorsement record (5END).
+ */
+function parseEndorsement(line: string): AL3Endorsement | null {
+  const code = extractField(line, END_FIELDS.ENDORSEMENT_CODE);
+  if (!code) return null;
+
+  return {
+    code,
+    description: extractField(line, END_FIELDS.DESCRIPTION) || undefined,
+    effectiveDate: parseAL3Date(extractField(line, END_FIELDS.EFFECTIVE_DATE)),
+    premium: parseAL3Number(extractField(line, END_FIELDS.PREMIUM)),
   };
 }

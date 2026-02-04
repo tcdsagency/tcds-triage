@@ -10,6 +10,9 @@ import type {
   CanonicalCoverage,
   CanonicalVehicle,
   CanonicalDriver,
+  CanonicalDiscount,
+  CanonicalEndorsement,
+  CanonicalClaim,
 } from '@/types/renewal.types';
 import { COVERAGE_CODE_MAP } from './constants';
 
@@ -94,17 +97,50 @@ export function buildRenewalSnapshot(
     totalPremium = allCoveragePremiums.reduce((sum, p) => sum + p, 0);
   }
 
-  // Extract endorsements and discounts from remarks
-  const endorsements: string[] = [];
-  const discounts: string[] = [];
-  for (const remark of transaction.remarks) {
-    const lower = remark.toLowerCase();
-    if (lower.includes('endorsement') || lower.includes('rider')) {
-      endorsements.push(remark);
-    } else if (lower.includes('discount') || lower.includes('credit')) {
-      discounts.push(remark);
+  // Map structured endorsement records to canonical format
+  const endorsements: CanonicalEndorsement[] = transaction.endorsementRecords.map((e) => ({
+    code: e.code,
+    description: e.description || e.code,
+    effectiveDate: e.effectiveDate,
+    premium: e.premium,
+  }));
+
+  // Fallback: extract endorsements from remarks if no structured records found
+  if (endorsements.length === 0) {
+    for (const remark of transaction.remarks) {
+      const lower = remark.toLowerCase();
+      if (lower.includes('endorsement') || lower.includes('rider')) {
+        endorsements.push({ code: 'RMK', description: remark });
+      }
     }
   }
+
+  // Map structured discount records to canonical format
+  const discounts: CanonicalDiscount[] = transaction.discountRecords.map((d) => ({
+    code: d.code,
+    description: d.description || d.code,
+    amount: d.amount,
+    percent: d.percent,
+  }));
+
+  // Fallback: extract discounts from remarks if no structured records found
+  if (discounts.length === 0) {
+    for (const remark of transaction.remarks) {
+      const lower = remark.toLowerCase();
+      if (lower.includes('discount') || lower.includes('credit')) {
+        discounts.push({ code: 'RMK', description: remark });
+      }
+    }
+  }
+
+  // Map claims
+  const claims: CanonicalClaim[] = transaction.claims.map((c) => ({
+    claimNumber: c.claimNumber,
+    claimDate: c.claimDate,
+    claimType: c.claimType,
+    amount: c.amount,
+    status: c.status,
+  }));
 
   return {
     premium: totalPremium,
@@ -113,6 +149,7 @@ export function buildRenewalSnapshot(
     drivers,
     endorsements,
     discounts,
+    claims,
     parseConfidence: transaction.parseConfidence,
     parsedAt: new Date().toISOString(),
     sourceFileName: undefined,

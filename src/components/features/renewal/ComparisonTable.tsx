@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
-import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle } from '@/types/renewal.types';
+import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle, CanonicalDiscount, CanonicalClaim, PropertyContext } from '@/types/renewal.types';
 
 interface ComparisonTableProps {
   renewalSnapshot: RenewalSnapshot | null;
@@ -102,6 +102,55 @@ export default function ComparisonTable({
           {renderDeductibleComparison(baselineSnapshot?.coverages, renewalSnapshot?.coverages, materialByField)}
         </div>
       )}
+
+      {/* Discounts Section */}
+      <SectionHeader
+        title="Discounts"
+        expanded={expandedSections.has('discounts')}
+        onToggle={() => toggleSection('discounts')}
+        hasMaterial={materialChanges.some((c) =>
+          ['discount_removed', 'discount_added'].includes(c.category) && c.severity === 'material_negative'
+        )}
+      />
+      {expandedSections.has('discounts') && (
+        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+          {renderDiscountComparison(baselineSnapshot?.discounts, renewalSnapshot?.discounts, materialByField)}
+        </div>
+      )}
+
+      {/* Claims Section */}
+      {(renewalSnapshot?.claims?.length || baselineSnapshot?.claims?.length) ? (
+        <>
+          <SectionHeader
+            title="Claims"
+            expanded={expandedSections.has('claims')}
+            onToggle={() => toggleSection('claims')}
+            hasMaterial={materialChanges.some((c) => c.category === 'claim' && c.severity === 'material_negative')}
+          />
+          {expandedSections.has('claims') && (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+              {renderClaimsSection(baselineSnapshot?.claims, renewalSnapshot?.claims, materialChanges)}
+            </div>
+          )}
+        </>
+      ) : null}
+
+      {/* Property Section (homeowners) */}
+      {baselineSnapshot?.propertyContext ? (
+        <>
+          <SectionHeader
+            title="Property"
+            expanded={expandedSections.has('property')}
+            onToggle={() => toggleSection('property')}
+            hasMaterial={materialChanges.some((c) => c.category === 'property' && c.severity === 'material_negative')}
+          />
+          {expandedSections.has('property') && (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+              {renderPropertySection(baselineSnapshot.propertyContext, materialChanges)}
+            </div>
+          )}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -321,6 +370,147 @@ function renderDeductibleComparison(
           />
         );
       })}
+    </>
+  );
+}
+
+function renderDiscountComparison(
+  baseline: CanonicalDiscount[] | undefined,
+  renewal: CanonicalDiscount[] | undefined,
+  materialByField: Map<string, MaterialChange>
+) {
+  const allCodes = new Set<string>();
+  baseline?.forEach((d) => allCodes.add(d.code.toUpperCase()));
+  renewal?.forEach((d) => allCodes.add(d.code.toUpperCase()));
+
+  if (allCodes.size === 0 && !baseline?.length && !renewal?.length) {
+    return <div className="px-3 py-2 text-sm text-gray-500">No discount data</div>;
+  }
+
+  const baselineByCode = new Map(baseline?.map((d) => [d.code.toUpperCase(), d]) || []);
+  const renewalByCode = new Map(renewal?.map((d) => [d.code.toUpperCase(), d]) || []);
+
+  return (
+    <>
+      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
+        <div>Discount</div>
+        <div>Current</div>
+        <div>Renewal</div>
+      </div>
+      {Array.from(allCodes).map((code) => {
+        const b = baselineByCode.get(code);
+        const r = renewalByCode.get(code);
+        const mc = materialByField.get(`discount.${code}`);
+
+        return (
+          <ComparisonRow
+            key={code}
+            label={b?.description || r?.description || code}
+            current={b ? (b.percent ? `${b.percent}%` : b.amount ? `$${b.amount}` : 'Applied') : 'N/A'}
+            renewal={r ? (r.percent ? `${r.percent}%` : r.amount ? `$${r.amount}` : 'Applied') : 'REMOVED'}
+            change={!r ? 'worse' : !b ? 'better' : 'same'}
+            isMaterial={mc?.severity === 'material_negative'}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function renderClaimsSection(
+  baseline: CanonicalClaim[] | undefined,
+  renewal: CanonicalClaim[] | undefined,
+  materialChanges: MaterialChange[]
+) {
+  const allClaims = [...(baseline || []), ...(renewal || [])];
+  const claimChanges = materialChanges.filter((c) => c.category === 'claim');
+
+  if (allClaims.length === 0 && claimChanges.length === 0) {
+    return <div className="px-3 py-2 text-sm text-gray-500">No claims data</div>;
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
+        <div>Claim</div>
+        <div>Date</div>
+        <div>Status</div>
+      </div>
+      {allClaims.map((claim, idx) => {
+        const isNew = claimChanges.some(
+          (c) => c.field === `claim.${claim.claimNumber || 'new'}`
+        );
+        return (
+          <ComparisonRow
+            key={claim.claimNumber || `claim-${idx}`}
+            label={claim.claimType || claim.claimNumber || 'Claim'}
+            current={claim.claimDate || '-'}
+            renewal={claim.status || (claim.amount != null ? `$${claim.amount.toLocaleString()}` : '-')}
+            change={isNew ? 'worse' : 'same'}
+            isMaterial={isNew}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function renderPropertySection(
+  propertyContext: PropertyContext,
+  materialChanges: MaterialChange[]
+) {
+  const propertyChanges = materialChanges.filter((c) => c.category === 'property');
+
+  return (
+    <>
+      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
+        <div>Property Detail</div>
+        <div>Value</div>
+        <div>Flag</div>
+      </div>
+      {propertyContext.roofAge != null && (
+        <ComparisonRow
+          label="Roof Age"
+          current={`${propertyContext.roofAge} years`}
+          renewal={propertyContext.roofType || '-'}
+          change={propertyContext.roofAge >= 20 ? 'worse' : propertyContext.roofAge >= 15 ? 'different' : 'same'}
+          isMaterial={propertyContext.roofAge >= 20}
+        />
+      )}
+      {propertyContext.yearBuilt != null && (
+        <ComparisonRow
+          label="Year Built"
+          current={`${propertyContext.yearBuilt}`}
+          renewal="-"
+        />
+      )}
+      {propertyContext.constructionType != null && (
+        <ComparisonRow
+          label="Construction"
+          current={propertyContext.constructionType}
+          renewal="-"
+        />
+      )}
+      {propertyChanges.filter((c) => c.field === 'property.rce').map((c) => (
+        <ComparisonRow
+          key={c.field}
+          label="Replacement Cost Est."
+          current={c.oldValue != null ? `$${Number(c.oldValue).toLocaleString()}` : '-'}
+          renewal={c.newValue != null ? `$${Number(c.newValue).toLocaleString()}` : '-'}
+          change={getChangeType(c)}
+          isMaterial={c.severity === 'material_negative'}
+        />
+      ))}
+      {propertyChanges.filter((c) => c.field === 'property.roofCoverageType').map((c) => (
+        <ComparisonRow
+          key={c.field}
+          label="Valuation Method"
+          current={String(c.oldValue || '-')}
+          renewal={String(c.newValue || '-')}
+          change="worse"
+          isMaterial={true}
+        />
+      ))}
     </>
   );
 }

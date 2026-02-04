@@ -6,13 +6,15 @@
  */
 
 import { db } from '@/db';
-import { policies, vehicles, drivers, customers } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { policies, vehicles, drivers, customers, properties, policyNotices } from '@/db/schema';
+import { eq, and, like } from 'drizzle-orm';
 import type {
   BaselineSnapshot,
   CanonicalCoverage,
   CanonicalVehicle,
   CanonicalDriver,
+  CanonicalClaim,
+  PropertyContext,
 } from '@/types/renewal.types';
 import { COVERAGE_CODE_MAP } from './constants';
 
@@ -159,6 +161,51 @@ export async function buildBaselineSnapshot(
     .from(drivers)
     .where(eq(drivers.policyId, policy.id));
 
+  // Fetch property context
+  let propertyContext: PropertyContext | undefined;
+  const [prop] = await db
+    .select({
+      roofAge: properties.roofAge,
+      roofType: properties.roofType,
+      yearBuilt: properties.yearBuilt,
+      constructionType: properties.constructionType,
+    })
+    .from(properties)
+    .where(eq(properties.customerId, localPolicy.customerId))
+    .limit(1);
+
+  if (prop) {
+    propertyContext = {
+      roofAge: prop.roofAge ?? undefined,
+      roofType: prop.roofType ?? undefined,
+      yearBuilt: prop.yearBuilt ?? undefined,
+      constructionType: prop.constructionType ?? undefined,
+    };
+  }
+
+  // Fetch claims from policy notices
+  const claimNotices = await db
+    .select({
+      claimNumber: policyNotices.claimNumber,
+      claimDate: policyNotices.claimDate,
+      claimStatus: policyNotices.claimStatus,
+      description: policyNotices.description,
+    })
+    .from(policyNotices)
+    .where(
+      and(
+        eq(policyNotices.policyId, policy.id),
+        eq(policyNotices.noticeType, 'claim')
+      )
+    );
+
+  const claims: CanonicalClaim[] = claimNotices.map((n) => ({
+    claimNumber: n.claimNumber ?? undefined,
+    claimDate: n.claimDate ?? undefined,
+    claimType: n.description ?? undefined,
+    status: n.claimStatus ?? undefined,
+  }));
+
   // Build snapshot
   const snapshot: BaselineSnapshot = {
     premium: policy.premium ? parseFloat(policy.premium) : undefined,
@@ -167,6 +214,8 @@ export async function buildBaselineSnapshot(
     drivers: normalizeHawkSoftDrivers(policyDrivers),
     endorsements: [],
     discounts: [],
+    claims,
+    propertyContext,
     fetchedAt: new Date().toISOString(),
     fetchSource: 'local_cache',
   };

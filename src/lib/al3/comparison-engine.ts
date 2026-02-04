@@ -14,6 +14,9 @@ import type {
   ComparisonThresholds,
   CanonicalCoverage,
   CanonicalVehicle,
+  CanonicalDiscount,
+  CanonicalEndorsement,
+  CanonicalClaim,
   ChangeSeverity,
 } from '@/types/renewal.types';
 import { DEFAULT_COMPARISON_THRESHOLDS } from '@/types/renewal.types';
@@ -43,6 +46,18 @@ export function compareSnapshots(
 
   // Compare drivers
   allChanges.push(...compareDrivers(renewal.drivers, baseline.drivers));
+
+  // Compare discounts
+  allChanges.push(...compareDiscounts(renewal.discounts, baseline.discounts));
+
+  // Compare endorsements
+  allChanges.push(...compareEndorsements(renewal.endorsements, baseline.endorsements));
+
+  // Compare claims
+  allChanges.push(...compareClaims(renewal.claims, baseline.claims));
+
+  // Flag property concerns (homeowners)
+  allChanges.push(...flagPropertyConcerns(renewal, baseline));
 
   // Separate material vs non-material
   const materialChanges = allChanges.filter((c) => c.severity !== 'non_material');
@@ -322,6 +337,228 @@ function compareDrivers(
         description: `Driver added: ${name}`,
       });
     }
+  }
+
+  return changes;
+}
+
+// =============================================================================
+// DISCOUNT COMPARISON
+// =============================================================================
+
+function compareDiscounts(
+  renewalDiscounts: CanonicalDiscount[],
+  baselineDiscounts: CanonicalDiscount[]
+): MaterialChange[] {
+  const changes: MaterialChange[] = [];
+
+  const renewalByCode = new Map(renewalDiscounts.map((d) => [d.code.toUpperCase(), d]));
+  const baselineByCode = new Map(baselineDiscounts.map((d) => [d.code.toUpperCase(), d]));
+
+  // Removed discounts (in baseline but not in renewal) — lost a savings
+  for (const [code, baseline] of baselineByCode) {
+    if (!renewalByCode.has(code)) {
+      changes.push({
+        field: `discount.${code}`,
+        category: 'discount_removed',
+        classification: 'material_negative',
+        oldValue: baseline.description || code,
+        newValue: null,
+        severity: 'material_negative',
+        description: `Discount removed: ${baseline.description || code}`,
+      });
+    }
+  }
+
+  // Added discounts (in renewal but not in baseline)
+  for (const [code, renewal] of renewalByCode) {
+    if (!baselineByCode.has(code)) {
+      changes.push({
+        field: `discount.${code}`,
+        category: 'discount_added',
+        classification: 'material_positive',
+        oldValue: null,
+        newValue: renewal.description || code,
+        severity: 'material_positive',
+        description: `Discount added: ${renewal.description || code}`,
+      });
+    }
+  }
+
+  return changes;
+}
+
+// =============================================================================
+// ENDORSEMENT COMPARISON
+// =============================================================================
+
+function compareEndorsements(
+  renewalEndorsements: CanonicalEndorsement[],
+  baselineEndorsements: CanonicalEndorsement[]
+): MaterialChange[] {
+  const changes: MaterialChange[] = [];
+
+  const renewalByCode = new Map(renewalEndorsements.map((e) => [e.code.toUpperCase(), e]));
+  const baselineByCode = new Map(baselineEndorsements.map((e) => [e.code.toUpperCase(), e]));
+
+  // Removed endorsements
+  for (const [code, baseline] of baselineByCode) {
+    if (!renewalByCode.has(code)) {
+      changes.push({
+        field: `endorsement.${code}`,
+        category: 'endorsement_removed',
+        classification: 'material_negative',
+        oldValue: baseline.description || code,
+        newValue: null,
+        severity: 'material_negative',
+        description: `Endorsement removed: ${baseline.description || code}`,
+      });
+    }
+  }
+
+  // Added endorsements — flag for agent review (can be positive or negative)
+  for (const [code, renewal] of renewalByCode) {
+    if (!baselineByCode.has(code)) {
+      changes.push({
+        field: `endorsement.${code}`,
+        category: 'endorsement_added',
+        classification: 'non_material',
+        oldValue: null,
+        newValue: renewal.description || code,
+        severity: 'non_material',
+        description: `Endorsement added: ${renewal.description || code}`,
+      });
+    }
+  }
+
+  return changes;
+}
+
+// =============================================================================
+// CLAIM COMPARISON
+// =============================================================================
+
+function compareClaims(
+  renewalClaims: CanonicalClaim[],
+  baselineClaims: CanonicalClaim[]
+): MaterialChange[] {
+  const changes: MaterialChange[] = [];
+
+  const baselineClaimNumbers = new Set(
+    baselineClaims
+      .filter((c) => c.claimNumber)
+      .map((c) => c.claimNumber!.toUpperCase())
+  );
+
+  // New claims in renewal that aren't in baseline
+  for (const claim of renewalClaims) {
+    const key = claim.claimNumber?.toUpperCase();
+    if (key && baselineClaimNumbers.has(key)) continue;
+
+    const datePart = claim.claimDate ? ` on ${claim.claimDate}` : '';
+    const amountPart = claim.amount != null ? ` — $${claim.amount.toLocaleString()}` : '';
+    const typePart = claim.claimType || 'Unknown type';
+
+    changes.push({
+      field: `claim.${claim.claimNumber || 'new'}`,
+      category: 'claim',
+      classification: 'material_negative',
+      oldValue: null,
+      newValue: claim.claimNumber || typePart,
+      severity: 'material_negative',
+      description: `New claim: ${typePart}${datePart}${amountPart}`,
+    });
+  }
+
+  return changes;
+}
+
+// =============================================================================
+// PROPERTY CONCERNS (HOMEOWNERS)
+// =============================================================================
+
+function flagPropertyConcerns(
+  renewal: RenewalSnapshot,
+  baseline: BaselineSnapshot
+): MaterialChange[] {
+  const changes: MaterialChange[] = [];
+  const propertyContext = baseline.propertyContext;
+
+  if (!propertyContext) return changes;
+
+  // Roof age flags
+  if (propertyContext.roofAge != null) {
+    const roofDesc = propertyContext.roofType
+      ? `${propertyContext.roofAge} years (${propertyContext.roofType})`
+      : `${propertyContext.roofAge} years`;
+
+    if (propertyContext.roofAge >= 20) {
+      changes.push({
+        field: 'property.roofAge',
+        category: 'property',
+        classification: 'material_negative',
+        oldValue: propertyContext.roofAge,
+        newValue: propertyContext.roofAge,
+        severity: 'material_negative',
+        description: `Roof age ${roofDesc} may affect coverage eligibility`,
+      });
+    } else if (propertyContext.roofAge >= 15) {
+      changes.push({
+        field: 'property.roofAge',
+        category: 'property',
+        classification: 'non_material',
+        oldValue: propertyContext.roofAge,
+        newValue: propertyContext.roofAge,
+        severity: 'non_material',
+        description: `Roof age: ${roofDesc}`,
+      });
+    }
+  }
+
+  // Check dwelling coverage (COV_A/dwelling) for RCE changes
+  const renewalDwelling = renewal.coverages.find((c) => c.type === 'dwelling');
+  const baselineDwelling = baseline.coverages.find((c) => c.type === 'dwelling');
+  if (
+    renewalDwelling?.limitAmount != null &&
+    baselineDwelling?.limitAmount != null &&
+    renewalDwelling.limitAmount !== baselineDwelling.limitAmount
+  ) {
+    changes.push({
+      field: 'property.rce',
+      category: 'property',
+      classification:
+        renewalDwelling.limitAmount < baselineDwelling.limitAmount
+          ? 'material_negative'
+          : 'non_material',
+      oldValue: baselineDwelling.limitAmount,
+      newValue: renewalDwelling.limitAmount,
+      changeAmount: renewalDwelling.limitAmount - baselineDwelling.limitAmount,
+      severity:
+        renewalDwelling.limitAmount < baselineDwelling.limitAmount
+          ? 'material_negative'
+          : 'non_material',
+      description: `Replacement Cost Estimate changed: $${baselineDwelling.limitAmount.toLocaleString()} → $${renewalDwelling.limitAmount.toLocaleString()}`,
+    });
+  }
+
+  // Check for valuation method change (Replacement Cost → ACV)
+  const baselineDesc = baselineDwelling?.description?.toLowerCase() || '';
+  const renewalDesc = renewalDwelling?.description?.toLowerCase() || '';
+  const baselineIsRC =
+    baselineDesc.includes('replacement cost') || baselineDesc.includes('rc');
+  const renewalIsACV =
+    renewalDesc.includes('actual cash value') || renewalDesc.includes('acv');
+
+  if (baselineIsRC && renewalIsACV) {
+    changes.push({
+      field: 'property.roofCoverageType',
+      category: 'property',
+      classification: 'material_negative',
+      oldValue: 'Replacement Cost',
+      newValue: 'Actual Cash Value',
+      severity: 'material_negative',
+      description: 'Roof coverage changed from Replacement Cost to Actual Cash Value',
+    });
   }
 
   return changes;

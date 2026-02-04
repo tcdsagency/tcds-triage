@@ -190,3 +190,34 @@ export const DRV_FIELDS = {
   LICENSE_STATE: { start: 72, end: 74 }, // 2 chars
   RELATIONSHIP: { start: 74, end: 84 }, // 10 chars
 } as const;
+
+/**
+ * Discount (5DSC) field positions.
+ */
+export const DSC_FIELDS = {
+  DISCOUNT_CODE: { start: 4, end: 14 }, // 10 chars
+  DESCRIPTION: { start: 14, end: 54 }, // 40 chars
+  AMOUNT: { start: 54, end: 69 }, // 15 chars
+  PERCENT: { start: 69, end: 79 }, // 10 chars
+} as const;
+
+/**
+ * Claim (5CLM) field positions.
+ */
+export const CLM_FIELDS = {
+  CLAIM_NUMBER: { start: 4, end: 24 }, // 20 chars
+  CLAIM_DATE: { start: 24, end: 32 }, // 8 chars (YYYYMMDD)
+  CLAIM_TYPE: { start: 32, end: 52 }, // 20 chars
+  AMOUNT: { start: 52, end: 67 }, // 15 chars
+  STATUS: { start: 67, end: 77 }, // 10 chars
+} as const;
+
+/**
+ * Endorsement (5END) field positions.
+ */
+export const END_FIELDS = {
+  ENDORSEMENT_CODE: { start: 4, end: 14 }, // 10 chars
+  DESCRIPTION: { start: 14, end: 54 }, // 40 chars
+  EFFECTIVE_DATE: { start: 54, end: 62 }, // 8 chars (YYYYMMDD)
+  PREMIUM: { start: 62, end: 77 }, // 15 chars
+} as const;

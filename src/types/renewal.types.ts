@@ -32,6 +32,9 @@ export interface AL3ParsedTransaction {
   drivers: AL3Driver[];
   locations: AL3Location[];
   remarks: string[];
+  claims: AL3Claim[];
+  endorsementRecords: AL3Endorsement[];
+  discountRecords: AL3Discount[];
   rawContent: string;
   parseConfidence: number; // 0-1
 }
@@ -71,6 +74,28 @@ export interface AL3Location {
   city?: string;
   state?: string;
   zip?: string;
+}
+
+export interface AL3Discount {
+  code: string;
+  description?: string;
+  amount?: number;
+  percent?: number;
+}
+
+export interface AL3Claim {
+  claimNumber?: string;
+  claimDate?: string;
+  claimType?: string;
+  amount?: number;
+  status?: string;
+}
+
+export interface AL3Endorsement {
+  code: string;
+  description?: string;
+  effectiveDate?: string;
+  premium?: number;
 }
 
 // =============================================================================
@@ -115,6 +140,47 @@ export interface CanonicalDriver {
 }
 
 /**
+ * Normalized discount.
+ */
+export interface CanonicalDiscount {
+  code: string;
+  description: string;
+  amount?: number;
+  percent?: number;
+}
+
+/**
+ * Normalized claim.
+ */
+export interface CanonicalClaim {
+  claimNumber?: string;
+  claimDate?: string;
+  claimType?: string;
+  amount?: number;
+  status?: string;
+}
+
+/**
+ * Normalized endorsement.
+ */
+export interface CanonicalEndorsement {
+  code: string;
+  description: string;
+  effectiveDate?: string;
+  premium?: number;
+}
+
+/**
+ * Property context for homeowners risk evaluation.
+ */
+export interface PropertyContext {
+  roofAge?: number;
+  roofType?: string;
+  yearBuilt?: number;
+  constructionType?: string;
+}
+
+/**
  * Renewal offer snapshot (from AL3).
  */
 export interface RenewalSnapshot {
@@ -122,8 +188,9 @@ export interface RenewalSnapshot {
   coverages: CanonicalCoverage[];
   vehicles: CanonicalVehicle[];
   drivers: CanonicalDriver[];
-  endorsements: string[];
-  discounts: string[];
+  endorsements: CanonicalEndorsement[];
+  discounts: CanonicalDiscount[];
+  claims: CanonicalClaim[];
   parseConfidence: number; // 0-1
   parsedAt: string; // ISO timestamp
   sourceFileName?: string;
@@ -137,8 +204,10 @@ export interface BaselineSnapshot {
   coverages: CanonicalCoverage[];
   vehicles: CanonicalVehicle[];
   drivers: CanonicalDriver[];
-  endorsements: string[];
-  discounts: string[];
+  endorsements: CanonicalEndorsement[];
+  discounts: CanonicalDiscount[];
+  claims: CanonicalClaim[];
+  propertyContext?: PropertyContext;
   fetchedAt: string; // ISO timestamp
   fetchSource: 'hawksoft_api' | 'local_cache';
 }
@@ -160,7 +229,13 @@ export type ChangeCategory =
   | 'driver_removed'
   | 'driver_added'
   | 'endorsement'
+  | 'endorsement_removed'
+  | 'endorsement_added'
   | 'discount'
+  | 'discount_removed'
+  | 'discount_added'
+  | 'claim'
+  | 'property'
   | 'other';
 
 /**
