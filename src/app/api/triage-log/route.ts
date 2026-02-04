@@ -182,6 +182,7 @@ export async function GET(request: NextRequest) {
         leadType: wrapupDrafts.leadType,
         agencyzoomLeadId: wrapupDrafts.agencyzoomLeadId,
         wrapupOutcome: wrapupDrafts.outcome,
+        wrapupTrestleData: wrapupDrafts.trestleData,
       })
       .from(calls)
       .leftJoin(wrapupDrafts, eq(calls.id, wrapupDrafts.callId))
@@ -268,10 +269,13 @@ export async function GET(request: NextRequest) {
         customerPhoneResolved = dir === "inbound" ? row.fromNumber : row.toNumber;
       }
 
+      const trestleName = (row.wrapupTrestleData as { person?: { name?: string } } | null)?.person?.name;
       const customerName =
         row.customerFirstName && row.customerLastName
           ? `${row.customerFirstName} ${row.customerLastName}`
-          : row.wrapupCustomerName || "Unknown";
+          : row.customerFirstName
+            ? row.customerFirstName
+            : row.wrapupCustomerName || trestleName || "Unknown";
 
       return {
         id: row.id,

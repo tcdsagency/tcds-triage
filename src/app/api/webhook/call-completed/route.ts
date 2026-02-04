@@ -786,15 +786,59 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
                           "completed";
 
       // Update call with VoIPTools data
+      // Also backfill phone numbers if presence-created call has "Unknown" placeholders
+      const needsFromBackfill = (!call.fromNumber || call.fromNumber === "Unknown") && callerNumber && callerNumber !== "Unknown";
+      const needsToBackfill = (!call.toNumber || call.toNumber === "Unknown") && calledNumber && calledNumber !== "Unknown";
+
+      const updateFields: Record<string, unknown> = {
+        externalCallId: body.callId,
+        status: finalStatus,
+        endedAt: timestamp,
+        durationSeconds: body.duration,
+        recordingUrl: body.recordingUrl,
+      };
+
+      if (needsFromBackfill) {
+        updateFields.fromNumber = normalizePhone(callerNumber);
+        console.log(`[Call-Completed] 📞 Backfilling fromNumber: "Unknown" → ${normalizePhone(callerNumber)} for call ${call.id}`);
+      }
+      if (needsToBackfill) {
+        updateFields.toNumber = normalizePhone(calledNumber);
+        console.log(`[Call-Completed] 📞 Backfilling toNumber: "Unknown" → ${normalizePhone(calledNumber)} for call ${call.id}`);
+      }
+
+      // Backfill customerId if phone was backfilled and no customer is linked
+      if ((needsFromBackfill || needsToBackfill) && !call.customerId) {
+        const backfilledPhone = direction === "inbound"
+          ? (needsFromBackfill ? callerNumber : call.fromNumber)
+          : (needsToBackfill ? calledNumber : call.toNumber);
+        const backfilledDigits = (backfilledPhone || "").replace(/\D/g, "");
+
+        if (backfilledDigits.length >= 10) {
+          const [foundCustomer] = await db
+            .select({ id: customers.id })
+            .from(customers)
+            .where(
+              and(
+                eq(customers.tenantId, tenantId),
+                or(
+                  ilike(customers.phone, `%${backfilledDigits.slice(-10)}`),
+                  ilike(customers.phoneAlt, `%${backfilledDigits.slice(-10)}`)
+                )
+              )
+            )
+            .limit(1);
+
+          if (foundCustomer) {
+            updateFields.customerId = foundCustomer.id;
+            console.log(`[Call-Completed] 👤 Backfilling customerId: ${foundCustomer.id} for call ${call.id}`);
+          }
+        }
+      }
+
       const [updated] = await db
         .update(calls)
-        .set({
-          externalCallId: body.callId,
-          status: finalStatus,
-          endedAt: timestamp,
-          durationSeconds: body.duration,
-          recordingUrl: body.recordingUrl,
-        })
+        .set(updateFields)
         .where(eq(calls.id, call.id))
         .returning();
 

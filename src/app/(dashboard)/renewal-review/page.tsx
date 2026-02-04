@@ -354,21 +354,26 @@ export default function RenewalReviewPage() {
           <StatBadge
             label="In Review"
             count={stats.inReviewCount}
-            active={filters.status === 'agent_reviewed'}
+            active={filters.status === 'requote_requested'}
             color="blue"
             onClick={() =>
               setFilters((f) => ({
                 ...f,
-                status: f.status === 'agent_reviewed' ? '' : 'agent_reviewed',
+                status: f.status === 'requote_requested' ? '' : 'requote_requested',
               }))
             }
           />
           <StatBadge
             label="Decided"
             count={stats.decidedCount}
-            active={false}
+            active={filters.status === 'agent_reviewed'}
             color="indigo"
-            onClick={() => {}}
+            onClick={() =>
+              setFilters((f) => ({
+                ...f,
+                status: f.status === 'agent_reviewed' ? '' : 'agent_reviewed',
+              }))
+            }
           />
           <StatBadge
             label="Completed"

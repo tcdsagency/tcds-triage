@@ -81,11 +81,11 @@ export async function moveRenewalToStage(
   const statusMap: Record<string, string> = {
     policy_pending_review: 'pending_ingestion',
     waiting_agent_review: 'waiting_agent_review',
-    contact_customer: 'waiting_agent_review',
-    unable_to_contact: 'waiting_agent_review',
+    contact_customer: 'agent_reviewed',
+    unable_to_contact: 'agent_reviewed',
     requote_requested: 'requote_requested',
     quote_ready_ezl: 'quote_ready',
-    waiting_customer: 'waiting_agent_review',
+    waiting_customer: 'agent_reviewed',
     completed: 'completed',
   };
 
@@ -275,7 +275,7 @@ export async function handleAgentDecision(
         ? 'completed'
         : decision === 'reshop'
           ? 'requote_requested'
-          : 'waiting_agent_review',
+          : 'agent_reviewed',
       updatedAt: new Date(),
     })
     .where(eq(renewalComparisons.id, renewalId));
