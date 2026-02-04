@@ -300,8 +300,8 @@ export class RiskMonitorScheduler {
 
       // Check if status changed and create alert if needed
       if (this.shouldCreateAlert(result.previousStatus, result.newStatus, policy, saleDate)) {
-        await this.createAlert(policy, result);
-        result.alertCreated = true;
+        const created = await this.createAlert(policy, result);
+        result.alertCreated = created;
       }
     } catch (error: any) {
       result.error = error.message || "Unknown error";
@@ -731,7 +731,7 @@ export class RiskMonitorScheduler {
   private async createAlert(
     policy: typeof riskMonitorPolicies.$inferSelect,
     result: PropertyCheckResult
-  ): Promise<void> {
+  ): Promise<boolean> {
     // Map status to alert type
     const alertTypeMap: Record<string, string> = {
       active: "listing_detected",
@@ -760,7 +760,7 @@ export class RiskMonitorScheduler {
 
     if (existingAlert) {
       await this.logEvent("alert_skipped", policy.id, `Skipped duplicate ${alertType} alert - active alert already exists`);
-      return;
+      return false;
     }
 
     // Determine priority based on status
@@ -818,13 +818,25 @@ export class RiskMonitorScheduler {
 
     // Send email notification if enabled (for all alert types: sold, pending, active)
     if (this.settings?.emailAlertsEnabled) {
-      await this.sendEmailAlert(policy, alertType, result);
+      try {
+        await this.sendEmailAlert(policy, alertType, result);
+      } catch (emailErr: any) {
+        console.error(`[RiskMonitor] sendEmailAlert failed for ${policy.addressLine1}: ${emailErr.message}`);
+        await this.logEvent("email_failed", policy.id, `Email send error: ${emailErr.message}`);
+      }
     }
 
     // Create AgencyZoom note for the customer
     if (policy.azContactId) {
-      await this.createAgencyZoomNote(policy, alertType, result);
+      try {
+        await this.createAgencyZoomNote(policy, alertType, result);
+      } catch (noteErr: any) {
+        console.error(`[RiskMonitor] createAgencyZoomNote failed for ${policy.addressLine1}: ${noteErr.message}`);
+        await this.logEvent("az_note_failed", policy.id, `AZ note error: ${noteErr.message}`);
+      }
     }
+
+    return true;
   }
 
   /**
@@ -1082,7 +1094,11 @@ Detected: ${new Date().toLocaleString()}
       new Set([...staticRecipients, ...agentEmails].map((e) => e.toLowerCase()))
     );
 
-    if (allRecipients.length === 0) return;
+    if (allRecipients.length === 0) {
+      console.warn(`[RiskMonitor] No email recipients for ${policy.addressLine1} - staticRecipients: ${JSON.stringify(staticRecipients)}, agentEmails: ${JSON.stringify(agentEmails)}`);
+      await this.logEvent("email_skipped", policy.id, "No email recipients configured");
+      return;
+    }
 
     const latestListing = result.mmiData?.listingHistory?.[0];
     const listPrice = latestListing?.LIST_PRICE || result.rprData?.listing?.price;
@@ -1164,12 +1180,29 @@ Please review and take appropriate action.
       });
 
       if (sendResult.success) {
-        await this.logEvent("email_sent", policy.id, `Email alert sent for ${alertType}`, {
+        // Update alert record with email tracking
+        await db
+          .update(riskMonitorAlerts)
+          .set({
+            emailSentAt: new Date(),
+            emailRecipients: allRecipients,
+          })
+          .where(
+            and(
+              eq(riskMonitorAlerts.tenantId, this.tenantId),
+              eq(riskMonitorAlerts.policyId, policy.id),
+              eq(riskMonitorAlerts.alertType, alertType as any),
+              eq(riskMonitorAlerts.status, "new")
+            )
+          );
+
+        await this.logEvent("email_sent", policy.id, `Email alert sent for ${alertType} to ${allRecipients.join(", ")}`, {
           recipients: allRecipients,
           agentEmails: agentEmails.length > 0 ? agentEmails : undefined,
           messageId: sendResult.messageId,
         });
       } else {
+        console.error(`[RiskMonitor] Outlook sendEmail failed for ${policy.addressLine1}: ${sendResult.error}`);
         await this.logEvent("email_failed", policy.id, `Failed to send email: ${sendResult.error}`, {
           recipients: allRecipients,
         });
