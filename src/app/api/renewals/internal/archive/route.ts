@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (!transactions || transactions.length === 0) {
+      console.log(`[Archive] batchId=${batchId} — no transactions to archive`);
       return NextResponse.json({ success: true, archived: 0 });
     }
 
@@ -45,6 +46,13 @@ export async function POST(request: NextRequest) {
     }));
 
     await db.insert(al3TransactionArchive).values(values);
+
+    const typeCounts: Record<string, number> = {};
+    for (const v of values) {
+      const t = v.transactionType || 'UNKNOWN';
+      typeCounts[t] = (typeCounts[t] || 0) + 1;
+    }
+    console.log(`[Archive] batchId=${batchId} — archived ${values.length} non-renewal transactions`, typeCounts);
 
     return NextResponse.json({ success: true, archived: values.length });
   } catch (error) {

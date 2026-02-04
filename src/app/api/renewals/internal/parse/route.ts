@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
       case 'partition-transactions': {
         const { renewals, nonRenewals } = partitionTransactions(body.transactions);
         const { unique, duplicatesRemoved } = deduplicateRenewals(renewals);
+        console.log(`[Parse] partition-transactions — total=${body.transactions.length} renewals=${renewals.length} unique=${unique.length} duplicatesRemoved=${duplicatesRemoved} nonRenewals=${nonRenewals.length}`);
         return NextResponse.json({ success: true, unique, duplicatesRemoved, nonRenewals });
       }
 
