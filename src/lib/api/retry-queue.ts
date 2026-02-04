@@ -20,6 +20,9 @@ export type RetryOperationType =
   | "agencyzoom_ticket"
   | "agencyzoom_lead"
   | "agencyzoom_lead_note"
+  | "agencyzoom_sr_create"
+  | "agencyzoom_sr_update"
+  | "agencyzoom_sr_note"
   | "trestle_lookup";
 
 export type RetryTargetService = "agencyzoom" | "trestle";
@@ -302,6 +305,114 @@ async function executeRetryOperation(
         resultData: { noteId: result.id },
         error: result.success ? undefined : "Failed to add lead note",
       };
+    }
+
+    case "agencyzoom_sr_create": {
+      const azClient = await getAgencyZoomClient();
+      if (!azClient) {
+        return { success: false, error: "AgencyZoom client not configured" };
+      }
+
+      const { resolveRenewalStageId } = await import("./renewal-stage-resolver");
+      const { SERVICE_PIPELINES, SERVICE_PRIORITIES, EMPLOYEE_IDS, getDefaultDueDate } = await import("./agencyzoom-service-tickets");
+      const { getRenewalCategory } = await import("./renewal-sr-service");
+
+      const stageId = await resolveRenewalStageId(
+        item.tenantId,
+        "policy_pending_review"
+      );
+      if (!stageId) {
+        return { success: false, error: "Could not resolve initial pipeline stage" };
+      }
+
+      const subject = `Renewal Review: ${payload.policyNumber} - ${payload.carrierName} (${payload.lineOfBusiness})`;
+      const categoryId = getRenewalCategory(payload.lineOfBusiness as string);
+
+      const result = await azClient.createServiceTicket({
+        customerId: payload.householdId as number,
+        subject,
+        description: `Automated renewal review for policy ${payload.policyNumber}`,
+        pipelineId: SERVICE_PIPELINES.RENEWALS,
+        stageId,
+        priorityId: SERVICE_PRIORITIES.STANDARD,
+        categoryId,
+        csr: EMPLOYEE_IDS.ACCOUNT_CSR,
+        dueDate: getDefaultDueDate(),
+      });
+
+      if (result.success && result.serviceTicketId) {
+        // Link SR back to renewal
+        const { renewalComparisons } = await import("@/db/schema");
+        const { eq } = await import("drizzle-orm");
+        const { db } = await import("@/db");
+        await db
+          .update(renewalComparisons)
+          .set({
+            agencyzoomSrId: result.serviceTicketId,
+            agencyzoomSrCreatedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(renewalComparisons.id, payload.renewalComparisonId as string));
+
+        return {
+          success: true,
+          resultData: { srId: result.serviceTicketId },
+        };
+      }
+
+      return { success: false, error: "Failed to create renewal SR" };
+    }
+
+    case "agencyzoom_sr_update": {
+      const azClient = await getAgencyZoomClient();
+      if (!azClient) {
+        return { success: false, error: "AgencyZoom client not configured" };
+      }
+
+      if (payload.isComplete) {
+        const { SERVICE_RESOLUTIONS } = await import("./agencyzoom-service-tickets");
+        await azClient.completeServiceTicket({
+          id: payload.srId as number,
+          resolutionId: SERVICE_RESOLUTIONS.STANDARD,
+          resolutionDesc: "Renewal review completed",
+        });
+      } else {
+        await azClient.updateServiceTicket({
+          id: payload.srId as number,
+          workflowStageId: payload.targetStageId as number,
+        });
+      }
+
+      return { success: true, resultData: { srId: payload.srId } };
+    }
+
+    case "agencyzoom_sr_note": {
+      const azClient = await getAgencyZoomClient();
+      if (!azClient) {
+        return { success: false, error: "AgencyZoom client not configured" };
+      }
+
+      if (payload.customerId) {
+        const { customers: custTable } = await import("@/db/schema");
+        const { eq } = await import("drizzle-orm");
+        const { db } = await import("@/db");
+        const [cust] = await db
+          .select({ agencyzoomId: custTable.agencyzoomId })
+          .from(custTable)
+          .where(eq(custTable.id, payload.customerId as string))
+          .limit(1);
+
+        if (cust?.agencyzoomId) {
+          const noteText = `[Renewal Review - ${payload.policyNumber}]\n${payload.content}`;
+          await azClient.addNote(
+            parseInt(cust.agencyzoomId, 10),
+            noteText
+          );
+          return { success: true };
+        }
+      }
+
+      return { success: false, error: "Could not find customer AZ ID for note" };
     }
 
     case "trestle_lookup": {

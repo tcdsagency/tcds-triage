@@ -290,6 +290,76 @@ export async function queueNotification(data: NotificationJobData) {
 }
 
 // =============================================================================
+// RENEWAL PROCESSING
+// =============================================================================
+
+/**
+ * Renewal processing job data
+ */
+export interface RenewalBatchJobData {
+  batchId: string;
+  tenantId: string;
+  storagePath: string;
+  fileBuffer?: string; // Base64 encoded for in-memory processing
+}
+
+export interface RenewalCandidateJobData {
+  candidateId: string;
+  tenantId: string;
+  batchId: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let renewalQueue: Queue<any> | null = null;
+
+function getRenewalQueue() {
+  if (!renewalQueue) {
+    renewalQueue = new Queue('renewal-processing', {
+      connection: getRedisConnection(),
+    });
+  }
+  return renewalQueue;
+}
+
+/**
+ * Queue a renewal batch for processing
+ */
+export async function queueRenewalBatchProcessing(data: RenewalBatchJobData) {
+  const queue = getRenewalQueue();
+
+  const job = await queue.add('process-batch', data, {
+    jobId: `renewal-batch-${data.batchId}`,
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 10000,
+    },
+  });
+
+  console.log(`[Queue] Renewal batch job queued: ${job.id}`);
+  return job;
+}
+
+/**
+ * Queue a single renewal candidate for processing
+ */
+export async function queueRenewalCandidateProcessing(data: RenewalCandidateJobData) {
+  const queue = getRenewalQueue();
+
+  const job = await queue.add('process-candidate', data, {
+    jobId: `renewal-candidate-${data.candidateId}`,
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 10000,
+    },
+  });
+
+  console.log(`[Queue] Renewal candidate job queued: ${job.id}`);
+  return job;
+}
+
+// =============================================================================
 // QUEUE STATS (for monitoring)
 // =============================================================================
 
@@ -303,6 +373,7 @@ export async function getQueueStats() {
     { name: 'risk-monitor', queue: getRiskMonitorQueue() },
     { name: 'embeddings', queue: getEmbeddingsQueue() },
     { name: 'notifications', queue: getNotificationsQueue() },
+    { name: 'renewal-processing', queue: getRenewalQueue() },
   ];
 
   const stats = await Promise.all(
@@ -342,6 +413,9 @@ export async function getJob(queueName: string, jobId: string) {
       break;
     case 'notifications':
       queue = getNotificationsQueue();
+      break;
+    case 'renewal-processing':
+      queue = getRenewalQueue();
       break;
     default:
       throw new Error(`Unknown queue: ${queueName}`);

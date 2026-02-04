@@ -38,6 +38,7 @@ import {
   Plane,
   ExternalLink,
   BookOpen,
+  RefreshCw,
 } from 'lucide-react';
 
 // Map routes to feature permission keys (must match keys in feature-permissions.ts)
@@ -66,6 +67,7 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   '/competitive-intel': 'competitiveIntel',
   '/risk-monitor': 'riskMonitor',
   '/phone-lookup': 'phoneLookup',
+  '/renewal-review': 'renewalReview',
   '/properties': 'properties',
   '/reports': 'reports',
   '/reviews': 'reviews',
@@ -105,6 +107,7 @@ const customerNav = [
   { name: 'Customers', href: '/customers', icon: Users },
   { name: 'Birthday Cards', href: '/birthday-cards', icon: Cake },
   { name: 'Policy Notices', href: '/policy-notices', icon: Bell },
+  { name: 'Renewal Review', href: '/renewal-review', icon: RefreshCw },
   { name: 'Policy Change', href: '/policy-change', icon: FilePen },
   { name: 'Payment Advance', href: '/payment-advance', icon: CreditCard },
   { name: 'Same-Day Payment', href: '/same-day-payment', icon: Zap },

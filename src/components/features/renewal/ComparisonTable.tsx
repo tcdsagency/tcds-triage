@@ -1,0 +1,326 @@
+'use client';
+
+import { useState } from 'react';
+import { cn } from '@/lib/utils';
+import { ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
+import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle } from '@/types/renewal.types';
+
+interface ComparisonTableProps {
+  renewalSnapshot: RenewalSnapshot | null;
+  baselineSnapshot: BaselineSnapshot | null;
+  materialChanges: MaterialChange[];
+}
+
+export default function ComparisonTable({
+  renewalSnapshot,
+  baselineSnapshot,
+  materialChanges,
+}: ComparisonTableProps) {
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['premium', 'coverages']));
+
+  const toggleSection = (section: string) => {
+    const next = new Set(expandedSections);
+    if (next.has(section)) next.delete(section);
+    else next.add(section);
+    setExpandedSections(next);
+  };
+
+  if (!renewalSnapshot && !baselineSnapshot) {
+    return (
+      <div className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
+        No comparison data available
+      </div>
+    );
+  }
+
+  const materialByField = new Map(materialChanges.map((c) => [c.field, c]));
+
+  const formatCurrency = (val: number | undefined | null) =>
+    val != null ? `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-';
+
+  return (
+    <div className="space-y-1">
+      {/* Premium Section */}
+      <SectionHeader
+        title="Premium"
+        expanded={expandedSections.has('premium')}
+        onToggle={() => toggleSection('premium')}
+        hasMaterial={materialChanges.some((c) => c.category === 'premium' && c.severity === 'material_negative')}
+      />
+      {expandedSections.has('premium') && (
+        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+          <ComparisonRow
+            label="Total Premium"
+            current={formatCurrency(baselineSnapshot?.premium)}
+            renewal={formatCurrency(renewalSnapshot?.premium)}
+            change={getChangeType(materialByField.get('premium'))}
+            isMaterial={materialByField.has('premium')}
+          />
+        </div>
+      )}
+
+      {/* Coverages Section */}
+      <SectionHeader
+        title="Coverages"
+        expanded={expandedSections.has('coverages')}
+        onToggle={() => toggleSection('coverages')}
+        hasMaterial={materialChanges.some((c) =>
+          ['coverage_limit', 'coverage_removed', 'coverage_added', 'deductible'].includes(c.category) &&
+          c.severity === 'material_negative'
+        )}
+      />
+      {expandedSections.has('coverages') && (
+        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+          {renderCoverageComparison(baselineSnapshot?.coverages, renewalSnapshot?.coverages, materialByField)}
+        </div>
+      )}
+
+      {/* Vehicles Section */}
+      <SectionHeader
+        title="Vehicles"
+        expanded={expandedSections.has('vehicles')}
+        onToggle={() => toggleSection('vehicles')}
+        hasMaterial={materialChanges.some((c) =>
+          ['vehicle_removed', 'vehicle_added'].includes(c.category) && c.severity === 'material_negative'
+        )}
+      />
+      {expandedSections.has('vehicles') && (
+        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+          {renderVehicleComparison(baselineSnapshot?.vehicles, renewalSnapshot?.vehicles, materialByField)}
+        </div>
+      )}
+
+      {/* Deductibles Section */}
+      <SectionHeader
+        title="Deductibles"
+        expanded={expandedSections.has('deductibles')}
+        onToggle={() => toggleSection('deductibles')}
+        hasMaterial={materialChanges.some((c) => c.category === 'deductible' && c.severity === 'material_negative')}
+      />
+      {expandedSections.has('deductibles') && (
+        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+          {renderDeductibleComparison(baselineSnapshot?.coverages, renewalSnapshot?.coverages, materialByField)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// SUB-COMPONENTS
+// =============================================================================
+
+function SectionHeader({
+  title,
+  expanded,
+  onToggle,
+  hasMaterial,
+}: {
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+  hasMaterial: boolean;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-900/50 rounded-md hover:bg-gray-100 dark:hover:bg-gray-900/80 transition-colors"
+    >
+      <div className="flex items-center gap-2">
+        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{title}</span>
+      </div>
+      {hasMaterial && <AlertTriangle className="h-4 w-4 text-red-500" />}
+    </button>
+  );
+}
+
+function ComparisonRow({
+  label,
+  current,
+  renewal,
+  change,
+  isMaterial,
+}: {
+  label: string;
+  current: string;
+  renewal: string;
+  change?: 'better' | 'worse' | 'same' | 'different';
+  isMaterial?: boolean;
+}) {
+  const rowColor =
+    change === 'better'
+      ? 'bg-green-50/50 dark:bg-green-900/10'
+      : change === 'worse'
+        ? 'bg-red-50/50 dark:bg-red-900/10'
+        : change === 'different'
+          ? 'bg-yellow-50/50 dark:bg-yellow-900/10'
+          : '';
+
+  return (
+    <div
+      className={cn(
+        'grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-b-0 text-sm',
+        rowColor
+      )}
+    >
+      <div className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
+        {isMaterial && <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />}
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="text-gray-900 dark:text-gray-100">{current}</div>
+      <div className={cn(
+        'font-medium',
+        change === 'better' ? 'text-green-600 dark:text-green-400' :
+        change === 'worse' ? 'text-red-600 dark:text-red-400' :
+        'text-gray-900 dark:text-gray-100'
+      )}>
+        {renewal}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// RENDER HELPERS
+// =============================================================================
+
+function getChangeType(change?: MaterialChange): 'better' | 'worse' | 'same' | 'different' | undefined {
+  if (!change) return undefined;
+  if (change.severity === 'material_positive') return 'better';
+  if (change.severity === 'material_negative') return 'worse';
+  return 'different';
+}
+
+function renderCoverageComparison(
+  baseline: CanonicalCoverage[] | undefined,
+  renewal: CanonicalCoverage[] | undefined,
+  materialByField: Map<string, MaterialChange>
+) {
+  const allTypes = new Set<string>();
+  baseline?.forEach((c) => allTypes.add(c.type));
+  renewal?.forEach((c) => allTypes.add(c.type));
+
+  if (allTypes.size === 0) {
+    return <div className="px-3 py-2 text-sm text-gray-500">No coverage data</div>;
+  }
+
+  const baselineByType = new Map(baseline?.map((c) => [c.type, c]) || []);
+  const renewalByType = new Map(renewal?.map((c) => [c.type, c]) || []);
+
+  // Header
+  return (
+    <>
+      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
+        <div>Coverage</div>
+        <div>Current Limit</div>
+        <div>Renewal Limit</div>
+      </div>
+      {Array.from(allTypes).map((type) => {
+        const b = baselineByType.get(type);
+        const r = renewalByType.get(type);
+        const mc = materialByField.get(`coverage.${type}`) || materialByField.get(`coverage.${type}.limit`);
+
+        return (
+          <ComparisonRow
+            key={type}
+            label={b?.description || r?.description || type}
+            current={b ? (b.limit || '-') : 'N/A'}
+            renewal={r ? (r.limit || '-') : 'REMOVED'}
+            change={!r ? 'worse' : !b ? 'better' : getChangeType(mc)}
+            isMaterial={mc?.severity === 'material_negative'}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function renderVehicleComparison(
+  baseline: CanonicalVehicle[] | undefined,
+  renewal: CanonicalVehicle[] | undefined,
+  materialByField: Map<string, MaterialChange>
+) {
+  const allVins = new Set<string>();
+  baseline?.forEach((v) => v.vin && allVins.add(v.vin));
+  renewal?.forEach((v) => v.vin && allVins.add(v.vin));
+
+  if (allVins.size === 0 && !baseline?.length && !renewal?.length) {
+    return <div className="px-3 py-2 text-sm text-gray-500">No vehicle data</div>;
+  }
+
+  const baselineByVin = new Map(baseline?.filter((v) => v.vin).map((v) => [v.vin!, v]) || []);
+  const renewalByVin = new Map(renewal?.filter((v) => v.vin).map((v) => [v.vin!, v]) || []);
+
+  return (
+    <>
+      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
+        <div>Vehicle</div>
+        <div>Current</div>
+        <div>Renewal</div>
+      </div>
+      {Array.from(allVins).map((vin) => {
+        const b = baselineByVin.get(vin);
+        const r = renewalByVin.get(vin);
+        const desc = (v: CanonicalVehicle | undefined) =>
+          v ? `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin : 'N/A';
+        const mc = materialByField.get(`vehicle.${vin}`);
+
+        return (
+          <ComparisonRow
+            key={vin}
+            label={desc(b || r)}
+            current={b ? 'Present' : 'N/A'}
+            renewal={r ? 'Present' : 'REMOVED'}
+            change={!r ? 'worse' : !b ? 'better' : 'same'}
+            isMaterial={mc?.severity === 'material_negative'}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function renderDeductibleComparison(
+  baseline: CanonicalCoverage[] | undefined,
+  renewal: CanonicalCoverage[] | undefined,
+  materialByField: Map<string, MaterialChange>
+) {
+  const withDeductibles = new Set<string>();
+  baseline?.filter((c) => c.deductibleAmount != null).forEach((c) => withDeductibles.add(c.type));
+  renewal?.filter((c) => c.deductibleAmount != null).forEach((c) => withDeductibles.add(c.type));
+
+  if (withDeductibles.size === 0) {
+    return <div className="px-3 py-2 text-sm text-gray-500">No deductible data</div>;
+  }
+
+  const baselineByType = new Map(baseline?.map((c) => [c.type, c]) || []);
+  const renewalByType = new Map(renewal?.map((c) => [c.type, c]) || []);
+  const formatDed = (val: number | undefined) => val != null ? `$${val.toLocaleString()}` : '-';
+
+  return (
+    <>
+      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
+        <div>Coverage</div>
+        <div>Current Ded.</div>
+        <div>Renewal Ded.</div>
+      </div>
+      {Array.from(withDeductibles).map((type) => {
+        const b = baselineByType.get(type);
+        const r = renewalByType.get(type);
+        const mc = materialByField.get(`coverage.${type}.deductible`);
+
+        return (
+          <ComparisonRow
+            key={type}
+            label={b?.description || r?.description || type}
+            current={formatDed(b?.deductibleAmount)}
+            renewal={formatDed(r?.deductibleAmount)}
+            change={getChangeType(mc)}
+            isMaterial={mc?.severity === 'material_negative'}
+          />
+        );
+      })}
+    </>
+  );
+}

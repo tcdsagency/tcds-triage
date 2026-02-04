@@ -172,6 +172,14 @@ export const FEATURES: FeatureConfig[] = [
     defaultEnabled: true,
     route: '/phone-lookup',
   },
+  {
+    key: 'renewalReview',
+    label: 'Renewal Review',
+    description: 'IVANS AL3 renewal comparison and review workflow',
+    category: 'tools',
+    defaultEnabled: true,
+    route: '/renewal-review',
+  },
 
   // =============================================================================
   // ADVANCED - Analytics and monitoring features

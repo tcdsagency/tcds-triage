@@ -1,0 +1,85 @@
+/**
+ * AL3 Filter & Deduplication
+ * ==========================
+ * Filters AL3 transactions to only renewal types and deduplicates.
+ */
+
+import type { AL3ParsedTransaction, AL3TransactionHeader } from '@/types/renewal.types';
+import { DEFAULT_RENEWAL_TRANSACTION_TYPES, TRG_FIELDS, LOB_CODES } from './constants';
+import { parseAL3Date } from './parser';
+
+/**
+ * Quick header scan - extracts transaction headers without full parsing.
+ * Faster than full parse when you just need to filter.
+ */
+export function extractTransactionHeaders(content: string): AL3TransactionHeader[] {
+  const lines = content.split(/\r?\n/);
+  const headers: AL3TransactionHeader[] = [];
+
+  for (const line of lines) {
+    if (line.length >= 4 && line.substring(0, 4) === '2TRG') {
+      const transactionType = line.substring(TRG_FIELDS.TRANSACTION_TYPE.start, TRG_FIELDS.TRANSACTION_TYPE.end).trim();
+      const carrierCode = line.substring(TRG_FIELDS.COMPANY_CODE.start, TRG_FIELDS.COMPANY_CODE.end).trim();
+      const policyNumber = line.substring(TRG_FIELDS.POLICY_NUMBER.start, TRG_FIELDS.POLICY_NUMBER.end).trim();
+      const effectiveDateRaw = line.substring(TRG_FIELDS.EFFECTIVE_DATE.start, TRG_FIELDS.EFFECTIVE_DATE.end).trim();
+      const expirationDateRaw = line.substring(TRG_FIELDS.EXPIRATION_DATE.start, TRG_FIELDS.EXPIRATION_DATE.end).trim();
+      const lobCode = line.substring(TRG_FIELDS.LOB_CODE.start, TRG_FIELDS.LOB_CODE.end).trim();
+
+      headers.push({
+        transactionType,
+        policyNumber,
+        carrierCode,
+        lineOfBusiness: LOB_CODES[lobCode] || lobCode || undefined,
+        effectiveDate: parseAL3Date(effectiveDateRaw),
+        expirationDate: parseAL3Date(expirationDateRaw),
+      });
+    }
+  }
+
+  return headers;
+}
+
+/**
+ * Filter transactions to only renewal types.
+ * Uses carrier-specific renewal types if provided, otherwise defaults.
+ */
+export function filterRenewalTransactions(
+  transactions: AL3ParsedTransaction[],
+  carrierRenewalTypes?: string[],
+  defaults: string[] = DEFAULT_RENEWAL_TRANSACTION_TYPES
+): AL3ParsedTransaction[] {
+  const renewalTypes = new Set(
+    (carrierRenewalTypes && carrierRenewalTypes.length > 0 ? carrierRenewalTypes : defaults)
+      .map((t) => t.toUpperCase())
+  );
+
+  return transactions.filter((t) =>
+    renewalTypes.has(t.header.transactionType.toUpperCase())
+  );
+}
+
+/**
+ * Deduplicate renewals by carrier+policy+effectiveDate.
+ * Keeps the most recent (last in file order, which is typically most recent).
+ */
+export function deduplicateRenewals(
+  renewals: AL3ParsedTransaction[]
+): { unique: AL3ParsedTransaction[]; duplicatesRemoved: number } {
+  const seen = new Map<string, AL3ParsedTransaction>();
+
+  for (const renewal of renewals) {
+    const key = [
+      renewal.header.carrierCode,
+      renewal.header.policyNumber,
+      renewal.header.effectiveDate || '',
+    ].join('|');
+
+    // Always overwrite - later entries are more recent
+    seen.set(key, renewal);
+  }
+
+  const unique = Array.from(seen.values());
+  const duplicatesRemoved = renewals.length - unique.length;
+
+  return { unique, duplicatesRemoved };
+}

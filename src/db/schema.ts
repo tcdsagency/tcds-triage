@@ -2206,6 +2206,7 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   activities: many(activities),
   messages: many(messages),
   properties: many(properties),
+  renewalComparisons: many(renewalComparisons),
 }));
 
 export const policiesRelations = relations(policies, ({ one, many }) => ({
@@ -2219,6 +2220,7 @@ export const policiesRelations = relations(policies, ({ one, many }) => ({
   }),
   vehicles: many(vehicles),
   drivers: many(drivers),
+  renewalComparisons: many(renewalComparisons),
 }));
 
 export const callsRelations = relations(calls, ({ one }) => ({
@@ -4603,6 +4605,378 @@ export const autofillUsageStatsRelations = relations(autofillUsageStats, ({ one 
   user: one(users, {
     fields: [autofillUsageStats.userId],
     references: [users.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RENEWAL REVIEW MODULE - Enums
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const renewalComparisonStatusEnum = pgEnum('renewal_comparison_status', [
+  'pending_ingestion',
+  'comparison_ready',
+  'waiting_agent_review',
+  'agent_reviewed',
+  'requote_requested',
+  'quote_ready',
+  'completed',
+  'cancelled',
+]);
+
+export const renewalAuditEventTypeEnum = pgEnum('renewal_audit_event_type', [
+  'ingested',
+  'compared',
+  'sr_created',
+  'sr_updated',
+  'agent_decision',
+  'note_posted',
+  'sr_moved',
+  'completed',
+]);
+
+export const renewalRecommendationEnum = pgEnum('renewal_recommendation', [
+  'renew_as_is',
+  'reshop',
+  'needs_review',
+]);
+
+export const renewalBatchStatusEnum = pgEnum('renewal_batch_status', [
+  'uploaded',
+  'extracting',
+  'filtering',
+  'processing',
+  'completed',
+  'failed',
+]);
+
+export const renewalCandidateStatusEnum = pgEnum('renewal_candidate_status', [
+  'pending',
+  'fetching_baseline',
+  'comparing',
+  'completed',
+  'failed',
+  'skipped',
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RENEWAL COMPARISONS - Core renewal record
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const renewalComparisons = pgTable('renewal_comparisons', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+  policyId: uuid('policy_id').references(() => policies.id, { onDelete: 'set null' }),
+
+  // Dates
+  renewalEffectiveDate: timestamp('renewal_effective_date').notNull(),
+  renewalExpirationDate: timestamp('renewal_expiration_date'),
+
+  // Premium
+  currentPremium: decimal('current_premium', { precision: 12, scale: 2 }),
+  renewalPremium: decimal('renewal_premium', { precision: 12, scale: 2 }),
+  premiumChangeAmount: decimal('premium_change_amount', { precision: 12, scale: 2 }),
+  premiumChangePercent: decimal('premium_change_percent', { precision: 6, scale: 2 }),
+
+  // Intelligence
+  recommendation: renewalRecommendationEnum('recommendation'),
+  status: renewalComparisonStatusEnum('status').default('pending_ingestion').notNull(),
+  verificationStatus: varchar('verification_status', { length: 50 }),
+
+  // Agent Decision
+  agentDecision: varchar('agent_decision', { length: 50 }),
+  agentDecisionAt: timestamp('agent_decision_at'),
+  agentDecisionBy: uuid('agent_decision_by').references(() => users.id, { onDelete: 'set null' }),
+  agentNotes: text('agent_notes'),
+
+  // Snapshots (JSONB)
+  renewalSnapshot: jsonb('renewal_snapshot'),
+  baselineSnapshot: jsonb('baseline_snapshot'),
+
+  // Comparison results
+  materialChanges: jsonb('material_changes').$type<Array<Record<string, unknown>>>().default([]),
+  comparisonSummary: jsonb('comparison_summary'),
+
+  // AgencyZoom link
+  agencyzoomSrId: integer('agencyzoom_sr_id'),
+  agencyzoomSrCreatedAt: timestamp('agencyzoom_sr_created_at'),
+
+  // Denormalized for display
+  carrierName: varchar('carrier_name', { length: 100 }),
+  lineOfBusiness: varchar('line_of_business', { length: 50 }),
+  policyNumber: varchar('policy_number', { length: 50 }),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('renewal_comparisons_tenant_idx').on(table.tenantId),
+  index('renewal_comparisons_customer_idx').on(table.customerId),
+  index('renewal_comparisons_policy_idx').on(table.policyId),
+  index('renewal_comparisons_status_idx').on(table.tenantId, table.status),
+  index('renewal_comparisons_date_idx').on(table.tenantId, table.renewalEffectiveDate),
+  index('renewal_comparisons_carrier_idx').on(table.tenantId, table.carrierName),
+  index('renewal_comparisons_lob_idx').on(table.tenantId, table.lineOfBusiness),
+  uniqueIndex('renewal_comparisons_policy_date_unique').on(table.policyId, table.renewalEffectiveDate),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CARRIER PROFILES - Per-carrier IVANS configuration
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const carrierProfiles = pgTable('carrier_profiles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  carrierName: varchar('carrier_name', { length: 100 }).notNull(),
+  carrierCode: varchar('carrier_code', { length: 20 }), // NAIC code
+  al3CompanyCode: varchar('al3_company_code', { length: 20 }),
+
+  // AL3 parsing configuration
+  renewalTransactionTypes: jsonb('renewal_transaction_types').$type<string[]>().default(['RWL', 'RWQ']),
+  al3ParsingRules: jsonb('al3_parsing_rules'),
+  comparisonThresholds: jsonb('comparison_thresholds'),
+
+  // Thresholds
+  premiumIncreaseThresholdPercent: decimal('premium_increase_threshold_percent', { precision: 5, scale: 2 }).default('10'),
+  autoRenewThresholdPercent: decimal('auto_renew_threshold_percent', { precision: 5, scale: 2 }).default('5'),
+
+  isActive: boolean('is_active').default(true).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('carrier_profiles_tenant_idx').on(table.tenantId),
+  index('carrier_profiles_code_idx').on(table.tenantId, table.carrierCode),
+  uniqueIndex('carrier_profiles_name_unique').on(table.tenantId, table.carrierName),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RENEWAL AUDIT LOG - Append-only audit trail
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const renewalAuditLog = pgTable('renewal_audit_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  renewalComparisonId: uuid('renewal_comparison_id').notNull().references(() => renewalComparisons.id, { onDelete: 'cascade' }),
+
+  eventType: renewalAuditEventTypeEnum('event_type').notNull(),
+  eventData: jsonb('event_data'),
+
+  performedBy: varchar('performed_by', { length: 100 }),
+  performedByUserId: uuid('performed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  performedAt: timestamp('performed_at').defaultNow().notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('renewal_audit_log_tenant_idx').on(table.tenantId),
+  index('renewal_audit_log_comparison_idx').on(table.renewalComparisonId),
+  index('renewal_audit_log_type_idx').on(table.tenantId, table.eventType),
+  index('renewal_audit_log_date_idx').on(table.tenantId, table.performedAt),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AZ PIPELINE STAGE CONFIG - Maps AZ pipeline stages to canonical names
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const azPipelineStageConfig = pgTable('az_pipeline_stage_config', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  pipelineId: integer('pipeline_id').notNull(),
+  stageId: integer('stage_id').notNull(),
+  stageName: varchar('stage_name', { length: 100 }).notNull(),
+  canonicalName: varchar('canonical_name', { length: 50 }).notNull(),
+
+  sortOrder: integer('sort_order').default(0),
+  isActive: boolean('is_active').default(true).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('az_pipeline_stage_config_tenant_idx').on(table.tenantId),
+  uniqueIndex('az_pipeline_stage_config_canonical_unique').on(table.tenantId, table.pipelineId, table.canonicalName),
+  uniqueIndex('az_pipeline_stage_config_stage_unique').on(table.tenantId, table.pipelineId, table.stageId),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RENEWAL BATCHES - Tracks each uploaded IVANS ZIP
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const renewalBatches = pgTable('renewal_batches', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  uploadedById: uuid('uploaded_by_id').references(() => users.id, { onDelete: 'set null' }),
+  originalFileName: text('original_file_name').notNull(),
+  fileSize: integer('file_size'),
+  storagePath: text('storage_path'),
+
+  // Status
+  status: renewalBatchStatusEnum('status').default('uploaded').notNull(),
+
+  // Processing stats
+  totalAl3FilesFound: integer('total_al3_files_found').default(0),
+  totalTransactionsFound: integer('total_transactions_found').default(0),
+  totalRenewalTransactions: integer('total_renewal_transactions').default(0),
+  totalCandidatesCreated: integer('total_candidates_created').default(0),
+  duplicatesRemoved: integer('duplicates_removed').default(0),
+
+  // Result counts
+  candidatesCompleted: integer('candidates_completed').default(0),
+  candidatesFailed: integer('candidates_failed').default(0),
+  candidatesSkipped: integer('candidates_skipped').default(0),
+
+  // Error tracking
+  errorMessage: text('error_message'),
+  processingLog: jsonb('processing_log').$type<Array<{ timestamp: string; message: string; level: string }>>().default([]),
+
+  // Timing
+  processingStartedAt: timestamp('processing_started_at'),
+  processingCompletedAt: timestamp('processing_completed_at'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('renewal_batches_tenant_idx').on(table.tenantId),
+  index('renewal_batches_status_idx').on(table.tenantId, table.status),
+  index('renewal_batches_created_idx').on(table.tenantId, table.createdAt),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RENEWAL CANDIDATES - Individual renewal transactions from AL3
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const renewalCandidates = pgTable('renewal_candidates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  batchId: uuid('batch_id').notNull().references(() => renewalBatches.id, { onDelete: 'cascade' }),
+
+  // Status
+  status: renewalCandidateStatusEnum('status').default('pending').notNull(),
+
+  // AL3 header info
+  transactionType: varchar('transaction_type', { length: 10 }),
+  policyNumber: varchar('policy_number', { length: 50 }),
+  carrierCode: varchar('carrier_code', { length: 20 }),
+  carrierName: varchar('carrier_name', { length: 100 }),
+  lineOfBusiness: varchar('line_of_business', { length: 50 }),
+  effectiveDate: timestamp('effective_date'),
+  expirationDate: timestamp('expiration_date'),
+
+  // Links
+  carrierProfileId: uuid('carrier_profile_id').references(() => carrierProfiles.id, { onDelete: 'set null' }),
+  policyId: uuid('policy_id').references(() => policies.id, { onDelete: 'set null' }),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+  comparisonId: uuid('comparison_id').references(() => renewalComparisons.id, { onDelete: 'set null' }),
+
+  // Raw data
+  rawAl3Content: text('raw_al3_content'),
+  al3FileName: varchar('al3_file_name', { length: 255 }),
+  renewalSnapshot: jsonb('renewal_snapshot'),
+
+  // Error tracking
+  errorMessage: text('error_message'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('renewal_candidates_tenant_idx').on(table.tenantId),
+  index('renewal_candidates_batch_idx').on(table.batchId),
+  index('renewal_candidates_status_idx').on(table.tenantId, table.status),
+  index('renewal_candidates_policy_idx').on(table.policyNumber),
+  uniqueIndex('renewal_candidates_dedup_unique').on(table.tenantId, table.carrierCode, table.policyNumber, table.effectiveDate),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RENEWAL REVIEW RELATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const renewalComparisonsRelations = relations(renewalComparisons, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [renewalComparisons.tenantId],
+    references: [tenants.id],
+  }),
+  customer: one(customers, {
+    fields: [renewalComparisons.customerId],
+    references: [customers.id],
+  }),
+  policy: one(policies, {
+    fields: [renewalComparisons.policyId],
+    references: [policies.id],
+  }),
+  agentDecisionUser: one(users, {
+    fields: [renewalComparisons.agentDecisionBy],
+    references: [users.id],
+  }),
+  auditLog: many(renewalAuditLog),
+  candidates: many(renewalCandidates),
+}));
+
+export const carrierProfilesRelations = relations(carrierProfiles, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [carrierProfiles.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+export const renewalAuditLogRelations = relations(renewalAuditLog, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [renewalAuditLog.tenantId],
+    references: [tenants.id],
+  }),
+  renewalComparison: one(renewalComparisons, {
+    fields: [renewalAuditLog.renewalComparisonId],
+    references: [renewalComparisons.id],
+  }),
+  performedByUser: one(users, {
+    fields: [renewalAuditLog.performedByUserId],
+    references: [users.id],
+  }),
+}));
+
+export const azPipelineStageConfigRelations = relations(azPipelineStageConfig, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [azPipelineStageConfig.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+export const renewalBatchesRelations = relations(renewalBatches, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [renewalBatches.tenantId],
+    references: [tenants.id],
+  }),
+  uploadedBy: one(users, {
+    fields: [renewalBatches.uploadedById],
+    references: [users.id],
+  }),
+  candidates: many(renewalCandidates),
+}));
+
+export const renewalCandidatesRelations = relations(renewalCandidates, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [renewalCandidates.tenantId],
+    references: [tenants.id],
+  }),
+  batch: one(renewalBatches, {
+    fields: [renewalCandidates.batchId],
+    references: [renewalBatches.id],
+  }),
+  carrierProfile: one(carrierProfiles, {
+    fields: [renewalCandidates.carrierProfileId],
+    references: [carrierProfiles.id],
+  }),
+  policy: one(policies, {
+    fields: [renewalCandidates.policyId],
+    references: [policies.id],
+  }),
+  customer: one(customers, {
+    fields: [renewalCandidates.customerId],
+    references: [customers.id],
+  }),
+  comparison: one(renewalComparisons, {
+    fields: [renewalCandidates.comparisonId],
+    references: [renewalComparisons.id],
   }),
 }));
 

@@ -153,6 +153,35 @@ export const notificationsQueue = new Queue<NotificationJobData>('notifications'
   },
 });
 
+/**
+ * Renewal Processing Queue
+ * Processes IVANS AL3 batch downloads and individual renewal candidates
+ */
+export interface RenewalBatchJobData {
+  batchId: string;
+  tenantId: string;
+  storagePath: string;
+  fileBuffer?: string; // Base64 encoded for in-memory processing
+}
+
+export interface RenewalCandidateJobData {
+  candidateId: string;
+  tenantId: string;
+  batchId: string;
+}
+
+export const renewalQueue = new Queue<RenewalBatchJobData | RenewalCandidateJobData>('renewal-processing', {
+  connection: redis,
+  defaultJobOptions: {
+    ...defaultJobOptions,
+    attempts: 3,
+    backoff: {
+      type: 'exponential' as const,
+      delay: 10000, // Start at 10s
+    },
+  },
+});
+
 // =============================================================================
 // SCHEDULED JOBS
 // =============================================================================
@@ -252,6 +281,7 @@ export async function getQueuesHealth(): Promise<{
     { name: 'risk-monitor', queue: riskMonitorQueue },
     { name: 'embeddings', queue: embeddingsQueue },
     { name: 'notifications', queue: notificationsQueue },
+    { name: 'renewal-processing', queue: renewalQueue },
   ];
 
   const results = await Promise.all(
@@ -288,6 +318,7 @@ export async function closeQueues(): Promise<void> {
     riskMonitorQueue.close(),
     embeddingsQueue.close(),
     notificationsQueue.close(),
+    renewalQueue.close(),
   ]);
   logger.info('All queues closed');
 }
