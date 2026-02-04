@@ -106,7 +106,7 @@ function normalizeHawkSoftDrivers(
     licenseNumber?: string | null;
     licenseState?: string | null;
     relationship?: string | null;
-    isExcluded?: boolean;
+    isExcluded?: boolean | null;
   }>
 ): CanonicalDriver[] {
   return hsDrivers.map((d) => ({
@@ -115,7 +115,7 @@ function normalizeHawkSoftDrivers(
     licenseNumber: d.licenseNumber || undefined,
     licenseState: d.licenseState || undefined,
     relationship: d.relationship || undefined,
-    isExcluded: d.isExcluded,
+    isExcluded: d.isExcluded ?? undefined,
   }));
 }
 

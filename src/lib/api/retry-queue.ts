@@ -336,7 +336,7 @@ async function executeRetryOperation(
         stageId,
         priorityId: SERVICE_PRIORITIES.STANDARD,
         categoryId,
-        csr: EMPLOYEE_IDS.ACCOUNT_CSR,
+        csrId: EMPLOYEE_IDS.ACCOUNT_CSR,
         dueDate: getDefaultDueDate(),
       });
 
@@ -371,15 +371,14 @@ async function executeRetryOperation(
 
       if (payload.isComplete) {
         const { SERVICE_RESOLUTIONS } = await import("./agencyzoom-service-tickets");
-        await azClient.completeServiceTicket({
-          id: payload.srId as number,
+        await azClient.updateServiceTicket(payload.srId as number, {
+          status: 2,
           resolutionId: SERVICE_RESOLUTIONS.STANDARD,
           resolutionDesc: "Renewal review completed",
         });
       } else {
-        await azClient.updateServiceTicket({
-          id: payload.srId as number,
-          workflowStageId: payload.targetStageId as number,
+        await azClient.updateServiceTicket(payload.srId as number, {
+          stageId: payload.targetStageId as number,
         });
       }
 

@@ -104,15 +104,14 @@ export async function moveRenewalToStage(
       const azClient = await getAgencyZoomClient();
       if (azClient) {
         if (targetStage === 'completed') {
-          await azClient.completeServiceTicket({
-            id: renewal.agencyzoomSrId,
+          await azClient.updateServiceTicket(renewal.agencyzoomSrId, {
+            status: 2, // completed
             resolutionId: SERVICE_RESOLUTIONS.STANDARD,
             resolutionDesc: `Renewal review completed`,
           });
         } else {
-          await azClient.updateServiceTicket({
-            id: renewal.agencyzoomSrId,
-            workflowStageId: targetStageId,
+          await azClient.updateServiceTicket(renewal.agencyzoomSrId, {
+            stageId: targetStageId,
           });
         }
       }

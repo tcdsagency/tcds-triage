@@ -111,14 +111,13 @@ export async function findOrCreateRenewalSR(
   try {
     // Search for existing SRs matching this renewal
     const existingSRs = await azClient.getServiceTickets({
-      fullName: undefined,
-      workflowId: SERVICE_PIPELINES.RENEWALS,
+      pipelineId: SERVICE_PIPELINES.RENEWALS,
       status: 1, // Active only
-      pageSize: 50,
+      limit: 50,
     });
 
     // Find SR matching this policy in the renewals pipeline
-    const matchingSR = existingSRs.serviceTickets?.find((sr: any) => {
+    const matchingSR = existingSRs.data?.find((sr: any) => {
       return (
         sr.householdId === householdId &&
         sr.subject?.includes(ctx.policyNumber)
@@ -163,7 +162,7 @@ export async function findOrCreateRenewalSR(
       stageId: initialStageId,
       priorityId: SERVICE_PRIORITIES.STANDARD,
       categoryId,
-      csr: EMPLOYEE_IDS.ACCOUNT_CSR,
+      csrId: EMPLOYEE_IDS.ACCOUNT_CSR,
       dueDate: getDefaultDueDate(),
     });
 

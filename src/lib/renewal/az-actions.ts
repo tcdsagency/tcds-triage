@@ -46,9 +46,8 @@ export async function moveRenewalSRStage(
     const stageId = await resolveRenewalStageId(tenantId, targetStage);
     if (!stageId) return { success: false, error: `Could not resolve stage: ${targetStage}` };
 
-    await azClient.updateServiceTicket({
-      id: azTicketId,
-      workflowStageId: stageId,
+    await azClient.updateServiceTicket(azTicketId, {
+      stageId,
     });
 
     return { success: true };
@@ -71,8 +70,8 @@ export async function completeRenewalSR(
     const azClient = await getAgencyZoomClient();
     if (!azClient) return { success: false, error: 'AZ client not configured' };
 
-    await azClient.completeServiceTicket({
-      id: azTicketId,
+    await azClient.updateServiceTicket(azTicketId, {
+      status: 2,
       resolutionId: SERVICE_RESOLUTIONS.STANDARD,
       resolutionDesc: resolutionDesc || 'Renewal review completed',
     });
