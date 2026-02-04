@@ -9,7 +9,7 @@ import { renewalComparisons } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { handleAgentDecision, type AgentDecision } from '@/lib/api/renewal-state-machine';
 
-const TENANT_ID = process.env.TENANT_ID || '';
+const TENANT_ID = process.env.DEFAULT_TENANT_ID || '';
 
 const VALID_DECISIONS: AgentDecision[] = [
   'renew_as_is',

@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRenewalAuditHistory } from '@/lib/api/renewal-audit';
 import { addRenewalNote } from '@/lib/api/renewal-state-machine';
 
-const TENANT_ID = process.env.TENANT_ID || '';
+const TENANT_ID = process.env.DEFAULT_TENANT_ID || '';
 
 export async function GET(
   _request: NextRequest,

@@ -9,7 +9,7 @@ import { azPipelineStageConfig } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { SERVICE_PIPELINES } from '@/lib/api/agencyzoom-service-tickets';
 
-const TENANT_ID = process.env.TENANT_ID || '';
+const TENANT_ID = process.env.DEFAULT_TENANT_ID || '';
 
 export async function GET() {
   try {

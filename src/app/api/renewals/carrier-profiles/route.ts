@@ -8,7 +8,7 @@ import { db } from '@/db';
 import { carrierProfiles } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
-const TENANT_ID = process.env.TENANT_ID || '';
+const TENANT_ID = process.env.DEFAULT_TENANT_ID || '';
 
 export async function GET() {
   try {

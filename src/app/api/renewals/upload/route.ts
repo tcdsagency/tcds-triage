@@ -9,7 +9,7 @@ import { db } from '@/db';
 import { renewalBatches } from '@/db/schema';
 import { queueRenewalBatchProcessing } from '@/lib/queues/client';
 
-const TENANT_ID = process.env.TENANT_ID || '';
+const TENANT_ID = process.env.DEFAULT_TENANT_ID || '';
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 export async function POST(request: NextRequest) {

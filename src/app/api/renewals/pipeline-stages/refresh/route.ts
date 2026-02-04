@@ -11,7 +11,7 @@ import { getAgencyZoomClient } from '@/lib/api/agencyzoom';
 import { SERVICE_PIPELINES } from '@/lib/api/agencyzoom-service-tickets';
 import { clearStageResolverCache } from '@/lib/api/renewal-stage-resolver';
 
-const TENANT_ID = process.env.TENANT_ID || '';
+const TENANT_ID = process.env.DEFAULT_TENANT_ID || '';
 
 export async function POST() {
   try {

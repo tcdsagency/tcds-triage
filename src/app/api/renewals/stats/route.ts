@@ -8,7 +8,7 @@ import { db } from '@/db';
 import { renewalComparisons } from '@/db/schema';
 import { eq, and, gte, sql } from 'drizzle-orm';
 
-const TENANT_ID = process.env.TENANT_ID || '';
+const TENANT_ID = process.env.DEFAULT_TENANT_ID || '';
 
 export async function GET() {
   try {
