@@ -80,6 +80,7 @@ export async function PATCH(
       "policyType",
       "expirationDate",
       "isActive",
+      "currentStatus",
     ];
 
     for (const field of allowedFields) {
