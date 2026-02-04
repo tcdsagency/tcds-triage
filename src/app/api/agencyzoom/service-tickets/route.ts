@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     let targetStageId = stageId;
     
     if (!targetPipelineId || !targetStageId) {
-      const pipelines = await client.getServiceTicketPipelines();
+      const pipelines = await client.getPipelinesAndStages('service');
       if (pipelines.length === 0) {
         return NextResponse.json(
           { error: 'No service pipelines configured in AgencyZoom' },

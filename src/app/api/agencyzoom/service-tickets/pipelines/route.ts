@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   try {
     const client = getAgencyZoomClient();
     
-    const pipelines = await client.getServiceTicketPipelines();
+    const pipelines = await client.getPipelinesAndStages('service');
 
     return NextResponse.json({
       success: true,

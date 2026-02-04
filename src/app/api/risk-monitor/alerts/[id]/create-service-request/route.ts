@@ -57,7 +57,7 @@ export async function POST(
     const azClient = getAgencyZoomClient();
 
     // Get pipelines to find the appropriate one for risk monitor alerts
-    const pipelines = await azClient.getServiceTicketPipelines();
+    const pipelines = await azClient.getPipelinesAndStages('service');
 
     // Find a suitable pipeline - look for "Risk", "Property", or use first available
     let targetPipeline = pipelines.find(

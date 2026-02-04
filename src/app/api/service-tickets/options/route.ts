@@ -114,7 +114,7 @@ async function fetchOptionsFromAgencyZoom(): Promise<ServiceTicketOptions> {
 
   try {
     // Fetch pipelines with stages from AgencyZoom
-    const pipelines = await azClient.getServiceTicketPipelines();
+    const pipelines = await azClient.getPipelinesAndStages('service');
     if (pipelines.length > 0) {
       options.pipelines = pipelines.map((p: any) => ({
         id: p.id,

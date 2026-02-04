@@ -1,7 +1,7 @@
 /**
  * Discover Renewal Pipeline Stages
  * =================================
- * One-time script to discover AZ pipeline stages for the Renewals pipeline (82839).
+ * One-time script to discover AZ pipeline stages for the Renewals pipeline.
  * Inserts discovered stages into azPipelineStageConfig table.
  *
  * Usage: npx tsx scripts/discover-renewal-stages.ts
@@ -15,12 +15,13 @@ import { eq } from 'drizzle-orm';
 
 // Known canonical name mappings based on expected stage names
 const CANONICAL_NAME_MAP: Record<string, string> = {
-  // Common stage name patterns -> canonical names
+  // Exact matches first (checked before partial matches)
+  'pol pend. review': 'policy_pending_review',
   'policy pending review': 'policy_pending_review',
   'pending review': 'policy_pending_review',
+  'waiting for agt review': 'waiting_agent_review',
   'waiting agent review': 'waiting_agent_review',
   'agent review': 'waiting_agent_review',
-  'review': 'waiting_agent_review',
   'contact customer': 'contact_customer',
   'contact insured': 'contact_customer',
   'unable to contact': 'unable_to_contact',
@@ -28,9 +29,11 @@ const CANONICAL_NAME_MAP: Record<string, string> = {
   'requote requested': 'requote_requested',
   'requote': 'requote_requested',
   'reshop': 'requote_requested',
+  'quote ready in ezlynx': 'quote_ready_ezl',
   'quote ready': 'quote_ready_ezl',
   'quote ready ezl': 'quote_ready_ezl',
   'quote ready - ezl': 'quote_ready_ezl',
+  'waiting for customer': 'waiting_customer',
   'waiting customer': 'waiting_customer',
   'waiting on customer': 'waiting_customer',
   'awaiting customer': 'waiting_customer',
@@ -84,18 +87,17 @@ async function main() {
 
   console.log(`Tenant: ${tenant.id}\n`);
 
-  // Fetch pipelines from AZ
+  // Fetch service pipelines from AZ using /v1/api/pipelines-and-stages
   console.log('Fetching pipelines from AgencyZoom...');
   let pipelines: any;
   try {
-    // Try service ticket pipelines endpoint first, fall back to general pipelines
-    try {
-      pipelines = await azClient.getServiceTicketPipelines();
-      console.log('Used service ticket pipelines endpoint');
-    } catch {
-      console.log('Service ticket pipelines endpoint failed, trying general pipelines...');
-      pipelines = await azClient.getPipelines();
-      console.log('Used general pipelines endpoint');
+    // Try service type first, then all pipelines as fallback
+    pipelines = await azClient.getPipelinesAndStages('service');
+    console.log(`Fetched ${pipelines?.length ?? 0} service pipelines`);
+    if (!pipelines?.length) {
+      console.log('No service pipelines returned, trying without type filter...');
+      pipelines = await azClient.getPipelinesAndStages();
+      console.log(`Fetched ${pipelines?.length ?? 0} total pipelines`);
     }
   } catch (error) {
     console.error('ERROR fetching pipelines:', error);

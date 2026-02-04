@@ -158,7 +158,7 @@ export const SERVICE_PIPELINES = {
   CANCELLATIONS_UW: 51446,
   NON_PAY_CAN: 61303,
   MORTGAGEE_LATE_PAYS: 79072,
-  RENEWALS: 82839
+  RENEWALS: 88345
 } as const;
 
 // TCDS Agency-specific Stage IDs
@@ -174,18 +174,25 @@ export const PIPELINE_STAGES = {
   // Mortgagee Billed Late Pays (79072)
   MORTGAGEE_VERIFIED: 339834,
   MORTGAGEE_PAYMENT_RECEIVED: 339835,
-  // Renewals Pipeline (82839) - Discovered via discover-renewal-stages.ts
-  // Renewals Pipeline (82839) - discovered from AZ
-  RENEWALS_POLICY_PENDING_REVIEW: 357870, // "Annual Review"
-  RENEWALS_REQUOTE_REQUESTED: 357872,     // "Need to Requote"
+  // Renewals Pipeline (88345) "Policy Renewals" - Discovered via discover-renewal-stages.ts
+  RENEWALS_POLICY_PENDING_REVIEW: 383285, // "Pol Pend. Review"
+  RENEWALS_WAITING_AGENT_REVIEW: 383286,  // "Waiting for Agt Review"
+  RENEWALS_CONTACT_CUSTOMER: 383333,      // "Contact Customer"
+  RENEWALS_UNABLE_TO_CONTACT: 383288,     // "Unable to Contact"
+  RENEWALS_REQUOTE_REQUESTED: 383287,     // "Requote Requested"
+  RENEWALS_QUOTE_READY_EZL: 383334,       // "Quote ready in ezlynx"
+  RENEWALS_WAITING_CUSTOMER: 383336,      // "Waiting for customer"
 } as const;
 
-// Canonical name to AZ stage ID mapping for Renewals pipeline
-// These IDs should be updated after running discover-renewal-stages.ts
+// Canonical name to AZ stage ID mapping for Renewals pipeline (88345)
 export const RENEWAL_CANONICAL_TO_STAGE: Record<string, number> = {
   policy_pending_review: PIPELINE_STAGES.RENEWALS_POLICY_PENDING_REVIEW,
-  waiting_agent_review: PIPELINE_STAGES.RENEWALS_POLICY_PENDING_REVIEW, // Same stage in AZ
+  waiting_agent_review: PIPELINE_STAGES.RENEWALS_WAITING_AGENT_REVIEW,
+  contact_customer: PIPELINE_STAGES.RENEWALS_CONTACT_CUSTOMER,
+  unable_to_contact: PIPELINE_STAGES.RENEWALS_UNABLE_TO_CONTACT,
   requote_requested: PIPELINE_STAGES.RENEWALS_REQUOTE_REQUESTED,
+  quote_ready_ezl: PIPELINE_STAGES.RENEWALS_QUOTE_READY_EZL,
+  waiting_customer: PIPELINE_STAGES.RENEWALS_WAITING_CUSTOMER,
 };
 
 // TCDS Agency-specific Category IDs

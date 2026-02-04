@@ -24,7 +24,7 @@ export async function POST() {
     }
 
     // Fetch pipelines
-    const pipelines = await azClient.getServiceTicketPipelines();
+    const pipelines = await azClient.getPipelinesAndStages('service');
     const renewalPipeline = pipelines?.find?.((p: any) => p.id === SERVICE_PIPELINES.RENEWALS);
 
     if (!renewalPipeline?.stages?.length) {

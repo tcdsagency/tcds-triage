@@ -1445,12 +1445,13 @@ export class AgencyZoomClient {
   }
 
   /**
-   * Get service ticket pipelines (workflows) with stages
-   * GET /v1/api/serviceTicket/service-tickets/pipelines
+   * Get pipelines with their stages
+   * GET /v1/api/pipelines-and-stages
+   * @param type - Optional: "lead" or "service" to filter pipeline type
    */
-  async getServiceTicketPipelines(): Promise<any[]> {
-    const result = await this.request<any>('/v1/api/serviceTicket/service-tickets/pipelines');
-    // Handle both wrapped { pipelines: [...] } and direct array response
+  async getPipelinesAndStages(type?: 'lead' | 'service'): Promise<any[]> {
+    const query = type ? `?type=${type}` : '';
+    const result = await this.request<any>(`/v1/api/pipelines-and-stages${query}`);
     if (Array.isArray(result)) {
       return result;
     }
