@@ -6,12 +6,22 @@
  * Two job types:
  * 1. process-batch: Extract ZIP -> parse AL3 -> filter renewals -> create candidates
  * 2. process-candidate: Full parse -> fetch baseline -> compare -> create comparison
+ *
+ * All AL3 parsing and comparison logic is delegated to internal API endpoints
+ * to keep the worker isolated from the main app's source tree.
  */
 
 import { Worker, Job } from 'bullmq';
 import { redis } from '../redis';
+import { config } from '../config';
 import { logger } from '../logger';
 import type { RenewalBatchJobData, RenewalCandidateJobData } from '../queues';
+
+const BASE_URL = config.app.url;
+const HEADERS = {
+  'Content-Type': 'application/json',
+  Authorization: `Bearer ${config.app.internalKey}`,
+};
 
 // =============================================================================
 // WORKER
@@ -64,6 +74,31 @@ renewalWorker.on('failed', (job, err) => {
 });
 
 // =============================================================================
+// HELPERS
+// =============================================================================
+
+async function internalFetch(path: string, options?: RequestInit): Promise<Response> {
+  return fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: { ...HEADERS, ...(options?.headers || {}) },
+  });
+}
+
+async function patchBatch(batchId: string, data: Record<string, unknown>): Promise<void> {
+  await internalFetch(`/api/renewals/internal/batches/${batchId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+async function patchCandidate(candidateId: string, data: Record<string, unknown>): Promise<void> {
+  await internalFetch(`/api/renewals/internal/candidates/${candidateId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+// =============================================================================
 // PROCESS BATCH
 // =============================================================================
 
@@ -71,61 +106,73 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
   const { batchId, tenantId } = data;
   logger.info({ batchId }, 'Processing renewal batch');
 
-  // Use internal API endpoints to update batch status (avoids DB import issues in workers)
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000';
-
   try {
     // Update batch status to extracting
-    await fetch(`${baseUrl}/api/renewals/internal/batches/${batchId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'extracting', processingStartedAt: new Date().toISOString() }),
-    });
+    await patchBatch(batchId, { status: 'extracting', processingStartedAt: new Date().toISOString() });
 
     // Get file buffer
-    let fileBuffer: Buffer;
+    let fileBuffer: string; // base64
     if (data.fileBuffer) {
-      fileBuffer = Buffer.from(data.fileBuffer, 'base64');
+      fileBuffer = data.fileBuffer;
     } else {
       // TODO: Download from Supabase Storage using data.storagePath
       throw new Error('Storage download not yet implemented');
     }
 
-    // Extract AL3 files from ZIP
-    const { extractAL3FilesFromZip } = await import('../../../src/lib/al3/zip-extractor');
-    const al3Files = await extractAL3FilesFromZip(fileBuffer);
+    // Extract AL3 files from ZIP via internal API
+    const extractRes = await internalFetch('/api/renewals/internal/parse', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'extract-zip', fileBuffer }),
+    });
+    const extractData = await extractRes.json() as { success: boolean; files: Array<{ fileName: string; content: string }> };
+    if (!extractData.success) throw new Error('ZIP extraction failed');
 
+    const al3Files = extractData.files;
     logger.info({ batchId, filesFound: al3Files.length }, 'AL3 files extracted');
 
     // Update batch with file count
-    await fetch(`${baseUrl}/api/renewals/internal/batches/${batchId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status: 'filtering',
-        totalAl3FilesFound: al3Files.length,
-      }),
-    });
+    await patchBatch(batchId, { status: 'filtering', totalAl3FilesFound: al3Files.length });
 
-    // Parse and filter for renewals
-    const { parseAL3File } = await import('../../../src/lib/al3/parser');
-    const { filterRenewalTransactions, deduplicateRenewals } = await import('../../../src/lib/al3/filter');
-
+    // Parse each file and filter for renewals
     let totalTransactions = 0;
-    let allRenewals: any[] = [];
+    const allRenewals: Array<{ header: Record<string, unknown>; rawContent: string; _fileName: string }> = [];
 
     for (const file of al3Files) {
-      const transactions = parseAL3File(file.content);
-      totalTransactions += transactions.length;
+      // Parse AL3 file
+      const parseRes = await internalFetch('/api/renewals/internal/parse', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'parse-file', content: file.content }),
+      });
+      const parseData = await parseRes.json() as { success: boolean; transactions: any[] };
+      if (!parseData.success) continue;
 
-      const renewals = filterRenewalTransactions(transactions);
-      allRenewals.push(
-        ...renewals.map((r) => ({ ...r, _fileName: file.fileName }))
-      );
+      totalTransactions += parseData.transactions.length;
+
+      // Filter for renewals
+      const filterRes = await internalFetch('/api/renewals/internal/parse', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'filter-renewals', transactions: parseData.transactions }),
+      });
+      const filterData = await filterRes.json() as { success: boolean; unique: any[]; duplicatesRemoved: number };
+      if (!filterData.success) continue;
+
+      for (const r of filterData.unique) {
+        allRenewals.push({ ...r, _fileName: file.fileName });
+      }
     }
 
-    // Deduplicate
-    const { unique, duplicatesRemoved } = deduplicateRenewals(allRenewals);
+    // Global dedup across files
+    const deduped = new Map<string, typeof allRenewals[0]>();
+    let duplicatesRemoved = 0;
+    for (const r of allRenewals) {
+      const key = `${r.header?.carrierCode}|${r.header?.policyNumber}|${r.header?.effectiveDate}`;
+      if (deduped.has(key)) {
+        duplicatesRemoved++;
+      } else {
+        deduped.set(key, r);
+      }
+    }
+    const unique = Array.from(deduped.values());
 
     logger.info({
       batchId,
@@ -136,40 +183,35 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
     }, 'Renewals filtered');
 
     // Update batch stats
-    await fetch(`${baseUrl}/api/renewals/internal/batches/${batchId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status: 'processing',
-        totalTransactionsFound: totalTransactions,
-        totalRenewalTransactions: allRenewals.length,
-        duplicatesRemoved,
-        totalCandidatesCreated: unique.length,
-      }),
+    await patchBatch(batchId, {
+      status: 'processing',
+      totalTransactionsFound: totalTransactions,
+      totalRenewalTransactions: allRenewals.length,
+      duplicatesRemoved,
+      totalCandidatesCreated: unique.length,
     });
 
     // Create candidate records and queue individual processing
     for (const renewal of unique) {
       try {
-        const candidateResponse = await fetch(`${baseUrl}/api/renewals/internal/candidates`, {
+        const candidateRes = await internalFetch('/api/renewals/internal/candidates', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             tenantId,
             batchId,
-            transactionType: renewal.header.transactionType,
-            policyNumber: renewal.header.policyNumber,
-            carrierCode: renewal.header.carrierCode,
-            carrierName: renewal.header.carrierName,
-            lineOfBusiness: renewal.header.lineOfBusiness,
-            effectiveDate: renewal.header.effectiveDate,
-            expirationDate: renewal.header.expirationDate,
+            transactionType: renewal.header?.transactionType,
+            policyNumber: renewal.header?.policyNumber,
+            carrierCode: renewal.header?.carrierCode,
+            carrierName: renewal.header?.carrierName,
+            lineOfBusiness: renewal.header?.lineOfBusiness,
+            effectiveDate: renewal.header?.effectiveDate,
+            expirationDate: renewal.header?.expirationDate,
             rawAl3Content: renewal.rawContent,
             al3FileName: renewal._fileName,
           }),
         });
 
-        const result = await candidateResponse.json();
+        const result = await candidateRes.json() as { success: boolean; candidateId?: string };
         if (result.success && result.candidateId) {
           // Queue individual candidate processing
           const { renewalQueue } = await import('../queues');
@@ -190,13 +232,9 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
 
     // If no candidates, mark batch complete
     if (unique.length === 0) {
-      await fetch(`${baseUrl}/api/renewals/internal/batches/${batchId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'completed',
-          processingCompletedAt: new Date().toISOString(),
-        }),
+      await patchBatch(batchId, {
+        status: 'completed',
+        processingCompletedAt: new Date().toISOString(),
       });
     }
 
@@ -204,14 +242,10 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
   } catch (error) {
     logger.error({ batchId, error }, 'Batch processing failed');
 
-    await fetch(`${baseUrl}/api/renewals/internal/batches/${batchId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status: 'failed',
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-        processingCompletedAt: new Date().toISOString(),
-      }),
+    await patchBatch(batchId, {
+      status: 'failed',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      processingCompletedAt: new Date().toISOString(),
     });
 
     throw error;
@@ -223,79 +257,91 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
 // =============================================================================
 
 async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
-  const { candidateId, tenantId, batchId } = data;
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000';
+  const { candidateId, tenantId } = data;
 
   logger.info({ candidateId }, 'Processing renewal candidate');
 
   try {
     // Update status to fetching_baseline
-    await fetch(`${baseUrl}/api/renewals/internal/candidates/${candidateId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'fetching_baseline' }),
-    });
+    await patchCandidate(candidateId, { status: 'fetching_baseline' });
 
     // Get candidate data
-    const candidateRes = await fetch(`${baseUrl}/api/renewals/internal/candidates/${candidateId}`);
-    const candidateData = await candidateRes.json();
+    const candidateRes = await internalFetch(`/api/renewals/internal/candidates/${candidateId}`);
+    const candidateData = await candidateRes.json() as { success: boolean; candidate: Record<string, any> };
     if (!candidateData.success) throw new Error('Failed to fetch candidate');
     const candidate = candidateData.candidate;
 
-    // Full-parse the AL3 content
-    const { parseAL3File } = await import('../../../src/lib/al3/parser');
-    const { buildRenewalSnapshot } = await import('../../../src/lib/al3/snapshot-builder');
-
-    const transactions = parseAL3File(candidate.rawAl3Content || '');
-    const transaction = transactions[0]; // Take first (should match)
-    if (!transaction) {
-      await fetch(`${baseUrl}/api/renewals/internal/candidates/${candidateId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'failed', errorMessage: 'No parseable transaction found' }),
-      });
+    // Full-parse the AL3 content via internal API
+    const parseRes = await internalFetch('/api/renewals/internal/parse', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'parse-file', content: candidate.rawAl3Content || '' }),
+    });
+    const parseData = await parseRes.json() as { success: boolean; transactions: any[] };
+    if (!parseData.success || !parseData.transactions.length) {
+      await patchCandidate(candidateId, { status: 'failed', errorMessage: 'No parseable transaction found' });
       return;
     }
 
-    const renewalSnapshot = buildRenewalSnapshot(transaction);
-    renewalSnapshot.sourceFileName = candidate.al3FileName;
-
-    // Fetch HawkSoft baseline
-    await fetch(`${baseUrl}/api/renewals/internal/candidates/${candidateId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'comparing', renewalSnapshot }),
-    });
-
-    const baselineRes = await fetch(`${baseUrl}/api/renewals/internal/baseline`, {
+    // Build renewal snapshot via internal API
+    const snapshotRes = await internalFetch('/api/renewals/internal/parse', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'build-snapshot', transaction: parseData.transactions[0] }),
+    });
+    const snapshotData = await snapshotRes.json() as { success: boolean; snapshot: Record<string, any> };
+    if (!snapshotData.success) {
+      await patchCandidate(candidateId, { status: 'failed', errorMessage: 'Failed to build renewal snapshot' });
+      return;
+    }
+
+    const renewalSnapshot: Record<string, any> = { ...snapshotData.snapshot, sourceFileName: candidate.al3FileName };
+
+    // Update candidate status and snapshot
+    await patchCandidate(candidateId, { status: 'comparing', renewalSnapshot });
+
+    // Fetch HawkSoft baseline via internal API
+    const baselineRes = await internalFetch('/api/renewals/internal/baseline', {
+      method: 'POST',
       body: JSON.stringify({
         tenantId,
         policyNumber: candidate.policyNumber,
         carrierName: candidate.carrierName,
       }),
     });
-    const baselineData = await baselineRes.json();
+    const baselineData = await baselineRes.json() as {
+      success: boolean;
+      snapshot?: Record<string, any>;
+      policyId?: string;
+      customerId?: string;
+    };
 
     if (!baselineData.success || !baselineData.snapshot) {
       // Policy not found - skip candidate
-      await fetch(`${baseUrl}/api/renewals/internal/candidates/${candidateId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'skipped', errorMessage: 'Policy not found in HawkSoft' }),
-      });
+      await patchCandidate(candidateId, { status: 'skipped', errorMessage: 'Policy not found in HawkSoft' });
       return;
     }
 
-    // Run comparison engine
-    const { compareSnapshots } = await import('../../../src/lib/al3/comparison-engine');
-    const comparisonResult = compareSnapshots(renewalSnapshot, baselineData.snapshot);
-
-    // Create comparison record
-    const comparisonRes = await fetch(`${baseUrl}/api/renewals/internal/comparisons`, {
+    // Run comparison engine via internal API
+    const compareRes = await internalFetch('/api/renewals/internal/compare', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        renewalSnapshot,
+        baselineSnapshot: baselineData.snapshot,
+      }),
+    });
+    const compareData = await compareRes.json() as {
+      success: boolean;
+      result: { recommendation: string; materialChanges: any[]; summary: any };
+    };
+    if (!compareData.success) {
+      await patchCandidate(candidateId, { status: 'failed', errorMessage: 'Comparison engine failed' });
+      return;
+    }
+
+    const comparisonResult = compareData.result;
+
+    // Create comparison record via internal API
+    const comparisonRes = await internalFetch('/api/renewals/internal/comparisons', {
+      method: 'POST',
       body: JSON.stringify({
         tenantId,
         candidateId,
@@ -316,18 +362,14 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
       }),
     });
 
-    const comparison = await comparisonRes.json();
+    const comparison = await comparisonRes.json() as { success: boolean; comparisonId?: string };
 
     // Update candidate with completion
-    await fetch(`${baseUrl}/api/renewals/internal/candidates/${candidateId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status: 'completed',
-        comparisonId: comparison.comparisonId,
-        policyId: baselineData.policyId,
-        customerId: baselineData.customerId,
-      }),
+    await patchCandidate(candidateId, {
+      status: 'completed',
+      comparisonId: comparison.comparisonId,
+      policyId: baselineData.policyId,
+      customerId: baselineData.customerId,
     });
 
     logger.info({
@@ -338,13 +380,9 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
   } catch (error) {
     logger.error({ candidateId, error }, 'Candidate processing failed');
 
-    await fetch(`${baseUrl}/api/renewals/internal/candidates/${candidateId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status: 'failed',
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      }),
+    await patchCandidate(candidateId, {
+      status: 'failed',
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
     });
 
     throw error;
