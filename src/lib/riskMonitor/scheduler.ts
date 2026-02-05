@@ -18,6 +18,7 @@ import { mmiClient, type MMIPropertyData } from "@/lib/mmi";
 import { outlookClient } from "@/lib/outlook";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 import { normalizeAddress, type NormalizedAddress } from "./addressUtils";
+import { buildZillowUrl } from "@/lib/utils/zillow";
 
 // =============================================================================
 // TYPES
@@ -1117,6 +1118,7 @@ Detected: ${new Date().toLocaleString()}
 
     const title = this.getAlertTitle(alertType, `${policy.addressLine1}, ${policy.city}`);
     const statusEmoji = alertType === "sold" ? "🏠" : alertType === "pending_sale" ? "⏳" : "📋";
+    const zillowUrl = buildZillowUrl({ street: policy.addressLine1, city: policy.city, state: policy.state, zip: policy.zipCode });
 
     const emailBody = `
 ${statusEmoji} RISK MONITOR ALERT - ${title}
@@ -1129,7 +1131,7 @@ CUSTOMER INFORMATION
 • Email: ${policy.contactEmail || "N/A"}
 
 PROPERTY DETAILS
-• Address: ${result.address}
+• Address: ${result.address}${zillowUrl ? `\n• Zillow: ${zillowUrl}` : ""}
 • Policy #: ${policy.policyNumber || "N/A"}
 • Carrier: ${policy.carrier || "N/A"}
 
@@ -1162,7 +1164,7 @@ ${alertType === "listing_detected" ? `1. Reach out to confirm they are selling
 
 QUICK LINKS
 • AgencyZoom Profile: ${policy.azContactId ? `https://app.agencyzoom.com/customer/index?id=${policy.azContactId}` : "N/A"}
-• TCDS App: ${policy.azContactId ? `https://tcds-triage.vercel.app/customers/${policy.azContactId}?azId=${policy.azContactId}` : "N/A"}
+• TCDS App: ${policy.azContactId ? `https://tcds-triage.vercel.app/customers/${policy.azContactId}?azId=${policy.azContactId}` : "N/A"}${zillowUrl ? `\n• Zillow Property: ${zillowUrl}` : ""}
 • Risk Monitor Dashboard: https://tcds-triage.vercel.app/risk-monitor
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

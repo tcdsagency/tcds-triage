@@ -29,6 +29,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { FloodZoneBadge, FloodRisk } from '@/components/ui/flood-zone-indicator';
+import { buildZillowUrl } from '@/lib/utils/zillow';
 
 // =============================================================================
 // TYPES
@@ -618,7 +619,17 @@ export default function RiskMonitorPage() {
 
                     {/* Address */}
                     <div className="min-w-0">
-                      <p className="text-sm text-gray-700 truncate">{policy.addressLine1}</p>
+                      <div className="flex items-center gap-1">
+                        <p className="text-sm text-gray-700 truncate">{policy.addressLine1}</p>
+                        {(() => {
+                          const zUrl = buildZillowUrl({ street: policy.addressLine1, city: policy.city, state: policy.state, zip: policy.zipCode });
+                          return zUrl ? (
+                            <a href={zUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 flex-shrink-0" title="View on Zillow" onClick={(e) => e.stopPropagation()}>
+                              <ExternalLink className="h-3.5 w-3.5 inline" />
+                            </a>
+                          ) : null;
+                        })()}
+                      </div>
                       <p className="text-xs text-gray-400 truncate">{policy.city}, {policy.state} {policy.zipCode}</p>
                     </div>
 
@@ -885,6 +896,14 @@ function ExpandedPropertyPanel({
             <div className="flex items-center gap-2">
               <MapPin className="h-3.5 w-3.5 text-gray-400" />
               {policy.addressLine1}{policy.addressLine2 ? `, ${policy.addressLine2}` : ''}
+              {(() => {
+                const zUrl = buildZillowUrl({ street: policy.addressLine1, city: policy.city, state: policy.state, zip: policy.zipCode });
+                return zUrl ? (
+                  <a href={zUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 flex-shrink-0" title="View on Zillow">
+                    <ExternalLink className="h-3.5 w-3.5 inline" />
+                  </a>
+                ) : null;
+              })()}
             </div>
             <p className="pl-5 text-xs text-gray-500">{policy.city}, {policy.state} {policy.zipCode}</p>
             {policy.carrier && <p className="text-xs text-gray-500">Carrier: {policy.carrier}</p>}

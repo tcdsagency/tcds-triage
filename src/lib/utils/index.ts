@@ -165,3 +165,5 @@ export function formatFullName(firstName?: string | null, lastName?: string | nu
   const last = normalizeName(lastName);
   return [first, last].filter(Boolean).join(' ') || 'Unknown';
 }
+
+export { buildZillowUrl } from './zillow';

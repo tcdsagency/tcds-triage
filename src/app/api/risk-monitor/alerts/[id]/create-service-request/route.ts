@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { riskMonitorAlerts, riskMonitorPolicies } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { buildZillowUrl } from "@/lib/utils/zillow";
 
 // POST - Create a service request for an alert
 export async function POST(
@@ -113,11 +114,13 @@ export async function POST(
 
     const subject = `Property Alert: ${statusLabel} - ${policy.addressLine1 || address}`;
 
+    const zillowUrl = buildZillowUrl({ street: policy.addressLine1, city: policy.city, state: policy.state, zip: policy.zipCode });
+
     const description = `
 Property Status Alert from Risk Monitor
 
 Customer: ${policy.contactName || "Unknown"}
-Address: ${address}
+Address: ${address}${zillowUrl ? `\nZillow: ${zillowUrl}` : ""}
 Status: ${statusLabel}
 Listing Price: ${listingPriceFormatted}
 Policy Number: ${policy.policyNumber || "N/A"}

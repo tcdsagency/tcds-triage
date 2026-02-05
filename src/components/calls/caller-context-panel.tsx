@@ -11,6 +11,7 @@ import React, { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { Customer, Policy } from '@/types';
+import { buildZillowUrl } from '@/lib/utils/zillow';
 
 // =============================================================================
 // ICONS
@@ -325,6 +326,16 @@ export function CallerContextPanel({
                   <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400">
                     <MapPinIcon />
                     <span className="line-clamp-2">{fullAddress}</span>
+                    {(() => {
+                      const zUrl = buildZillowUrl({ street: customer?.address?.street, city: customer?.address?.city, state: customer?.address?.state, zip: customer?.address?.zip });
+                      return zUrl ? (
+                        <a href={zUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 flex-shrink-0" title="View on Zillow">
+                          <svg className="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      ) : null;
+                    })()}
                   </div>
                   <button
                     onClick={() => copyToClipboard(fullAddress)}

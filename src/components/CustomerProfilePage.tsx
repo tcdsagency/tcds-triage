@@ -55,6 +55,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { buildZillowUrl } from "@/lib/utils/zillow";
 import {
   MergedProfile,
   Policy,
@@ -1761,9 +1762,21 @@ function PolicyCard({
               </div>
               <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
                 <div className="text-sm text-gray-900 dark:text-white mb-2">
-                  {policy.property.address?.street && <div>{policy.property.address.street}</div>}
-                  <div>
-                    {policy.property.address?.city}, {policy.property.address?.state} {policy.property.address?.zip}
+                  <div className="flex items-center gap-1">
+                    <div>
+                      {policy.property.address?.street && <div>{policy.property.address.street}</div>}
+                      <div>
+                        {policy.property.address?.city}, {policy.property.address?.state} {policy.property.address?.zip}
+                      </div>
+                    </div>
+                    {(() => {
+                      const zUrl = buildZillowUrl({ street: policy.property.address?.street, city: policy.property.address?.city, state: policy.property.address?.state, zip: policy.property.address?.zip });
+                      return zUrl ? (
+                        <a href={zUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 flex-shrink-0" title="View on Zillow">
+                          <ExternalLink className="h-3.5 w-3.5 inline" />
+                        </a>
+                      ) : null;
+                    })()}
                   </div>
                   {policy.property.address?.county && (
                     <div className="text-xs text-gray-500">{policy.property.address.county} County</div>
@@ -1910,13 +1923,23 @@ function PolicyCard({
                 {policy.locations.map((location) => (
                   <div key={location.id} className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
                     <div className="flex items-start justify-between">
-                      <div>
-                        <div className="text-sm text-gray-900 dark:text-white">
-                          {location.address?.street}
+                      <div className="flex items-center gap-1">
+                        <div>
+                          <div className="text-sm text-gray-900 dark:text-white">
+                            {location.address?.street}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {location.address?.city}, {location.address?.state} {location.address?.zip}
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-500">
-                          {location.address?.city}, {location.address?.state} {location.address?.zip}
-                        </div>
+                        {(() => {
+                          const zUrl = buildZillowUrl({ street: location.address?.street, city: location.address?.city, state: location.address?.state, zip: location.address?.zip });
+                          return zUrl ? (
+                            <a href={zUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 flex-shrink-0" title="View on Zillow">
+                              <ExternalLink className="h-3.5 w-3.5 inline" />
+                            </a>
+                          ) : null;
+                        })()}
                       </div>
                       {location.isPrimary && (
                         <Badge variant="outline" className="text-xs">Primary</Badge>
