@@ -20,29 +20,35 @@ import type {
   ChangeSeverity,
 } from '@/types/renewal.types';
 import { DEFAULT_COMPARISON_THRESHOLDS } from '@/types/renewal.types';
+import { VEHICLE_LEVEL_COVERAGE_TYPES } from './constants';
 
 // =============================================================================
 // HELPERS
 // =============================================================================
 
 /**
- * Collect all coverages from both policy-level and vehicle-level.
- * For auto policies, HawkSoft returns coverages at the policy level while
- * AL3 puts them at the vehicle level. This flattens both into a single list,
- * deduplicating by coverage type (keeps first occurrence per type).
+ * Collect POLICY-LEVEL coverages (excluding vehicle-specific ones like Comp, Coll).
+ * For auto policies, HawkSoft may return coverages at the policy level while
+ * AL3 puts them at the vehicle level. This flattens policy-level coverages only,
+ * deduplicating by coverage type.
+ * Vehicle-specific coverages (Comp, Coll, Roadside, Rental) are compared per-vehicle.
  */
-function collectAllCoverages(
+function collectPolicyLevelCoverages(
   policyCoverages: CanonicalCoverage[],
   vehicles: CanonicalVehicle[]
 ): CanonicalCoverage[] {
-  // If policy-level coverages exist, use those (they already include everything)
-  if (policyCoverages.length > 0) return policyCoverages;
+  // Filter to only policy-level coverages (exclude vehicle-specific)
+  const policyLevel = policyCoverages.filter(c => !VEHICLE_LEVEL_COVERAGE_TYPES.has(c.type));
 
-  // Otherwise, flatten vehicle-level coverages and deduplicate by type
+  // If we have policy-level coverages, return them
+  if (policyLevel.length > 0) return policyLevel;
+
+  // Otherwise, extract policy-level coverages from vehicles and deduplicate
   const seen = new Map<string, CanonicalCoverage>();
   for (const vehicle of vehicles) {
     for (const cov of vehicle.coverages || []) {
-      if (cov.type && !seen.has(cov.type)) {
+      // Skip vehicle-specific coverages
+      if (cov.type && !seen.has(cov.type) && !VEHICLE_LEVEL_COVERAGE_TYPES.has(cov.type)) {
         seen.set(cov.type, cov);
       }
     }
@@ -68,16 +74,16 @@ export function compareSnapshots(
   allChanges.push(...comparePremium(renewal.premium, baseline.premium, thresholds));
 
   // For auto policies, coverages may live at the vehicle level in one snapshot
-  // but at the policy level in the other. Flatten vehicle coverages into a
-  // unified list so the comparison can match them properly.
-  const renewalCoverages = collectAllCoverages(renewal.coverages, renewal.vehicles);
-  const baselineCoverages = collectAllCoverages(baseline.coverages, baseline.vehicles);
+  // but at the policy level in the other. Collect POLICY-LEVEL coverages only.
+  // Vehicle-specific coverages (Comp, Coll, etc.) are compared per-vehicle below.
+  const renewalCoverages = collectPolicyLevelCoverages(renewal.coverages, renewal.vehicles);
+  const baselineCoverages = collectPolicyLevelCoverages(baseline.coverages, baseline.vehicles);
 
-  // Compare coverages
+  // Compare policy-level coverages
   allChanges.push(...compareCoverages(renewalCoverages, baselineCoverages, thresholds));
 
-  // Compare vehicles
-  allChanges.push(...compareVehicles(renewal.vehicles, baseline.vehicles));
+  // Compare vehicles (includes vehicle-level coverage comparison)
+  allChanges.push(...compareVehicles(renewal.vehicles, baseline.vehicles, thresholds));
 
   // Compare drivers
   allChanges.push(...compareDrivers(renewal.drivers, baseline.drivers));
@@ -282,7 +288,8 @@ function compareCoverages(
 
 function compareVehicles(
   renewalVehicles: CanonicalVehicle[],
-  baselineVehicles: CanonicalVehicle[]
+  baselineVehicles: CanonicalVehicle[],
+  thresholds: ComparisonThresholds = DEFAULT_COMPARISON_THRESHOLDS
 ): MaterialChange[] {
   const changes: MaterialChange[] = [];
 
@@ -323,6 +330,119 @@ function compareVehicles(
         severity: 'material_positive',
         description: `Vehicle added: ${desc || vin}`,
       });
+    }
+  }
+
+  // Compare coverages within matched vehicles
+  for (const [vin, renewalVeh] of renewalByVin) {
+    const baselineVeh = baselineByVin.get(vin);
+    if (!baselineVeh) continue;
+
+    const vehDesc = `${renewalVeh.year || ''} ${renewalVeh.make || ''} ${renewalVeh.model || ''}`.trim();
+
+    // Get vehicle-level coverages only
+    const renewalCovs = (renewalVeh.coverages || []).filter(c => VEHICLE_LEVEL_COVERAGE_TYPES.has(c.type));
+    const baselineCovs = (baselineVeh.coverages || []).filter(c => VEHICLE_LEVEL_COVERAGE_TYPES.has(c.type));
+
+    const renewalByType = new Map(renewalCovs.map(c => [c.type, c]));
+    const baselineByType = new Map(baselineCovs.map(c => [c.type, c]));
+
+    // Check for removed vehicle coverages
+    for (const [type, baseline] of baselineByType) {
+      if (!renewalByType.has(type)) {
+        changes.push({
+          field: `vehicle.${vin}.coverage.${type}`,
+          category: 'coverage_removed',
+          classification: 'material_negative',
+          oldValue: baseline.description || type,
+          newValue: null,
+          severity: 'material_negative',
+          description: `${vehDesc}: ${baseline.description || type} removed`,
+        });
+      }
+    }
+
+    // Check for added vehicle coverages
+    for (const [type, renewal] of renewalByType) {
+      if (!baselineByType.has(type)) {
+        changes.push({
+          field: `vehicle.${vin}.coverage.${type}`,
+          category: 'coverage_added',
+          classification: 'material_positive',
+          oldValue: null,
+          newValue: renewal.description || type,
+          severity: 'material_positive',
+          description: `${vehDesc}: ${renewal.description || type} added`,
+        });
+      }
+    }
+
+    // Compare matching coverages (deductibles, limits)
+    for (const [type, renewal] of renewalByType) {
+      const baseline = baselineByType.get(type);
+      if (!baseline) continue;
+
+      // Compare deductibles
+      if (renewal.deductibleAmount != null && baseline.deductibleAmount != null) {
+        const dedChange = renewal.deductibleAmount - baseline.deductibleAmount;
+        const dedChangePercent = baseline.deductibleAmount !== 0
+          ? (dedChange / baseline.deductibleAmount) * 100
+          : 0;
+
+        if (dedChange !== 0) {
+          let severity: ChangeSeverity;
+          if (dedChange > 0 && dedChangePercent > thresholds.deductibleIncreasePercent) {
+            severity = 'material_negative';
+          } else if (dedChange < 0) {
+            severity = 'material_positive';
+          } else {
+            severity = 'non_material';
+          }
+
+          changes.push({
+            field: `vehicle.${vin}.coverage.${type}.deductible`,
+            category: 'deductible',
+            classification: severity,
+            oldValue: baseline.deductibleAmount,
+            newValue: renewal.deductibleAmount,
+            changeAmount: dedChange,
+            changePercent: Math.round(dedChangePercent * 100) / 100,
+            severity,
+            description: `${vehDesc} ${renewal.description || type} deductible: $${baseline.deductibleAmount} → $${renewal.deductibleAmount}`,
+          });
+        }
+      }
+
+      // Compare limits (for rental, roadside, etc.)
+      if (renewal.limitAmount != null && baseline.limitAmount != null) {
+        const limitChange = renewal.limitAmount - baseline.limitAmount;
+        const limitChangePercent = baseline.limitAmount !== 0
+          ? (limitChange / baseline.limitAmount) * 100
+          : 0;
+
+        if (limitChange !== 0) {
+          let severity: ChangeSeverity;
+          if (limitChange < 0 && Math.abs(limitChangePercent) > thresholds.coverageLimitReductionPercent) {
+            severity = 'material_negative';
+          } else if (limitChange > 0) {
+            severity = 'material_positive';
+          } else {
+            severity = 'non_material';
+          }
+
+          changes.push({
+            field: `vehicle.${vin}.coverage.${type}.limit`,
+            category: 'coverage_limit',
+            classification: severity,
+            oldValue: baseline.limitAmount,
+            newValue: renewal.limitAmount,
+            changeAmount: limitChange,
+            changePercent: Math.round(limitChangePercent * 100) / 100,
+            severity,
+            description: `${vehDesc} ${renewal.description || type} limit: $${baseline.limitAmount} → $${renewal.limitAmount}`,
+          });
+        }
+      }
     }
   }
 

@@ -254,6 +254,23 @@ export const DISCOUNT_COVERAGE_TYPES = new Set([
   'bundle_discount',
 ]);
 
+/**
+ * Coverage types that are vehicle-specific and should NOT be flattened to policy level.
+ * These coverages can have different limits/deductibles per vehicle.
+ */
+export const VEHICLE_LEVEL_COVERAGE_TYPES = new Set([
+  'comprehensive',
+  'collision',
+  'tl',              // Towing/Roadside
+  'rreim',           // Rental Reimbursement
+  'glass',           // Glass Coverage
+  'gap',             // GAP Insurance
+  'loan_lease',      // Loan/Lease Payoff
+  'full_glass',      // Full Glass Coverage
+  'roadside',        // Roadside Assistance (alternate code)
+  'rental',          // Rental (alternate code)
+]);
+
 // =============================================================================
 // FIELD POSITION MAPPINGS (for fixed-width AL3 parsing)
 // =============================================================================

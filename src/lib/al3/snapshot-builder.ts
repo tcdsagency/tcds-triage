@@ -14,7 +14,7 @@ import type {
   CanonicalEndorsement,
   CanonicalClaim,
 } from '@/types/renewal.types';
-import { COVERAGE_CODE_MAP, DISCOUNT_COVERAGE_TYPES } from './constants';
+import { COVERAGE_CODE_MAP, DISCOUNT_COVERAGE_TYPES, VEHICLE_LEVEL_COVERAGE_TYPES } from './constants';
 import { parseSplitLimit } from './parser';
 
 /**
@@ -87,18 +87,24 @@ export function buildRenewalSnapshot(
     isExcluded: drv.isExcluded,
   }));
 
-  // Flatten vehicle-level coverages into policy-level (e.g. Progressive auto)
-  // Only count non-discount coverages to decide whether to flatten
-  // Sum premiums across all vehicles for the same coverage type
-  const realCoverageCount = coverages.filter(c => !DISCOUNT_COVERAGE_TYPES.has(c.type)).length;
+  // Flatten POLICY-LEVEL coverages from vehicles into policy coverages array
+  // Vehicle-specific coverages (Comp, Coll, Roadside, Rental) stay on vehicles
+  // Only count non-discount, non-vehicle-specific coverages to decide whether to flatten
+  const realCoverageCount = coverages.filter(c =>
+    !DISCOUNT_COVERAGE_TYPES.has(c.type) && !VEHICLE_LEVEL_COVERAGE_TYPES.has(c.type)
+  ).length;
+
   if (realCoverageCount === 0 && vehicles.length > 0) {
     const seen = new Map<string, CanonicalCoverage>();
     for (const veh of vehicles) {
       for (const cov of veh.coverages) {
         if (!cov.type) continue;
+        // Skip vehicle-specific coverages - they stay on the vehicle
+        if (VEHICLE_LEVEL_COVERAGE_TYPES.has(cov.type)) continue;
+
         const existing = seen.get(cov.type);
         if (existing) {
-          // Sum premiums across vehicles
+          // Sum premiums across vehicles for policy-level coverages
           if (cov.premium != null) {
             existing.premium = (existing.premium ?? 0) + cov.premium;
           }
@@ -129,13 +135,18 @@ export function buildRenewalSnapshot(
   coverages.push(...realCoverages);
 
   // Calculate total premium
+  // - Policy-level coverages are in `coverages` (already summed across vehicles)
+  // - Vehicle-level coverages (comp, coll, etc.) are on each vehicle
   let totalPremium: number | undefined;
-  const allCoveragePremiums = [
-    ...coverages.filter((c) => c.premium != null).map((c) => c.premium!),
-    ...vehicles.flatMap((v) =>
-      v.coverages.filter((c) => c.premium != null).map((c) => c.premium!)
-    ),
-  ];
+  const policyLevelPremiums = coverages
+    .filter((c) => c.premium != null)
+    .map((c) => c.premium!);
+  const vehicleLevelPremiums = vehicles.flatMap((v) =>
+    v.coverages
+      .filter((c) => c.premium != null && VEHICLE_LEVEL_COVERAGE_TYPES.has(c.type))
+      .map((c) => c.premium!)
+  );
+  const allCoveragePremiums = [...policyLevelPremiums, ...vehicleLevelPremiums];
   if (allCoveragePremiums.length > 0) {
     totalPremium = allCoveragePremiums.reduce((sum, p) => sum + p, 0);
   }
