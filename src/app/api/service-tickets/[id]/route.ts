@@ -8,6 +8,7 @@ import { getAgencyZoomClient } from '@/lib/api/agencyzoom';
 
 interface UpdateTicketRequest {
   stageId?: number;
+  status?: number;
   csrId?: number;
   priorityId?: number;
   categoryId?: number;
@@ -47,6 +48,7 @@ export async function PATCH(
     // Build update object
     const updates: Parameters<typeof azClient.updateServiceTicket>[1] = {};
 
+    if (body.status !== undefined) updates.status = body.status;
     if (body.stageId !== undefined) updates.stageId = body.stageId;
     if (body.csrId !== undefined) updates.csrId = body.csrId;
     if (body.priorityId !== undefined) updates.priorityId = body.priorityId;
