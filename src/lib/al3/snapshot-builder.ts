@@ -87,9 +87,11 @@ export function buildRenewalSnapshot(
     isExcluded: drv.isExcluded,
   }));
 
-  // Flatten vehicle-level coverages into policy-level when empty (e.g. Progressive auto)
+  // Flatten vehicle-level coverages into policy-level (e.g. Progressive auto)
+  // Only count non-discount coverages to decide whether to flatten
   // Sum premiums across all vehicles for the same coverage type
-  if (coverages.length === 0 && vehicles.length > 0) {
+  const realCoverageCount = coverages.filter(c => !DISCOUNT_COVERAGE_TYPES.has(c.type)).length;
+  if (realCoverageCount === 0 && vehicles.length > 0) {
     const seen = new Map<string, CanonicalCoverage>();
     for (const veh of vehicles) {
       for (const cov of veh.coverages) {
