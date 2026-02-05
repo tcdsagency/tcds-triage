@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     const order = searchParams.get('order') || 'asc';
     const dateFrom = searchParams.get('dateFrom');
     const dateTo = searchParams.get('dateTo');
+    const dateRange = searchParams.get('dateRange');
     const offset = (page - 1) * limit;
 
     // Build conditions
@@ -33,7 +34,20 @@ export async function GET(request: NextRequest) {
       conditions.push(eq(renewalComparisons.status, status as any));
     }
     if (lob) {
-      conditions.push(eq(renewalComparisons.lineOfBusiness, lob));
+      // Map UI category names to DB lineOfBusiness values
+      const lobMap: Record<string, string[]> = {
+        auto: ['Personal Auto', 'personal_auto'],
+        home: ['Homeowners', 'homeowners', 'Home', 'Dwelling Fire'],
+        commercial: ['Commercial Auto', 'Commercial Property', 'Commercial Package', 'BOP', 'General Liability', 'Workers Compensation'],
+      };
+      const lobValues = lobMap[lob];
+      if (lobValues) {
+        conditions.push(
+          sql`${renewalComparisons.lineOfBusiness} IN (${sql.join(lobValues.map(v => sql`${v}`), sql`, `)})`
+        );
+      } else {
+        conditions.push(eq(renewalComparisons.lineOfBusiness, lob));
+      }
     }
     if (carrier) {
       conditions.push(eq(renewalComparisons.carrierName, carrier));
@@ -47,6 +61,19 @@ export async function GET(request: NextRequest) {
     if (dateTo) {
       conditions.push(lte(renewalComparisons.renewalEffectiveDate, new Date(dateTo)));
     }
+    if (dateRange) {
+      const now = new Date();
+      if (dateRange === 'past') {
+        conditions.push(lte(renewalComparisons.renewalEffectiveDate, now));
+      } else {
+        const days = parseInt(dateRange);
+        if (!isNaN(days)) {
+          const future = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+          conditions.push(gte(renewalComparisons.renewalEffectiveDate, now));
+          conditions.push(lte(renewalComparisons.renewalEffectiveDate, future));
+        }
+      }
+    }
 
     // Sort
     const sortColumn =
@@ -56,51 +83,8 @@ export async function GET(request: NextRequest) {
       renewalComparisons.renewalEffectiveDate;
     const sortDirection = order === 'desc' ? desc(sortColumn) : asc(sortColumn);
 
-    // Query with customer join
-    const query = db
-      .select({
-        id: renewalComparisons.id,
-        tenantId: renewalComparisons.tenantId,
-        customerId: renewalComparisons.customerId,
-        policyId: renewalComparisons.policyId,
-        policyNumber: renewalComparisons.policyNumber,
-        carrierName: renewalComparisons.carrierName,
-        lineOfBusiness: renewalComparisons.lineOfBusiness,
-        renewalEffectiveDate: renewalComparisons.renewalEffectiveDate,
-        renewalExpirationDate: renewalComparisons.renewalExpirationDate,
-        currentPremium: renewalComparisons.currentPremium,
-        renewalPremium: renewalComparisons.renewalPremium,
-        premiumChangeAmount: renewalComparisons.premiumChangeAmount,
-        premiumChangePercent: renewalComparisons.premiumChangePercent,
-        recommendation: renewalComparisons.recommendation,
-        status: renewalComparisons.status,
-        verificationStatus: renewalComparisons.verificationStatus,
-        agentDecision: renewalComparisons.agentDecision,
-        agentDecisionAt: renewalComparisons.agentDecisionAt,
-        agentDecisionBy: renewalComparisons.agentDecisionBy,
-        agentNotes: renewalComparisons.agentNotes,
-        agencyzoomSrId: renewalComparisons.agencyzoomSrId,
-        materialChanges: renewalComparisons.materialChanges,
-        comparisonSummary: renewalComparisons.comparisonSummary,
-        createdAt: renewalComparisons.createdAt,
-        updatedAt: renewalComparisons.updatedAt,
-        customerFirstName: customers.firstName,
-        customerLastName: customers.lastName,
-        customerPhone: customers.phone,
-        customerEmail: customers.email,
-      })
-      .from(renewalComparisons)
-      .leftJoin(customers, eq(renewalComparisons.customerId, customers.id))
-      .where(and(...conditions))
-      .orderBy(sortDirection)
-      .limit(limit)
-      .offset(offset);
-
-    // Add search filter
-    let finalQuery = query;
+    // Add search filter (must be added before queries since it references joined table)
     if (search) {
-      // Search is applied separately since it involves joined table
-      // We'll filter in the condition
       conditions.push(
         or(
           ilike(renewalComparisons.policyNumber, `%${search}%`),
@@ -111,38 +95,42 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Select fields
+    const selectFields = {
+      id: renewalComparisons.id,
+      tenantId: renewalComparisons.tenantId,
+      customerId: renewalComparisons.customerId,
+      policyId: renewalComparisons.policyId,
+      policyNumber: renewalComparisons.policyNumber,
+      carrierName: renewalComparisons.carrierName,
+      lineOfBusiness: renewalComparisons.lineOfBusiness,
+      renewalEffectiveDate: renewalComparisons.renewalEffectiveDate,
+      renewalExpirationDate: renewalComparisons.renewalExpirationDate,
+      currentPremium: renewalComparisons.currentPremium,
+      renewalPremium: renewalComparisons.renewalPremium,
+      premiumChangeAmount: renewalComparisons.premiumChangeAmount,
+      premiumChangePercent: renewalComparisons.premiumChangePercent,
+      recommendation: renewalComparisons.recommendation,
+      status: renewalComparisons.status,
+      verificationStatus: renewalComparisons.verificationStatus,
+      agentDecision: renewalComparisons.agentDecision,
+      agentDecisionAt: renewalComparisons.agentDecisionAt,
+      agentDecisionBy: renewalComparisons.agentDecisionBy,
+      agentNotes: renewalComparisons.agentNotes,
+      agencyzoomSrId: renewalComparisons.agencyzoomSrId,
+      materialChanges: renewalComparisons.materialChanges,
+      comparisonSummary: renewalComparisons.comparisonSummary,
+      createdAt: renewalComparisons.createdAt,
+      updatedAt: renewalComparisons.updatedAt,
+      customerFirstName: customers.firstName,
+      customerLastName: customers.lastName,
+      customerPhone: customers.phone,
+      customerEmail: customers.email,
+    };
+
+    // Query with customer join
     const results = await db
-      .select({
-        id: renewalComparisons.id,
-        tenantId: renewalComparisons.tenantId,
-        customerId: renewalComparisons.customerId,
-        policyId: renewalComparisons.policyId,
-        policyNumber: renewalComparisons.policyNumber,
-        carrierName: renewalComparisons.carrierName,
-        lineOfBusiness: renewalComparisons.lineOfBusiness,
-        renewalEffectiveDate: renewalComparisons.renewalEffectiveDate,
-        renewalExpirationDate: renewalComparisons.renewalExpirationDate,
-        currentPremium: renewalComparisons.currentPremium,
-        renewalPremium: renewalComparisons.renewalPremium,
-        premiumChangeAmount: renewalComparisons.premiumChangeAmount,
-        premiumChangePercent: renewalComparisons.premiumChangePercent,
-        recommendation: renewalComparisons.recommendation,
-        status: renewalComparisons.status,
-        verificationStatus: renewalComparisons.verificationStatus,
-        agentDecision: renewalComparisons.agentDecision,
-        agentDecisionAt: renewalComparisons.agentDecisionAt,
-        agentDecisionBy: renewalComparisons.agentDecisionBy,
-        agentNotes: renewalComparisons.agentNotes,
-        agencyzoomSrId: renewalComparisons.agencyzoomSrId,
-        materialChanges: renewalComparisons.materialChanges,
-        comparisonSummary: renewalComparisons.comparisonSummary,
-        createdAt: renewalComparisons.createdAt,
-        updatedAt: renewalComparisons.updatedAt,
-        customerFirstName: customers.firstName,
-        customerLastName: customers.lastName,
-        customerPhone: customers.phone,
-        customerEmail: customers.email,
-      })
+      .select(selectFields)
       .from(renewalComparisons)
       .leftJoin(customers, eq(renewalComparisons.customerId, customers.id))
       .where(and(...conditions))
@@ -150,10 +138,11 @@ export async function GET(request: NextRequest) {
       .limit(limit)
       .offset(offset);
 
-    // Count total
+    // Count total (needs customer join for search filter)
     const [{ count: total }] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(renewalComparisons)
+      .leftJoin(customers, eq(renewalComparisons.customerId, customers.id))
       .where(and(...conditions));
 
     // Get stats

@@ -5,6 +5,35 @@ import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
 import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle, CanonicalDiscount, CanonicalClaim, PropertyContext } from '@/types/renewal.types';
 
+// Human-readable labels for coverage types (fallback when description is a raw code)
+const COVERAGE_TYPE_LABELS: Record<string, string> = {
+  dwelling: 'Dwelling',
+  personal_property: 'Personal Property',
+  personal_liability: 'Personal Liability',
+  medical_payments: 'Medical Payments',
+  other_structures: 'Other Structures',
+  loss_of_use: 'Loss of Use',
+  water_damage: 'Water Damage',
+  tropical_cyclone: 'Tropical Cyclone',
+  identity_fraud: 'Identity Fraud',
+  roof_surfaces: 'Roof Surfaces',
+  building_structures_extended: 'Extended Replacement Cost',
+  responsible_payment_discount: 'Responsible Payment Discount',
+  loyalty_discount: 'Loyalty Discount',
+  protective_devices: 'Protective Devices',
+  welcome_discount: 'Welcome Discount',
+  bodily_injury: 'Bodily Injury',
+  property_damage: 'Property Damage',
+  collision: 'Collision',
+  comprehensive: 'Comprehensive',
+  uninsured_motorist: 'Uninsured Motorist',
+  underinsured_motorist: 'Underinsured Motorist',
+  rental_reimbursement: 'Rental Reimbursement',
+  towing: 'Towing/Roadside',
+  pip: 'Personal Injury Protection',
+  med_pay: 'Medical Payments',
+};
+
 interface ComparisonTableProps {
   renewalSnapshot: RenewalSnapshot | null;
   baselineSnapshot: BaselineSnapshot | null;
@@ -241,23 +270,63 @@ function getChangeType(change?: MaterialChange): 'better' | 'worse' | 'same' | '
   return 'different';
 }
 
+function formatLimit(cov: CanonicalCoverage | undefined): string {
+  if (!cov) return 'N/A';
+  if (cov.limitAmount != null) return `$${cov.limitAmount.toLocaleString()}`;
+  if (cov.limit) {
+    // Try to parse zero-padded limit string
+    const cleaned = cov.limit.replace(/^0+/, '') || '0';
+    const num = parseInt(cleaned, 10);
+    if (!isNaN(num) && num > 0) return `$${num.toLocaleString()}`;
+    return cov.limit;
+  }
+  return '-';
+}
+
 function renderCoverageComparison(
   baseline: CanonicalCoverage[] | undefined,
   renewal: CanonicalCoverage[] | undefined,
   materialByField: Map<string, MaterialChange>
 ) {
-  const allTypes = new Set<string>();
-  baseline?.forEach((c) => allTypes.add(c.type));
-  renewal?.forEach((c) => allTypes.add(c.type));
+  // Build unique coverage entries using type+description to handle duplicates
+  interface CovEntry { key: string; type: string; baseline?: CanonicalCoverage; renewal?: CanonicalCoverage; }
+  const entries: CovEntry[] = [];
+  const entryMap = new Map<string, CovEntry>();
 
-  if (allTypes.size === 0) {
+  const getKey = (c: CanonicalCoverage) => {
+    // Use type + description to disambiguate (e.g., two personal_property with different descriptions)
+    const desc = c.description || '';
+    return `${c.type}::${desc}`;
+  };
+
+  baseline?.forEach((c) => {
+    const key = getKey(c);
+    const existing = entryMap.get(key);
+    if (existing) {
+      existing.baseline = c;
+    } else {
+      const entry: CovEntry = { key, type: c.type, baseline: c };
+      entryMap.set(key, entry);
+      entries.push(entry);
+    }
+  });
+
+  renewal?.forEach((c) => {
+    const key = getKey(c);
+    const existing = entryMap.get(key);
+    if (existing) {
+      existing.renewal = c;
+    } else {
+      const entry: CovEntry = { key, type: c.type, renewal: c };
+      entryMap.set(key, entry);
+      entries.push(entry);
+    }
+  });
+
+  if (entries.length === 0) {
     return <div className="px-3 py-2 text-sm text-gray-500">No coverage data</div>;
   }
 
-  const baselineByType = new Map(baseline?.map((c) => [c.type, c]) || []);
-  const renewalByType = new Map(renewal?.map((c) => [c.type, c]) || []);
-
-  // Header
   return (
     <>
       <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -265,17 +334,21 @@ function renderCoverageComparison(
         <div>Current Limit</div>
         <div>Renewal Limit</div>
       </div>
-      {Array.from(allTypes).map((type) => {
-        const b = baselineByType.get(type);
-        const r = renewalByType.get(type);
+      {entries.map((entry) => {
+        const { baseline: b, renewal: r, type } = entry;
         const mc = materialByField.get(`coverage.${type}`) || materialByField.get(`coverage.${type}.limit`);
+
+        // Use description, but fall back to type label if description is a short raw code
+        const rawDesc = b?.description || r?.description || '';
+        const isRawCode = rawDesc.length <= 6 && /^[A-Z]+$/.test(rawDesc);
+        const label = isRawCode ? (COVERAGE_TYPE_LABELS[type] || rawDesc || type) : (rawDesc || COVERAGE_TYPE_LABELS[type] || type);
 
         return (
           <ComparisonRow
-            key={type}
-            label={b?.description || r?.description || type}
-            current={b ? (b.limit || '-') : 'N/A'}
-            renewal={r ? (r.limit || '-') : 'REMOVED'}
+            key={entry.key}
+            label={label}
+            current={b ? formatLimit(b) : 'N/A'}
+            renewal={r ? formatLimit(r) : 'REMOVED'}
             change={!r ? 'worse' : !b ? 'better' : getChangeType(mc)}
             isMaterial={mc?.severity === 'material_negative'}
           />
@@ -335,17 +408,39 @@ function renderDeductibleComparison(
   renewal: CanonicalCoverage[] | undefined,
   materialByField: Map<string, MaterialChange>
 ) {
-  const withDeductibles = new Set<string>();
-  baseline?.filter((c) => c.deductibleAmount != null).forEach((c) => withDeductibles.add(c.type));
-  renewal?.filter((c) => c.deductibleAmount != null).forEach((c) => withDeductibles.add(c.type));
+  const formatDed = (val: number | undefined) => val != null ? `$${val.toLocaleString()}` : '-';
 
-  if (withDeductibles.size === 0) {
+  // Collect coverages that have deductibles, handling duplicates
+  interface DedEntry { key: string; type: string; baseline?: CanonicalCoverage; renewal?: CanonicalCoverage; }
+  const entries: DedEntry[] = [];
+  const entryMap = new Map<string, DedEntry>();
+
+  const getKey = (c: CanonicalCoverage) => `${c.type}::${c.description || ''}`;
+
+  baseline?.filter((c) => c.deductibleAmount != null).forEach((c) => {
+    const key = getKey(c);
+    if (!entryMap.has(key)) {
+      const entry: DedEntry = { key, type: c.type, baseline: c };
+      entryMap.set(key, entry);
+      entries.push(entry);
+    }
+  });
+
+  renewal?.filter((c) => c.deductibleAmount != null).forEach((c) => {
+    const key = getKey(c);
+    const existing = entryMap.get(key);
+    if (existing) {
+      existing.renewal = c;
+    } else {
+      const entry: DedEntry = { key, type: c.type, renewal: c };
+      entryMap.set(key, entry);
+      entries.push(entry);
+    }
+  });
+
+  if (entries.length === 0) {
     return <div className="px-3 py-2 text-sm text-gray-500">No deductible data</div>;
   }
-
-  const baselineByType = new Map(baseline?.map((c) => [c.type, c]) || []);
-  const renewalByType = new Map(renewal?.map((c) => [c.type, c]) || []);
-  const formatDed = (val: number | undefined) => val != null ? `$${val.toLocaleString()}` : '-';
 
   return (
     <>
@@ -354,15 +449,18 @@ function renderDeductibleComparison(
         <div>Current Ded.</div>
         <div>Renewal Ded.</div>
       </div>
-      {Array.from(withDeductibles).map((type) => {
-        const b = baselineByType.get(type);
-        const r = renewalByType.get(type);
+      {entries.map((entry) => {
+        const { baseline: b, renewal: r, type } = entry;
         const mc = materialByField.get(`coverage.${type}.deductible`);
 
         return (
           <ComparisonRow
-            key={type}
-            label={b?.description || r?.description || type}
+            key={entry.key}
+            label={(() => {
+              const rawDesc = b?.description || r?.description || '';
+              const isRawCode = rawDesc.length <= 6 && /^[A-Z]+$/.test(rawDesc);
+              return isRawCode ? (COVERAGE_TYPE_LABELS[type] || rawDesc || type) : (rawDesc || COVERAGE_TYPE_LABELS[type] || type);
+            })()}
             current={formatDed(b?.deductibleAmount)}
             renewal={formatDed(r?.deductibleAmount)}
             change={getChangeType(mc)}
