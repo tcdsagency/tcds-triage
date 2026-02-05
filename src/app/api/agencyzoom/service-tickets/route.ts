@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     
-    const { subject, description, customerId, pipelineId, stageId, priorityId, csrId } = body;
+    const { subject, description, customerId, pipelineId, stageId, priorityId, csrId, categoryId } = body;
 
     if (!subject || !customerId) {
       return NextResponse.json(
@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
       pipelineId: targetPipelineId,
       stageId: targetStageId,
       priorityId,
+      categoryId,
       csrId,
     });
 
