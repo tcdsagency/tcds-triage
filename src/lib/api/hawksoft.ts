@@ -100,8 +100,17 @@ export interface HawkSoftPolicy {
   vehicles?: HawkSoftVehicle[];
   autos?: HawkSoftVehicle[]; // Raw API field name
   drivers?: HawkSoftDriver[];
+  // Coverages (populated via policies.coverages expansion)
+  coverages?: HawkSoftCoverage[];
   // Property-specific
   locations?: HawkSoftLocation[];
+}
+
+export interface HawkSoftCoverage {
+  type: string;
+  limit: string;
+  deductible?: string;
+  premium?: number;
 }
 
 export interface HawkSoftVehicle {
@@ -111,6 +120,7 @@ export interface HawkSoftVehicle {
   model: string;
   vin: string;
   usage?: string;
+  coverages?: HawkSoftCoverage[];
 }
 
 export interface HawkSoftDriver {

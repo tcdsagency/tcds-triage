@@ -163,18 +163,22 @@ export async function buildBaselineSnapshot(
 
   let localCoverages = normalizeHawkSoftCoverages(policy.coverages as any);
 
-  // If local DB has no vehicles/drivers/coverages, try HawkSoft API
+  // Fill gaps from HawkSoft API — check each category independently
   let fetchSource: 'hawksoft_api' | 'local_cache' = 'local_cache';
   let hsVehicles: CanonicalVehicle[] = [];
   let hsDrivers: CanonicalDriver[] = [];
   let hsCoverages: CanonicalCoverage[] = [];
 
-  if (policyVehicles.length === 0 && policyDrivers.length === 0 && localCoverages.length === 0) {
+  const needsVehicles = policyVehicles.length === 0;
+  const needsDrivers = policyDrivers.length === 0;
+  const needsCoverages = localCoverages.length === 0;
+
+  if (needsVehicles || needsDrivers || needsCoverages) {
     const hsData = await fetchHawkSoftPolicyData(localPolicy.customerId, policyNumber);
     if (hsData) {
-      hsVehicles = hsData.vehicles;
-      hsDrivers = hsData.drivers;
-      hsCoverages = hsData.coverages;
+      if (needsVehicles) hsVehicles = hsData.vehicles;
+      if (needsDrivers) hsDrivers = hsData.drivers;
+      if (needsCoverages) hsCoverages = hsData.coverages;
       fetchSource = 'hawksoft_api';
     }
   }
@@ -277,25 +281,26 @@ async function fetchHawkSoftPolicyData(
     if (!matchingPolicy) return null;
 
     // Normalize the HawkSoft data
-    const policyVehicles = matchingPolicy.vehicles || matchingPolicy.autos || [];
-    const policyDrivers = matchingPolicy.drivers || [];
+    const hsVehicles = matchingPolicy.vehicles || matchingPolicy.autos || [];
+    const hsDrivers = matchingPolicy.drivers || [];
+    const hsCoverages = matchingPolicy.coverages || [];
 
     return {
-      vehicles: policyVehicles.map((v) => ({
+      vehicles: hsVehicles.map((v: any) => ({
         vin: v.vin || undefined,
         year: v.year || undefined,
         make: v.make || undefined,
         model: v.model || undefined,
-        usage: v.usage || undefined,
-        coverages: [],
+        usage: v.usage || v.use || undefined,
+        coverages: normalizeHawkSoftCoverages(v.coverages),
       })),
-      drivers: policyDrivers.map((d) => ({
+      drivers: hsDrivers.map((d: any) => ({
         name: `${d.firstName} ${d.lastName}`.trim(),
         dateOfBirth: d.dateOfBirth || undefined,
         licenseNumber: d.licenseNumber || undefined,
         licenseState: d.licenseState || undefined,
       })),
-      coverages: [],
+      coverages: normalizeHawkSoftCoverages(hsCoverages),
     };
   } catch (error) {
     console.error('[Baseline] HawkSoft API enrichment failed:', error);
