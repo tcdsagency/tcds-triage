@@ -2063,13 +2063,9 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       console.log(`[Call-Completed] ⏭️ Skipping wrapup creation for call ${call.id}: no analysis and not detected as hangup (duration: ${body.duration}s, transcript length: ${transcript?.length || 0})`);
     }
 
-    // 5. Auto-post note to AgencyZoom for matched customers with AI summaries
-    // Use matchedAzCustomerId (from phone lookup) since call.customerId is often null
-    if (
-      analysis?.summary &&
-      matchedAzCustomerId &&
-      customerMatchStatus === "matched"
-    ) {
+    // 5. Auto-post note to AgencyZoom for calls with AI summaries
+    // Posts to matched customer OR to NCM (No Customer Match) placeholder for unmatched inbound calls
+    if (analysis?.summary) {
       try {
         const [wrapupForPost] = await db
           .select({
@@ -2077,6 +2073,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             isAutoVoided: wrapupDrafts.isAutoVoided,
             noteAutoPosted: wrapupDrafts.noteAutoPosted,
             agencyzoomTicketId: wrapupDrafts.agencyzoomTicketId,
+            agentName: wrapupDrafts.agentName,
           })
           .from(wrapupDrafts)
           .where(eq(wrapupDrafts.callId, call.id))
@@ -2089,24 +2086,47 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             const now = new Date();
             const formattedDate = now.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
             const formattedTime = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-            const noteText = `📞 ${direction === "inbound" ? "Inbound" : "Outbound"} Call - ${formattedDate} ${formattedTime}\n\n${analysis.summary}\n\nAgent: ${body.agentName || "Unknown Agent"}`;
+            const resolvedAgentName = wrapupForPost.agentName || body.agentName || "Unknown Agent";
 
-            const result = await azClient.addNote(parseInt(matchedAzCustomerId), noteText);
-            if (result.success) {
-              await db
-                .update(wrapupDrafts)
-                .set({
-                  noteAutoPosted: true,
-                  noteAutoPostedAt: now,
-                  completionAction: "posted",
-                  status: "completed",
-                  completedAt: now,
-                  agencyzoomNoteId: result.id?.toString() || null,
-                })
-                .where(eq(wrapupDrafts.id, wrapupForPost.id));
-              console.log(`[Call-Completed] ✅ Auto-posted note to AgencyZoom for wrapup ${wrapupForPost.id} (AZ customer: ${matchedAzCustomerId})`);
+            // Determine target AZ customer ID and build note text
+            let azTargetCustomerId: number;
+            let noteText: string;
+
+            if (matchedAzCustomerId && customerMatchStatus === "matched") {
+              // Matched customer — standard note
+              azTargetCustomerId = parseInt(matchedAzCustomerId);
+              noteText = `📞 ${direction === "inbound" ? "Inbound" : "Outbound"} Call - ${formattedDate} ${formattedTime}\n\n${analysis.summary}\n\nAgent: ${resolvedAgentName}`;
+            } else if (direction === "inbound") {
+              // Unmatched inbound call — post to NCM placeholder with caller details
+              azTargetCustomerId = SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER;
+              const callerName = analysis?.extractedData?.customerName || "Unknown Caller";
+              const callerPhone = (direction === "inbound" ? (call.fromNumber || callerNumber) : (call.toNumber || calledNumber)) || "Unknown Number";
+              noteText = `📞 Inbound Call (No Customer Match) - ${formattedDate} ${formattedTime}\n\nCaller: ${callerName}\nPhone: ${callerPhone}\n\n${analysis.summary}\n\nAgent: ${resolvedAgentName}`;
             } else {
-              console.warn(`[Call-Completed] ⚠️ AZ note post returned non-success for wrapup ${wrapupForPost.id}`);
+              // Outbound unmatched — skip (shouldn't happen normally)
+              azTargetCustomerId = 0;
+              noteText = "";
+            }
+
+            if (azTargetCustomerId > 0) {
+              const result = await azClient.addNote(azTargetCustomerId, noteText);
+              if (result.success) {
+                await db
+                  .update(wrapupDrafts)
+                  .set({
+                    noteAutoPosted: true,
+                    noteAutoPostedAt: now,
+                    completionAction: "posted",
+                    status: "completed",
+                    completedAt: now,
+                    agencyzoomNoteId: result.id?.toString() || null,
+                  })
+                  .where(eq(wrapupDrafts.id, wrapupForPost.id));
+                const target = azTargetCustomerId === SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER ? "NCM placeholder" : `AZ customer ${azTargetCustomerId}`;
+                console.log(`[Call-Completed] ✅ Auto-posted note to AgencyZoom for wrapup ${wrapupForPost.id} (${target})`);
+              } else {
+                console.warn(`[Call-Completed] ⚠️ AZ note post returned non-success for wrapup ${wrapupForPost.id}`);
+              }
             }
           }
         }
