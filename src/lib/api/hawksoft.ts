@@ -107,10 +107,11 @@ export interface HawkSoftPolicy {
 }
 
 export interface HawkSoftCoverage {
-  type: string;
-  limit: string;
-  deductible?: string;
-  premium?: number;
+  code: string;
+  description: string;
+  limits?: string | null;
+  deductibles?: string | null;
+  premium?: string | null;
 }
 
 export interface HawkSoftVehicle {

@@ -53,24 +53,28 @@ export async function findLocalPolicy(
 
 /**
  * Normalize HawkSoft coverage format to canonical.
+ * HawkSoft API returns: { code, description, limits, deductibles, premium (string) }
  */
 export function normalizeHawkSoftCoverages(
-  hsCoverages: Array<{ type: string; limit: string; deductible?: string; premium?: number }> | null | undefined
+  hsCoverages: Array<{ code?: string; description?: string; limits?: string | null; deductibles?: string | null; premium?: string | number | null }> | null | undefined
 ): CanonicalCoverage[] {
   if (!hsCoverages || !Array.isArray(hsCoverages)) return [];
 
   return hsCoverages.map((cov) => {
-    const upperType = (cov.type || '').toUpperCase().trim();
-    const canonicalType = COVERAGE_CODE_MAP[upperType] || upperType.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    const code = (cov.code || '').toUpperCase().trim();
+    const canonicalType = COVERAGE_CODE_MAP[code] || code.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    const limitStr = cov.limits || '';
+    const dedStr = cov.deductibles || '';
+    const premiumVal = typeof cov.premium === 'string' ? parseFloat(cov.premium) : (cov.premium ?? undefined);
 
     return {
-      type: canonicalType,
-      description: cov.type || '',
-      limit: cov.limit || undefined,
-      limitAmount: parseFloat((cov.limit || '').replace(/[^0-9.-]/g, '')) || undefined,
-      deductible: cov.deductible || undefined,
-      deductibleAmount: cov.deductible ? parseFloat(cov.deductible.replace(/[^0-9.-]/g, '')) || undefined : undefined,
-      premium: cov.premium,
+      type: canonicalType || '',
+      description: cov.description || '',
+      limit: limitStr || undefined,
+      limitAmount: parseFloat(limitStr.replace(/[^0-9.-]/g, '')) || undefined,
+      deductible: dedStr || undefined,
+      deductibleAmount: dedStr ? parseFloat(dedStr.replace(/[^0-9.-]/g, '')) || undefined : undefined,
+      premium: isNaN(premiumVal as number) ? undefined : premiumVal,
     };
   });
 }
