@@ -67,9 +67,21 @@ export function parseAL3Number(str: string): number | undefined {
 
 /**
  * Extract a fixed-width field from a line.
+ * Truncates at field separators (EDIFACT control chars) used by some carriers.
  */
 function extractField(line: string, pos: { start: number; end: number }): string {
-  return (line.substring(pos.start, pos.end) || '').trim();
+  const raw = line.substring(pos.start, pos.end) || '';
+  // Truncate at the first EDIFACT field separator (0xFA-0xFF range or control chars < 0x20 except space)
+  // These separators indicate field boundaries in SAFECO/Universal format variants
+  let end = raw.length;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw.charCodeAt(i);
+    if ((c >= 0xFA && c <= 0xFF) || (c < 0x20 && c !== 0x20)) {
+      end = i;
+      break;
+    }
+  }
+  return raw.substring(0, end).trim();
 }
 
 /**
@@ -117,7 +129,6 @@ export function splitAL3Records(content: string): string[] {
   while (pos < raw.length) {
     // Need at least 7 chars for group code (4) + length (3)
     if (pos + 7 > raw.length) {
-      // Remaining fragment — append to last record or skip
       break;
     }
 
@@ -125,8 +136,6 @@ export function splitAL3Records(content: string): string[] {
 
     // Verify this looks like a valid group code
     if (!KNOWN_GROUP_CODE_PATTERN.test(groupCode)) {
-      // Not a recognized record start — skip forward to find next one
-      // This handles garbage or padding between records
       pos++;
       continue;
     }
@@ -135,18 +144,61 @@ export function splitAL3Records(content: string): string[] {
     const recordLength = parseInt(lengthStr, 10);
 
     if (isNaN(recordLength) || recordLength < 7 || recordLength > 1000) {
-      // Invalid length — try treating rest as a single record
-      records.push(raw.substring(pos));
-      break;
+      // Invalid length — skip this match and keep scanning
+      pos++;
+      continue;
     }
 
     // Extract the record
     const record = raw.substring(pos, pos + recordLength);
     records.push(record);
+
+    // Some carriers (e.g., Universal/SAFECO) embed sub-records within container records
+    // like 1MHG or 2TCG. Scan the container content for embedded records, but extract
+    // from the FULL raw stream to get complete records even if they overflow the container.
+    if (groupCode === '1MHG' || groupCode === '2TCG' || groupCode === '9BIS') {
+      extractEmbeddedRecords(raw, pos, recordLength, records);
+    }
+
     pos += recordLength;
   }
 
   return records.length > 0 ? records : lines;
+}
+
+/**
+ * Scan a container record for embedded sub-records.
+ * Some carriers embed 2TRG, 5BIS, 5BPI etc. inside 1MHG or 2TCG records.
+ * Embedded records may overflow the container boundary — we extract from the
+ * full raw stream to get the complete record.
+ */
+function extractEmbeddedRecords(
+  raw: string,
+  containerStart: number,
+  containerLength: number,
+  records: string[]
+): void {
+  const embeddedCodes = ['2TRG', '5BIS', '5BPI'];
+  const searchEnd = containerStart + containerLength;
+
+  for (const code of embeddedCodes) {
+    let searchPos = containerStart + 8; // Skip the container's own header
+    while (searchPos < searchEnd - 4) {
+      const idx = raw.indexOf(code, searchPos);
+      if (idx === -1 || idx >= searchEnd) break;
+
+      const lenStr = raw.substring(idx + 4, idx + 7).trim();
+      const len = parseInt(lenStr, 10);
+      if (!isNaN(len) && len >= 7 && len <= 1000) {
+        // Extract from the FULL raw stream, not just the container
+        const embedded = raw.substring(idx, idx + len);
+        if (embedded.length >= 7) {
+          records.push(embedded);
+        }
+      }
+      searchPos = idx + 1;
+    }
+  }
 }
 
 // =============================================================================
@@ -165,6 +217,8 @@ export function parseAL3File(content: string): AL3ParsedTransaction[] {
   let currentLines: string[] = [];
   let inTransaction = false;
 
+  let lastTrgLine: string | null = null; // Track 2TRG for multi-2TCG formats
+
   for (const line of lines) {
     const groupCode = getGroupCode(line);
 
@@ -176,7 +230,20 @@ export function parseAL3File(content: string): AL3ParsedTransaction[] {
         if (parsed) transactions.push(parsed);
       }
       currentLines = [line];
+      lastTrgLine = line;
       inTransaction = true;
+    } else if (groupCode === '2TCG') {
+      // 2TCG = Transaction Content Group. In SAFECO/Universal format, each 2TCG
+      // represents a separate policy/insured within the same file.
+      // Start a new sub-transaction, re-using the last 2TRG header.
+      if (inTransaction && currentLines.length > 1) {
+        // Close previous transaction
+        const parsed = parseTransaction(currentLines);
+        if (parsed) transactions.push(parsed);
+        // Start new transaction with the same 2TRG header
+        currentLines = lastTrgLine ? [lastTrgLine] : [];
+      }
+      // Don't add the 2TCG itself to lines — it's just a boundary marker
     } else if (groupCode === AL3_GROUP_CODES.MASTER_TRAILER) {
       if (inTransaction) {
         currentLines.push(line);
@@ -292,12 +359,62 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
       }
 
       case AL3_GROUP_CODES.BUSINESS_INFO_SEGMENT: {
-        // 5BIS contains insured name(s)
-        // Position 30 starts with a 1-char type prefix (G, C, P, etc.) followed by the name
-        if (!header.insuredName && line.length > 31) {
-          const nameArea = line.substring(31, 60).trim();
-          if (nameArea && nameArea.length > 1 && !/^\d+$/.test(nameArea)) {
-            header.insuredName = nameArea;
+        // 5BIS contains insured name(s).
+        // Two format variants:
+        //   Progressive: pos 30=type prefix (P/C), 39-65=first name, 66-89=last name
+        //   SAFECO/Universal: name at pos 18+ delimited by field separators (0xFA)
+        // Strategy: try position-based first, then content-based regex fallback
+        if (!header.insuredName && line.length > 20) {
+          let nameResult: string | null = null;
+
+          // Attempt 1: Position-based (Progressive format — pos 31-89)
+          if (line.length > 39) {
+            const nameArea = line.substring(31, 90)
+              .replace(/[\x00-\x1F\x7F-\xFF]/g, ' ')
+              .replace(/\?+/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+            // Only accept if it looks like a real name: must have a word with 3+ letters,
+            // no embedded record codes, not starting with digits
+            let cleanName = nameArea.replace(/\d[A-Z]{3}\d{3}.*/, '').trim();
+            // Strip trailing EDIFACT tag residue (e.g., "21 3C IN 14" — mixed hex codes and short words)
+            cleanName = cleanName.replace(/\s+[0-9A-F]{2}(\s+\S{1,4})*\s*$/, '').trim();
+            if (cleanName && cleanName.length > 3 && /[a-zA-Z]{3,}/.test(cleanName) && !/^\d/.test(cleanName) && !/^[a-z]\s\d/.test(cleanName)) {
+              nameResult = cleanName;
+            }
+          }
+
+          // Attempt 2: Content-based (SAFECO format — find name between control chars)
+          if (!nameResult) {
+            // Clean entire line, then find name-like content
+            const printable = line
+              .replace(/[\x00-\x1F\x7F-\xFF]/g, '\n')
+              .split('\n')
+              .map(s => s.trim())
+              // Strip leading EDIFACT tag identifiers (e.g., "0E ", "21 ", "3C")
+              .map(s => s.replace(/^[0-9A-F]{2}\s+/, ''))
+              .filter(s => s.length > 2);
+            // Find the first segment that looks like a person name (has letters, not a record code)
+            for (const segment of printable) {
+              // Skip segments that are record headers, codes, or numeric
+              if (/^\d[A-Z]{3}/.test(segment)) continue;
+              if (/^[A-Z]{3,4}\d{3}/.test(segment)) continue;
+              if (/^\d+$/.test(segment)) continue;
+              if (/^[A-Z]{1,2}\d{4,}/.test(segment)) continue;
+              // Look for name-like content: starts with a letter, has 3+ chars
+              const nameMatch = segment.match(/^[CP]?([A-Za-z][A-Za-z .'\-]+[A-Za-z])$/);
+              if (nameMatch) {
+                // Strip leading type prefix (C or P)
+                let name = nameMatch[0];
+                if (/^[CP][A-Z][a-z]/.test(name)) name = name.substring(1);
+                nameResult = name.replace(/\s+/g, ' ').trim();
+                break;
+              }
+            }
+          }
+
+          if (nameResult) {
+            header.insuredName = nameResult;
           }
         }
         break;
@@ -407,20 +524,56 @@ function parseTransactionHeader(line: string): AL3TransactionHeader {
   if (spaceRun) cleanCarrierName = spaceRun[1].trim();
   if (!cleanCarrierName || /^IBM/i.test(cleanCarrierName)) cleanCarrierName = '';
 
+  // Fallback: try extracting LOB from anywhere in the first 40 chars if position-based failed
+  let resolvedLob = LOB_CODES[lobCode] || lobCode || undefined;
+  if (!resolvedLob || resolvedLob === lobCode) {
+    const lobMatch = line.substring(0, 40).match(/\b(PHOME|PAUTO|CAUTO|HOME|AUTO)\b/i);
+    if (lobMatch) resolvedLob = LOB_CODES[lobMatch[1].toUpperCase()] || lobMatch[1];
+  }
+
   const header: AL3TransactionHeader = {
     transactionType: transactionType || 'UNKNOWN',
     policyNumber: '',
     carrierCode: carrierCode || '',
     carrierName: cleanCarrierName || undefined,
-    lineOfBusiness: LOB_CODES[lobCode] || lobCode || undefined,
+    lineOfBusiness: resolvedLob,
     effectiveDate: parseAL3Date(effectiveDateRaw),
     insuredName: undefined,
   };
 
-  // Fallback: regex-based transaction type (for non-standard record formats)
-  if (header.transactionType === 'UNKNOWN' || /^\d+$/.test(header.transactionType)) {
+  // Fallback: regex-based transaction type (for non-standard record formats or
+  // EDIFACT-delimited formats where position-based extraction yields garbage)
+  if (!transactionType || header.transactionType === 'UNKNOWN' || /^\d+$/.test(header.transactionType) || /[^\x20-\x7E]/.test(header.transactionType)) {
     const txMatch = line.match(/\b(RWL|RWQ|RNW|NBS|NBQ|END|ENQ|CAN|REI|AUD|INQ|PCH|COM)\b/);
     if (txMatch) header.transactionType = txMatch[1];
+  }
+
+  // Fallback: regex-based carrier name extraction
+  // Trigger if name is missing, contains non-printable chars, or looks like a truncated fragment
+  if (!header.carrierName || /[^\x20-\x7E]/.test(header.carrierName) || (header.carrierName.length < 20 && /^[A-Z]{3,}/.test(header.carrierName) === false)) {
+    const cleanLine = line.replace(/[^\x20-\x7E]/g, ' ');
+    const nameMatch = cleanLine.match(/([A-Z][A-Z &.']+(?:INS(?:URANCE)?|MUTUAL|ASSURANCE|INDEMNITY|CASUALTY|P&C|FIRE|GROUP|SURETY)[A-Z &.']*(?: CO| COMPANY| CORP)?)/i);
+    if (nameMatch && nameMatch[1].length > (header.carrierName?.length || 0)) {
+      // Clean up: if the name starts with a repeated carrier code, trim the prefix
+      let name = nameMatch[1].trim();
+      // Handle "UNIVUNIVERSAL" → "UNIVERSAL" pattern (carrier code prefix runs into name)
+      const repeatMatch = name.match(/^([A-Z]{3,6})\1/i);
+      if (repeatMatch) {
+        name = name.substring(repeatMatch[1].length);
+      }
+      header.carrierName = name;
+    }
+  }
+
+  // Fallback: extract effective date via regex if position-based failed
+  if (!header.effectiveDate) {
+    // Look for YYYYMMDD dates in the line (2025-2027 range)
+    const cleanLine = line.replace(/[^\x20-\x7E]/g, '');
+    const dateMatch = cleanLine.match(/(202[5-7][01]\d[0-3]\d)/g);
+    if (dateMatch && dateMatch.length >= 1) {
+      // Last date in the record is usually the effective date
+      header.effectiveDate = parseAL3Date(dateMatch[dateMatch.length - 1]);
+    }
   }
 
   return header;
@@ -503,9 +656,19 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
  * Parse a form/endorsement schedule record (5FOR).
  */
 function parseForm(line: string): AL3Endorsement | null {
-  const formNumber = extractField(line, FOR_FIELDS.FORM_NUMBER);
-  const description = extractField(line, FOR_FIELDS.DESCRIPTION);
+  let formNumber = extractField(line, FOR_FIELDS.FORM_NUMBER);
+  let description = extractField(line, FOR_FIELDS.DESCRIPTION);
   if (!formNumber && !description) return null;
+
+  // Clean non-printable characters and ? filler
+  if (formNumber) formNumber = formNumber.replace(/[^\x20-\x7E]/g, '').trim() || '';
+  if (description) {
+    description = description
+      .replace(/[^\x20-\x7E]/g, ' ')  // Remove non-printable chars
+      .replace(/\?{3,}/g, '')          // Strip runs of 3+ question marks (filler)
+      .replace(/\s+/g, ' ')
+      .trim() || '';
+  }
 
   return {
     code: formNumber || 'FORM',
@@ -542,32 +705,28 @@ function parseVehicle(line: string): AL3Vehicle {
  * IVANS format has a complex name field with type prefix and split first/last names.
  */
 function parseDriver(line: string): AL3Driver | null {
-  // Extract raw name area (position 39-80) and clean it
+  // Extract raw name area (positions 39-97: first name + last name)
   let rawName = extractField(line, DRV_FIELDS.NAME);
   if (!rawName) return null;
 
-  // Strip single-char type prefix at start (P, C, etc.)
-  if (rawName.length > 1 && /^[A-Z]\s/.test(rawName)) {
-    rawName = rawName.substring(1).trim();
-  } else if (rawName.length > 1 && /^[A-Z][A-Z]/.test(rawName)) {
-    rawName = rawName.substring(1).trim();
-  }
-
-  // Clean non-printable characters
+  // Clean non-printable characters and collapse whitespace
   rawName = rawName.replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!rawName) return null;
 
-  // Parse DOB — IVANS uses YYMMDD at position 135
+  // Parse DOB — try YYYYMMDD (positions 160-167) first, then YYMMDD (positions 140-145)
   let dateOfBirth: string | undefined;
-  const dobRaw = extractField(line, DRV_FIELDS.DOB);
-  if (dobRaw && dobRaw.length === 6 && /^\d{6}$/.test(dobRaw)) {
-    const yy = parseInt(dobRaw.substring(0, 2), 10);
-    const mm = dobRaw.substring(2, 4);
-    const dd = dobRaw.substring(4, 6);
-    const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
-    dateOfBirth = parseAL3Date(`${yyyy}${mm}${dd}`);
+  const dobFull = extractField(line, DRV_FIELDS.DOB_FULL);
+  if (dobFull && /^\d{8}$/.test(dobFull)) {
+    dateOfBirth = parseAL3Date(dobFull);
   } else {
-    dateOfBirth = parseAL3Date(dobRaw);
+    const dobRaw = extractField(line, DRV_FIELDS.DOB);
+    if (dobRaw && /^\d{6}$/.test(dobRaw)) {
+      const yy = parseInt(dobRaw.substring(0, 2), 10);
+      const mm = dobRaw.substring(2, 4);
+      const dd = dobRaw.substring(4, 6);
+      const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
+      dateOfBirth = parseAL3Date(`${yyyy}${mm}${dd}`);
+    }
   }
 
   return {

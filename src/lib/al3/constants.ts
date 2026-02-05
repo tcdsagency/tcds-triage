@@ -251,16 +251,17 @@ export const VEH_FIELDS = {
 
 /**
  * Driver (5DRV) field positions.
- * IVANS format: 223-byte records. Name field is complex — extracted with regex fallback.
- *   5DRV223 B F200015BPIF10001    ????0001P        Jeremy                     Yielding
- *                                 ^30  ^34  ^39                                         ^80
+ * IVANS format: 223-byte records.
+ *   5DRV223 B F200015BPIF10001    ????0001P        Tanaye                     Walker - Heard          ?????????7776577                  AL??????890709F
+ *                                 ^30  ^34  ^38^39 ^47 (first)                ^74 (last)              ^98      ^107                     ^132    ^140   ^146
  */
 export const DRV_FIELDS = {
-  NAME: { start: 39, end: 80 }, // ~41 chars (type prefix + first/last name)
-  DOB: { start: 135, end: 141 }, // 6 chars (YYMMDD format)
-  LICENSE_NUMBER: { start: 102, end: 115 }, // 13 chars
-  LICENSE_STATE: { start: 127, end: 129 }, // 2 chars
-  RELATIONSHIP: { start: 141, end: 142 }, // 1 char (gender/type indicator)
+  NAME: { start: 39, end: 98 }, // 59 chars: first name (39-73, 35 chars) + last name (74-97, 24 chars)
+  DOB: { start: 140, end: 146 }, // 6 chars (YYMMDD format, e.g., 890709)
+  DOB_FULL: { start: 160, end: 168 }, // 8 chars (YYYYMMDD format, e.g., 19890709)
+  LICENSE_NUMBER: { start: 102, end: 115 }, // 13 chars (may have masked prefix)
+  LICENSE_STATE: { start: 132, end: 134 }, // 2 chars (e.g., AL)
+  GENDER: { start: 146, end: 147 }, // 1 char (F/M)
 } as const;
 
 /**

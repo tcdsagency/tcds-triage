@@ -66,7 +66,7 @@ export async function extractAL3FilesFromZip(
     yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, zipfile) => {
       if (err || !zipfile) {
         // Not a valid ZIP - check if it's raw AL3 content
-        const content = buffer.toString('utf-8');
+        const content = buffer.toString('latin1');
         if (isAL3Content(content)) {
           resolve([{
             fileName: parentZip || 'raw-content.al3',
@@ -114,7 +114,7 @@ export async function extractAL3FilesFromZip(
                 resolveEntry(nested);
               } else if (isAL3FileName(entry.fileName)) {
                 // AL3 file
-                const content = entryBuffer.toString('utf-8');
+                const content = entryBuffer.toString('latin1');
                 if (isAL3Content(content)) {
                   resolveEntry([{
                     fileName: entry.fileName,
@@ -127,7 +127,7 @@ export async function extractAL3FilesFromZip(
                 }
               } else {
                 // Try content sniffing for files without AL3 extension
-                const content = entryBuffer.toString('utf-8');
+                const content = entryBuffer.toString('latin1');
                 if (isAL3Content(content)) {
                   resolveEntry([{
                     fileName: entry.fileName,

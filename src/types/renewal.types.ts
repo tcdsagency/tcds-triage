@@ -184,6 +184,7 @@ export interface PropertyContext {
  * Renewal offer snapshot (from AL3).
  */
 export interface RenewalSnapshot {
+  insuredName?: string;
   premium?: number;
   coverages: CanonicalCoverage[];
   vehicles: CanonicalVehicle[];

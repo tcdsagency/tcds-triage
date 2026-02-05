@@ -143,6 +143,7 @@ export function buildRenewalSnapshot(
   }));
 
   return {
+    insuredName: transaction.header.insuredName,
     premium: totalPremium,
     coverages,
     vehicles,
