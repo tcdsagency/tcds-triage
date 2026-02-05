@@ -6,14 +6,14 @@
 
 import type { AL3ParsedTransaction, AL3TransactionHeader } from '@/types/renewal.types';
 import { DEFAULT_RENEWAL_TRANSACTION_TYPES, TRG_FIELDS, LOB_CODES } from './constants';
-import { parseAL3Date } from './parser';
+import { parseAL3Date, splitAL3Records } from './parser';
 
 /**
  * Quick header scan - extracts transaction headers without full parsing.
  * Faster than full parse when you just need to filter.
  */
 export function extractTransactionHeaders(content: string): AL3TransactionHeader[] {
-  const lines = content.split(/\r?\n/);
+  const lines = splitAL3Records(content);
   const headers: AL3TransactionHeader[] = [];
 
   for (const line of lines) {
