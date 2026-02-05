@@ -123,7 +123,7 @@ export function AIPasteButton() {
               )}
 
               {result && (
-                <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
                   <Check className="w-4 h-4" />
                   Extracted {result.count} field{result.count !== 1 ? 's' : ''} successfully!
                 </div>

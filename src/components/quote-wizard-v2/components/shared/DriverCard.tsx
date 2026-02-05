@@ -32,7 +32,7 @@ export function DriverCard({ index, onRemove, canRemove }: DriverCardProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Users className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+          <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           <h4 className="font-semibold text-gray-900 dark:text-gray-100">
             Driver {index + 1}
           </h4>

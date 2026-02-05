@@ -24,7 +24,7 @@ export function WizardProgress({
   const getBarColor = () => {
     if (eligibilityStatus === 'DECLINE') return 'from-red-500 to-red-600';
     if (eligibilityStatus === 'REVIEW') return 'from-amber-500 to-amber-600';
-    return 'from-emerald-500 to-emerald-600';
+    return 'from-blue-500 to-blue-600';
   };
 
   const getStatusBadge = () => {
@@ -45,9 +45,9 @@ export function WizardProgress({
       );
     }
     return (
-      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-500/50">
-        <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-        <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Eligible</span>
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-100 dark:bg-green-900/50 border border-green-200 dark:border-green-500/50">
+        <Check className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+        <span className="text-xs font-medium text-green-700 dark:text-green-300">Eligible</span>
       </div>
     );
   };
@@ -103,7 +103,7 @@ export function WizardProgress({
               <div
                 className={cn(
                   'w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200 border-2',
-                  isPast && 'bg-emerald-500 border-emerald-500',
+                  isPast && 'bg-blue-500 border-blue-500',
                   isCurrent && 'bg-blue-500 border-blue-500 ring-4 ring-blue-100 dark:ring-blue-500/20',
                   !isPast && !isCurrent && 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600',
                   canClick && 'group-hover:scale-110'

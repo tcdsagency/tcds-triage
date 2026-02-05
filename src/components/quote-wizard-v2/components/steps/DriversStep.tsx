@@ -77,7 +77,7 @@ export function DriversStep() {
           'w-full py-3 px-4 rounded-lg border-2 border-dashed transition-colors',
           'border-gray-300 dark:border-gray-600',
           'text-gray-600 dark:text-gray-400',
-          'hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400',
+          'hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400',
           'flex items-center justify-center gap-2'
         )}
       >

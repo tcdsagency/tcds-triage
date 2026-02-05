@@ -39,7 +39,7 @@ export function FormCheckbox({
             aria-describedby={error ? errorId : undefined}
             className={cn(
               'mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600',
-              'text-emerald-600 focus:ring-emerald-500',
+              'text-blue-600 focus:ring-blue-500',
               'dark:bg-gray-800'
             )}
           />

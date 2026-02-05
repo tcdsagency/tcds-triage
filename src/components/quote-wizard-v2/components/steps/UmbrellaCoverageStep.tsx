@@ -32,10 +32,10 @@ export function UmbrellaCoverageStep() {
                 onClick={() => setValue('coverage.umbrellaLimit', limit.value)}
                 className={cn(
                   'rounded-lg border-2 p-5 text-left transition-all',
-                  'focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2',
+                  'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
                   'dark:focus:ring-offset-gray-900',
                   isSelected
-                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-400'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-400'
                     : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'
                 )}
               >
@@ -44,14 +44,14 @@ export function UmbrellaCoverageStep() {
                     className={cn(
                       'text-lg font-bold',
                       isSelected
-                        ? 'text-emerald-700 dark:text-emerald-300'
+                        ? 'text-blue-700 dark:text-blue-300'
                         : 'text-gray-900 dark:text-gray-100'
                     )}
                   >
                     {limit.label}
                   </span>
                   {isSelected && (
-                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white">
+                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white">
                       <svg
                         className="w-3 h-3"
                         fill="none"

@@ -44,7 +44,7 @@ export function FormRadioGroup({
                   onBlur={field.onBlur}
                   className={cn(
                     'h-4 w-4 border-gray-300 dark:border-gray-600',
-                    'text-emerald-600 focus:ring-emerald-500',
+                    'text-blue-600 focus:ring-blue-500',
                     'dark:bg-gray-800'
                   )}
                 />

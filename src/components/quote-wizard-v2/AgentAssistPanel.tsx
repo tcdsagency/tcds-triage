@@ -58,10 +58,10 @@ const typeColors = {
     title: 'text-amber-900 dark:text-amber-100',
   },
   success: {
-    bg: 'bg-emerald-50 dark:bg-emerald-900/20',
-    border: 'border-emerald-200 dark:border-emerald-700',
-    icon: 'text-emerald-600 dark:text-emerald-400',
-    title: 'text-emerald-900 dark:text-emerald-100',
+    bg: 'bg-green-50 dark:bg-green-900/20',
+    border: 'border-green-200 dark:border-green-700',
+    icon: 'text-green-600 dark:text-green-400',
+    title: 'text-green-900 dark:text-green-100',
   },
   upsell: {
     bg: 'bg-purple-50 dark:bg-purple-900/20',
@@ -402,7 +402,7 @@ export function AgentAssistPanel({ currentStepId }: AgentAssistPanelProps) {
       <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
         <a
           href="/training"
-          className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+          className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
         >
           <FileText className="w-4 h-4" />
           View knowledge base

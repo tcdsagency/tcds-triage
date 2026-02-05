@@ -39,9 +39,9 @@ export function FormDateInput({
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
             className={cn(
-              'w-full px-3 py-2 rounded-lg border transition-colors',
+              'w-full px-3 py-2 rounded-md border transition-colors',
               'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800',
-              'focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500',
+              'focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 shadow-sm',
               error
                 ? 'border-red-300 dark:border-red-500'
                 : 'border-gray-300 dark:border-gray-600',

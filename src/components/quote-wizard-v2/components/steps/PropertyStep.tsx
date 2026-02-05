@@ -161,7 +161,7 @@ export function PropertyStep() {
             disabled={isLookingUp}
             className={cn(
               'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-              'bg-emerald-600 text-white hover:bg-emerald-700',
+              'bg-blue-600 text-white hover:bg-blue-700',
               'disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed',
               'dark:disabled:bg-gray-700 dark:disabled:text-gray-500'
             )}
@@ -180,7 +180,7 @@ export function PropertyStep() {
           </button>
 
           {lookupSuccess && (
-            <span className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
+            <span className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
               <CheckCircle2 className="w-4 h-4" />
               Property data loaded
             </span>
@@ -212,8 +212,8 @@ export function PropertyStep() {
                 className={cn(
                   'px-4 py-2 rounded-lg text-sm font-medium transition-colors border',
                   yearsAtPropertyAddress === option.value
-                    ? 'bg-emerald-600 text-white border-emerald-600'
-                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400'
                 )}
               >
                 {option.label}
@@ -255,14 +255,14 @@ export function PropertyStep() {
                 className={cn(
                   'flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-colors text-center',
                   propertyType === option.value
-                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
-                    : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-emerald-300 dark:hover:border-emerald-600'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
+                    : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-blue-300 dark:hover:border-blue-600'
                 )}
               >
                 <Home className={cn(
                   'w-6 h-6 mb-2',
                   propertyType === option.value
-                    ? 'text-emerald-600 dark:text-emerald-400'
+                    ? 'text-blue-600 dark:text-blue-400'
                     : 'text-gray-400 dark:text-gray-500'
                 )} />
                 <span className="text-sm font-medium">{option.label}</span>
@@ -290,8 +290,8 @@ export function PropertyStep() {
                 className={cn(
                   'px-4 py-2 rounded-lg text-sm font-medium transition-colors border',
                   occupancyType === option.value
-                    ? 'bg-emerald-600 text-white border-emerald-600'
-                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400'
                 )}
               >
                 {option.label}

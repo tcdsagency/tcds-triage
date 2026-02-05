@@ -58,7 +58,7 @@ function CollapsibleCard({
         className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
         onClick={onToggle}
       >
-        <Icon className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+        <Icon className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
         <span className="font-semibold text-gray-900 dark:text-gray-100 flex-1">
           {title}
         </span>
@@ -74,7 +74,7 @@ function CollapsibleCard({
               e.stopPropagation();
               onEdit();
             }}
-            className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-medium px-2 py-1"
+            className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium px-2 py-1"
           >
             Edit
           </button>
@@ -258,7 +258,7 @@ export function ReviewStep() {
                 const label = [v.year, v.make, v.model].filter(Boolean).join(' ') || `Vehicle ${i + 1}`;
                 return (
                   <div key={i} className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                    <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
                     <span>{label}</span>
                   </div>
                 );
@@ -282,7 +282,7 @@ export function ReviewStep() {
                 const name = [d.firstName, d.lastName].filter(Boolean).join(' ') || `Driver ${i + 1}`;
                 return (
                   <div key={i} className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                    <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
                     <span>{name}</span>
                     {d.relationship && (
                       <span className="text-xs text-gray-400">({d.relationship})</span>

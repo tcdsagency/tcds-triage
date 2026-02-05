@@ -69,7 +69,7 @@ export function VehicleCard({ index, onRemove, canRemove }: VehicleCardProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Car className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+          <Car className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           <h4 className="font-semibold text-gray-900 dark:text-gray-100">
             Vehicle {index + 1}
           </h4>
@@ -109,9 +109,9 @@ export function VehicleCard({ index, onRemove, canRemove }: VehicleCardProps) {
                   type="text"
                   placeholder="Enter VIN to auto-fill"
                   className={cn(
-                    'w-full px-3 py-2 rounded-lg border transition-colors',
+                    'w-full px-3 py-2 rounded-md border transition-colors',
                     'text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800',
-                    'focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500',
+                    'focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 shadow-sm',
                     'border-gray-300 dark:border-gray-600 uppercase'
                   )}
                   onChange={(e) =>
@@ -128,7 +128,7 @@ export function VehicleCard({ index, onRemove, canRemove }: VehicleCardProps) {
           disabled={decodingVin || vin.length < 11}
           className={cn(
             'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-            'bg-emerald-600 text-white hover:bg-emerald-700',
+            'bg-blue-600 text-white hover:bg-blue-700',
             'disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed',
             'dark:disabled:bg-gray-700 dark:disabled:text-gray-500'
           )}

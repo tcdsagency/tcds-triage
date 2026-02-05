@@ -95,8 +95,8 @@ export function WizardNavigation() {
             disabled={isSubmitting}
             className={cn(
               'flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all',
-              'bg-emerald-600 text-white hover:bg-emerald-700',
-              'shadow-lg shadow-emerald-500/20',
+              'bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98]',
+              'shadow-lg shadow-blue-500/20',
               isSubmitting && 'opacity-70 cursor-not-allowed'
             )}
           >
@@ -119,7 +119,7 @@ export function WizardNavigation() {
             className={cn(
               'flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all',
               canGoNext
-                ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-500/20'
+                ? 'bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] shadow-lg shadow-blue-500/20'
                 : 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
             )}
           >

@@ -31,15 +31,15 @@ export default function QuoteIntakePage() {
   const router = useRouter();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
+    <div>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
-          <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 mb-4">
+          <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30 mb-4">
             <Sparkles className="w-3 h-3 mr-1" />
             AI-Powered Quote Assistant
           </Badge>
-          <h1 className="text-3xl font-bold text-white mb-2">New Quote</h1>
-          <p className="text-gray-400">Select a quote type to get started</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">New Quote</h1>
+          <p className="text-gray-500 dark:text-gray-400">Select a quote type to get started</p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {QUOTE_TYPES.map((type) => (
@@ -53,15 +53,15 @@ export default function QuoteIntakePage() {
               className={cn(
                 "p-6 rounded-xl border text-left transition-all",
                 type.available
-                  ? "bg-gray-800/50 border-gray-700 hover:border-amber-500/50 hover:bg-gray-800 cursor-pointer"
-                  : "bg-gray-800/20 border-gray-800 opacity-50 cursor-not-allowed"
+                  ? "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-blue-500/50 active:scale-[0.98] cursor-pointer"
+                  : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-50 cursor-not-allowed"
               )}
             >
-              <type.icon className={cn("w-8 h-8 mb-3", type.available ? "text-amber-500" : "text-gray-600")} />
+              <type.icon className={cn("w-8 h-8 mb-3", type.available ? "text-blue-500 dark:text-blue-400" : "text-gray-400 dark:text-gray-600")} />
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-white">{type.name}</h3>
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">{type.name}</h3>
               </div>
-              <p className="text-sm text-gray-400 mt-1">{type.description}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{type.description}</p>
               {!type.available && <Badge variant="secondary" className="mt-2 text-xs">Coming Soon</Badge>}
             </button>
           ))}
