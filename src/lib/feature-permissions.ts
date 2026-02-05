@@ -149,6 +149,14 @@ export const FEATURES: FeatureConfig[] = [
     route: '/quote-extractor',
   },
   {
+    key: 'gayaExtractor',
+    label: 'Gaya Extractor',
+    description: 'Extract insurance data from PDFs with Gaya AI',
+    category: 'tools',
+    defaultEnabled: true,
+    route: '/gaya-extractor',
+  },
+  {
     key: 'canopyConnect',
     label: 'Canopy Connect',
     description: 'Policy import via Canopy Connect',

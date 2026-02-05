@@ -208,6 +208,10 @@ export default function CustomerProfilePage() {
   // Coverage Guide Modal
   const [coverageGuidePolicy, setCoverageGuidePolicy] = useState<Policy | null>(null);
 
+  // Gaya
+  const [sendingToGaya, setSendingToGaya] = useState(false);
+  const [gayaSuccess, setGayaSuccess] = useState(false);
+
   // =============================================================================
   // DATA FETCHING
   // =============================================================================
@@ -721,6 +725,42 @@ export default function CustomerProfilePage() {
                   <DropdownMenuItem>
                     <Clock className="w-4 h-4 mr-2" />
                     Schedule Callback
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={sendingToGaya || (!profile?.contact?.email && !profile?.contact?.phone && !profile?.contact?.mobilePhone)}
+                    onClick={async () => {
+                      if (!profile) return;
+                      setSendingToGaya(true);
+                      setGayaSuccess(false);
+                      try {
+                        const res = await fetch('/api/gaya/send', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ profile }),
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                          setGayaSuccess(true);
+                          setTimeout(() => setGayaSuccess(false), 3000);
+                        } else {
+                          alert(data.error || 'Failed to send to Gaya');
+                        }
+                      } catch (err: any) {
+                        alert(err.message || 'Failed to send to Gaya');
+                      } finally {
+                        setSendingToGaya(false);
+                      }
+                    }}
+                  >
+                    {sendingToGaya ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : gayaSuccess ? (
+                      <Check className="w-4 h-4 mr-2 text-green-500" />
+                    ) : (
+                      <Send className="w-4 h-4 mr-2" />
+                    )}
+                    {gayaSuccess ? 'Sent to Gaya!' : sendingToGaya ? 'Sending...' : 'Send to Gaya'}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

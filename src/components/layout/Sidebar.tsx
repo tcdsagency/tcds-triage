@@ -61,6 +61,7 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   '/payment-advance': 'paymentAdvance',
   '/same-day-payment': 'sameDayPayment',
   '/quote-extractor': 'quoteExtractor',
+  '/gaya-extractor': 'gayaExtractor',
   '/canopy-connect': 'canopyConnect',
   '/travelers-application': 'travelersApplication',
   // Advanced
@@ -118,6 +119,7 @@ const customerNav = [
 const toolsNav = [
   { name: 'Quotes', href: '/quotes', icon: FileText },
   { name: 'Quote Extractor', href: '/quote-extractor', icon: FileSearch },
+  { name: 'Gaya Extractor', href: '/gaya-extractor', icon: Sparkles },
   { name: 'Coverage Guide', href: '/coverage-demo', icon: BookOpen },
   { name: 'Canopy Connect', href: '/canopy-connect', icon: Link2 },
   { name: 'Travelers App', href: '/travelers-application', icon: Plane },
