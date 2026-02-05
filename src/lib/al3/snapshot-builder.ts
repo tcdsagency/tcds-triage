@@ -48,13 +48,14 @@ export function buildRenewalSnapshot(
   carrierOverrides?: Record<string, string>
 ): RenewalSnapshot {
   // Normalize coverages — re-parse limitAmount/deductibleAmount with split-limit awareness
+  // parseSplitLimit returns undefined for 0 values (AL3 "00" filler fields)
   const coverages: CanonicalCoverage[] = transaction.coverages.map((cov) => ({
     type: normalizeCoverageType(cov.code, carrierOverrides),
     description: cov.description || cov.code,
     limit: cov.limit,
     limitAmount: parseSplitLimit(cov.limit || '') ?? cov.limitAmount,
     deductible: cov.deductible,
-    deductibleAmount: parseSplitLimit(cov.deductible || '') ?? cov.deductibleAmount,
+    deductibleAmount: parseSplitLimit(cov.deductible || '') ?? (cov.deductibleAmount || undefined),
     premium: cov.premium,
   }));
 
@@ -71,7 +72,7 @@ export function buildRenewalSnapshot(
       limit: cov.limit,
       limitAmount: parseSplitLimit(cov.limit || '') ?? cov.limitAmount,
       deductible: cov.deductible,
-      deductibleAmount: parseSplitLimit(cov.deductible || '') ?? cov.deductibleAmount,
+      deductibleAmount: parseSplitLimit(cov.deductible || '') ?? (cov.deductibleAmount || undefined),
       premium: cov.premium,
     })),
   }));
