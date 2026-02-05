@@ -1123,8 +1123,8 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       // Only do phone lookup if no screen pop match
       if (customerMatchStatus === "unmatched" && phoneForLookup) {
         // FIRST: Search local customers table (faster and more reliable than AZ API)
+        const phoneDigits = phoneForLookup.replace(/\D/g, "").slice(-10);
         try {
-          const phoneDigits = phoneForLookup.replace(/\D/g, "").slice(-10);
           const localMatches = await db
             .select({
               id: customers.id,
@@ -1135,7 +1135,10 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             })
             .from(customers)
             .where(
-              sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '(', ''), ')', ''), '-', ''), ' ', '') LIKE ${'%' + phoneDigits}`
+              and(
+                eq(customers.tenantId, tenantId),
+                sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '(', ''), ')', ''), '-', ''), ' ', '') LIKE ${'%' + phoneDigits}`
+              )
             )
             .limit(5);
 
@@ -1153,7 +1156,66 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             console.log(`[Call-Completed] No local DB match for ${phoneDigits}`);
           }
         } catch (localError) {
-          console.error("[Call-Completed] Local customer lookup error:", localError);
+          console.error("[Call-Completed] Local customer lookup error (REPLACE query):", localError);
+          // Retry with simpler ILIKE query as fallback
+          if (phoneDigits.length >= 10) {
+            try {
+              const [fallbackMatch] = await db
+                .select({
+                  id: customers.id,
+                  agencyzoomId: customers.agencyzoomId,
+                  firstName: customers.firstName,
+                  lastName: customers.lastName,
+                })
+                .from(customers)
+                .where(
+                  and(
+                    eq(customers.tenantId, tenantId),
+                    or(
+                      ilike(customers.phone, `%${phoneDigits.slice(-10)}`),
+                      ilike(customers.phoneAlt, `%${phoneDigits.slice(-10)}`)
+                    )
+                  )
+                )
+                .limit(1);
+
+              if (fallbackMatch?.agencyzoomId) {
+                customerMatchStatus = "matched";
+                matchedAzCustomerId = fallbackMatch.agencyzoomId;
+                matchedCustomerName = `${fallbackMatch.firstName || ""} ${fallbackMatch.lastName || ""}`.trim() || null;
+                matchType = "customer";
+                console.log(`[Call-Completed] Local DB fallback match: ${matchedCustomerName} (AZ: ${matchedAzCustomerId})`);
+              }
+            } catch (fallbackError) {
+              console.error("[Call-Completed] Local customer fallback lookup also failed:", fallbackError);
+            }
+          }
+        }
+
+        // Backfill call.customerId if wrapup matching found a customer but call has none
+        if (customerMatchStatus === "matched" && !call.customerId && phoneDigits.length >= 10) {
+          try {
+            const [localCustomer] = await db
+              .select({ id: customers.id })
+              .from(customers)
+              .where(
+                and(
+                  eq(customers.tenantId, tenantId),
+                  or(
+                    ilike(customers.phone, `%${phoneDigits.slice(-10)}`),
+                    ilike(customers.phoneAlt, `%${phoneDigits.slice(-10)}`)
+                  )
+                )
+              )
+              .limit(1);
+
+            if (localCustomer) {
+              await db.update(calls).set({ customerId: localCustomer.id, updatedAt: new Date() }).where(eq(calls.id, call.id));
+              console.log(`[Call-Completed] 👤 Backfilled call.customerId: ${localCustomer.id} from wrapup matching`);
+            }
+          } catch (backfillError) {
+            console.error("[Call-Completed] Failed to backfill call.customerId:", backfillError);
+          }
         }
 
         // FALLBACK: Try AgencyZoom API if no local match (with timeout)
@@ -1497,11 +1559,21 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
               customerPhone: wrapupValues.customerPhone,
               customerEmail: wrapupValues.customerEmail,
               requestType: wrapupValues.requestType,
+              matchStatus: wrapupValues.matchStatus,
+              status: wrapupValues.status,
+              isAutoVoided: wrapupValues.isAutoVoided,
+              autoVoidReason: wrapupValues.autoVoidReason,
+              trestleData: wrapupValues.trestleData,
               aiCleanedSummary: wrapupValues.aiCleanedSummary,
               aiProcessingStatus: wrapupValues.aiProcessingStatus,
               aiProcessedAt: wrapupValues.aiProcessedAt,
               aiExtraction: wrapupValues.aiExtraction,
               aiConfidence: wrapupValues.aiConfidence,
+              aiTriageRecommendation: wrapupValues.aiTriageRecommendation,
+              aiSimilarityScore: wrapupValues.aiSimilarityScore,
+              aiRelatedTicketId: wrapupValues.aiRelatedTicketId,
+              aiRecommendationReason: wrapupValues.aiRecommendationReason,
+              similarityComputedAt: wrapupValues.similarityComputedAt,
               updatedAt: new Date(),
             },
           })
