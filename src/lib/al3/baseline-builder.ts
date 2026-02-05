@@ -13,10 +13,11 @@ import type {
   CanonicalCoverage,
   CanonicalVehicle,
   CanonicalDriver,
+  CanonicalDiscount,
   CanonicalClaim,
   PropertyContext,
 } from '@/types/renewal.types';
-import { COVERAGE_CODE_MAP } from './constants';
+import { COVERAGE_CODE_MAP, DISCOUNT_COVERAGE_TYPES } from './constants';
 import { parseSplitLimit } from './parser';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
 
@@ -233,14 +234,30 @@ export async function buildBaselineSnapshot(
     status: n.claimStatus ?? undefined,
   }));
 
+  // Partition discount-type coverages into discounts array
+  const allCoverages = localCoverages.length > 0 ? localCoverages : hsCoverages;
+  const realCoverages: CanonicalCoverage[] = [];
+  const discountCoverages: CanonicalDiscount[] = [];
+  for (const cov of allCoverages) {
+    if (DISCOUNT_COVERAGE_TYPES.has(cov.type)) {
+      discountCoverages.push({
+        code: cov.type,
+        description: cov.description || cov.type,
+        amount: cov.premium,
+      });
+    } else {
+      realCoverages.push(cov);
+    }
+  }
+
   // Build snapshot — use HawkSoft API data if local was empty
   const snapshot: BaselineSnapshot = {
     premium: policy.premium ? parseFloat(policy.premium) : undefined,
-    coverages: localCoverages.length > 0 ? localCoverages : hsCoverages,
+    coverages: realCoverages,
     vehicles: policyVehicles.length > 0 ? normalizeHawkSoftVehicles(policyVehicles) : hsVehicles,
     drivers: policyDrivers.length > 0 ? normalizeHawkSoftDrivers(policyDrivers) : hsDrivers,
     endorsements: [],
-    discounts: [],
+    discounts: discountCoverages,
     claims,
     propertyContext,
     fetchedAt: new Date().toISOString(),

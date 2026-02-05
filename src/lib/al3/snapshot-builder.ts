@@ -14,7 +14,7 @@ import type {
   CanonicalEndorsement,
   CanonicalClaim,
 } from '@/types/renewal.types';
-import { COVERAGE_CODE_MAP } from './constants';
+import { COVERAGE_CODE_MAP, DISCOUNT_COVERAGE_TYPES } from './constants';
 import { parseSplitLimit } from './parser';
 
 /**
@@ -88,17 +88,43 @@ export function buildRenewalSnapshot(
   }));
 
   // Flatten vehicle-level coverages into policy-level when empty (e.g. Progressive auto)
+  // Sum premiums across all vehicles for the same coverage type
   if (coverages.length === 0 && vehicles.length > 0) {
     const seen = new Map<string, CanonicalCoverage>();
     for (const veh of vehicles) {
       for (const cov of veh.coverages) {
-        if (cov.type && !seen.has(cov.type)) {
-          seen.set(cov.type, cov);
+        if (!cov.type) continue;
+        const existing = seen.get(cov.type);
+        if (existing) {
+          // Sum premiums across vehicles
+          if (cov.premium != null) {
+            existing.premium = (existing.premium ?? 0) + cov.premium;
+          }
+        } else {
+          seen.set(cov.type, { ...cov });
         }
       }
     }
     coverages.push(...seen.values());
   }
+
+  // Partition discount-type coverages into discounts array
+  const realCoverages: CanonicalCoverage[] = [];
+  const discountCoverages: CanonicalDiscount[] = [];
+  for (const cov of coverages) {
+    if (DISCOUNT_COVERAGE_TYPES.has(cov.type)) {
+      discountCoverages.push({
+        code: cov.type,
+        description: cov.description || cov.type,
+        amount: cov.premium,
+      });
+    } else {
+      realCoverages.push(cov);
+    }
+  }
+  // Replace coverages with only real coverages
+  coverages.length = 0;
+  coverages.push(...realCoverages);
 
   // Calculate total premium
   let totalPremium: number | undefined;
@@ -137,6 +163,9 @@ export function buildRenewalSnapshot(
     amount: d.amount,
     percent: d.percent,
   }));
+
+  // Add discount-type coverages partitioned from the coverages array
+  discounts.push(...discountCoverages);
 
   // Fallback: extract discounts from remarks if no structured records found
   if (discounts.length === 0) {

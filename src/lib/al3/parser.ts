@@ -1313,16 +1313,26 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
     const limitAmount = parseAL3Number(limitStr);
     const deductibleAmount = parseAL3Number(deductibleStr);
 
-    // Skip discount-code-only records (no premium, no limit, no deductible)
-    if (!premium && !limitAmount && !deductibleAmount) return null;
+    // Use human-readable description from 6CVA if available
+    const cleanDesc = descriptionStr
+      ?.replace(/[\x00-\x1F\x7F-\xFF]/g, ' ')
+      .replace(/\?+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Skip truly empty records (no premium, no limit, no deductible, no description)
+    // Keep discount-code records that have a description even without numeric values
+    if (!premium && !limitAmount && !deductibleAmount && !cleanDesc) return null;
 
     // Build limit display string for split limits (BI, UM, UMBI)
     // Format: Limit 1 (10 chars) = [7 digits per-person][3 digits per-accident prefix]
     // Limit 2 (5+ chars) = per-accident suffix
     // Example: "0100000003" + "00000" → $100,000/$300,000
     let displayLimit = limitStr || undefined;
+    let finalLimitAmount = limitAmount;
+    const upperCode = code.toUpperCase();
     const splitLimitCodes = ['BI', 'UM', 'UMBI', 'UMISP', 'UIM'];
-    const isSplitLimit = splitLimitCodes.includes(code.toUpperCase());
+    const isSplitLimit = splitLimitCodes.includes(upperCode);
     if (isSplitLimit && limitStr && limitStr.length >= 7) {
       const rawLimit = limitStr.replace(/[^0-9]/g, '');
       if (rawLimit.length >= 7) {
@@ -1336,18 +1346,56 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       }
     }
 
-    // Use human-readable description from 6CVA if available
-    const cleanDesc = descriptionStr
-      ?.replace(/[\x00-\x1F\x7F-\xFF]/g, ' ')
-      .replace(/\?+/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    // RREIM/RENT: rental reimbursement is daily/max format
+    // AL3 stores as "0000050000" (raw = 50000) but HawkSoft stores "50/1,500"
+    // Parse as: first digits = daily amount, remainder = max amount
+    if ((upperCode === 'RREIM' || upperCode === 'RENT') && limitAmount) {
+      const rawLimit = (limitStr || '').replace(/[^0-9]/g, '');
+      if (rawLimit.length >= 5) {
+        // Typical format: "0000050000" → daily=50, max=1500
+        // or "0050001500" → daily=50, max=1500
+        const cleaned = parseInt(rawLimit, 10);
+        if (cleaned >= 1000) {
+          // Parse as combined: try splitting at common daily amounts (25, 30, 40, 50, 75, 100)
+          const dailyAmounts = [100, 75, 50, 40, 30, 25];
+          let daily: number | undefined;
+          let max: number | undefined;
+          for (const d of dailyAmounts) {
+            if (cleaned % d === 0 || String(cleaned).startsWith(String(d))) {
+              const remainder = String(cleaned).substring(String(d).length);
+              const m = parseInt(remainder, 10);
+              if (m > 0 && m > d) {
+                daily = d;
+                max = m;
+                break;
+              }
+            }
+          }
+          if (daily && max) {
+            displayLimit = `${daily}/${max}`;
+            finalLimitAmount = daily;
+          }
+        } else {
+          // Small value = daily amount only
+          finalLimitAmount = cleaned;
+        }
+      }
+    }
+
+    // Clean non-split limit strings: strip leading zeros for readable display
+    if (displayLimit && !isSplitLimit && !(upperCode === 'RREIM' || upperCode === 'RENT')) {
+      const numericOnly = displayLimit.replace(/[^0-9]/g, '');
+      if (numericOnly.length > 0 && /^0+\d/.test(numericOnly)) {
+        const cleaned = numericOnly.replace(/^0+/, '') || '0';
+        displayLimit = cleaned;
+      }
+    }
 
     return {
       code,
       description: cleanDesc || code,
       limit: displayLimit,
-      limitAmount,
+      limitAmount: finalLimitAmount,
       deductible: deductibleStr || undefined,
       deductibleAmount,
       premium: premium ? premium / 100 : undefined, // IVANS premiums are in cents

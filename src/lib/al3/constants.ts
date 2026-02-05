@@ -200,7 +200,41 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'ESTAB': 'established_customer',
   'ESMRT': 'esmart_discount',
   'ADDA': 'additional_coverage_a',
+
+  // Progressive-specific discount codes (stored as coverage records in HawkSoft)
+  'AFR': 'accident_free_discount',
+  'EFT': 'eft_discount',
+  'HON': 'homeowner_discount',
+  'MC1': 'multi_car_discount',
+  'SMP': 'multi_policy_discount',
+  'NP3': 'continuous_insurance_discount',
+  'NP5': 'continuous_insurance_discount',
+  'SD3': 'safe_driving_discount',
+  'IPP': 'paperless_discount',
 };
+
+/**
+ * Coverage types that are really discounts/credits.
+ * Used to partition discounts from real coverages in snapshot/baseline builders.
+ */
+export const DISCOUNT_COVERAGE_TYPES = new Set([
+  'accident_free_discount',
+  'eft_discount',
+  'homeowner_discount',
+  'multi_car_discount',
+  'multi_policy_discount',
+  'continuous_insurance_discount',
+  'safe_driving_discount',
+  'paperless_discount',
+  'early_signing_discount',
+  'responsible_payment_discount',
+  'welcome_discount',
+  'loyalty_discount',
+  'protective_devices',
+  'account_discount',
+  'established_customer',
+  'esmart_discount',
+]);
 
 // =============================================================================
 // FIELD POSITION MAPPINGS (for fixed-width AL3 parsing)

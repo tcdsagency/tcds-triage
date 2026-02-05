@@ -11,6 +11,7 @@ const COVERAGE_TYPE_LABELS: Record<string, string> = {
   personal_property: 'Personal Property',
   personal_liability: 'Personal Liability',
   medical_payments: 'Medical Payments',
+  medical_payments_to_others: 'Medical Payments to Others',
   other_structures: 'Other Structures',
   loss_of_use: 'Loss of Use',
   water_damage: 'Water Damage',
@@ -27,11 +28,37 @@ const COVERAGE_TYPE_LABELS: Record<string, string> = {
   collision: 'Collision',
   comprehensive: 'Comprehensive',
   uninsured_motorist: 'Uninsured Motorist',
+  uninsured_motorist_bi: 'Uninsured Motorist BI',
+  uninsured_motorist_pd: 'Uninsured Motorist PD',
   underinsured_motorist: 'Underinsured Motorist',
   rental_reimbursement: 'Rental Reimbursement',
   towing: 'Towing/Roadside',
+  roadside_assistance: 'Roadside Assistance',
   pip: 'Personal Injury Protection',
+  personal_injury_protection: 'Personal Injury Protection',
   med_pay: 'Medical Payments',
+  combined_single_limit: 'Combined Single Limit',
+  gap_coverage: 'GAP Coverage',
+  extended_dwelling: 'Extended Dwelling',
+  personal_property_replacement: 'Personal Property Replacement',
+  sewer_water_backup: 'Sewer/Water Backup',
+  equipment_breakdown: 'Equipment Breakdown',
+  roof_replacement_cost: 'Roof Replacement Cost',
+  additional_insured: 'Additional Insured',
+  additional_coverage_a: 'Additional Coverage A',
+  early_signing_discount: 'Early Signing Discount',
+  esmart_discount: 'eSmart Discount',
+  account_discount: 'Account Discount',
+  established_customer: 'Established Customer',
+  // Progressive discount types
+  accident_free_discount: 'Accident Free Discount',
+  eft_discount: 'EFT Discount',
+  homeowner_discount: 'Homeowner Discount',
+  multi_car_discount: 'Multi-Car Discount',
+  multi_policy_discount: 'Multi-Policy Discount',
+  continuous_insurance_discount: 'Continuous Insurance Discount',
+  safe_driving_discount: 'Safe Driving Discount',
+  paperless_discount: 'Paperless Discount',
 };
 
 interface ComparisonTableProps {
@@ -503,7 +530,7 @@ function renderDiscountComparison(
         return (
           <ComparisonRow
             key={code}
-            label={b?.description || r?.description || code}
+            label={b?.description || r?.description || COVERAGE_TYPE_LABELS[code.toLowerCase()] || code}
             current={b ? (b.percent ? `${b.percent}%` : b.amount ? `$${b.amount}` : 'Applied') : 'N/A'}
             renewal={r ? (r.percent ? `${r.percent}%` : r.amount ? `$${r.amount}` : 'Applied') : 'REMOVED'}
             change={!r ? 'worse' : !b ? 'better' : 'same'}
