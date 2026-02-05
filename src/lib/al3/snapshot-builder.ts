@@ -144,6 +144,12 @@ export function buildRenewalSnapshot(
 
   return {
     insuredName: transaction.header.insuredName,
+    insuredAddress: transaction.insuredAddress?.address,
+    insuredCity: transaction.insuredAddress?.city,
+    insuredState: transaction.insuredAddress?.state,
+    insuredZip: transaction.insuredAddress?.zip,
+    insuredEmail: transaction.insuredEmail,
+    insuredPhone: transaction.insuredPhone,
     premium: totalPremium,
     coverages,
     vehicles,

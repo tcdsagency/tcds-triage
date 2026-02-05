@@ -18,6 +18,7 @@ import type {
   AL3Discount,
   AL3Claim,
   AL3Endorsement,
+  AL3Mortgagee,
 } from '@/types/renewal.types';
 import {
   AL3_GROUP_CODES,
@@ -31,6 +32,14 @@ import {
   CLM_FIELDS,
   END_FIELDS,
   FOR_FIELDS,
+  BIS_FIELDS,
+  BIS_ADDRESS_FIELDS,
+  BIS_ADDRESS_FIELDS_SHORT,
+  BPI_FIELDS,
+  LAG_FIELDS,
+  AOI_FIELDS,
+  COM_FIELDS,
+  RMK_FIELDS,
   LOB_CODES,
 } from './constants';
 
@@ -285,6 +294,10 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
   const claims: AL3Claim[] = [];
   const endorsementRecords: AL3Endorsement[] = [];
   const discountRecords: AL3Discount[] = [];
+  const mortgagees: AL3Mortgagee[] = [];
+  let insuredAddress: AL3Location | undefined;
+  let insuredEmail: string | undefined;
+  let insuredPhone: string | undefined;
 
   let currentVehicle: AL3Vehicle | null = null;
   let confidence = 0.7; // Base confidence
@@ -360,51 +373,61 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
 
       case AL3_GROUP_CODES.BUSINESS_INFO_SEGMENT: {
         // 5BIS contains insured name(s).
+        // Reference positions: 29=entity type, 38-62=first name, 63-87=last name
         // Two format variants:
-        //   Progressive: pos 30=type prefix (P/C), 39-65=first name, 66-89=last name
+        //   Standard: position-based extraction using BIS_FIELDS
         //   SAFECO/Universal: name at pos 18+ delimited by field separators (0xFA)
         // Strategy: try position-based first, then content-based regex fallback
         if (!header.insuredName && line.length > 20) {
           let nameResult: string | null = null;
 
-          // Attempt 1: Position-based (Progressive format — pos 31-89)
-          if (line.length > 39) {
-            const nameArea = line.substring(31, 90)
-              .replace(/[\x00-\x1F\x7F-\xFF]/g, ' ')
-              .replace(/\?+/g, ' ')
-              .replace(/\s+/g, ' ')
-              .trim();
-            // Only accept if it looks like a real name: must have a word with 3+ letters,
-            // no embedded record codes, not starting with digits
-            let cleanName = nameArea.replace(/\d[A-Z]{3}\d{3}.*/, '').trim();
-            // Strip trailing EDIFACT tag residue (e.g., "21 3C IN 14" — mixed hex codes and short words)
-            cleanName = cleanName.replace(/\s+[0-9A-F]{2}(\s+\S{1,4})*\s*$/, '').trim();
-            if (cleanName && cleanName.length > 3 && /[a-zA-Z]{3,}/.test(cleanName) && !/^\d/.test(cleanName) && !/^[a-z]\s\d/.test(cleanName)) {
-              nameResult = cleanName;
+          // Attempt 1: Position-based — try reference positions first, then wider range
+          if (line.length > 63) {
+            const entityType = extractField(line, BIS_FIELDS.ENTITY_TYPE);
+
+            if (entityType === 'C' || entityType === 'G') {
+              // Company/Group: name starts at 31 (right after entity type at 30)
+              const companyName = line.substring(31, 88)
+                .replace(/[\x00-\x1F\x7F-\xFF]/g, ' ')
+                .replace(/\?+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+              if (companyName && companyName.length > 2 && /[a-zA-Z]{2,}/.test(companyName)) {
+                nameResult = companyName;
+              }
+            } else {
+              // Person: read positions 39-98 as single name field (matches DRV approach)
+              // then collapse whitespace to merge first + last name
+              let rawName = line.substring(39, Math.min(line.length, 98))
+                .replace(/[\x00-\x1F\x7F-\xFF]/g, ' ')
+                .replace(/\?+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+              // Clean trailing record artifacts
+              rawName = rawName.replace(/\s+[0-9A-F]{2}(\s+\S{1,4})*\s*$/, '').trim();
+              rawName = rawName.replace(/\d[A-Z]{3}\d{3}.*/, '').trim();
+
+              if (rawName.length > 2 && /[a-zA-Z]{3,}/.test(rawName) && !/^\d/.test(rawName) && !/^[a-z]\s\d/.test(rawName)) {
+                nameResult = rawName;
+              }
             }
           }
 
           // Attempt 2: Content-based (SAFECO format — find name between control chars)
           if (!nameResult) {
-            // Clean entire line, then find name-like content
             const printable = line
               .replace(/[\x00-\x1F\x7F-\xFF]/g, '\n')
               .split('\n')
               .map(s => s.trim())
-              // Strip leading EDIFACT tag identifiers (e.g., "0E ", "21 ", "3C")
               .map(s => s.replace(/^[0-9A-F]{2}\s+/, ''))
               .filter(s => s.length > 2);
-            // Find the first segment that looks like a person name (has letters, not a record code)
             for (const segment of printable) {
-              // Skip segments that are record headers, codes, or numeric
               if (/^\d[A-Z]{3}/.test(segment)) continue;
               if (/^[A-Z]{3,4}\d{3}/.test(segment)) continue;
               if (/^\d+$/.test(segment)) continue;
               if (/^[A-Z]{1,2}\d{4,}/.test(segment)) continue;
-              // Look for name-like content: starts with a letter, has 3+ chars
               const nameMatch = segment.match(/^[CP]?([A-Za-z][A-Za-z .'\-]+[A-Za-z])$/);
               if (nameMatch) {
-                // Strip leading type prefix (C or P)
                 let name = nameMatch[0];
                 if (/^[CP][A-Z][a-z]/.test(name)) name = name.substring(1);
                 nameResult = name.replace(/\s+/g, ' ').trim();
@@ -450,28 +473,114 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
       }
 
       case AL3_GROUP_CODES.BUSINESS_PURPOSE_INFO: {
-        // 5BPI contains policy number and LOB
-        // Format varies but policy number often appears after reference codes
-        const bpiContent = line.substring(7);
-        if (!header.policyNumber && bpiContent.length > 20) {
-          // Look for policy number pattern: alphanumeric sequence (6+ chars)
+        // 5BPI: Policy number, dates, premium, LOB
+        // Position-based extraction first, then regex fallback
+        if (line.length > 49) {
+          // Policy number at positions 24-48 (25 chars)
+          if (!header.policyNumber) {
+            let policyNum = extractField(line, BPI_FIELDS.POLICY_NUMBER)
+              .replace(/\?+/g, '')
+              .trim();
+            // Strip leading reference prefix (e.g., "01    " or "F10001") before actual policy number
+            policyNum = policyNum.replace(/^[A-Z]?\d{1,2}\s{2,}/, '').trim();
+            if (policyNum && policyNum.length >= 5 && /[A-Z0-9]/.test(policyNum)) {
+              header.policyNumber = policyNum;
+            }
+          }
+
+          // LOB from BPI positions 64-68
+          if (!header.lineOfBusiness && line.length > 69) {
+            const bpiLob = extractField(line, BPI_FIELDS.LOB_CODE).replace(/\?+/g, '').trim();
+            if (bpiLob && LOB_CODES[bpiLob]) {
+              header.lineOfBusiness = LOB_CODES[bpiLob];
+            }
+          }
+
+          // Effective date from BPI (YYMMDD at 73-78 or YYYYMMDD in extended portion)
+          if (!header.effectiveDate && line.length > 79) {
+            const effShort = extractField(line, BPI_FIELDS.EFF_DATE_SHORT);
+            if (effShort && /^\d{6}$/.test(effShort)) {
+              const yy = parseInt(effShort.substring(0, 2), 10);
+              const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
+              header.effectiveDate = parseAL3Date(`${yyyy}${effShort.substring(2)}`);
+            }
+          }
+
+          // Expiration date from BPI (YYMMDD at 79-84)
+          if (!header.expirationDate && line.length > 85) {
+            const expShort = extractField(line, BPI_FIELDS.EXP_DATE_SHORT);
+            if (expShort && /^\d{6}$/.test(expShort)) {
+              const yy = parseInt(expShort.substring(0, 2), 10);
+              const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
+              header.expirationDate = parseAL3Date(`${yyyy}${expShort.substring(2)}`);
+            }
+          }
+        }
+
+        // Regex fallback for policy number
+        if (!header.policyNumber) {
+          const bpiContent = line.substring(7);
           const policyMatch = bpiContent.match(/\b([A-Z]{1,3}\d{5,15})\b/);
           if (policyMatch) {
             header.policyNumber = policyMatch[1];
           } else {
-            // Try to find any substantial alphanumeric code
             const altMatch = bpiContent.match(/\b(\d{7,15})\b/);
-            if (altMatch) {
-              header.policyNumber = altMatch[1];
-            }
+            if (altMatch) header.policyNumber = altMatch[1];
           }
         }
-        // Extract LOB from 5BPI if not already set
+        // Regex fallback for LOB
         if (!header.lineOfBusiness) {
-          const lobMatch = bpiContent.match(/\b(HOME|AUTO|PAUTO|CAUTO|PHOME)\b/i);
+          const lobMatch = line.match(/\b(HOME|AUTOP?|PAUTO|CAUTO|PHOME|FIRE|FLOOD|BOAT)\b/i);
           if (lobMatch) {
             header.lineOfBusiness = LOB_CODES[lobMatch[1].toUpperCase()] || lobMatch[1];
           }
+        }
+        break;
+      }
+
+      default: {
+        // Handle record types by their 4-char group code prefix
+        const gc = getGroupCode(line);
+
+        if (gc === '9BIS' && !insuredAddress) {
+          // 9BIS: Insured address continuation
+          insuredAddress = parseBISAddress(line) ?? undefined;
+          // Extract phone from 9BIS if available
+          if (!insuredPhone && insuredAddress) {
+            const fields = line.length > 130 ? BIS_ADDRESS_FIELDS : BIS_ADDRESS_FIELDS_SHORT;
+            const phone = extractField(line, fields.PHONE).replace(/\?+/g, '').trim();
+            if (phone && /^\d{7,}$/.test(phone)) {
+              insuredPhone = phone;
+            }
+          }
+        } else if (gc === '5AOI') {
+          // 5AOI: Additional Other Insured (mortgagee/lienholder)
+          const mortgagee = parseMortgagee(line);
+          if (mortgagee) mortgagees.push(mortgagee);
+        } else if (gc === '6COM') {
+          // 6COM: Communication record (email, phone)
+          const commType = extractField(line, COM_FIELDS.COMM_TYPE).toUpperCase();
+          const commValue = extractField(line, COM_FIELDS.VALUE).replace(/\?+/g, '').trim();
+          if (commType === 'EMAIL' && commValue && commValue.includes('@')) {
+            insuredEmail = commValue.toLowerCase();
+          } else if ((commType === 'PHONE' || commType === 'CELL') && commValue && /^\d{7,}$/.test(commValue)) {
+            if (!insuredPhone) insuredPhone = commValue;
+          }
+        } else if (gc === '5RMK') {
+          // 5RMK: Remarks — proper parsing + email extraction
+          const remarkText = extractField(line, RMK_FIELDS.TEXT).replace(/\?+/g, ' ').replace(/\s+/g, ' ').trim();
+          if (remarkText) {
+            remarks.push(remarkText);
+            // Extract email from remark text if not already found
+            if (!insuredEmail) {
+              const emailMatch = remarkText.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/);
+              if (emailMatch) insuredEmail = emailMatch[0].toLowerCase();
+            }
+          }
+        } else if (gc === '5LAG') {
+          // 5LAG: Location Address Group — use proper reference positions
+          const loc = parseLAGLocation(line);
+          if (loc) locations.push(loc);
         }
         break;
       }
@@ -485,6 +594,7 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
   if (header.policyNumber && header.transactionType) confidence += 0.1;
   if (coverages.length > 0 || vehicles.length > 0) confidence += 0.1;
   if (header.effectiveDate) confidence += 0.05;
+  if (insuredAddress) confidence += 0.05;
   confidence = Math.min(confidence, 1.0);
 
   return {
@@ -497,6 +607,10 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
     claims,
     endorsementRecords,
     discountRecords,
+    mortgagees,
+    insuredAddress,
+    insuredEmail,
+    insuredPhone,
     rawContent: lines.join('\n'),
     parseConfidence: confidence,
   };
@@ -611,22 +725,53 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
   if (!code || code === 'PIF') return null;
 
   if (type === 'vehicle') {
-    // 6CVA: position 60 = premium (may have +/- suffix), position 90 = limit
+    // 6CVA: premium at 60 (implied 2 decimals + sign), limits at 102+, deductible at 122+
     const premiumStr = extractField(line, CVA_FIELDS.PREMIUM).replace(/[+-]$/, '');
     const limitStr = extractField(line, CVA_FIELDS.LIMIT);
+    const limit2Str = extractField(line, CVA_FIELDS.LIMIT_2);
+    const deductibleStr = extractField(line, CVA_FIELDS.DEDUCTIBLE);
+    const descriptionStr = line.length > 145 ? extractField(line, CVA_FIELDS.DESCRIPTION) : '';
     const premium = parseAL3Number(premiumStr);
     const limitAmount = parseAL3Number(limitStr);
+    const deductibleAmount = parseAL3Number(deductibleStr);
 
-    // Skip discount-code-only records (no premium and no limit)
-    if (!premium && !limitAmount) return null;
+    // Skip discount-code-only records (no premium, no limit, no deductible)
+    if (!premium && !limitAmount && !deductibleAmount) return null;
+
+    // Build limit display string for split limits (BI, UM, UMBI)
+    // Format: Limit 1 (10 chars) = [7 digits per-person][3 digits per-accident prefix]
+    // Limit 2 (5+ chars) = per-accident suffix
+    // Example: "0100000003" + "00000" → $100,000/$300,000
+    let displayLimit = limitStr || undefined;
+    const splitLimitCodes = ['BI', 'UM', 'UMBI', 'UMISP', 'UIM'];
+    const isSplitLimit = splitLimitCodes.includes(code.toUpperCase());
+    if (isSplitLimit && limitStr && limitStr.length >= 7) {
+      const rawLimit = limitStr.replace(/[^0-9]/g, '');
+      if (rawLimit.length >= 7) {
+        const perPerson = parseInt(rawLimit.substring(0, 7), 10);
+        const perAccidentPrefix = rawLimit.substring(7);
+        const rawLimit2 = (limit2Str || '').replace(/[^0-9]/g, '');
+        const perAccident = parseInt(perAccidentPrefix + rawLimit2, 10);
+        if (perPerson > 0) {
+          displayLimit = perAccident > 0 ? `${perPerson}/${perAccident}` : `${perPerson}`;
+        }
+      }
+    }
+
+    // Use human-readable description from 6CVA if available
+    const cleanDesc = descriptionStr
+      ?.replace(/[\x00-\x1F\x7F-\xFF]/g, ' ')
+      .replace(/\?+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
 
     return {
       code,
-      description: code,
-      limit: limitStr || undefined,
+      description: cleanDesc || code,
+      limit: displayLimit,
       limitAmount,
-      deductible: undefined,
-      deductibleAmount: undefined,
+      deductible: deductibleStr || undefined,
+      deductibleAmount,
       premium: premium ? premium / 100 : undefined, // IVANS premiums are in cents
     };
   } else {
@@ -739,18 +884,125 @@ function parseDriver(line: string): AL3Driver | null {
 }
 
 /**
- * Parse a location record (5LOC).
+ * Parse a location record (5LOC) — generic fallback.
  */
 function parseLocation(line: string): AL3Location | null {
   const content = line.substring(4).trim();
   if (!content) return null;
 
-  // Location records vary significantly - attempt basic extraction
   return {
     address: content.substring(0, 60).trim() || undefined,
     city: content.substring(60, 90).trim() || undefined,
     state: content.substring(90, 92).trim() || undefined,
     zip: content.substring(92, 102).trim() || undefined,
+  };
+}
+
+/**
+ * Parse a 5LAG location address record using reference field positions.
+ */
+function parseLAGLocation(line: string): AL3Location | null {
+  if (line.length < 110) return null;
+
+  // LAG has a location number at 24-28, but Progressive offsets may push data forward
+  // Read both number and address; if address starts with digits, it might be the number
+  let locNumber = extractField(line, LAG_FIELDS.LOCATION_NUMBER).replace(/\?+/g, '').trim();
+  let address = extractField(line, LAG_FIELDS.ADDRESS)
+    .replace(/\?+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // If location number ran into address, extract it
+  if (!locNumber && address) {
+    const numMatch = address.match(/^(\d{4})(.*)/);
+    if (numMatch) {
+      locNumber = numMatch[1];
+      address = numMatch[2].trim();
+    }
+  }
+
+  const city = extractField(line, LAG_FIELDS.CITY)
+    .replace(/^\?+/, '').replace(/\?+/g, ' ').trim();
+  const state = extractField(line, LAG_FIELDS.STATE).replace(/\?+/g, '').trim();
+  const zip = extractField(line, LAG_FIELDS.ZIP).replace(/\?+/g, '').trim();
+
+  if (!address && !city) return null;
+
+  return {
+    number: locNumber || undefined,
+    address: address || undefined,
+    city: city || undefined,
+    state: (state && state.length === 2) ? state : undefined,
+    zip: (zip && /^\d{5}/.test(zip)) ? zip.substring(0, 5) : undefined,
+  };
+}
+
+/**
+ * Parse a 9BIS insured address continuation record.
+ * Two variants: long (343 bytes) and short (168 bytes, Safeco).
+ */
+function parseBISAddress(line: string): AL3Location | null {
+  if (line.length < 100) return null;
+
+  // Use short fields for shorter records (Safeco 168-byte variant)
+  const fields = line.length > 200 ? BIS_ADDRESS_FIELDS : BIS_ADDRESS_FIELDS_SHORT;
+
+  const address = extractField(line, fields.ADDRESS_1)
+    .replace(/\?+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  let city: string;
+  if ('CITY' in fields) {
+    city = extractField(line, fields.CITY)
+      .replace(/^\?+/, '').replace(/\?+/g, ' ').trim();
+  } else {
+    city = '';
+  }
+
+  const state = extractField(line, fields.STATE).replace(/\?+/g, '').trim();
+  const zip = extractField(line, fields.ZIP).replace(/\?+/g, '').trim();
+
+  if (!address && !city && !state) return null;
+
+  return {
+    address: address || undefined,
+    city: city || undefined,
+    state: (state && state.length === 2) ? state : undefined,
+    zip: (zip && /^\d{5}/.test(zip)) ? zip.substring(0, 5) : undefined,
+  };
+}
+
+/**
+ * Parse a 5AOI mortgagee/lienholder record.
+ */
+function parseMortgagee(line: string): AL3Mortgagee | null {
+  if (line.length < 72) return null;
+
+  let interestType = extractField(line, AOI_FIELDS.INTEREST_TYPE).replace(/\?+/g, '').trim();
+  let rawName = extractField(line, AOI_FIELDS.NAME)
+    .replace(/[\x00-\x1F\x7F-\xFF]/g, ' ')
+    .replace(/\?+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!rawName) return null;
+
+  // Strip prefix residue: sequence + interest type + entity type that bleeds into name field
+  // Pattern: "1LH01 CFord Motor Credit" → extract interest type from prefix, then strip it
+  const prefixMatch = rawName.match(/^(\d+)([A-Z]{2})(\d+)\s*([CP])(.*)/);
+  if (prefixMatch) {
+    if (!interestType) interestType = prefixMatch[2]; // LH, MS, CN, etc.
+    rawName = prefixMatch[5].trim();
+  }
+
+  if (!rawName) return null;
+
+  let loanNumber: string | undefined;
+  if (line.length > 141) {
+    loanNumber = extractField(line, AOI_FIELDS.LOAN_NUMBER).replace(/\?+/g, '').trim() || undefined;
+  }
+
+  return {
+    interestType: interestType || undefined,
+    name: rawName,
+    loanNumber,
   };
 }
 

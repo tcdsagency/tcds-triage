@@ -35,6 +35,10 @@ export interface AL3ParsedTransaction {
   claims: AL3Claim[];
   endorsementRecords: AL3Endorsement[];
   discountRecords: AL3Discount[];
+  mortgagees: AL3Mortgagee[];
+  insuredAddress?: AL3Location;
+  insuredEmail?: string;
+  insuredPhone?: string;
   rawContent: string;
   parseConfidence: number; // 0-1
 }
@@ -96,6 +100,16 @@ export interface AL3Endorsement {
   description?: string;
   effectiveDate?: string;
   premium?: number;
+}
+
+export interface AL3Mortgagee {
+  interestType?: string; // LH=Lienholder, MS=Mortgagee, CN=Co-Named
+  name?: string;
+  loanNumber?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
 }
 
 // =============================================================================
@@ -185,6 +199,12 @@ export interface PropertyContext {
  */
 export interface RenewalSnapshot {
   insuredName?: string;
+  insuredAddress?: string;
+  insuredCity?: string;
+  insuredState?: string;
+  insuredZip?: string;
+  insuredEmail?: string;
+  insuredPhone?: string;
   premium?: number;
   coverages: CanonicalCoverage[];
   vehicles: CanonicalVehicle[];

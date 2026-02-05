@@ -60,11 +60,16 @@ export const TRANSACTION_TYPES = {
 
   // Cancellation
   CAN: 'CAN', // Cancellation
+  XLC: 'XLC', // Cancellation (ACORD)
+  XLR: 'XLR', // Cancellation Rescind
   REI: 'REI', // Reinstatement
 
   // Other
   AUD: 'AUD', // Audit
   INQ: 'INQ', // Inquiry
+  PCH: 'PCH', // Policy Change
+  COM: 'COM', // Commission Statement
+  SYN: 'SYN', // Sync/Download (full policy snapshot)
 } as const;
 
 /**
@@ -94,12 +99,21 @@ export const LOB_CODES: Record<string, string> = {
   'IM': 'Inland Marine',
   'CMP': 'Commercial Package',
   'RENT': 'Renters',
-  // IVANS sub-LOB codes (5-char format from 2TRG positions 24-28)
+  // IVANS sub-LOB codes (5-char format from 2TRG positions 24-29)
   'PAUTO': 'Personal Auto',
+  'AUTOP': 'Personal Auto',
   'CAUTO': 'Commercial Auto',
+  'CAUTOB': 'Commercial Auto',
+  'AUTOB': 'Commercial Auto',
   'PHOME': 'Homeowners',
   'HOME': 'Homeowners',
   'AUTO': 'Personal Auto',
+  'PFIRE': 'Dwelling Fire',
+  'FIRE': 'Dwelling Fire',
+  'PFLOOD': 'Flood',
+  'FLOOD': 'Flood',
+  'PBOAT': 'Watercraft',
+  'BOAT': 'Watercraft',
 };
 
 // =============================================================================
@@ -192,7 +206,7 @@ export const TRG_FIELDS = {
   POLICY_NUMBER: { start: 12, end: 37 }, // Not reliably in 2TRG — extracted from 5BPI
   EFFECTIVE_DATE: { start: 204, end: 212 }, // 8 chars (YYYYMMDD)
   EXPIRATION_DATE: { start: 196, end: 204 }, // 8 chars — actually processing/batch date
-  LOB_CODE: { start: 24, end: 29 }, // 5 chars (PHOME, PAUTO, CAUTO, etc.)
+  LOB_CODE: { start: 24, end: 30 }, // 6 chars (PHOME, PAUTO, CAUTO, etc.) — includes leading space
   INSURED_NAME: { start: 56, end: 96 }, // Not reliably in 2TRG — extracted from 5BIS
 } as const;
 
@@ -217,9 +231,12 @@ export const CVG_FIELDS = {
  *                                 ^30                           ^60         ^72           ^90
  */
 export const CVA_FIELDS = {
-  COVERAGE_CODE: { start: 30, end: 45 }, // 15 chars
-  PREMIUM: { start: 60, end: 72 }, // 12 chars (amount with +/- sign)
-  LIMIT: { start: 102, end: 110 }, // 8 chars (primary limit — split limits use 102-109 + 110-117)
+  COVERAGE_CODE: { start: 30, end: 45 }, // 15 chars (includes filler before code)
+  PREMIUM: { start: 60, end: 72 }, // 12 chars (amount with +/- sign, implied 2 decimals)
+  LIMIT: { start: 103, end: 113 }, // 10 chars (split limit part 1: per-person, ref 103-112)
+  LIMIT_2: { start: 113, end: 122 }, // 9 chars (split limit part 2: per-accident, ref 113-121)
+  DEDUCTIBLE: { start: 122, end: 131 }, // 9 chars (deductible amount)
+  DESCRIPTION: { start: 145, end: 195 }, // 50 chars (human-readable coverage name)
 } as const;
 
 /**
@@ -305,7 +322,120 @@ export const END_FIELDS = {
  *                                 ^30   ^34    ^40               ^90
  */
 export const FOR_FIELDS = {
-  FORM_NUMBER: { start: 30, end: 40 }, // 10 chars (form number)
+  FORM_NUMBER: { start: 30, end: 40 }, // 10 chars (form number + state)
   DESCRIPTION: { start: 40, end: 90 }, // 50 chars
   EFFECTIVE_DATE: { start: 90, end: 96 }, // 6 chars (YYMMDD)
+} as const;
+
+// =============================================================================
+// NEW FIELD POSITION MAPPINGS (from AL3 reference guide)
+// =============================================================================
+
+/**
+ * Basic Insured Segment (5BIS) field positions.
+ * IVANS format: 172-byte records.
+ */
+export const BIS_FIELDS = {
+  ENTITY_TYPE: { start: 30, end: 31 }, // 1 char (P=Person, C=Company, G=Group)
+  PREFIX: { start: 31, end: 39 }, // 8 chars (name prefix/title, usually spaces)
+  FIRST_NAME: { start: 39, end: 67 }, // 28 chars (verified from Progressive hex dump)
+  LAST_NAME: { start: 67, end: 90 }, // 23 chars (verified from Progressive hex dump)
+  SUFFIX: { start: 90, end: 92 }, // 2 chars
+} as const;
+
+/**
+ * Insured Address Continuation (9BIS) field positions.
+ * IVANS format: 168-343 bytes.
+ */
+export const BIS_ADDRESS_FIELDS = {
+  ADDRESS_1: { start: 29, end: 59 }, // 30 chars
+  ADDRESS_2: { start: 59, end: 89 }, // 30 chars
+  CITY: { start: 89, end: 109 }, // 20 chars (may have leading ?)
+  STATE: { start: 109, end: 111 }, // 2 chars
+  ZIP: { start: 111, end: 116 }, // 5 chars
+  ZIP4: { start: 116, end: 120 }, // 4 chars
+  PHONE: { start: 120, end: 130 }, // 10 chars
+} as const;
+
+/**
+ * Safeco shorter 9BIS variant (168-byte version).
+ */
+export const BIS_ADDRESS_FIELDS_SHORT = {
+  ADDRESS_1: { start: 29, end: 59 }, // 30 chars
+  CITY: { start: 59, end: 79 }, // 20 chars
+  STATE: { start: 79, end: 81 }, // 2 chars
+  ZIP: { start: 81, end: 91 }, // 10 chars (ZIP+4)
+  PHONE: { start: 91, end: 101 }, // 10 chars
+} as const;
+
+/**
+ * Basic Policy Information (5BPI) field positions.
+ * IVANS format: 282-511 bytes.
+ */
+export const BPI_FIELDS = {
+  POLICY_NUMBER: { start: 24, end: 49 }, // 25 chars
+  NAIC_CODE: { start: 59, end: 64 }, // 5 chars
+  LOB_CODE: { start: 64, end: 69 }, // 5 chars
+  EFF_DATE_SHORT: { start: 73, end: 79 }, // 6 chars (YYMMDD)
+  EXP_DATE_SHORT: { start: 79, end: 85 }, // 6 chars (YYMMDD)
+  WRITTEN_PREMIUM: { start: 98, end: 109 }, // 11 chars (implied 2 decimals)
+  ANNUAL_PREMIUM: { start: 109, end: 120 }, // 11 chars (with +/- sign)
+} as const;
+
+/**
+ * Location Address Group (5LAG) field positions.
+ * IVANS format: 199-636 bytes.
+ */
+export const LAG_FIELDS = {
+  LOCATION_NUMBER: { start: 24, end: 28 }, // 4 chars
+  ADDRESS: { start: 28, end: 58 }, // 30 chars
+  ADDRESS_2: { start: 58, end: 88 }, // 30 chars
+  CITY: { start: 88, end: 108 }, // 20 chars
+  STATE: { start: 108, end: 110 }, // 2 chars
+  ZIP: { start: 110, end: 115 }, // 5 chars
+  COUNTY: { start: 121, end: 136 }, // 15 chars
+} as const;
+
+/**
+ * Additional Other Insured / Mortgagee (5AOI) field positions.
+ * IVANS format: 186-238 bytes.
+ */
+export const AOI_FIELDS = {
+  SEQUENCE: { start: 24, end: 27 }, // 3 chars
+  INTEREST_TYPE: { start: 27, end: 29 }, // 2 chars (LH=Lienholder, MS=Mortgagee, CN=Co-Named)
+  ENTITY_TYPE: { start: 31, end: 32 }, // 1 char (C=Company, P=Person)
+  NAME: { start: 32, end: 72 }, // 40 chars
+  LOAN_NUMBER: { start: 131, end: 141 }, // 10 chars
+} as const;
+
+/**
+ * Communication record (6COM) field positions.
+ * IVANS format: 416 bytes.
+ */
+export const COM_FIELDS = {
+  COMM_TYPE: { start: 24, end: 29 }, // 5 chars (EMAIL, PHONE, CELL)
+  VALUE: { start: 29, end: 99 }, // 70 chars
+} as const;
+
+/**
+ * Remark record (5RMK) field positions.
+ * IVANS format: 195 bytes.
+ */
+export const RMK_FIELDS = {
+  SEQUENCE: { start: 28, end: 30 }, // 2 chars
+  REMARK_TYPE: { start: 30, end: 31 }, // 1 char (N=Normal)
+  TEXT: { start: 31, end: 195 }, // 164 chars
+} as const;
+
+/**
+ * Insured Supplemental Info (5ISI) field positions.
+ * IVANS format: 147-203 bytes.
+ */
+export const ISI_FIELDS = {
+  DOB_SHORT: { start: 24, end: 30 }, // 6 chars (YYMMDD)
+  GENDER: { start: 32, end: 33 }, // 1 char (M/F)
+  SPOUSE_DOB_SHORT: { start: 35, end: 41 }, // 6 chars (YYMMDD)
+  HOMEOWNER_FLAG: { start: 80, end: 81 }, // 1 char (Y/N)
+  DOB_FULL: { start: 97, end: 105 }, // 8 chars (YYYYMMDD)
+  SPOUSE_DOB_FULL: { start: 105, end: 113 }, // 8 chars (YYYYMMDD)
 } as const;
