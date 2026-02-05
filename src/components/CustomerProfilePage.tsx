@@ -53,6 +53,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { buildZillowUrl } from "@/lib/utils/zillow";
@@ -75,7 +78,8 @@ import {
   ClaimStatus,
   formatPhoneNumber,
   formatAddress,
-  getInitials
+  getInitials,
+  getPolicyTypeEmoji
 } from "@/types/customer-profile";
 import { LifeInsuranceTab } from "@/components/features/life-insurance";
 import { mapMergedProfileToLifeInsurance, hasLifeInsurance, calculateOpportunityScore } from "@/lib/utils/lifeInsuranceMapper";
@@ -211,6 +215,31 @@ export default function CustomerProfilePage() {
   // Gaya
   const [sendingToGaya, setSendingToGaya] = useState(false);
   const [gayaSuccess, setGayaSuccess] = useState(false);
+
+  const handleSendToGaya = useCallback(async (policy: Policy) => {
+    if (!profile) return;
+    setSendingToGaya(true);
+    setGayaSuccess(false);
+    try {
+      const filteredProfile = { ...profile, policies: [policy] };
+      const res = await fetch('/api/gaya/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: filteredProfile }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGayaSuccess(true);
+        setTimeout(() => setGayaSuccess(false), 3000);
+      } else {
+        alert(data.error || 'Failed to send to Gaya');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to send to Gaya');
+    } finally {
+      setSendingToGaya(false);
+    }
+  }, [profile]);
 
   // =============================================================================
   // DATA FETCHING
@@ -727,41 +756,28 @@ export default function CustomerProfilePage() {
                     Schedule Callback
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={sendingToGaya || (!profile?.contact?.email && !profile?.contact?.phone && !profile?.contact?.mobilePhone)}
-                    onClick={async () => {
-                      if (!profile) return;
-                      setSendingToGaya(true);
-                      setGayaSuccess(false);
-                      try {
-                        const res = await fetch('/api/gaya/send', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ profile }),
-                        });
-                        const data = await res.json();
-                        if (data.success) {
-                          setGayaSuccess(true);
-                          setTimeout(() => setGayaSuccess(false), 3000);
-                        } else {
-                          alert(data.error || 'Failed to send to Gaya');
-                        }
-                      } catch (err: any) {
-                        alert(err.message || 'Failed to send to Gaya');
-                      } finally {
-                        setSendingToGaya(false);
-                      }
-                    }}
-                  >
-                    {sendingToGaya ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : gayaSuccess ? (
-                      <Check className="w-4 h-4 mr-2 text-green-500" />
-                    ) : (
-                      <Send className="w-4 h-4 mr-2" />
-                    )}
-                    {gayaSuccess ? 'Sent to Gaya!' : sendingToGaya ? 'Sending...' : 'Send to Gaya'}
-                  </DropdownMenuItem>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger
+                      disabled={sendingToGaya || (!profile?.contact?.email && !profile?.contact?.phone && !profile?.contact?.mobilePhone)}
+                    >
+                      {sendingToGaya ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : gayaSuccess ? (
+                        <Check className="w-4 h-4 mr-2 text-green-500" />
+                      ) : (
+                        <Send className="w-4 h-4 mr-2" />
+                      )}
+                      {gayaSuccess ? 'Sent to Gaya!' : sendingToGaya ? 'Sending...' : 'Send to Gaya'}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {(profile?.policies?.filter(p => p.status === 'active') || []).map(policy => (
+                        <DropdownMenuItem key={policy.id} onClick={() => handleSendToGaya(policy)}>
+                          <span className="mr-2">{getPolicyTypeEmoji(policy.type)}</span>
+                          {policy.carrier?.name} - {policy.policyNumber}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
