@@ -12,6 +12,7 @@ import { createCustomerSyncWorker } from './customer-sync.worker';
 import { createRiskMonitorWorker } from './risk-monitor.worker';
 import { createEmbeddingsWorker } from './embeddings.worker';
 import { createNotificationsWorker } from './notifications.worker';
+import { createRenewalWorker } from './renewal.worker';
 
 // Store all worker instances for management
 const workers: Worker[] = [];
@@ -28,7 +29,8 @@ export async function initializeWorkers(): Promise<void> {
     createCustomerSyncWorker(),
     createRiskMonitorWorker(),
     createEmbeddingsWorker(),
-    createNotificationsWorker()
+    createNotificationsWorker(),
+    createRenewalWorker()
   );
 
   // Attach event handlers to each worker

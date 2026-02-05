@@ -27,51 +27,42 @@ const HEADERS = {
 // WORKER
 // =============================================================================
 
-export const renewalWorker = new Worker(
-  'renewal-processing',
-  async (job: Job) => {
-    const startTime = Date.now();
+export function createRenewalWorker(): Worker {
+  return new Worker(
+    'renewal-processing',
+    async (job: Job) => {
+      const startTime = Date.now();
 
-    try {
-      switch (job.name) {
-        case 'process-batch':
-          await processBatch(job.data as RenewalBatchJobData);
-          break;
-        case 'process-candidate':
-          await processCandidate(job.data as RenewalCandidateJobData);
-          break;
-        default:
-          logger.warn({ jobName: job.name }, 'Unknown renewal job type');
+      try {
+        switch (job.name) {
+          case 'process-batch':
+            await processBatch(job.data as RenewalBatchJobData);
+            break;
+          case 'process-candidate':
+            await processCandidate(job.data as RenewalCandidateJobData);
+            break;
+          default:
+            logger.warn({ jobName: job.name }, 'Unknown renewal job type');
+        }
+      } catch (error) {
+        const elapsed = Date.now() - startTime;
+        logger.error(
+          { jobName: job.name, jobId: job.id, error, elapsed },
+          'Renewal job failed'
+        );
+        throw error; // Re-throw to trigger BullMQ retry
       }
-    } catch (error) {
-      const elapsed = Date.now() - startTime;
-      logger.error(
-        { jobName: job.name, jobId: job.id, error, elapsed },
-        'Renewal job failed'
-      );
-      throw error; // Re-throw to trigger BullMQ retry
-    }
-  },
-  {
-    connection: redis,
-    concurrency: 3,
-    limiter: {
-      max: 10,
-      duration: 60000, // Max 10 jobs per minute (rate limit HawkSoft API)
     },
-  }
-);
-
-renewalWorker.on('completed', (job) => {
-  logger.info({ jobName: job.name, jobId: job.id }, 'Renewal job completed');
-});
-
-renewalWorker.on('failed', (job, err) => {
-  logger.error(
-    { jobName: job?.name, jobId: job?.id, error: err.message },
-    'Renewal job failed'
+    {
+      connection: redis,
+      concurrency: 3,
+      limiter: {
+        max: 10,
+        duration: 60000, // Max 10 jobs per minute (rate limit HawkSoft API)
+      },
+    }
   );
-});
+}
 
 // =============================================================================
 // HELPERS
