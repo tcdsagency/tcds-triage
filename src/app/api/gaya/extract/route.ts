@@ -4,6 +4,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGayaClient } from '@/lib/api/gaya';
 
+export const maxDuration = 120; // Allow up to 2 minutes for PDF extraction
+
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_FILES = 5;
 

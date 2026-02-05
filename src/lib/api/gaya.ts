@@ -13,7 +13,7 @@ import type {
 
 const GAYA_BASE_URL = 'https://live.api.gaya.ai';
 const GAYA_INDUSTRY = 'personal_line_insurance';
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 120_000;
 
 // =============================================================================
 // CLIENT
