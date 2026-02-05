@@ -59,6 +59,14 @@ const COVERAGE_TYPE_LABELS: Record<string, string> = {
   continuous_insurance_discount: 'Continuous Insurance Discount',
   safe_driving_discount: 'Safe Driving Discount',
   paperless_discount: 'Paperless Discount',
+  claim_free_discount: 'Claim Free Discount',
+  auto_pay_discount: 'Auto Pay Discount',
+  mobile_home_discount: 'Mobile Home Discount',
+  senior_discount: 'Senior Discount',
+  good_driver_discount: 'Good Driver Discount',
+  defensive_driver_discount: 'Defensive Driver Discount',
+  association_discount: 'Association Discount',
+  bundle_discount: 'Bundle Discount',
 };
 
 interface ComparisonTableProps {

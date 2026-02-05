@@ -1311,10 +1311,12 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
     const descriptionStr = line.length > 145 ? extractField(line, CVA_FIELDS.DESCRIPTION) : '';
     const premium = parseAL3Number(premiumStr);
     const limitAmount = parseAL3Number(limitStr);
-    // Only parse deductible if it's purely numeric (skip type codes like "G2", "PR")
+    // Parse deductible: extract leading digits, ignore trailing type codes like "G2", "PR"
+    // Format is zero-padded 6 digits (e.g., "000500" = $500)
     const cleanDedStr = deductibleStr.trim();
-    const deductibleAmount = /^\d+$/.test(cleanDedStr) && parseInt(cleanDedStr, 10) > 0
-      ? parseInt(cleanDedStr, 10)
+    const dedDigits = cleanDedStr.match(/^(\d+)/);
+    const deductibleAmount = dedDigits && parseInt(dedDigits[1], 10) > 0
+      ? parseInt(dedDigits[1], 10)
       : undefined;
 
     // Use human-readable description from 6CVA if available

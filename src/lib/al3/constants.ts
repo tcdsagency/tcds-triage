@@ -209,9 +209,18 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'SMP': 'multi_policy_discount',
   'NP2': 'continuous_insurance_discount',
   'NP3': 'continuous_insurance_discount',
+  'NP4': 'continuous_insurance_discount',
   'NP5': 'continuous_insurance_discount',
   'SD3': 'safe_driving_discount',
   'IPP': 'paperless_discount',
+  'CFR': 'claim_free_discount',
+  'PPAYD': 'auto_pay_discount',
+  'DMH': 'mobile_home_discount',
+  'SNRDR': 'senior_discount',
+  'GOODD': 'good_driver_discount',
+  'DFEDR': 'defensive_driver_discount',
+  'ASSOC': 'association_discount',
+  'BUNDL': 'bundle_discount',
 };
 
 /**
@@ -235,6 +244,14 @@ export const DISCOUNT_COVERAGE_TYPES = new Set([
   'account_discount',
   'established_customer',
   'esmart_discount',
+  'claim_free_discount',
+  'auto_pay_discount',
+  'mobile_home_discount',
+  'senior_discount',
+  'good_driver_discount',
+  'defensive_driver_discount',
+  'association_discount',
+  'bundle_discount',
 ]);
 
 // =============================================================================
@@ -287,8 +304,8 @@ export const CVA_FIELDS = {
   COVERAGE_CODE: { start: 30, end: 45 }, // 15 chars (includes filler before code)
   PREMIUM: { start: 60, end: 72 }, // 12 chars (amount with +/- sign, implied 2 decimals)
   LIMIT: { start: 103, end: 113 }, // 10 chars (split limit part 1: per-person, ref 103-112)
-  LIMIT_2: { start: 113, end: 122 }, // 9 chars (split limit part 2: per-accident, ref 113-121)
-  DEDUCTIBLE: { start: 122, end: 131 }, // 9 chars (deductible amount)
+  LIMIT_2: { start: 113, end: 118 }, // 5 chars (split limit part 2: per-accident suffix)
+  DEDUCTIBLE: { start: 118, end: 125 }, // 7 chars (deductible amount, 6 digits zero-padded)
   DESCRIPTION: { start: 145, end: 195 }, // 50 chars (human-readable coverage name)
 } as const;
 
