@@ -322,7 +322,7 @@ export function CommandPalette({
       category: 'action',
       shortcut: 'Cmd+N',
       keywords: ['add', 'create', 'quote', 'proposal'],
-      onSelect: () => router.push('/quotes/new'),
+      onSelect: () => router.push('/quote/new'),
     },
     {
       id: 'action-add-customer',

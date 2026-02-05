@@ -238,7 +238,7 @@ export function KeyboardShortcutsProvider({
       // Cmd+N - New Quote
       if (isModKey && e.key === 'n') {
         e.preventDefault();
-        router.push('/quotes/new');
+        router.push('/quote/new');
         return;
       }
 
