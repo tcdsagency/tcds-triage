@@ -2064,7 +2064,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
     }
 
     // 5. Auto-post note to AgencyZoom for calls with AI summaries
-    // Posts to matched customer OR to NCM (No Customer Match) placeholder for unmatched inbound calls
+    // Posts to matched customer OR to NCM placeholder for unmatched inbound calls (with full transcription)
     if (analysis?.summary) {
       try {
         const [wrapupForPost] = await db
@@ -2097,11 +2097,23 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
               azTargetCustomerId = parseInt(matchedAzCustomerId);
               noteText = `📞 ${direction === "inbound" ? "Inbound" : "Outbound"} Call - ${formattedDate} ${formattedTime}\n\n${analysis.summary}\n\nAgent: ${resolvedAgentName}`;
             } else if (direction === "inbound") {
-              // Unmatched inbound call — post to NCM placeholder with caller details
+              // Unmatched inbound call — post to NCM placeholder with caller details + transcription
               azTargetCustomerId = SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER;
               const callerName = analysis?.extractedData?.customerName || "Unknown Caller";
-              const callerPhone = (direction === "inbound" ? (call.fromNumber || callerNumber) : (call.toNumber || calledNumber)) || "Unknown Number";
-              noteText = `📞 Inbound Call (No Customer Match) - ${formattedDate} ${formattedTime}\n\nCaller: ${callerName}\nPhone: ${callerPhone}\n\n${analysis.summary}\n\nAgent: ${resolvedAgentName}`;
+              const callerPhone = (call.fromNumber || callerNumber) || "Unknown Number";
+              const durationSecs = body.duration || 0;
+
+              noteText = `📞 Inbound Call - ${formattedDate} ${formattedTime}\n\nCaller: ${callerName}\nPhone: ${callerPhone}\nAgent: ${resolvedAgentName}\nDuration: ${durationSecs} seconds\n\nSummary:\n${analysis.summary}`;
+
+              // Add action items if available
+              if (analysis.actionItems && analysis.actionItems.length > 0) {
+                noteText += `\n\nAction Items:\n${analysis.actionItems.map((item: string) => `• ${item}`).join("\n")}`;
+              }
+
+              // Add transcription if available
+              if (transcript && transcript.trim().length > 0) {
+                noteText += `\n\nTranscription:\n${transcript}`;
+              }
             } else {
               // Outbound unmatched — skip (shouldn't happen normally)
               azTargetCustomerId = 0;
