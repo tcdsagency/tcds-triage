@@ -150,9 +150,13 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'COV_D': 'loss_of_use',
   'COV_E': 'personal_liability',
   'COV_F': 'medical_payments_to_others',
-  'LIAB': 'liability',
+  'LIAB': 'personal_liability',
   'PP': 'personal_property',
+  'PPERS': 'personal_property',
   'LOU': 'loss_of_use',
+  'WTRDM': 'water_damage',
+  'ROOF': 'roof_surfaces',
+  'LFREE': 'identity_fraud',
 
   // Commercial coverages
   'GL': 'general_liability',
@@ -182,6 +186,20 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'RFRC': 'roof_replacement_cost',
   'ADDIN': 'additional_insured',
   'OS': 'other_structures',
+
+  // Allstate-specific coverage codes
+  'PL': 'personal_liability',
+  'BSREI': 'building_structures_extended',
+  'TRCYC': 'tropical_cyclone',
+  'ESIGN': 'early_signing_discount',
+  'RESPY': 'responsible_payment_discount',
+  'WELCM': 'welcome_discount',
+  'LOYAL': 'loyalty_discount',
+  'PROTD': 'protective_devices',
+  'ACCT': 'account_discount',
+  'ESTAB': 'established_customer',
+  'ESMRT': 'esmart_discount',
+  'ADDA': 'additional_coverage_a',
 };
 
 // =============================================================================

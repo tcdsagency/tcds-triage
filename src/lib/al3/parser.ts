@@ -94,6 +94,243 @@ function extractField(line: string, pos: { start: number; end: number }): string
 }
 
 /**
+ * Check if a record line uses EDIFACT-style 0xFA field separators (Allstate format).
+ * Only checks after position 28 (past the standard AL3 header area).
+ */
+function isEDIFACTFormat(line: string): boolean {
+  for (let i = 28; i < line.length; i++) {
+    if (line.charCodeAt(i) === 0xFA) return true;
+  }
+  return false;
+}
+
+/**
+ * Parse EDIFACT-style segments from a record line split on 0xFA bytes.
+ * Allstate format: after each 0xFA, segments have a 2-char hex tag, optional space, then data.
+ * Segments may contain embedded sub-records (e.g., multiple 6CVH records packed together).
+ * Truncates segment data at embedded record boundaries.
+ * Returns an array of { tag, data } where:
+ *   - First segment (before first 0xFA) is tagged 'REF'
+ *   - Subsequent segments: strip 2-char hex tag + optional space, clean non-printable/filler chars
+ */
+function parseEDIFACTSegments(line: string): { tag: string; data: string }[] {
+  const segments: { tag: string; data: string }[] = [];
+  // Split on 0xFA
+  const parts: string[] = [];
+  let start = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (line.charCodeAt(i) === 0xFA) {
+      parts.push(line.substring(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(line.substring(start));
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (i === 0) {
+      // First segment is the header/reference area — clean and tag as REF
+      const cleaned = part.replace(/[\x00-\x1F\x7F-\xFF]/g, '').trim();
+      segments.push({ tag: 'REF', data: cleaned });
+    } else {
+      // Clean non-printable chars
+      let data = part.replace(/[\x00-\x1F\x7F-\xFF]/g, '');
+
+      // Truncate at embedded record boundaries: "?<digit><3 uppercase><3 digits>"
+      const boundaryMatch = data.match(/\?\d[A-Z]{3}\d{3}/);
+      if (boundaryMatch && boundaryMatch.index !== undefined) {
+        data = data.substring(0, boundaryMatch.index);
+      }
+
+      // Strip 2-char hex tag at start (e.g., "0E ", "08 ", "1E ")
+      const tagMatch = data.match(/^([0-9A-Fa-f]{2})\s?(.*)/);
+      let tag = '';
+      if (tagMatch) {
+        tag = tagMatch[1].toUpperCase();
+        data = tagMatch[2];
+      }
+
+      // Check if the remaining data IS an embedded record header (after tag strip)
+      if (/^\d[A-Z]{3}\d{3}/.test(data)) {
+        // Mark as embedded sub-record header (used by parseEDIFACTSubRecords)
+        segments.push({ tag: 'SUB', data });
+        continue;
+      }
+
+      // Clean filler characters (? runs)
+      data = data.replace(/\?+/g, '').trim();
+
+      if (data) {
+        segments.push({ tag, data });
+      }
+    }
+  }
+
+  return segments;
+}
+
+/**
+ * Parse multiple EDIFACT sub-records from a single record line.
+ * Allstate packs multiple records into one line separated by group code patterns in segments.
+ * Returns array of { groupCode, coverageCode, segments } for each sub-record found.
+ */
+function parseEDIFACTSubRecords(line: string): { groupCode: string; coverageCode: string; segments: { tag: string; data: string }[] }[] {
+  const allSegments = parseEDIFACTSegments(line);
+  const subRecords: { groupCode: string; coverageCode: string; segments: { tag: string; data: string }[] }[] = [];
+
+  // The REF segment contains the first record's group code and coverage code
+  // Pattern: "6CVH292 8 W100026HRUR10001    MEDPM"
+  // After that, segments may contain new record headers in their data
+  let currentGroupCode = '';
+  let currentCoverageCode = '';
+  let currentSegments: { tag: string; data: string }[] = [];
+
+  for (const seg of allSegments) {
+    if (seg.tag === 'REF' || seg.tag === 'SUB') {
+      // Extract group code and coverage code from REF or SUB (embedded sub-record) header
+      // Pattern: "6CVH292 8 W100026HRUR10001    MEDPM"
+      const headerMatch = seg.data.match(/^(\d[A-Z]{3})\d{3}\s.*?\s{2,}(\S+)\s*$/);
+      if (headerMatch) {
+        // Save previous sub-record if it has data
+        if (currentGroupCode && (currentSegments.length > 0 || seg.tag === 'SUB')) {
+          if (currentSegments.length > 0) {
+            subRecords.push({ groupCode: currentGroupCode, coverageCode: currentCoverageCode, segments: currentSegments });
+          }
+        }
+        currentGroupCode = headerMatch[1];
+        currentCoverageCode = headerMatch[2];
+        currentSegments = [];
+      }
+      continue;
+    }
+
+    currentSegments.push(seg);
+  }
+
+  // Save last sub-record
+  if (currentGroupCode && currentSegments.length > 0) {
+    subRecords.push({ groupCode: currentGroupCode, coverageCode: currentCoverageCode, segments: currentSegments });
+  }
+
+  return subRecords;
+}
+
+/**
+ * Parse Allstate premium format: digits with trailing +/- sign, value in cents.
+ * E.g., "0272689+" → 2726.89, "0005000-" → -50.00
+ */
+function parseAllstatePremium(str: string): number | undefined {
+  const match = str.match(/^0*(\d+)([+-])?$/);
+  if (!match) return undefined;
+  const cents = parseInt(match[1], 10);
+  if (isNaN(cents) || cents === 0) return undefined;
+  const value = cents / 100;
+  return match[2] === '-' ? -value : value;
+}
+
+/**
+ * Parse all EDIFACT-format coverages from a 6CVH or 6CVA record line.
+ * Allstate packs multiple coverage sub-records into a single line.
+ * Each sub-record has: coverage code in header, premium (digits+sign), limit (long digits), description (text).
+ */
+function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
+  const subRecords = parseEDIFACTSubRecords(line);
+  const results: AL3Coverage[] = [];
+
+  for (const sub of subRecords) {
+    // Only process coverage records (6CVH, 6CVA), skip other embedded record types
+    if (sub.groupCode !== '6CVH' && sub.groupCode !== '6CVA') continue;
+    const code = sub.coverageCode;
+    if (!code || code === 'PIF') continue;
+
+    // Skip sub-records that contain embedded transaction data (2TRG/2TCG/5BIS headers
+    // leaked into coverage segments). These produce garbage coverages like "ACCT" with
+    // descriptions that are insured names.
+    const hasEmbeddedTxData = sub.segments.some(s =>
+      /2TRG\d{3}/.test(s.data) || /2TCG\d{3}/.test(s.data) ||
+      /5BIS\d{3}/.test(s.data)
+    );
+    if (hasEmbeddedTxData) continue;
+
+    let premium: number | undefined;
+    let limitAmount: number | undefined;
+    let limitStr: string | undefined;
+    let deductibleAmount: number | undefined;
+    let deductibleStr: string | undefined;
+    let description: string | undefined;
+
+    for (const seg of sub.segments) {
+      const d = seg.data;
+      const t = seg.tag.toUpperCase();
+
+      // Premium: digits with trailing +/- (Allstate cents format)
+      if (premium === undefined && /^\d{4,}[+-]$/.test(d)) {
+        premium = parseAllstatePremium(d);
+        continue;
+      }
+
+      // Limit: tag "1E" with digit-only data (leading zeros, e.g., "00025000")
+      // Standard format: 8 zero-padded digits. Compound: >10 digits = limit + extra.
+      // Short values (<8 digits) occur when records are truncated at field boundaries —
+      // right-pad with zeros to 8 digits (e.g., "0065" → "00650000" → 650,000).
+      if (limitAmount === undefined && t === '1E' && /^0{1,}\d+$/.test(d) && d.length >= 3) {
+        let limitPortion = d;
+        if (limitPortion.length > 10) {
+          limitPortion = limitPortion.substring(0, 8);
+        } else if (limitPortion.length < 8) {
+          limitPortion = limitPortion.padEnd(8, '0');
+        }
+        const cleaned = limitPortion.replace(/^0+/, '') || '0';
+        limitAmount = parseInt(cleaned, 10);
+        limitStr = limitPortion;
+        continue;
+      }
+
+      // Fallback limit: any segment with leading-zero digits if tag 1E wasn't found
+      if (limitAmount === undefined && /^0{2,}\d{4,}$/.test(d) && d.length <= 10) {
+        const cleaned = d.replace(/^0+/, '') || '0';
+        limitAmount = parseInt(cleaned, 10);
+        limitStr = d;
+        continue;
+      }
+
+      // Deductible: shorter numeric segment after limit is found
+      if (deductibleAmount === undefined && limitAmount !== undefined && /^\d{4,8}$/.test(d)) {
+        const val = parseInt(d, 10);
+        if (val > 0 && val !== limitAmount) {
+          deductibleAmount = val;
+          deductibleStr = d;
+        }
+        continue;
+      }
+
+      // Description: text with 3+ alpha chars, prefer lowercase text (human-readable)
+      // Skip embedded transaction references (e.g., "3P PHOME FMGBN0 PL DOWN   ALLSTATE")
+      if (!description && /[a-zA-Z]{3,}/.test(d) && !/^\d+[+-]?$/.test(d) && !/^0{2,}\d/.test(d)) {
+        if (/^[0-9][A-Z]\s/.test(d)) continue; // Embedded reference (e.g., "3P PHOME...")
+        if (/^[A-Z]\d{5,}/.test(d)) continue; // Policy/reference number
+        if (/[a-z]/.test(d) || d.length > 5) {
+          description = d;
+        }
+        continue;
+      }
+    }
+
+    results.push({
+      code,
+      description: description || code,
+      limit: limitStr || undefined,
+      limitAmount,
+      deductible: deductibleStr || undefined,
+      deductibleAmount,
+      premium,
+    });
+  }
+
+  return results;
+}
+
+/**
  * Identify the group code of an AL3 record line.
  */
 function getGroupCode(line: string): string {
@@ -252,7 +489,9 @@ export function parseAL3File(content: string): AL3ParsedTransaction[] {
         // Start new transaction with the same 2TRG header
         currentLines = lastTrgLine ? [lastTrgLine] : [];
       }
-      // Don't add the 2TCG itself to lines — it's just a boundary marker
+      // Include the 2TCG in the new transaction's lines — it contains insured name
+      // and address data in EDIFACT format that supplements the 5BIS record.
+      currentLines.push(line);
     } else if (groupCode === AL3_GROUP_CODES.MASTER_TRAILER) {
       if (inTransaction) {
         currentLines.push(line);
@@ -302,8 +541,52 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
   let currentVehicle: AL3Vehicle | null = null;
   let confidence = 0.7; // Base confidence
 
+  // Allstate EDIFACT: track when we enter an auto section within a home transaction.
+  // Auto sections start with 5ISI followed by 5PPH/6PDR/6PDA and contain 6CVA records.
+  // These auto coverages should be excluded from homeowners transactions.
+  let inAutoSection = false;
+  let hasHomeCoverages = false;
+  // First pass: check if this transaction has any 6CVH (home) records
+  for (const line of lines) {
+    const gc = getGroupCode(line);
+    if (gc === '6CVH') { hasHomeCoverages = true; break; }
+  }
+
   for (const line of lines) {
     const groupCode = getGroupCode(line);
+
+    // Allstate EDIFACT auto section detection: 5ISI followed by auto-specific records
+    // marks the start of an auto section within a home transaction.
+    // 9BIS or 5BPI with HOME LOB resets back to home section.
+    if (hasHomeCoverages) {
+      if (groupCode === '5ISI') {
+        // 5ISI can appear at the start (before home coverages) — only mark as auto
+        // when it appears AFTER home coverage records have been seen
+        const covSoFar = coverages.length;
+        if (covSoFar > 0) {
+          inAutoSection = true;
+        }
+      } else if (groupCode === '5PPH' || groupCode === '6PDR' || groupCode === '6PDA') {
+        // Auto-specific record types confirm we're in auto section
+        if (inAutoSection) { /* stay in auto section */ }
+      } else if (groupCode === '9BIS' || groupCode === '6CVH') {
+        // Home-specific records reset to home section
+        inAutoSection = false;
+      }
+    }
+
+    // Skip auto-specific records when in a home transaction's auto section
+    if (hasHomeCoverages && inAutoSection) {
+      const gc = getGroupCode(line);
+      if (gc === '6CVA' || gc === '5PPH' || gc === '6PDR' || gc === '6PDA' ||
+          gc === '6PVH' || gc === '5DRV' || gc === '5VEH') {
+        continue; // Skip auto records in home transactions
+      }
+      // Also skip 5AOI/9AOI in auto section (auto lienholder, not home mortgagee)
+      if (gc === '5AOI' || gc === '9AOI') {
+        continue;
+      }
+    }
 
     switch (groupCode) {
       case AL3_GROUP_CODES.COVERAGE: {
@@ -381,8 +664,45 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
         if (!header.insuredName && line.length > 20) {
           let nameResult: string | null = null;
 
+          // Attempt 0: EDIFACT (Allstate) — parse 0xFA-delimited segments for name
+          if (isEDIFACTFormat(line)) {
+            const segments = parseEDIFACTSegments(line);
+            // Skip REF, skip entity type (single char like "P" or "C"),
+            // then collect consecutive alpha name parts (first, middle, last)
+            const nameParts: string[] = [];
+            let pastEntityType = false;
+            for (const seg of segments) {
+              if (seg.tag === 'REF') continue;
+              // Entity type is a single char (P, C, G)
+              if (!pastEntityType && /^[PCGIN]$/.test(seg.data)) {
+                pastEntityType = true;
+                continue;
+              }
+              pastEntityType = true;
+              // Stop at non-name segments: numeric, codes, addresses, embedded records
+              if (/^\d+[+-]?$/.test(seg.data)) break;
+              if (/^[A-Z]{1,2}\d{4,}/.test(seg.data)) break;
+              if (/\d/.test(seg.data) && /[a-zA-Z]/.test(seg.data)) break; // address
+              // Name part: alphabetic text
+              if (/^[A-Za-z][A-Za-z .'\-]*$/.test(seg.data)) {
+                // Skip known non-name codes (2 char entity/status codes)
+                if (/^(IN|FL|OUT|SEP|HOS|POT)$/i.test(seg.data)) break;
+                nameParts.push(seg.data.trim());
+              } else if (seg.data.length === 0) {
+                // Empty segment (e.g., suffix) — skip but don't break
+                continue;
+              } else {
+                break; // Non-name segment reached
+              }
+            }
+            if (nameParts.length > 0) {
+              const name = nameParts.filter(p => p.length > 0).join(' ').replace(/\s+/g, ' ').trim();
+              if (name.length > 2) nameResult = name;
+            }
+          }
+
           // Attempt 1: Position-based — try reference positions first, then wider range
-          if (line.length > 63) {
+          if (!nameResult && line.length > 63) {
             const entityType = extractField(line, BIS_FIELDS.ENTITY_TYPE);
 
             if (entityType === 'C' || entityType === 'G') {
@@ -440,27 +760,86 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
             header.insuredName = nameResult;
           }
         }
+
+        // For EDIFACT format: also extract address and embedded policy data from 5BIS
+        // (outside the name guard so address is always extracted even if name came from 2TCG)
+        if (isEDIFACTFormat(line)) {
+          if (!insuredAddress) {
+            const addrResult = parseAllstateAddress(line);
+            if (addrResult) {
+              insuredAddress = addrResult.location;
+              if (!insuredPhone && addrResult.phone) insuredPhone = addrResult.phone;
+            }
+          }
+          // Extract policy number from embedded 5BPI data within 5BIS/5ISI
+          // Pattern: "5BPI...<spaces>POLICYNUMBER"
+          if (!header.policyNumber) {
+            const cleanLine = line.replace(/[\x00-\x1F\x7F-\xFF]/g, ' ');
+            const policyMatch = cleanLine.match(/5BPI\d{3}[^]*?\s{2,}(\d{7,15})\b/);
+            if (policyMatch) header.policyNumber = policyMatch[1];
+          }
+          // Extract LOB and dates from embedded 5BPI data
+          if (!header.lineOfBusiness || !header.effectiveDate) {
+            const cleanLine = line.replace(/[\x00-\x1F\x7F-\xFF]/g, ' ');
+            if (!header.lineOfBusiness) {
+              const lobMatch = cleanLine.match(/\b(HOME|AUTO|FIRE|FLOOD)\b/i);
+              if (lobMatch) header.lineOfBusiness = LOB_CODES[lobMatch[1].toUpperCase()] || lobMatch[1];
+            }
+            // Look for YYMMDDYYMMDD date pairs
+            const dateMatch = cleanLine.match(/(\d{6})(\d{6})\s*$/m) || cleanLine.match(/(\d{6})(\d{6})/);
+            if (dateMatch) {
+              if (!header.effectiveDate) {
+                const yy = parseInt(dateMatch[1].substring(0, 2), 10);
+                const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
+                header.effectiveDate = parseAL3Date(`${yyyy}${dateMatch[1].substring(2)}`);
+              }
+              if (!header.expirationDate) {
+                const yy = parseInt(dateMatch[2].substring(0, 2), 10);
+                const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
+                header.expirationDate = parseAL3Date(`${yyyy}${dateMatch[2].substring(2)}`);
+              }
+            }
+          }
+        }
         break;
       }
 
       case AL3_GROUP_CODES.COVERAGE_VEHICLE: {
         // 6CVA: vehicle-level coverage with premium and limit
-        const cva = parse6LevelCoverage(line, 'vehicle');
-        if (cva) {
-          if (currentVehicle) {
-            currentVehicle.coverages.push(cva);
-          } else {
-            coverages.push(cva);
+        if (isEDIFACTFormat(line)) {
+          // EDIFACT (Allstate): multiple coverages packed in one record line
+          const cvaList = parseEDIFACTHomeCoverages(line);
+          for (const cva of cvaList) {
+            if (currentVehicle) {
+              currentVehicle.coverages.push(cva);
+            } else {
+              coverages.push(cva);
+            }
+          }
+        } else {
+          const cva = parse6LevelCoverage(line, 'vehicle');
+          if (cva) {
+            if (currentVehicle) {
+              currentVehicle.coverages.push(cva);
+            } else {
+              coverages.push(cva);
+            }
           }
         }
         break;
       }
 
       case AL3_GROUP_CODES.COVERAGE_HOME: {
-        // 6CVH: home coverage record (SAFECO)
-        const cvh = parse6LevelCoverage(line, 'home');
-        if (cvh) {
-          coverages.push(cvh);
+        // 6CVH: home coverage record
+        if (isEDIFACTFormat(line)) {
+          // EDIFACT (Allstate): multiple coverages packed in one record line
+          const cvhList = parseEDIFACTHomeCoverages(line);
+          coverages.push(...cvhList);
+        } else {
+          const cvh = parse6LevelCoverage(line, 'home');
+          if (cvh) {
+            coverages.push(cvh);
+          }
         }
         break;
       }
@@ -517,6 +896,49 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
           }
         }
 
+        // EDIFACT (Allstate) branch: extract LOB and dates from segments
+        if (isEDIFACTFormat(line)) {
+          const segments = parseEDIFACTSegments(line);
+          for (const seg of segments) {
+            if (seg.tag === 'REF') continue;
+            // LOB: segment containing HOME/AUTO/FIRE/FLOOD
+            if (!header.lineOfBusiness) {
+              const lobMatch = seg.data.match(/\b(HOME|AUTO|FIRE|FLOOD)\b/i);
+              if (lobMatch) {
+                header.lineOfBusiness = LOB_CODES[lobMatch[1].toUpperCase()] || lobMatch[1];
+              }
+            }
+            // Dates: YYMMDD (6 digits) — first=effective, second=expiration
+            // Also check for combined "YYMMDDYYMMDD" (12 digits) pattern
+            if (!header.effectiveDate || !header.expirationDate) {
+              const combinedMatch = seg.data.match(/(\d{6})(\d{6})/);
+              if (combinedMatch) {
+                if (!header.effectiveDate) {
+                  const yy = parseInt(combinedMatch[1].substring(0, 2), 10);
+                  const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
+                  header.effectiveDate = parseAL3Date(`${yyyy}${combinedMatch[1].substring(2)}`);
+                }
+                if (!header.expirationDate) {
+                  const yy = parseInt(combinedMatch[2].substring(0, 2), 10);
+                  const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
+                  header.expirationDate = parseAL3Date(`${yyyy}${combinedMatch[2].substring(2)}`);
+                }
+              } else if (/^\d{6}$/.test(seg.data)) {
+                const yy = parseInt(seg.data.substring(0, 2), 10);
+                const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
+                const parsed = parseAL3Date(`${yyyy}${seg.data.substring(2)}`);
+                if (parsed) {
+                  if (!header.effectiveDate) {
+                    header.effectiveDate = parsed;
+                  } else if (!header.expirationDate) {
+                    header.expirationDate = parsed;
+                  }
+                }
+              }
+            }
+          }
+        }
+
         // Regex fallback for policy number
         if (!header.policyNumber) {
           const bpiContent = line.substring(7);
@@ -544,9 +966,18 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
 
         if (gc === '9BIS' && !insuredAddress) {
           // 9BIS: Insured address continuation
-          insuredAddress = parseBISAddress(line) ?? undefined;
-          // Extract phone from 9BIS if available
-          if (!insuredPhone && insuredAddress) {
+          // Try EDIFACT (Allstate) first
+          if (isEDIFACTFormat(line)) {
+            const result = parseAllstateAddress(line);
+            if (result) {
+              insuredAddress = result.location;
+              if (!insuredPhone && result.phone) insuredPhone = result.phone;
+            }
+          } else {
+            insuredAddress = parseBISAddress(line) ?? undefined;
+          }
+          // Extract phone from 9BIS if available (position-based fallback)
+          if (!insuredPhone && insuredAddress && !isEDIFACTFormat(line)) {
             const fields = line.length > 130 ? BIS_ADDRESS_FIELDS : BIS_ADDRESS_FIELDS_SHORT;
             const phone = extractField(line, fields.PHONE).replace(/\?+/g, '').trim();
             if (phone && /^\d{7,}$/.test(phone)) {
@@ -559,12 +990,34 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
           if (mortgagee) mortgagees.push(mortgagee);
         } else if (gc === '6COM') {
           // 6COM: Communication record (email, phone)
-          const commType = extractField(line, COM_FIELDS.COMM_TYPE).toUpperCase();
-          const commValue = extractField(line, COM_FIELDS.VALUE).replace(/\?+/g, '').trim();
-          if (commType === 'EMAIL' && commValue && commValue.includes('@')) {
-            insuredEmail = commValue.toLowerCase();
-          } else if ((commType === 'PHONE' || commType === 'CELL') && commValue && /^\d{7,}$/.test(commValue)) {
-            if (!insuredPhone) insuredPhone = commValue;
+          if (isEDIFACTFormat(line)) {
+            // EDIFACT (Allstate): extract type and value from segments
+            const segments = parseEDIFACTSegments(line);
+            let commType = '';
+            let commValue = '';
+            for (const seg of segments) {
+              if (seg.tag === 'REF') continue;
+              if (/\b(EMAIL|PHONE|CELL)\b/i.test(seg.data)) {
+                commType = seg.data.match(/\b(EMAIL|PHONE|CELL)\b/i)?.[1]?.toUpperCase() || '';
+              } else if (seg.data.includes('@')) {
+                commValue = seg.data;
+              } else if (/^\d{10,}$/.test(seg.data)) {
+                commValue = seg.data;
+              }
+            }
+            if (commType === 'EMAIL' && commValue && commValue.includes('@')) {
+              insuredEmail = commValue.toLowerCase();
+            } else if ((commType === 'PHONE' || commType === 'CELL') && commValue && /^\d{7,}$/.test(commValue)) {
+              if (!insuredPhone) insuredPhone = commValue;
+            }
+          } else {
+            const commType = extractField(line, COM_FIELDS.COMM_TYPE).toUpperCase();
+            const commValue = extractField(line, COM_FIELDS.VALUE).replace(/\?+/g, '').trim();
+            if (commType === 'EMAIL' && commValue && commValue.includes('@')) {
+              insuredEmail = commValue.toLowerCase();
+            } else if ((commType === 'PHONE' || commType === 'CELL') && commValue && /^\d{7,}$/.test(commValue)) {
+              if (!insuredPhone) insuredPhone = commValue;
+            }
           }
         } else if (gc === '5RMK') {
           // 5RMK: Remarks — proper parsing + email extraction
@@ -577,10 +1030,93 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
               if (emailMatch) insuredEmail = emailMatch[0].toLowerCase();
             }
           }
+        } else if (gc === '2TCG' && isEDIFACTFormat(line)) {
+          // 2TCG: Transaction Content Group — in Allstate EDIFACT, contains insured name
+          // and address data that supplements (and may be more complete than) the 5BIS record.
+          // Extract name from segments: tag 08=first name, 0A/0B/0C=last name parts
+          if (!header.insuredName || header.insuredName.split(' ').length <= 1) {
+            const segments = parseEDIFACTSegments(line);
+            const nameParts: string[] = [];
+            let pastEntityType = false;
+            for (const seg of segments) {
+              if (seg.tag === 'REF' || seg.tag === 'SUB') continue;
+              // Entity type: single char P, C, F, G
+              if (!pastEntityType && /^[PCFGIN]$/.test(seg.data)) {
+                pastEntityType = true;
+                continue;
+              }
+              pastEntityType = true;
+              // Stop at non-name data
+              if (/^\d+[+-]?$/.test(seg.data)) break;
+              if (/^[A-Z]{1,2}\d{4,}/.test(seg.data)) break;
+              if (/\d/.test(seg.data) && /[a-zA-Z]/.test(seg.data)) break;
+              if (/^(IN|FL|OUT|SEP|HOS|POT)$/i.test(seg.data)) break;
+              // Embedded record header
+              if (/^\d[A-Z]{3}\d{3}/.test(seg.data)) break;
+              if (/^[A-Za-z][A-Za-z .&'\-]*$/.test(seg.data)) {
+                nameParts.push(seg.data.trim());
+              } else if (seg.data.length === 0) {
+                continue;
+              } else {
+                break;
+              }
+            }
+            if (nameParts.length > 0) {
+              const name = nameParts.filter(p => p.length > 0).join(' ').replace(/\s+/g, ' ').trim();
+              if (name.length > 2) header.insuredName = name;
+            }
+          }
         } else if (gc === '5LAG') {
           // 5LAG: Location Address Group — use proper reference positions
           const loc = parseLAGLocation(line);
           if (loc) locations.push(loc);
+        } else if ((gc === '6HRU' || gc === '6FRU') && isEDIFACTFormat(line)) {
+          // 6HRU/6FRU: Home/Fire Underwriting — may contain embedded 5AOI mortgagee data
+          // In Allstate EDIFACT, the mortgagee name is embedded in a segment containing "5AOI"
+          // Pattern: "50?5AOI204 6 R200016HRUR10001    001MG01?CHometown Bank Of Alabama"
+          const rawParts: string[] = [];
+          let partStart = 0;
+          for (let i = 0; i < line.length; i++) {
+            if (line.charCodeAt(i) === 0xFA) {
+              rawParts.push(line.substring(partStart, i));
+              partStart = i + 1;
+            }
+          }
+          rawParts.push(line.substring(partStart));
+
+          for (const part of rawParts) {
+            // Look for segments containing embedded 5AOI with mortgagee data
+            // Pattern: "50?5AOI...001MG01?C<name>" or "50?5AOI...001LP01?C<name>"
+            const aoiMatch = part.match(/5AOI\d{3}[^]*?001([A-Z]{2})01\?([CP])(.+)/);
+            if (aoiMatch) {
+              const interestType = aoiMatch[1]; // MG, LP, etc.
+              let name = aoiMatch[3].replace(/[\x00-\x1F\x7F-\xFF]/g, '').trim();
+              // Clean trailing noise
+              name = name.replace(/\d[A-Z]{3}\d{3}.*$/, '').trim();
+              if (name.length > 2) {
+                mortgagees.push({
+                  interestType,
+                  name,
+                });
+              }
+            }
+          }
+
+          // Also extract loan number from segments with tag "12"
+          // Pattern: "12?40821544 1"
+          if (mortgagees.length > 0) {
+            const lastMortgagee = mortgagees[mortgagees.length - 1];
+            if (!lastMortgagee.loanNumber) {
+              for (const part of rawParts) {
+                const clean = part.replace(/[\x00-\x1F\x7F-\xFF]/g, '').trim();
+                const loanMatch = clean.match(/^12\?(\d{5,})/);
+                if (loanMatch) {
+                  lastMortgagee.loanNumber = loanMatch[1];
+                  break;
+                }
+              }
+            }
+          }
         }
         break;
       }
@@ -589,6 +1125,29 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
 
   // Save last vehicle
   if (currentVehicle) vehicles.push(currentVehicle);
+
+  // Deduplicate coverages (EDIFACT records can produce duplicates from overlapping record splits)
+  const seen = new Set<string>();
+  const uniqueCoverages: AL3Coverage[] = [];
+  for (const c of coverages) {
+    const key = `${c.code}|${c.premium ?? ''}|${c.limitAmount ?? ''}|${c.description ?? ''}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueCoverages.push(c);
+    }
+  }
+
+  // Reclassify LOB: if transaction has auto coverages (6CVA codes like BI, PD, COLL, COMP)
+  // but no home coverages, it's an auto transaction regardless of the header LOB
+  if (!hasHomeCoverages && uniqueCoverages.length > 0) {
+    const autoCodes = new Set(['BI', 'PD', 'COLL', 'COMP', 'UM', 'MEDPM', 'RREIM', 'TL', 'EXTCV']);
+    const hasAutoCode = uniqueCoverages.some(c =>
+      autoCodes.has(c.code.toUpperCase()) || autoCodes.has(c.description?.toUpperCase() || '')
+    );
+    if (hasAutoCode) {
+      header.lineOfBusiness = 'Personal Auto';
+    }
+  }
 
   // Adjust confidence based on data completeness
   if (header.policyNumber && header.transactionType) confidence += 0.1;
@@ -599,7 +1158,7 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
 
   return {
     header,
-    coverages,
+    coverages: uniqueCoverages,
     vehicles,
     drivers,
     locations,
@@ -637,6 +1196,8 @@ function parseTransactionHeader(line: string): AL3TransactionHeader {
   const spaceRun = cleanCarrierName.match(/^(.+?)\s{3,}/);
   if (spaceRun) cleanCarrierName = spaceRun[1].trim();
   if (!cleanCarrierName || /^IBM/i.test(cleanCarrierName)) cleanCarrierName = '';
+  // Fix truncated carrier names from EDIFACT-delimited records
+  if (cleanCarrierName === 'LSTATE') cleanCarrierName = 'ALLSTATE';
 
   // Fallback: try extracting LOB from anywhere in the first 40 chars if position-based failed
   let resolvedLob = LOB_CODES[lobCode] || lobCode || undefined;
@@ -775,7 +1336,8 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       premium: premium ? premium / 100 : undefined, // IVANS premiums are in cents
     };
   } else {
-    // 6CVH: position 60 = primary limit, position 90 = secondary amount
+    // 6CVH: home coverage record (standard position-based for SAFECO etc.)
+    // Note: EDIFACT format is handled separately via parseEDIFACTHomeCoverages in the caller
     const limitStr = extractField(line, CVH_FIELDS.LIMIT);
     const secondaryStr = extractField(line, CVH_FIELDS.SECONDARY_AMOUNT);
     const limitAmount = parseAL3Number(limitStr);
@@ -801,6 +1363,31 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
  * Parse a form/endorsement schedule record (5FOR).
  */
 function parseForm(line: string): AL3Endorsement | null {
+  // EDIFACT (Allstate): extract form number and description from segments
+  if (isEDIFACTFormat(line)) {
+    const segments = parseEDIFACTSegments(line);
+    let formNumber = '';
+    let description = '';
+    for (const seg of segments) {
+      if (seg.tag === 'REF') continue;
+      // Form number: alphanumeric segment (e.g., "A206 AL")
+      if (!formNumber && /[A-Z0-9]/.test(seg.data) && seg.data.length <= 20) {
+        formNumber = seg.data;
+      }
+      // Description: longer text segment
+      if (!description && /[a-zA-Z]{3,}/.test(seg.data) && seg.data.length > formNumber.length) {
+        description = seg.data;
+      }
+    }
+    if (!formNumber && !description) return null;
+    return {
+      code: formNumber || 'FORM',
+      description: description || formNumber || undefined,
+      effectiveDate: undefined,
+      premium: undefined,
+    };
+  }
+
   let formNumber = extractField(line, FOR_FIELDS.FORM_NUMBER);
   let description = extractField(line, FOR_FIELDS.DESCRIPTION);
   if (!formNumber && !description) return null;
@@ -936,6 +1523,115 @@ function parseLAGLocation(line: string): AL3Location | null {
 }
 
 /**
+ * Parse an Allstate EDIFACT-format 9BIS address record.
+ * Segments are 0xFA-delimited with pattern-matched fields.
+ */
+function parseAllstateAddress(line: string): { location: AL3Location; phone?: string } | null {
+  // Split on 0xFA and process segments — look for address data
+  // In 5BIS lines, address data comes after the 9BIS header boundary
+  // In standalone 9BIS lines, address data is in the first few segments
+  const parts: string[] = [];
+  let start = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (line.charCodeAt(i) === 0xFA) {
+      parts.push(line.substring(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(line.substring(start));
+
+  // Clean each part: strip non-printable chars, strip 2-char hex tag, strip ? filler
+  // Track whether we've passed the address section boundary (9BIS header or address-like data)
+  const cleanParts: string[] = [];
+  let foundAddressSection = false;
+  const gc = line.substring(0, 4);
+
+  for (let i = 1; i < parts.length; i++) { // Skip first (REF) part
+    let d = parts[i].replace(/[\x00-\x1F\x7F-\xFF]/g, '');
+    // Strip 2-char hex tag
+    const tagMatch = d.match(/^[0-9A-Fa-f]{2}\s?(.*)/);
+    if (tagMatch) d = tagMatch[1];
+    d = d.replace(/\?+/g, '').trim();
+    if (!d) continue;
+
+    // For 5BIS lines: skip segments until we hit a 9BIS header or address-like data
+    if (gc === '5BIS' && !foundAddressSection) {
+      if (/9BIS\d{3}/.test(d)) {
+        foundAddressSection = true;
+        continue; // Skip the header itself
+      }
+      // Also detect address start: segment with digits + letters (street address)
+      if (/\d/.test(d) && /[a-zA-Z]/.test(d) && d.length > 5 && !/^\d[A-Z]{3}/.test(d)) {
+        foundAddressSection = true;
+        cleanParts.push(d);
+      }
+      continue;
+    }
+
+    // For standalone 9BIS, start parsing immediately
+    if (gc === '9BIS') foundAddressSection = true;
+
+    cleanParts.push(d);
+  }
+
+  let address: string | undefined;
+  let city: string | undefined;
+  let state: string | undefined;
+  let zip: string | undefined;
+  let phone: string | undefined;
+
+  for (const d of cleanParts) {
+    // Skip record headers (e.g., "5ISI203 B B200015BISB10001")
+    if (/^\d[A-Z]{3}\d{3}/.test(d)) break; // Stop at next embedded record
+    // Skip long numeric/code strings
+    if (/^\d{8,}/.test(d) && !/^\d{10}$/.test(d)) continue;
+
+    // State+ZIP: 2 uppercase letters followed by 5 digits (e.g., "AL35033", "AL352156718")
+    if (!state && /^[A-Z]{2}\d{5}/.test(d)) {
+      state = d.substring(0, 2);
+      zip = d.substring(2, 7);
+      // Check for embedded phone: "AL352156718" → zip=35215, phone=6718 (partial)
+      // "AL3509378229065" → zip=35093, phone area embedded
+      if (d.length >= 12) {
+        const phoneCandidate = d.substring(7);
+        if (/^\d{7,10}$/.test(phoneCandidate)) phone = phoneCandidate;
+      }
+      continue;
+    }
+
+    // Phone: exactly 10 digits
+    if (!phone && /^\d{10}$/.test(d)) {
+      phone = d;
+      continue;
+    }
+
+    // Address: contains both digits and letters (street address pattern)
+    if (!address && /\d/.test(d) && /[a-zA-Z]/.test(d) && d.length > 5) {
+      address = d;
+      continue;
+    }
+
+    // City: alphabetic, 3-30 chars
+    if (!city && /^[A-Za-z][A-Za-z .'\-]{2,29}$/.test(d)) {
+      city = d;
+      continue;
+    }
+  }
+
+  if (!address && !city && !state) return null;
+
+  return {
+    location: {
+      address: address || undefined,
+      city: city || undefined,
+      state: state || undefined,
+      zip: zip || undefined,
+    },
+    phone,
+  };
+}
+
+/**
  * Parse a 9BIS insured address continuation record.
  * Two variants: long (343 bytes) and short (168 bytes, Safeco).
  */
@@ -974,6 +1670,43 @@ function parseBISAddress(line: string): AL3Location | null {
  */
 function parseMortgagee(line: string): AL3Mortgagee | null {
   if (line.length < 72) return null;
+
+  // EDIFACT (Allstate): extract from 0xFA-delimited segments
+  if (isEDIFACTFormat(line)) {
+    const segments = parseEDIFACTSegments(line);
+    let interestType: string | undefined;
+    let name: string | undefined;
+    let loanNumber: string | undefined;
+
+    for (const seg of segments) {
+      if (seg.tag === 'REF') continue;
+      // Interest type: 2-char uppercase (LH, MS, CN)
+      if (!interestType && /^[A-Z]{2}$/.test(seg.data)) {
+        interestType = seg.data;
+        continue;
+      }
+      // Loan number: numeric segment
+      if (!loanNumber && /^\d{5,}$/.test(seg.data)) {
+        loanNumber = seg.data;
+        continue;
+      }
+      // Name: alpha segment with 3+ chars
+      if (!name && /[a-zA-Z]{3,}/.test(seg.data) && !/^\d+$/.test(seg.data)) {
+        let n = seg.data;
+        // Strip entity type prefix (C/P)
+        if (/^[CP][A-Z]/.test(n)) n = n.substring(1);
+        name = n.trim();
+        continue;
+      }
+    }
+
+    if (!name) return null;
+    return {
+      interestType,
+      name,
+      loanNumber,
+    };
+  }
 
   let interestType = extractField(line, AOI_FIELDS.INTEREST_TYPE).replace(/\?+/g, '').trim();
   let rawName = extractField(line, AOI_FIELDS.NAME)
