@@ -15,6 +15,7 @@ import type {
   CanonicalClaim,
 } from '@/types/renewal.types';
 import { COVERAGE_CODE_MAP } from './constants';
+import { parseSplitLimit } from './parser';
 
 /**
  * Normalize a carrier-specific coverage code to a canonical type.
@@ -46,14 +47,14 @@ export function buildRenewalSnapshot(
   transaction: AL3ParsedTransaction,
   carrierOverrides?: Record<string, string>
 ): RenewalSnapshot {
-  // Normalize coverages
+  // Normalize coverages — re-parse limitAmount/deductibleAmount with split-limit awareness
   const coverages: CanonicalCoverage[] = transaction.coverages.map((cov) => ({
     type: normalizeCoverageType(cov.code, carrierOverrides),
     description: cov.description || cov.code,
     limit: cov.limit,
-    limitAmount: cov.limitAmount,
+    limitAmount: parseSplitLimit(cov.limit || '') ?? cov.limitAmount,
     deductible: cov.deductible,
-    deductibleAmount: cov.deductibleAmount,
+    deductibleAmount: parseSplitLimit(cov.deductible || '') ?? cov.deductibleAmount,
     premium: cov.premium,
   }));
 
@@ -68,9 +69,9 @@ export function buildRenewalSnapshot(
       type: normalizeCoverageType(cov.code, carrierOverrides),
       description: cov.description || cov.code,
       limit: cov.limit,
-      limitAmount: cov.limitAmount,
+      limitAmount: parseSplitLimit(cov.limit || '') ?? cov.limitAmount,
       deductible: cov.deductible,
-      deductibleAmount: cov.deductibleAmount,
+      deductibleAmount: parseSplitLimit(cov.deductible || '') ?? cov.deductibleAmount,
       premium: cov.premium,
     })),
   }));

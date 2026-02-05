@@ -17,6 +17,7 @@ import type {
   PropertyContext,
 } from '@/types/renewal.types';
 import { COVERAGE_CODE_MAP } from './constants';
+import { parseSplitLimit } from './parser';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
 
 // =============================================================================
@@ -71,9 +72,9 @@ export function normalizeHawkSoftCoverages(
       type: canonicalType || '',
       description: cov.description || '',
       limit: limitStr || undefined,
-      limitAmount: parseFloat(limitStr.replace(/[^0-9.-]/g, '')) || undefined,
+      limitAmount: parseSplitLimit(limitStr),
       deductible: dedStr || undefined,
-      deductibleAmount: dedStr ? parseFloat(dedStr.replace(/[^0-9.-]/g, '')) || undefined : undefined,
+      deductibleAmount: parseSplitLimit(dedStr),
       premium: isNaN(premiumVal as number) ? undefined : premiumVal,
     };
   });

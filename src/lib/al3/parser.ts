@@ -75,6 +75,23 @@ export function parseAL3Number(str: string): number | undefined {
 }
 
 /**
+ * Parse a limit string that may contain split limits (e.g., "250,000/500,000"
+ * for per-person/per-accident, or "50/1,500" for per-day/per-occurrence).
+ * Returns the numeric value of the first (per-person) part only to enable
+ * consistent comparison between HawkSoft and AL3 data.
+ */
+export function parseSplitLimit(str: string): number | undefined {
+  if (!str) return undefined;
+  const trimmed = str.trim();
+  // Split on "/" and take the first part
+  const firstPart = trimmed.split('/')[0];
+  const cleaned = firstPart.replace(/[^0-9.-]/g, '');
+  if (!cleaned) return undefined;
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? undefined : (num || undefined);
+}
+
+/**
  * Extract a fixed-width field from a line.
  * Truncates at field separators (EDIFACT control chars) used by some carriers.
  */
