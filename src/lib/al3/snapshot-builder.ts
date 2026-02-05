@@ -87,6 +87,19 @@ export function buildRenewalSnapshot(
     isExcluded: drv.isExcluded,
   }));
 
+  // Flatten vehicle-level coverages into policy-level when empty (e.g. Progressive auto)
+  if (coverages.length === 0 && vehicles.length > 0) {
+    const seen = new Map<string, CanonicalCoverage>();
+    for (const veh of vehicles) {
+      for (const cov of veh.coverages) {
+        if (cov.type && !seen.has(cov.type)) {
+          seen.set(cov.type, cov);
+        }
+      }
+    }
+    coverages.push(...seen.values());
+  }
+
   // Calculate total premium
   let totalPremium: number | undefined;
   const allCoveragePremiums = [
