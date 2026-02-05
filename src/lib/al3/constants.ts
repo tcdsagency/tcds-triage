@@ -207,6 +207,7 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'HON': 'homeowner_discount',
   'MC1': 'multi_car_discount',
   'SMP': 'multi_policy_discount',
+  'NP2': 'continuous_insurance_discount',
   'NP3': 'continuous_insurance_discount',
   'NP5': 'continuous_insurance_discount',
   'SD3': 'safe_driving_discount',

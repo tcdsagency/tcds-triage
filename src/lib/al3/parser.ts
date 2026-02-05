@@ -1311,7 +1311,11 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
     const descriptionStr = line.length > 145 ? extractField(line, CVA_FIELDS.DESCRIPTION) : '';
     const premium = parseAL3Number(premiumStr);
     const limitAmount = parseAL3Number(limitStr);
-    const deductibleAmount = parseAL3Number(deductibleStr);
+    // Only parse deductible if it's purely numeric (skip type codes like "G2", "PR")
+    const cleanDedStr = deductibleStr.trim();
+    const deductibleAmount = /^\d+$/.test(cleanDedStr) && parseInt(cleanDedStr, 10) > 0
+      ? parseInt(cleanDedStr, 10)
+      : undefined;
 
     // Use human-readable description from 6CVA if available
     const cleanDesc = descriptionStr
@@ -1347,37 +1351,25 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
     }
 
     // RREIM/RENT: rental reimbursement is daily/max format
-    // AL3 stores as "0000050000" (raw = 50000) but HawkSoft stores "50/1,500"
-    // Parse as: first digits = daily amount, remainder = max amount
+    // AL3 stores as "0000050000" which parses to 50000
+    // HawkSoft stores "50/1,500" (daily=$50, max=$1500)
+    // Common patterns: value/1000 = daily, daily*30 = max (30-day coverage)
     if ((upperCode === 'RREIM' || upperCode === 'RENT') && limitAmount) {
-      const rawLimit = (limitStr || '').replace(/[^0-9]/g, '');
-      if (rawLimit.length >= 5) {
-        // Typical format: "0000050000" → daily=50, max=1500
-        // or "0050001500" → daily=50, max=1500
-        const cleaned = parseInt(rawLimit, 10);
-        if (cleaned >= 1000) {
-          // Parse as combined: try splitting at common daily amounts (25, 30, 40, 50, 75, 100)
-          const dailyAmounts = [100, 75, 50, 40, 30, 25];
-          let daily: number | undefined;
-          let max: number | undefined;
-          for (const d of dailyAmounts) {
-            if (cleaned % d === 0 || String(cleaned).startsWith(String(d))) {
-              const remainder = String(cleaned).substring(String(d).length);
-              const m = parseInt(remainder, 10);
-              if (m > 0 && m > d) {
-                daily = d;
-                max = m;
-                break;
-              }
-            }
-          }
-          if (daily && max) {
-            displayLimit = `${daily}/${max}`;
-            finalLimitAmount = daily;
-          }
-        } else {
-          // Small value = daily amount only
-          finalLimitAmount = cleaned;
+      // If value >= 1000 and divisible by 1000, treat as daily*1000 encoding
+      if (limitAmount >= 1000 && limitAmount % 1000 === 0) {
+        const daily = limitAmount / 1000;
+        const max = daily * 30; // Standard 30-day rental coverage
+        displayLimit = `${daily}/${max}`;
+        finalLimitAmount = daily;
+      } else if (limitAmount >= 100) {
+        // Could be raw daily amount (e.g., 50 → $50/day)
+        // or max amount (e.g., 1500 → $1500 max)
+        // If < 200, assume daily; if >= 200, assume needs interpretation
+        if (limitAmount < 200) {
+          const daily = limitAmount;
+          const max = daily * 30;
+          displayLimit = `${daily}/${max}`;
+          finalLimitAmount = daily;
         }
       }
     }
