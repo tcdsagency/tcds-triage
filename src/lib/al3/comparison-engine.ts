@@ -22,6 +22,35 @@ import type {
 import { DEFAULT_COMPARISON_THRESHOLDS } from '@/types/renewal.types';
 
 // =============================================================================
+// HELPERS
+// =============================================================================
+
+/**
+ * Collect all coverages from both policy-level and vehicle-level.
+ * For auto policies, HawkSoft returns coverages at the policy level while
+ * AL3 puts them at the vehicle level. This flattens both into a single list,
+ * deduplicating by coverage type (keeps first occurrence per type).
+ */
+function collectAllCoverages(
+  policyCoverages: CanonicalCoverage[],
+  vehicles: CanonicalVehicle[]
+): CanonicalCoverage[] {
+  // If policy-level coverages exist, use those (they already include everything)
+  if (policyCoverages.length > 0) return policyCoverages;
+
+  // Otherwise, flatten vehicle-level coverages and deduplicate by type
+  const seen = new Map<string, CanonicalCoverage>();
+  for (const vehicle of vehicles) {
+    for (const cov of vehicle.coverages || []) {
+      if (cov.type && !seen.has(cov.type)) {
+        seen.set(cov.type, cov);
+      }
+    }
+  }
+  return Array.from(seen.values());
+}
+
+// =============================================================================
 // MAIN COMPARISON
 // =============================================================================
 
@@ -38,8 +67,14 @@ export function compareSnapshots(
   // Compare premium
   allChanges.push(...comparePremium(renewal.premium, baseline.premium, thresholds));
 
+  // For auto policies, coverages may live at the vehicle level in one snapshot
+  // but at the policy level in the other. Flatten vehicle coverages into a
+  // unified list so the comparison can match them properly.
+  const renewalCoverages = collectAllCoverages(renewal.coverages, renewal.vehicles);
+  const baselineCoverages = collectAllCoverages(baseline.coverages, baseline.vehicles);
+
   // Compare coverages
-  allChanges.push(...compareCoverages(renewal.coverages, baseline.coverages, thresholds));
+  allChanges.push(...compareCoverages(renewalCoverages, baselineCoverages, thresholds));
 
   // Compare vehicles
   allChanges.push(...compareVehicles(renewal.vehicles, baseline.vehicles));
