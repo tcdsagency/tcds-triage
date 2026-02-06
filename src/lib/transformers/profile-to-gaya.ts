@@ -43,16 +43,16 @@ function buildCustomerEntity(profile: MergedProfile): GayaEntity {
   addField(fields, 'first_name', profile.firstName);
   addField(fields, 'last_name', profile.lastName);
   addField(fields, 'email', profile.contact?.email);
-  addField(fields, 'phone', profile.contact?.phone);
-  addField(fields, 'mobile_phone', profile.contact?.mobilePhone);
+  addField(fields, 'phone_number', profile.contact?.phone);
+  addField(fields, 'mobile_phone_number', profile.contact?.mobilePhone);
   addField(fields, 'date_of_birth', formatDate(profile.dateOfBirth));
 
   // Address
   if (profile.address) {
-    addField(fields, 'street_address', profile.address.street);
+    addField(fields, 'address_line_1', profile.address.street);
     addField(fields, 'city', profile.address.city);
     addField(fields, 'state', profile.address.state);
-    addField(fields, 'zip', profile.address.zip);
+    addField(fields, 'zip_code', profile.address.zip);
   }
 
   return {
@@ -62,39 +62,10 @@ function buildCustomerEntity(profile: MergedProfile): GayaEntity {
   };
 }
 
-function buildHouseholdEntities(profile: MergedProfile): GayaEntity[] {
-  if (!profile.household?.length) return [];
-
-  const entities: GayaEntity[] = [];
-  let index = 1;
-
-  for (const member of profile.household) {
-    // Skip primary contact (already in customer entity)
-    const isPrimary =
-      member.firstName === profile.firstName &&
-      member.lastName === profile.lastName;
-    if (isPrimary) continue;
-
-    const fields: GayaField[] = [];
-    addField(fields, 'first_name', member.firstName);
-    addField(fields, 'last_name', member.lastName);
-    addField(fields, 'relationship', member.relationship);
-    addField(fields, 'date_of_birth', formatDate(member.dateOfBirth));
-    addField(fields, 'email', member.email);
-    addField(fields, 'phone', member.phone);
-    addField(fields, 'license_number', member.licenseNumber);
-    addField(fields, 'license_state', member.licenseState);
-
-    if (fields.length > 0) {
-      entities.push({
-        entity: GAYA_ENTITY_TYPES.HOUSEHOLD,
-        index: index++,
-        fields,
-      });
-    }
-  }
-
-  return entities;
+// NOTE: household_member entity is not supported by Gaya's clipboard creation API
+// Household data is only returned during PDF extraction, not accepted for creation
+function buildHouseholdEntities(_profile: MergedProfile): GayaEntity[] {
+  return [];
 }
 
 function buildVehicleEntities(profile: MergedProfile): GayaEntity[] {
@@ -110,8 +81,8 @@ function buildVehicleEntities(profile: MergedProfile): GayaEntity[] {
       addField(fields, 'make', vehicle.make);
       addField(fields, 'model', vehicle.model);
       addField(fields, 'vin', vehicle.vin);
-      addField(fields, 'use', vehicle.use);
-      addField(fields, 'annual_miles', vehicle.annualMiles);
+      // 'use' field not supported by Gaya API
+      addField(fields, 'annual_mileage', vehicle.annualMiles);
 
       if (fields.length > 0) {
         entities.push({
@@ -137,18 +108,18 @@ function buildPropertyEntities(profile: MergedProfile): GayaEntity[] {
     const fields: GayaField[] = [];
 
     if (prop.address) {
-      addField(fields, 'street_address', prop.address.street);
+      addField(fields, 'address_line_1', prop.address.street);
       addField(fields, 'city', prop.address.city);
       addField(fields, 'state', prop.address.state);
-      addField(fields, 'zip', prop.address.zip);
+      addField(fields, 'zip_code', prop.address.zip);
     }
 
     addField(fields, 'year_built', prop.yearBuilt);
-    addField(fields, 'square_feet', prop.squareFeet);
-    addField(fields, 'stories', prop.stories);
+    addField(fields, 'square_footage', prop.squareFeet);
+    addField(fields, 'number_of_stories', prop.stories);
     addField(fields, 'construction_type', prop.constructionType);
     addField(fields, 'roof_type', prop.roofType);
-    addField(fields, 'roof_age', prop.roofAge);
+    addField(fields, 'roof_year', prop.roofAge);
     addField(fields, 'heating_type', prop.heatingType);
     addField(fields, 'protection_class', prop.protectionClass);
 
@@ -167,18 +138,34 @@ function buildPropertyEntities(profile: MergedProfile): GayaEntity[] {
 function buildPolicyEntity(policy: Policy, entityType: string, index: number): GayaEntity | null {
   const fields: GayaField[] = [];
 
-  addField(fields, 'carrier', policy.carrier?.name);
+  addField(fields, 'carrier_name', policy.carrier?.name);
   addField(fields, 'policy_number', policy.policyNumber);
-  addField(fields, 'effective_date', formatDate(policy.effectiveDate));
-  addField(fields, 'expiration_date', formatDate(policy.expirationDate));
-  addField(fields, 'premium', formatCurrency(policy.premium));
+  addField(fields, 'policy_effective_date', formatDate(policy.effectiveDate));
+  addField(fields, 'policy_expiration_date', formatDate(policy.expirationDate));
+  addField(fields, 'annual_premium', formatCurrency(policy.premium));
 
-  // Add coverages
+  // Add coverages - use Gaya's standard coverage field names
+  // Note: Dynamic coverage field names may not be supported by Gaya
+  // Only include well-known coverage types with standardized names
   if (policy.coverages?.length) {
     for (const cov of policy.coverages) {
-      const covName = cov.type.toLowerCase().replace(/\s+/g, '_');
-      if (cov.limit) addField(fields, `${covName}_limit`, cov.limit);
-      if (cov.deductible) addField(fields, `${covName}_deductible`, cov.deductible);
+      const covType = cov.type.toLowerCase();
+      // Map to Gaya-compatible coverage names (skip if not a known mapping)
+      const covMapping: Record<string, { limit?: string; deductible?: string }> = {
+        'bodily injury': { limit: 'bodily_injury_liability' },
+        'property damage': { limit: 'property_damage_liability' },
+        'uninsured motorist': { limit: 'uninsured_motorist' },
+        'comprehensive': { deductible: 'comprehensive_deductible' },
+        'collision': { deductible: 'collision_deductible' },
+        'dwelling': { limit: 'dwelling_coverage' },
+        'personal property': { limit: 'personal_property_coverage' },
+        'liability': { limit: 'liability_coverage' },
+      };
+      const mapping = covMapping[covType];
+      if (mapping) {
+        if (mapping.limit && cov.limit) addField(fields, mapping.limit, cov.limit);
+        if (mapping.deductible && cov.deductible) addField(fields, mapping.deductible, cov.deductible);
+      }
     }
   }
 
@@ -245,7 +232,8 @@ export function transformProfileToGayaEntities(profile: MergedProfile): Transfor
     ...buildHouseholdEntities(profile),
     ...buildVehicleEntities(profile),
     ...buildPropertyEntities(profile),
-    ...buildPolicyEntities(profile),
+    // Policy entities disabled - Gaya doesn't accept auto_policy/home_policy for clipboard creation
+    // ...buildPolicyEntities(profile),
   ];
 
   return {
