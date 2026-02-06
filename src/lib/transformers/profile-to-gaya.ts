@@ -47,9 +47,9 @@ function buildCustomerEntity(profile: MergedProfile): GayaEntity {
   addField(fields, 'mobile_phone_number', profile.contact?.mobilePhone);
   addField(fields, 'date_of_birth', formatDate(profile.dateOfBirth));
 
-  // Address
+  // Address - street field disabled (Gaya rejects all variations: address, street_address, address_line_1)
   if (profile.address) {
-    addField(fields, 'address_line_1', profile.address.street);
+    // addField(fields, 'address_line_1', profile.address.street); // Gaya rejects this
     addField(fields, 'city', profile.address.city);
     addField(fields, 'state', profile.address.state);
     addField(fields, 'zip_code', profile.address.zip);
@@ -108,7 +108,7 @@ function buildPropertyEntities(profile: MergedProfile): GayaEntity[] {
     const fields: GayaField[] = [];
 
     if (prop.address) {
-      addField(fields, 'address_line_1', prop.address.street);
+      // addField(fields, 'address_line_1', prop.address.street); // Gaya rejects this
       addField(fields, 'city', prop.address.city);
       addField(fields, 'state', prop.address.state);
       addField(fields, 'zip_code', prop.address.zip);
