@@ -5,12 +5,23 @@ node_modules/
 .next/
 out/
 
-# Environment
-.env*.local
+# Environment - NEVER commit secrets
 .env
+.env.*
+.env*.local
+**/.env
+**/.env.*
+**/.env.production
+**/.env.local
+!**/.env.example
 
 # Vercel
 .vercel
+
+# Temporary files with potential secrets
+*.temp
+tmp_*.json
+tmp_*.txt
 
 # IDE
 .idea/
