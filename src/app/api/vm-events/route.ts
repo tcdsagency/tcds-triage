@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { calls, pendingVmEvents, pendingTranscriptJobs, users } from "@/db/schema";
+import { calls, customers, pendingVmEvents, pendingTranscriptJobs, users } from "@/db/schema";
 import { eq, lt, and, or, gt, desc, sql } from "drizzle-orm";
 
 // =============================================================================
@@ -348,6 +348,35 @@ export async function POST(request: NextRequest) {
               .limit(1);
 
             const isOutbound = direction === "outbound";
+            const customerPhone = isOutbound ? externalNumber : externalNumber;
+
+            // Look up customer by phone number
+            let customerId: string | null = null;
+            if (customerPhone) {
+              try {
+                const phoneDigits = customerPhone.replace(/\D/g, "").slice(-10);
+                const [customer] = await db
+                  .select({ id: customers.id })
+                  .from(customers)
+                  .where(
+                    and(
+                      eq(customers.tenantId, tenantId),
+                      or(
+                        sql`${customers.phone} LIKE ${'%' + phoneDigits}`,
+                        sql`${customers.phoneAlt} LIKE ${'%' + phoneDigits}`
+                      )
+                    )
+                  )
+                  .limit(1);
+                if (customer) {
+                  customerId = customer.id;
+                  console.log(`[VM Events] Matched customer ${customerId} for phone ${phoneDigits}`);
+                }
+              } catch (err) {
+                console.error(`[VM Events] Customer lookup failed:`, err);
+              }
+            }
+
             const [newCall] = await db
               .insert(calls)
               .values({
@@ -361,6 +390,7 @@ export async function POST(request: NextRequest) {
                 status: "in_progress",
                 transcriptionStatus: "active",
                 agentId: agent?.id || null,
+                customerId: customerId,
                 startedAt: new Date(),
                 answeredAt: new Date(),
               })
