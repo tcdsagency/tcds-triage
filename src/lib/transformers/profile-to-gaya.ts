@@ -44,12 +44,12 @@ function buildCustomerEntity(profile: MergedProfile): GayaEntity {
   addField(fields, 'last_name', profile.lastName);
   addField(fields, 'email', profile.contact?.email);
   addField(fields, 'phone_number', profile.contact?.phone);
-  addField(fields, 'mobile_phone_number', profile.contact?.mobilePhone);
+  addField(fields, 'mobile_phone', profile.contact?.mobilePhone);
   addField(fields, 'date_of_birth', formatDate(profile.dateOfBirth));
 
-  // Address - street field disabled (Gaya rejects all variations: address, street_address, address_line_1)
+  // Address
   if (profile.address) {
-    // addField(fields, 'address_line_1', profile.address.street); // Gaya rejects this
+    addField(fields, 'address_1', profile.address.street);
     addField(fields, 'city', profile.address.city);
     addField(fields, 'state', profile.address.state);
     addField(fields, 'zip_code', profile.address.zip);
@@ -81,8 +81,7 @@ function buildVehicleEntities(profile: MergedProfile): GayaEntity[] {
       addField(fields, 'make', vehicle.make);
       addField(fields, 'model', vehicle.model);
       addField(fields, 'vin', vehicle.vin);
-      // 'use' field not supported by Gaya API
-      addField(fields, 'annual_mileage', vehicle.annualMiles);
+      addField(fields, 'annual_miles', vehicle.annualMiles);
 
       // Add vehicle-level coverages (comp/coll deductibles)
       if (vehicle.coverages?.length) {
@@ -156,7 +155,7 @@ function buildPropertyEntities(profile: MergedProfile): GayaEntity[] {
     const fields: GayaField[] = [];
 
     if (prop.address) {
-      // addField(fields, 'address_line_1', prop.address.street); // Gaya rejects this
+      addField(fields, 'address_1', prop.address.street);
       addField(fields, 'city', prop.address.city);
       addField(fields, 'state', prop.address.state);
       addField(fields, 'zip_code', prop.address.zip);
