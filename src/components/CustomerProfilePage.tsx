@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { toast } from "sonner";
 import DOMPurify from "isomorphic-dompurify";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -230,12 +231,22 @@ export default function CustomerProfilePage() {
       const data = await res.json();
       if (data.success) {
         setGayaSuccess(true);
+        toast.success('Successfully sent to Gaya!', {
+          description: `${policy.carrier?.name || 'Policy'} - ${policy.policyNumber}`,
+          duration: 5000,
+        });
         setTimeout(() => setGayaSuccess(false), 3000);
       } else {
-        alert(data.error || 'Failed to send to Gaya');
+        toast.error('Failed to send to Gaya', {
+          description: data.error || 'Unknown error occurred',
+          duration: 5000,
+        });
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to send to Gaya');
+      toast.error('Failed to send to Gaya', {
+        description: err.message || 'Network error',
+        duration: 5000,
+      });
     } finally {
       setSendingToGaya(false);
     }

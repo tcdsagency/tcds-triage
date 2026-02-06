@@ -84,6 +84,18 @@ function buildVehicleEntities(profile: MergedProfile): GayaEntity[] {
       // 'use' field not supported by Gaya API
       addField(fields, 'annual_mileage', vehicle.annualMiles);
 
+      // Add vehicle-level coverages (comp/coll deductibles)
+      if (vehicle.coverages?.length) {
+        for (const cov of vehicle.coverages) {
+          const covType = cov.type.toLowerCase();
+          if (covType.includes('comprehensive') || covType === 'comp') {
+            addField(fields, 'comprehensive_deductible', cov.deductible);
+          } else if (covType.includes('collision') || covType === 'coll') {
+            addField(fields, 'collision_deductible', cov.deductible);
+          }
+        }
+      }
+
       if (fields.length > 0) {
         entities.push({
           entity: GAYA_ENTITY_TYPES.CAR,
