@@ -379,7 +379,13 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
     });
     const compareData = await compareRes.json() as {
       success: boolean;
-      result: { recommendation: string; materialChanges: any[]; summary: any };
+      result: {
+        recommendation: string;
+        materialChanges: any[];
+        summary: any;
+        baselineStatus?: 'prior_term' | 'current_term' | 'unknown';
+        baselineStatusReason?: string;
+      };
     };
     if (!compareData.success) {
       await patchCandidate(candidateId, { status: 'failed', errorMessage: 'Comparison engine failed' });
