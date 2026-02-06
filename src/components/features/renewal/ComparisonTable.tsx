@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronRight, AlertTriangle, Car } from 'lucide-react';
-import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle, CanonicalDiscount, CanonicalClaim, PropertyContext } from '@/types/renewal.types';
+import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle, CanonicalDriver, CanonicalDiscount, CanonicalClaim, PropertyContext } from '@/types/renewal.types';
 
 // Human-readable labels for coverage types
 const COVERAGE_TYPE_LABELS: Record<string, string> = {
@@ -71,12 +71,18 @@ interface ComparisonTableProps {
   renewalSnapshot: RenewalSnapshot | null;
   baselineSnapshot: BaselineSnapshot | null;
   materialChanges: MaterialChange[];
+  renewalEffectiveDate?: string | null;
+  carrierName?: string | null;
+  policyNumber?: string | null;
 }
 
 export default function ComparisonTable({
   renewalSnapshot,
   baselineSnapshot,
   materialChanges,
+  renewalEffectiveDate,
+  carrierName,
+  policyNumber,
 }: ComparisonTableProps) {
   const [expandedVehicles, setExpandedVehicles] = useState<Set<string>>(new Set(['all']));
   const [showDiscounts, setShowDiscounts] = useState(true);
@@ -107,6 +113,28 @@ export default function ComparisonTable({
 
   return (
     <div className="space-y-4">
+      {/* Policy Header with Renewal Date */}
+      {renewalEffectiveDate && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              {carrierName && (
+                <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">{carrierName}</div>
+              )}
+              {policyNumber && (
+                <div className="text-xs text-blue-500 dark:text-blue-500">Policy #{policyNumber}</div>
+              )}
+            </div>
+            <div className="text-right">
+              <div className="text-sm text-blue-600 dark:text-blue-400">Renewal Effective</div>
+              <div className="text-xl font-bold text-blue-700 dark:text-blue-300">
+                {formatDate(renewalEffectiveDate)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Premium Summary */}
       <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
         <div className="flex items-center justify-between">
@@ -154,6 +182,15 @@ export default function ComparisonTable({
         ))}
       </div>
 
+      {/* Drivers Section */}
+      {(baselineSnapshot?.drivers?.length || renewalSnapshot?.drivers?.length) ? (
+        <DriversSection
+          baselineDrivers={baselineSnapshot?.drivers}
+          renewalDrivers={renewalSnapshot?.drivers}
+          materialByField={materialByField}
+        />
+      ) : null}
+
       {/* Discounts Section */}
       {(baselineSnapshot?.discounts?.length || renewalSnapshot?.discounts?.length) ? (
         <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
@@ -184,6 +221,7 @@ export default function ComparisonTable({
 interface VehicleData {
   vin: string;
   label: string;
+  vinSuffix: string; // Last 4 of VIN for disambiguation
   baseline?: CanonicalVehicle;
   renewal?: CanonicalVehicle;
   isRemoved: boolean;
@@ -205,11 +243,13 @@ function VehicleCard({
   onToggle: () => void;
   materialByField: Map<string, MaterialChange>;
 }) {
-  const { baseline, renewal, isRemoved, isAdded, label } = vehicle;
+  const { baseline, renewal, isRemoved, isAdded, label, vinSuffix } = vehicle;
 
-  // Merge policy-level and vehicle-level coverages for comparison
-  const baselineCovs = mergeCoverages(baselinePolicyCovs, baseline?.coverages || []);
-  const renewalCovs = mergeCoverages(renewalPolicyCovs, renewal?.coverages || []);
+  // For removed vehicles: only show baseline coverages (no renewal data)
+  // For added vehicles: only show renewal coverages (no baseline data)
+  // For matched vehicles: merge both policy-level and vehicle-level coverages
+  const baselineCovs = isAdded ? [] : mergeCoverages(baselinePolicyCovs, baseline?.coverages || []);
+  const renewalCovs = isRemoved ? [] : mergeCoverages(renewalPolicyCovs, renewal?.coverages || []);
 
   // Build coverage comparison rows
   const coverageRows = buildCoverageRows(baselineCovs, renewalCovs);
@@ -248,6 +288,7 @@ function VehicleCard({
               'text-gray-900 dark:text-gray-100'
             )}>
               {label}
+              {vinSuffix && <span className="ml-2 text-xs text-gray-400 font-normal">(...{vinSuffix})</span>}
             </div>
             {(isRemoved || isAdded) && (
               <div className={cn(
@@ -280,19 +321,25 @@ function VehicleCard({
             <thead>
               <tr className="bg-gray-100 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400">
                 <th className="text-left px-4 py-2 font-medium">Coverage</th>
-                <th className="text-right px-3 py-2 font-medium w-20">Current</th>
-                <th className="text-right px-3 py-2 font-medium w-20">Renewal</th>
+                {!isAdded && <th className="text-right px-3 py-2 font-medium w-20">Current</th>}
+                {!isRemoved && <th className="text-right px-3 py-2 font-medium w-20">Renewal</th>}
                 <th className="text-center px-3 py-2 font-medium w-24">Limit</th>
                 <th className="text-center px-3 py-2 font-medium w-20">Deductible</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {coverageRows.map((row) => (
-                <CoverageRow key={row.type} row={row} materialByField={materialByField} />
+                <CoverageRowSimple
+                  key={row.type}
+                  row={row}
+                  vehicleRemoved={isRemoved}
+                  vehicleAdded={isAdded}
+                  materialByField={materialByField}
+                />
               ))}
               {coverageRows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-3 text-center text-gray-500 dark:text-gray-400 italic">
+                  <td colSpan={isRemoved || isAdded ? 4 : 5} className="px-4 py-3 text-center text-gray-500 dark:text-gray-400 italic">
                     No coverage data available
                   </td>
                 </tr>
@@ -318,7 +365,17 @@ interface CoverageRowData {
   isAdded: boolean;
 }
 
-function CoverageRow({ row, materialByField }: { row: CoverageRowData; materialByField: Map<string, MaterialChange> }) {
+function CoverageRowSimple({
+  row,
+  vehicleRemoved,
+  vehicleAdded,
+  materialByField,
+}: {
+  row: CoverageRowData;
+  vehicleRemoved: boolean;
+  vehicleAdded: boolean;
+  materialByField: Map<string, MaterialChange>;
+}) {
   const { type, label, baseline, renewal, isRemoved, isAdded } = row;
   const mc = materialByField.get(`coverage.${type}`) || materialByField.get(`coverage.${type}.limit`);
 
@@ -328,44 +385,51 @@ function CoverageRow({ row, materialByField }: { row: CoverageRowData; materialB
   // Get limit - prefer renewal, fall back to baseline
   const displayLimit = formatLimit(renewal) || formatLimit(baseline) || '-';
 
-  // Get deductible - compare both
+  // Get deductible
   const baselineDed = baseline?.deductibleAmount;
   const renewalDed = renewal?.deductibleAmount;
-  const dedChanged = baselineDed != null && renewalDed != null && baselineDed !== renewalDed;
+  const dedChanged = !vehicleRemoved && !vehicleAdded && baselineDed != null && renewalDed != null && baselineDed !== renewalDed;
+
+  // For removed/added vehicles, don't highlight individual coverages
+  const showCoverageChange = !vehicleRemoved && !vehicleAdded;
 
   return (
     <tr className={cn(
-      isRemoved ? 'bg-red-50/50 dark:bg-red-900/10' :
-      isAdded ? 'bg-green-50/50 dark:bg-green-900/10' :
+      showCoverageChange && isRemoved ? 'bg-red-50/50 dark:bg-red-900/10' :
+      showCoverageChange && isAdded ? 'bg-green-50/50 dark:bg-green-900/10' :
       ''
     )}>
       <td className="px-4 py-2">
         <div className="flex items-center gap-2">
-          {mc?.severity === 'material_negative' && (
+          {showCoverageChange && mc?.severity === 'material_negative' && (
             <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
           )}
           <span className={cn(
-            isRemoved ? 'text-red-600 dark:text-red-400 line-through' :
-            isAdded ? 'text-green-600 dark:text-green-400' :
+            showCoverageChange && isRemoved ? 'text-red-600 dark:text-red-400 line-through' :
+            showCoverageChange && isAdded ? 'text-green-600 dark:text-green-400' :
             'text-gray-700 dark:text-gray-300'
           )}>
             {label}
           </span>
-          {isRemoved && <span className="text-xs text-red-500 font-medium">REMOVED</span>}
-          {isAdded && <span className="text-xs text-green-500 font-medium">NEW</span>}
+          {showCoverageChange && isRemoved && <span className="text-xs text-red-500 font-medium">REMOVED</span>}
+          {showCoverageChange && isAdded && <span className="text-xs text-green-500 font-medium">NEW</span>}
         </div>
       </td>
-      <td className="text-right px-3 py-2 text-gray-600 dark:text-gray-400">
-        {baselinePrem != null ? formatCurrency(baselinePrem) : '-'}
-      </td>
-      <td className={cn(
-        'text-right px-3 py-2 font-medium',
-        isRemoved ? 'text-red-600 dark:text-red-400' :
-        isAdded ? 'text-green-600 dark:text-green-400' :
-        getPremiumChangeColor(baselinePrem, renewalPrem)
-      )}>
-        {renewalPrem != null ? formatCurrency(renewalPrem) : isRemoved ? '-' : '-'}
-      </td>
+      {!vehicleAdded && (
+        <td className="text-right px-3 py-2 text-gray-600 dark:text-gray-400">
+          {baselinePrem != null ? formatCurrency(baselinePrem) : '-'}
+        </td>
+      )}
+      {!vehicleRemoved && (
+        <td className={cn(
+          'text-right px-3 py-2 font-medium',
+          showCoverageChange && isRemoved ? 'text-red-600 dark:text-red-400' :
+          showCoverageChange && isAdded ? 'text-green-600 dark:text-green-400' :
+          getPremiumChangeColor(baselinePrem, renewalPrem)
+        )}>
+          {renewalPrem != null ? formatCurrency(renewalPrem) : '-'}
+        </td>
+      )}
       <td className="text-center px-3 py-2 text-gray-700 dark:text-gray-300">
         {displayLimit}
       </td>
@@ -374,10 +438,180 @@ function CoverageRow({ row, materialByField }: { row: CoverageRowData; materialB
         dedChanged ? (renewalDed! > baselineDed! ? 'text-red-600 dark:text-red-400 font-medium' : 'text-green-600 dark:text-green-400 font-medium') :
         'text-gray-700 dark:text-gray-300'
       )}>
-        {renewalDed != null ? `$${renewalDed.toLocaleString()}` : baselineDed != null ? `$${baselineDed.toLocaleString()}` : '-'}
+        {vehicleRemoved && baselineDed != null ? `$${baselineDed.toLocaleString()}` :
+         renewalDed != null ? `$${renewalDed.toLocaleString()}` :
+         baselineDed != null ? `$${baselineDed.toLocaleString()}` : '-'}
       </td>
     </tr>
   );
+}
+
+// =============================================================================
+// DRIVERS SECTION
+// =============================================================================
+
+function DriversSection({
+  baselineDrivers,
+  renewalDrivers,
+  materialByField,
+}: {
+  baselineDrivers?: CanonicalDriver[];
+  renewalDrivers?: CanonicalDriver[];
+  materialByField: Map<string, MaterialChange>;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  // Build driver comparison list
+  const drivers = buildDriverList(baselineDrivers || [], renewalDrivers || []);
+
+  // Check for material driver changes
+  const hasMaterialChange = Array.from(materialByField.keys()).some(k => k.startsWith('driver.'));
+
+  return (
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-gray-700 dark:text-gray-300">Drivers</span>
+          {hasMaterialChange && <AlertTriangle className="h-4 w-4 text-red-500" />}
+        </div>
+        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+      </button>
+      {expanded && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-100 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400">
+              <th className="text-left px-4 py-2 font-medium">Driver</th>
+              <th className="text-center px-3 py-2 font-medium w-20">Age</th>
+              <th className="text-center px-3 py-2 font-medium w-24">Status</th>
+              <th className="text-left px-3 py-2 font-medium">Notes</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            {drivers.map((driver, idx) => (
+              <tr key={driver.name || idx} className={cn(
+                driver.isRemoved ? 'bg-red-50/50 dark:bg-red-900/10' :
+                driver.isAdded ? 'bg-green-50/50 dark:bg-green-900/10' : ''
+              )}>
+                <td className="px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      driver.isRemoved ? 'text-red-600 dark:text-red-400 line-through' :
+                      driver.isAdded ? 'text-green-600 dark:text-green-400' :
+                      'text-gray-700 dark:text-gray-300'
+                    )}>
+                      {driver.name || 'Unknown Driver'}
+                    </span>
+                    {driver.isRemoved && <span className="text-xs text-red-500 font-medium">REMOVED</span>}
+                    {driver.isAdded && <span className="text-xs text-green-500 font-medium">NEW</span>}
+                  </div>
+                </td>
+                <td className="text-center px-3 py-2 text-gray-600 dark:text-gray-400">
+                  {driver.age ? `${driver.age}` : '-'}
+                </td>
+                <td className="text-center px-3 py-2">
+                  {driver.isExcluded ? (
+                    <span className="text-xs px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded">
+                      Excluded
+                    </span>
+                  ) : (
+                    <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
+                      Active
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-gray-500 dark:text-gray-400 text-xs">
+                  {driver.relationship && <span>{driver.relationship}</span>}
+                  {driver.licenseState && <span className="ml-2">{driver.licenseState} License</span>}
+                </td>
+              </tr>
+            ))}
+            {drivers.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-3 text-center text-gray-500 dark:text-gray-400 italic">
+                  No driver data available
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+interface DriverData {
+  name: string;
+  age?: number;
+  relationship?: string;
+  licenseState?: string;
+  isExcluded?: boolean;
+  isRemoved: boolean;
+  isAdded: boolean;
+}
+
+function buildDriverList(baseline: CanonicalDriver[], renewal: CanonicalDriver[]): DriverData[] {
+  const drivers: DriverData[] = [];
+  const seenNames = new Set<string>();
+
+  const calculateAge = (dob?: string): number | undefined => {
+    if (!dob) return undefined;
+    try {
+      const birthDate = new Date(dob);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return age > 0 && age < 150 ? age : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const normalizeName = (name?: string) => (name || '').toLowerCase().trim();
+
+  // Add baseline drivers
+  baseline.forEach((d) => {
+    const name = d.name || 'Unknown';
+    const normalizedName = normalizeName(d.name);
+    if (seenNames.has(normalizedName)) return;
+    seenNames.add(normalizedName);
+
+    const renewalMatch = renewal.find((r) => normalizeName(r.name) === normalizedName);
+    drivers.push({
+      name,
+      age: calculateAge(d.dateOfBirth),
+      relationship: d.relationship,
+      licenseState: d.licenseState,
+      isExcluded: renewalMatch?.isExcluded ?? d.isExcluded,
+      isRemoved: !renewalMatch,
+      isAdded: false,
+    });
+  });
+
+  // Add renewal-only drivers
+  renewal.forEach((d) => {
+    const name = d.name || 'Unknown';
+    const normalizedName = normalizeName(d.name);
+    if (seenNames.has(normalizedName)) return;
+    seenNames.add(normalizedName);
+
+    drivers.push({
+      name,
+      age: calculateAge(d.dateOfBirth),
+      relationship: d.relationship,
+      licenseState: d.licenseState,
+      isExcluded: d.isExcluded,
+      isRemoved: false,
+      isAdded: true,
+    });
+  });
+
+  return drivers;
 }
 
 // =============================================================================
@@ -459,6 +693,16 @@ function formatCurrency(val: number | undefined | null): string {
   return `$${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '-';
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return dateStr;
+  }
+}
+
 function formatLimit(cov: CanonicalCoverage | undefined): string {
   if (!cov) return '';
   if (cov.limitAmount != null) {
@@ -504,17 +748,31 @@ function calculateTotalPremium(coverages: CanonicalCoverage[]): number {
 function buildVehicleList(baseline: BaselineSnapshot | null, renewal: RenewalSnapshot | null): VehicleData[] {
   const vehicles: VehicleData[] = [];
   const seenVins = new Set<string>();
+  const labelCounts = new Map<string, number>();
+
+  // First pass: count how many vehicles share each label
+  const allVehicles = [...(baseline?.vehicles || []), ...(renewal?.vehicles || [])];
+  allVehicles.forEach((v) => {
+    const label = `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim();
+    labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
+  });
 
   // Add baseline vehicles
   baseline?.vehicles?.forEach((v) => {
-    const vin = v.vin || `${v.year}-${v.make}-${v.model}`;
+    const vin = v.vin || `${v.year}-${v.make}-${v.model}-${Math.random()}`;
     if (seenVins.has(vin)) return;
     seenVins.add(vin);
 
+    const label = `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin;
     const renewalMatch = renewal?.vehicles?.find((rv) => rv.vin === v.vin);
+
+    // Show VIN suffix if there are multiple vehicles with same label
+    const needsVinSuffix = (labelCounts.get(label) || 0) > 1;
+
     vehicles.push({
       vin,
-      label: `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin,
+      label,
+      vinSuffix: needsVinSuffix && v.vin ? v.vin.slice(-4) : '',
       baseline: v,
       renewal: renewalMatch,
       isRemoved: !renewalMatch,
@@ -524,13 +782,17 @@ function buildVehicleList(baseline: BaselineSnapshot | null, renewal: RenewalSna
 
   // Add renewal-only vehicles
   renewal?.vehicles?.forEach((v) => {
-    const vin = v.vin || `${v.year}-${v.make}-${v.model}`;
+    const vin = v.vin || `${v.year}-${v.make}-${v.model}-${Math.random()}`;
     if (seenVins.has(vin)) return;
     seenVins.add(vin);
 
+    const label = `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin;
+    const needsVinSuffix = (labelCounts.get(label) || 0) > 1;
+
     vehicles.push({
       vin,
-      label: `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin,
+      label,
+      vinSuffix: needsVinSuffix && v.vin ? v.vin.slice(-4) : '',
       baseline: undefined,
       renewal: v,
       isRemoved: false,

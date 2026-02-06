@@ -261,6 +261,9 @@ export default function RenewalDetailPanel({
                 renewalSnapshot={detail?.renewalSnapshot ?? null}
                 baselineSnapshot={detail?.baselineSnapshot ?? null}
                 materialChanges={renewal.materialChanges || []}
+                renewalEffectiveDate={renewal.renewalEffectiveDate}
+                carrierName={renewal.carrierName}
+                policyNumber={renewal.policyNumber}
               />
             </div>
 
