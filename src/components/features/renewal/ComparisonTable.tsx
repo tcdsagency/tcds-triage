@@ -34,6 +34,8 @@ const COVERAGE_TYPE_LABELS: Record<string, string> = {
   rental_reimbursement: 'Rental Reimbursement',
   towing: 'Towing/Roadside',
   roadside_assistance: 'Roadside Assistance',
+  tl: 'Towing & Roadside',
+  rreim: 'Rental Reimbursement',
   pip: 'Personal Injury Protection',
   personal_injury_protection: 'Personal Injury Protection',
   med_pay: 'Medical Payments',
@@ -150,7 +152,7 @@ export default function ComparisonTable({
       />
       {expandedSections.has('vehicles') && (
         <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-          {renderVehicleComparison(baselineSnapshot?.vehicles, renewalSnapshot?.vehicles, materialByField)}
+          {renderVehicleComparison(baselineSnapshot?.vehicles, renewalSnapshot?.vehicles, baselineSnapshot?.coverages, materialByField)}
         </div>
       )}
 
@@ -163,7 +165,13 @@ export default function ComparisonTable({
       />
       {expandedSections.has('deductibles') && (
         <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-          {renderDeductibleComparison(baselineSnapshot?.coverages, renewalSnapshot?.coverages, materialByField)}
+          {renderDeductibleComparison(
+            baselineSnapshot?.coverages,
+            renewalSnapshot?.coverages,
+            baselineSnapshot?.vehicles,
+            renewalSnapshot?.vehicles,
+            materialByField
+          )}
         </div>
       )}
 
@@ -396,6 +404,7 @@ function renderCoverageComparison(
 function renderVehicleComparison(
   baseline: CanonicalVehicle[] | undefined,
   renewal: CanonicalVehicle[] | undefined,
+  baselinePolicyCoverages: CanonicalCoverage[] | undefined,
   materialByField: Map<string, MaterialChange>
 ) {
   const allVins = new Set<string>();
@@ -409,29 +418,103 @@ function renderVehicleComparison(
   const baselineByVin = new Map(baseline?.filter((v) => v.vin).map((v) => [v.vin!, v]) || []);
   const renewalByVin = new Map(renewal?.filter((v) => v.vin).map((v) => [v.vin!, v]) || []);
 
+  // Get baseline vehicle-level coverages from policy level (HawkSoft stores them there)
+  const baselineVehicleCovs = (baselinePolicyCoverages || []).filter(c =>
+    ['comprehensive', 'collision', 'tl', 'rreim', 'roadside', 'rental'].includes(c.type)
+  );
+
+  const formatDed = (val: number | undefined) => val != null ? `$${val.toLocaleString()}` : '-';
+  const formatLimit = (val: number | undefined) => val != null ? `$${val.toLocaleString()}` : '-';
+
   return (
     <>
-      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
-        <div>Vehicle</div>
-        <div>Current</div>
-        <div>Renewal</div>
-      </div>
       {Array.from(allVins).map((vin) => {
         const b = baselineByVin.get(vin);
         const r = renewalByVin.get(vin);
-        const desc = (v: CanonicalVehicle | undefined) =>
-          v ? `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin : 'N/A';
+        const vehDesc = (v: CanonicalVehicle | undefined) =>
+          v ? `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin : 'Unknown';
         const mc = materialByField.get(`vehicle.${vin}`);
+        const isRemoved = !r;
+        const isAdded = !b;
+
+        // Get vehicle-level coverages
+        const renewalCovs = (r?.coverages || []).filter(c =>
+          ['comprehensive', 'collision', 'tl', 'rreim', 'roadside', 'rental'].includes(c.type)
+        );
 
         return (
-          <ComparisonRow
-            key={vin}
-            label={desc(b || r)}
-            current={b ? 'Present' : 'N/A'}
-            renewal={r ? 'Present' : 'REMOVED'}
-            change={!r ? 'worse' : !b ? 'better' : 'same'}
-            isMaterial={mc?.severity === 'material_negative'}
-          />
+          <div key={vin} className="border-b border-gray-200 dark:border-gray-700 last:border-b-0">
+            {/* Vehicle header */}
+            <div className={cn(
+              'px-3 py-2 font-medium text-sm flex items-center justify-between',
+              isRemoved ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' :
+              isAdded ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' :
+              'bg-gray-50 dark:bg-gray-800'
+            )}>
+              <div className="flex items-center gap-2">
+                {mc?.severity === 'material_negative' && <AlertTriangle className="h-4 w-4 text-red-500" />}
+                <span>{vehDesc(b || r)}</span>
+              </div>
+              <span className="text-xs">
+                {isRemoved ? 'REMOVED' : isAdded ? 'ADDED' : ''}
+              </span>
+            </div>
+
+            {/* Vehicle coverages (only for present vehicles) */}
+            {r && renewalCovs.length > 0 && (
+              <div className="px-3 py-1 space-y-1">
+                <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 text-xs text-gray-500 dark:text-gray-400 pb-1">
+                  <div>Coverage</div>
+                  <div>Current</div>
+                  <div>Renewal</div>
+                </div>
+                {renewalCovs.map((cov) => {
+                  // Find matching baseline coverage (from policy level or vehicle level)
+                  const baselineCov = baselineVehicleCovs.find(c => c.type === cov.type) ||
+                    (b?.coverages || []).find(c => c.type === cov.type);
+
+                  const label = COVERAGE_TYPE_LABELS[cov.type] || cov.description || cov.type;
+                  const hasDeductible = cov.deductibleAmount != null || baselineCov?.deductibleAmount != null;
+                  const hasLimit = cov.limitAmount != null || baselineCov?.limitAmount != null;
+
+                  return (
+                    <div key={cov.type} className="grid grid-cols-[1fr_1fr_1fr] gap-2 text-sm py-0.5">
+                      <div className="text-gray-600 dark:text-gray-400">{label}</div>
+                      <div className="text-gray-900 dark:text-gray-100">
+                        {hasDeductible && baselineCov?.deductibleAmount != null
+                          ? `${formatDed(baselineCov.deductibleAmount)} ded`
+                          : hasLimit && baselineCov?.limitAmount != null
+                            ? formatLimit(baselineCov.limitAmount)
+                            : baselineCov ? 'Included' : '-'}
+                      </div>
+                      <div className={cn(
+                        'font-medium',
+                        baselineCov?.deductibleAmount != null && cov.deductibleAmount != null &&
+                        cov.deductibleAmount !== baselineCov.deductibleAmount
+                          ? cov.deductibleAmount > baselineCov.deductibleAmount
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-green-600 dark:text-green-400'
+                          : ''
+                      )}>
+                        {hasDeductible && cov.deductibleAmount != null
+                          ? `${formatDed(cov.deductibleAmount)} ded`
+                          : hasLimit && cov.limitAmount != null
+                            ? formatLimit(cov.limitAmount)
+                            : 'Included'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Show message if vehicle has no physical damage coverage */}
+            {r && renewalCovs.length === 0 && (
+              <div className="px-3 py-1 text-xs text-gray-500 dark:text-gray-400 italic">
+                Liability only (no physical damage coverage)
+              </div>
+            )}
+          </div>
         );
       })}
     </>
@@ -439,21 +522,22 @@ function renderVehicleComparison(
 }
 
 function renderDeductibleComparison(
-  baseline: CanonicalCoverage[] | undefined,
-  renewal: CanonicalCoverage[] | undefined,
+  baselineCoverages: CanonicalCoverage[] | undefined,
+  renewalCoverages: CanonicalCoverage[] | undefined,
+  baselineVehicles: CanonicalVehicle[] | undefined,
+  renewalVehicles: CanonicalVehicle[] | undefined,
   materialByField: Map<string, MaterialChange>
 ) {
   const formatDed = (val: number | undefined) => val != null ? `$${val.toLocaleString()}` : '-';
 
-  // Collect coverages that have deductibles, handling duplicates
-  interface DedEntry { key: string; type: string; baseline?: CanonicalCoverage; renewal?: CanonicalCoverage; }
+  // Collect coverages that have deductibles from both policy-level and vehicle-level
+  interface DedEntry { key: string; type: string; vehicle?: string; baseline?: CanonicalCoverage; renewal?: CanonicalCoverage; }
   const entries: DedEntry[] = [];
   const entryMap = new Map<string, DedEntry>();
 
-  const getKey = (c: CanonicalCoverage) => `${c.type}::${c.description || ''}`;
-
-  baseline?.filter((c) => c.deductibleAmount != null).forEach((c) => {
-    const key = getKey(c);
+  // Add policy-level deductibles
+  baselineCoverages?.filter((c) => c.deductibleAmount != null).forEach((c) => {
+    const key = `policy::${c.type}`;
     if (!entryMap.has(key)) {
       const entry: DedEntry = { key, type: c.type, baseline: c };
       entryMap.set(key, entry);
@@ -461,13 +545,49 @@ function renderDeductibleComparison(
     }
   });
 
-  renewal?.filter((c) => c.deductibleAmount != null).forEach((c) => {
-    const key = getKey(c);
+  renewalCoverages?.filter((c) => c.deductibleAmount != null).forEach((c) => {
+    const key = `policy::${c.type}`;
     const existing = entryMap.get(key);
     if (existing) {
       existing.renewal = c;
     } else {
       const entry: DedEntry = { key, type: c.type, renewal: c };
+      entryMap.set(key, entry);
+      entries.push(entry);
+    }
+  });
+
+  // Add vehicle-level deductibles (grouped by coverage type, not per-vehicle)
+  const vehicleCovTypes = ['comprehensive', 'collision'];
+
+  // Collect baseline vehicle-level coverages (may be at policy level for HawkSoft)
+  const baselineVehCovs = new Map<string, CanonicalCoverage>();
+  baselineCoverages?.filter(c => vehicleCovTypes.includes(c.type) && c.deductibleAmount != null).forEach(c => {
+    if (!baselineVehCovs.has(c.type)) baselineVehCovs.set(c.type, c);
+  });
+  baselineVehicles?.forEach(v => {
+    v.coverages?.filter(c => vehicleCovTypes.includes(c.type) && c.deductibleAmount != null).forEach(c => {
+      if (!baselineVehCovs.has(c.type)) baselineVehCovs.set(c.type, c);
+    });
+  });
+
+  // Collect renewal vehicle-level coverages
+  const renewalVehCovs = new Map<string, CanonicalCoverage>();
+  renewalVehicles?.forEach(v => {
+    v.coverages?.filter(c => vehicleCovTypes.includes(c.type) && c.deductibleAmount != null).forEach(c => {
+      if (!renewalVehCovs.has(c.type)) renewalVehCovs.set(c.type, c);
+    });
+  });
+
+  // Add to entries if not already present
+  vehicleCovTypes.forEach(type => {
+    const key = `vehicle::${type}`;
+    if (entryMap.has(key) || entryMap.has(`policy::${type}`)) return;
+
+    const b = baselineVehCovs.get(type);
+    const r = renewalVehCovs.get(type);
+    if (b || r) {
+      const entry: DedEntry = { key, type, baseline: b, renewal: r };
       entryMap.set(key, entry);
       entries.push(entry);
     }
@@ -488,18 +608,25 @@ function renderDeductibleComparison(
         const { baseline: b, renewal: r, type } = entry;
         const mc = materialByField.get(`coverage.${type}.deductible`);
 
+        const rawDesc = b?.description || r?.description || '';
+        const isRawCode = rawDesc.length <= 6 && /^[A-Z]+$/.test(rawDesc);
+        const label = isRawCode ? (COVERAGE_TYPE_LABELS[type] || rawDesc || type) : (rawDesc || COVERAGE_TYPE_LABELS[type] || type);
+
+        // Determine change type based on values
+        let change: 'better' | 'worse' | 'same' | 'different' | undefined = getChangeType(mc);
+        if (!change && b?.deductibleAmount != null && r?.deductibleAmount != null) {
+          if (r.deductibleAmount > b.deductibleAmount) change = 'worse';
+          else if (r.deductibleAmount < b.deductibleAmount) change = 'better';
+        }
+
         return (
           <ComparisonRow
             key={entry.key}
-            label={(() => {
-              const rawDesc = b?.description || r?.description || '';
-              const isRawCode = rawDesc.length <= 6 && /^[A-Z]+$/.test(rawDesc);
-              return isRawCode ? (COVERAGE_TYPE_LABELS[type] || rawDesc || type) : (rawDesc || COVERAGE_TYPE_LABELS[type] || type);
-            })()}
+            label={label}
             current={formatDed(b?.deductibleAmount)}
             renewal={formatDed(r?.deductibleAmount)}
-            change={getChangeType(mc)}
-            isMaterial={mc?.severity === 'material_negative'}
+            change={change}
+            isMaterial={mc?.severity === 'material_negative' || (change === 'worse')}
           />
         );
       })}
