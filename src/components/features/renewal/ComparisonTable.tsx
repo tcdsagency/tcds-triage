@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, AlertTriangle, Car } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertTriangle, Car, Home } from 'lucide-react';
 import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle, CanonicalDriver, CanonicalDiscount, CanonicalClaim, PropertyContext } from '@/types/renewal.types';
 
 // Human-readable labels for coverage types
@@ -74,6 +74,7 @@ interface ComparisonTableProps {
   renewalEffectiveDate?: string | null;
   carrierName?: string | null;
   policyNumber?: string | null;
+  lineOfBusiness?: string | null;
 }
 
 export default function ComparisonTable({
@@ -83,6 +84,7 @@ export default function ComparisonTable({
   renewalEffectiveDate,
   carrierName,
   policyNumber,
+  lineOfBusiness,
 }: ComparisonTableProps) {
   const [expandedVehicles, setExpandedVehicles] = useState<Set<string>>(new Set(['all']));
   const [showDiscounts, setShowDiscounts] = useState(true);
@@ -117,13 +119,23 @@ export default function ComparisonTable({
       {renewalEffectiveDate && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
           <div className="flex items-center justify-between">
-            <div>
-              {carrierName && (
-                <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">{carrierName}</div>
+            <div className="flex items-center gap-3">
+              {isHomePolicy(lineOfBusiness) ? (
+                <Home className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+              ) : (
+                <Car className="h-8 w-8 text-blue-600 dark:text-blue-400" />
               )}
-              {policyNumber && (
-                <div className="text-xs text-blue-500 dark:text-blue-500">Policy #{policyNumber}</div>
-              )}
+              <div>
+                {carrierName && (
+                  <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">{carrierName}</div>
+                )}
+                {policyNumber && (
+                  <div className="text-xs text-blue-500 dark:text-blue-500">Policy #{policyNumber}</div>
+                )}
+                {lineOfBusiness && (
+                  <div className="text-xs text-blue-400 dark:text-blue-500">{lineOfBusiness}</div>
+                )}
+              </div>
             </div>
             <div className="text-right">
               <div className="text-sm text-blue-600 dark:text-blue-400">Renewal Effective</div>
@@ -701,6 +713,14 @@ function formatDate(dateStr: string | null | undefined): string {
   } catch {
     return dateStr;
   }
+}
+
+function isHomePolicy(lineOfBusiness?: string | null): boolean {
+  if (!lineOfBusiness) return false;
+  const lob = lineOfBusiness.toLowerCase();
+  return lob.includes('home') || lob.includes('dwelling') || lob.includes('houseowner') ||
+         lob.includes('ho3') || lob.includes('ho5') || lob.includes('condo') ||
+         lob.includes('renters') || lob.includes('property');
 }
 
 function formatLimit(cov: CanonicalCoverage | undefined): string {

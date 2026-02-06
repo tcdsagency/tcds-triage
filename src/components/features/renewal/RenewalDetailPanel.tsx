@@ -264,6 +264,7 @@ export default function RenewalDetailPanel({
                 renewalEffectiveDate={renewal.renewalEffectiveDate}
                 carrierName={renewal.carrierName}
                 policyNumber={renewal.policyNumber}
+                lineOfBusiness={renewal.lineOfBusiness}
               />
             </div>
 
