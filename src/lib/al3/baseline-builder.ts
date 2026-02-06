@@ -250,9 +250,21 @@ export async function buildBaselineSnapshot(
     }
   }
 
+  // Calculate premium from coverage premiums (more reliable than stored policy.premium
+  // which may get overwritten when HawkSoft syncs new term data)
+  let calculatedPremium: number | undefined;
+  const allCoveragePremiums = realCoverages
+    .filter(c => c.premium != null)
+    .map(c => c.premium!);
+  if (allCoveragePremiums.length > 0) {
+    calculatedPremium = allCoveragePremiums.reduce((sum, p) => sum + p, 0);
+  }
+  // Fall back to stored policy premium if no coverage premiums
+  const baselinePremium = calculatedPremium ?? (policy.premium ? parseFloat(policy.premium) : undefined);
+
   // Build snapshot — use HawkSoft API data if local was empty
   const snapshot: BaselineSnapshot = {
-    premium: policy.premium ? parseFloat(policy.premium) : undefined,
+    premium: baselinePremium,
     coverages: realCoverages,
     vehicles: policyVehicles.length > 0 ? normalizeHawkSoftVehicles(policyVehicles) : hsVehicles,
     drivers: policyDrivers.length > 0 ? normalizeHawkSoftDrivers(policyDrivers) : hsDrivers,
