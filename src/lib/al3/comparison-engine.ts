@@ -56,6 +56,84 @@ function collectPolicyLevelCoverages(
   return Array.from(seen.values());
 }
 
+/**
+ * Collect ALL vehicle-level coverages from a snapshot (from vehicles or policy-level).
+ * HawkSoft stores vehicle-level coverages at the policy level, while AL3 puts them on vehicles.
+ * This collects them from wherever they exist.
+ */
+function collectVehicleLevelCoverages(
+  policyCoverages: CanonicalCoverage[],
+  vehicles: CanonicalVehicle[]
+): CanonicalCoverage[] {
+  const seen = new Map<string, CanonicalCoverage>();
+
+  // Check policy-level coverages for vehicle-level types (HawkSoft style)
+  for (const cov of policyCoverages) {
+    if (cov.type && VEHICLE_LEVEL_COVERAGE_TYPES.has(cov.type) && !seen.has(cov.type)) {
+      seen.set(cov.type, cov);
+    }
+  }
+
+  // Check vehicle coverages (AL3 style)
+  for (const vehicle of vehicles) {
+    for (const cov of vehicle.coverages || []) {
+      if (cov.type && VEHICLE_LEVEL_COVERAGE_TYPES.has(cov.type) && !seen.has(cov.type)) {
+        seen.set(cov.type, cov);
+      }
+    }
+  }
+
+  return Array.from(seen.values());
+}
+
+/**
+ * Compare vehicle-level coverages at the aggregate level.
+ * Only checks for presence/absence - detailed per-vehicle comparison happens in compareVehicles.
+ */
+function compareVehicleLevelCoverages(
+  renewalCoverages: CanonicalCoverage[],
+  baselineCoverages: CanonicalCoverage[]
+): MaterialChange[] {
+  const changes: MaterialChange[] = [];
+
+  const renewalByType = new Map(renewalCoverages.map((c) => [c.type, c]));
+  const baselineByType = new Map(baselineCoverages.map((c) => [c.type, c]));
+
+  // Check for removed vehicle-level coverages
+  for (const [type, baseline] of baselineByType) {
+    if (!renewalByType.has(type)) {
+      changes.push({
+        field: `coverage.${type}`,
+        category: 'coverage_removed',
+        classification: 'material_negative',
+        oldValue: baseline.description || type,
+        newValue: null,
+        severity: 'material_negative',
+        description: `Coverage removed: ${baseline.description || type}`,
+      });
+    }
+  }
+
+  // Check for added vehicle-level coverages
+  for (const [type, renewal] of renewalByType) {
+    if (!baselineByType.has(type)) {
+      changes.push({
+        field: `coverage.${type}`,
+        category: 'coverage_added',
+        classification: 'material_positive',
+        oldValue: null,
+        newValue: renewal.description || type,
+        severity: 'material_positive',
+        description: `Coverage added: ${renewal.description || type}`,
+      });
+    }
+  }
+
+  // Note: Detailed limit/deductible comparison happens per-vehicle in compareVehicles
+
+  return changes;
+}
+
 // =============================================================================
 // MAIN COMPARISON
 // =============================================================================
@@ -75,12 +153,18 @@ export function compareSnapshots(
 
   // For auto policies, coverages may live at the vehicle level in one snapshot
   // but at the policy level in the other. Collect POLICY-LEVEL coverages only.
-  // Vehicle-specific coverages (Comp, Coll, etc.) are compared per-vehicle below.
+  // Vehicle-specific coverages (Comp, Coll, etc.) are compared separately.
   const renewalCoverages = collectPolicyLevelCoverages(renewal.coverages, renewal.vehicles);
   const baselineCoverages = collectPolicyLevelCoverages(baseline.coverages, baseline.vehicles);
 
-  // Compare policy-level coverages
+  // Compare policy-level coverages (BI, PD, UM, MedPay, etc.)
   allChanges.push(...compareCoverages(renewalCoverages, baselineCoverages, thresholds));
+
+  // Compare vehicle-level coverages at aggregate level (Comp, Coll, Roadside, Rental)
+  // HawkSoft stores these at policy level, AL3 puts them on vehicles
+  const renewalVehicleCovs = collectVehicleLevelCoverages(renewal.coverages, renewal.vehicles);
+  const baselineVehicleCovs = collectVehicleLevelCoverages(baseline.coverages, baseline.vehicles);
+  allChanges.push(...compareVehicleLevelCoverages(renewalVehicleCovs, baselineVehicleCovs));
 
   // Compare vehicles (includes vehicle-level coverage comparison)
   allChanges.push(...compareVehicles(renewal.vehicles, baseline.vehicles, thresholds));
@@ -334,6 +418,8 @@ function compareVehicles(
   }
 
   // Compare coverages within matched vehicles
+  // Note: Coverage presence/absence is handled by compareVehicleLevelCoverages at aggregate level
+  // Here we only compare deductibles/limits for coverages that exist on BOTH vehicle records
   for (const [vin, renewalVeh] of renewalByVin) {
     const baselineVeh = baselineByVin.get(vin);
     if (!baselineVeh) continue;
@@ -347,37 +433,7 @@ function compareVehicles(
     const renewalByType = new Map(renewalCovs.map(c => [c.type, c]));
     const baselineByType = new Map(baselineCovs.map(c => [c.type, c]));
 
-    // Check for removed vehicle coverages
-    for (const [type, baseline] of baselineByType) {
-      if (!renewalByType.has(type)) {
-        changes.push({
-          field: `vehicle.${vin}.coverage.${type}`,
-          category: 'coverage_removed',
-          classification: 'material_negative',
-          oldValue: baseline.description || type,
-          newValue: null,
-          severity: 'material_negative',
-          description: `${vehDesc}: ${baseline.description || type} removed`,
-        });
-      }
-    }
-
-    // Check for added vehicle coverages
-    for (const [type, renewal] of renewalByType) {
-      if (!baselineByType.has(type)) {
-        changes.push({
-          field: `vehicle.${vin}.coverage.${type}`,
-          category: 'coverage_added',
-          classification: 'material_positive',
-          oldValue: null,
-          newValue: renewal.description || type,
-          severity: 'material_positive',
-          description: `${vehDesc}: ${renewal.description || type} added`,
-        });
-      }
-    }
-
-    // Compare matching coverages (deductibles, limits)
+    // Compare matching coverages (deductibles, limits) - only where both vehicles have the coverage
     for (const [type, renewal] of renewalByType) {
       const baseline = baselineByType.get(type);
       if (!baseline) continue;
