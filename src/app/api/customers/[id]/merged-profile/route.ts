@@ -199,7 +199,7 @@ function extractAgencyZoomNotes(azContact: any): any[] {
 // DATA TRANSFORMATION FUNCTIONS
 // =============================================================================
 
-function transformHawkSoftPolicy(hsPolicy: any): Policy {
+function transformHawkSoftPolicy(hsPolicy: any, people?: any[]): Policy {
   // Get line of business from loBs array or title field
   const lobCode = hsPolicy.loBs?.[0]?.code || hsPolicy.title || hsPolicy.lineOfBusiness || "";
   const policyType = getPolicyTypeFromLineOfBusiness(lobCode);
@@ -245,20 +245,31 @@ function transformHawkSoftPolicy(hsPolicy: any): Policy {
     }))
   }));
   
-  // Transform drivers
-  const drivers: Driver[] = (hsPolicy.drivers || []).map((drv: any) => ({
-    id: String(drv.driverId || drv.id),
-    firstName: drv.firstName,
-    lastName: drv.lastName,
-    name: `${drv.firstName || ""} ${drv.lastName || ""}`.trim(),
-    dateOfBirth: drv.dateOfBirth || drv.dob,
-    licenseNumber: drv.licenseNumber,
-    licenseState: drv.licenseState,
-    relationship: drv.relationship,
-    maritalStatus: drv.maritalStatus,
-    gender: drv.gender,
-    excludedFromPolicy: drv.excluded
-  }));
+  // Transform drivers - merge with people data for license info
+  // HawkSoft stores license data on "people", not on "policy.drivers"
+  const drivers: Driver[] = (hsPolicy.drivers || []).map((drv: any) => {
+    // Find matching person by name to get license info
+    const matchingPerson = people?.find((p: any) => {
+      const drvName = `${drv.firstName} ${drv.lastName}`.toLowerCase().trim();
+      const personName = `${p.firstName} ${p.lastName}`.toLowerCase().trim();
+      return drvName === personName;
+    });
+
+    return {
+      id: String(drv.driverId || drv.id),
+      firstName: drv.firstName,
+      lastName: drv.lastName,
+      name: `${drv.firstName || ""} ${drv.lastName || ""}`.trim(),
+      dateOfBirth: drv.dateOfBirth || drv.dob || matchingPerson?.dateOfBirth,
+      // Prefer driver license from people (HawkSoft stores it there)
+      licenseNumber: drv.licenseNumber || matchingPerson?.licenseNumber,
+      licenseState: drv.licenseState || matchingPerson?.licenseState,
+      relationship: drv.relationship,
+      maritalStatus: drv.maritalStatus || matchingPerson?.maritalStatus,
+      gender: drv.gender || matchingPerson?.gender,
+      excludedFromPolicy: drv.excluded
+    };
+  });
   
   // Transform property details (for home policies)
   let property: PropertyDetails | undefined;
@@ -783,8 +794,9 @@ export async function GET(
     debugInfo.notesCount = azNotes.length;
     debugInfo.notesRaw = azNotes.length > 0 ? azNotes.slice(0, 2) : "none"; // Sample for debugging
     
-    // Transform policies
-    const policies = hsPolicies.map(transformHawkSoftPolicy);
+    // Transform policies - pass people array for driver license enrichment
+    const hsPeople = hsClient?.people || [];
+    const policies = hsPolicies.map(p => transformHawkSoftPolicy(p, hsPeople));
     
     // Calculate aggregates
     const activePolicies = policies.filter(p => p.status === "active");
