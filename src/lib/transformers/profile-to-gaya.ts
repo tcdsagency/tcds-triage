@@ -182,6 +182,35 @@ function buildPropertyEntities(profile: MergedProfile): GayaEntity[] {
     addField(fields, 'dog_breed', prop.dogBreed);
     addField(fields, 'flood_zone', prop.floodZone);
 
+    // Home coverage limits from policy coverages
+    if (policy.coverages?.length) {
+      for (const cov of policy.coverages) {
+        const covType = (cov.type || cov.description || '').toLowerCase();
+        // Map coverage types to Gaya field names
+        if (covType.includes('dwelling') || covType === 'dwell' || covType === 'cov a') {
+          addField(fields, 'dwelling_coverage', cov.limit);
+        } else if (covType.includes('personal property') || covType === 'cov c' || covType === 'pers') {
+          addField(fields, 'personal_property_coverage', cov.limit);
+        } else if (covType.includes('liability') || covType === 'cov e' || covType === 'liab') {
+          addField(fields, 'personal_liability', cov.limit);
+        } else if (covType.includes('loss of use') || covType === 'cov d' || covType === 'loss') {
+          addField(fields, 'loss_of_use', cov.limit);
+        } else if (covType.includes('medical') || covType === 'cov f' || covType === 'medc') {
+          addField(fields, 'medical_payments', cov.limit);
+        } else if (covType.includes('other structures') || covType === 'cov b') {
+          addField(fields, 'other_structures', cov.limit);
+        }
+        // Add deductible if present (usually on dwelling/AOP)
+        if ((covType.includes('dwelling') || covType.includes('all other') || covType === 'aop') && cov.deductible) {
+          addField(fields, 'deductible', cov.deductible);
+        }
+        // Wind/hail deductible if separate
+        if ((covType.includes('wind') || covType.includes('hurricane') || covType.includes('hail')) && cov.deductible) {
+          addField(fields, 'wind_hail_deductible', cov.deductible);
+        }
+      }
+    }
+
     if (fields.length > 0) {
       entities.push({
         entity: GAYA_ENTITY_TYPES.PROPERTY,
