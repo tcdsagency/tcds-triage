@@ -1395,25 +1395,51 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       premium: premium ? premium / 100 : undefined, // IVANS premiums are in cents
     };
   } else {
-    // 6CVH: home coverage record (standard position-based for SAFECO etc.)
+    // 6CVH: home/watercraft coverage record (standard position-based for SAFECO etc.)
     // Note: EDIFACT format is handled separately via parseEDIFACTHomeCoverages in the caller
-    const limitStr = extractField(line, CVH_FIELDS.LIMIT);
+    const primaryStr = extractField(line, CVH_FIELDS.LIMIT);
     const secondaryStr = extractField(line, CVH_FIELDS.SECONDARY_AMOUNT);
-    const limitAmount = parseAL3Number(limitStr);
-    const secondaryAmount = parseAL3Number(secondaryStr);
 
-    // Use primary limit if available, otherwise fall back to secondary
-    const finalLimit = limitAmount || secondaryAmount;
-    if (!finalLimit) return null;
+    // Detect if primary field is premium (has +/- sign) or limit
+    // Watercraft 6CVH: primary = premium (00000001400+), secondary = limit (00100000)
+    // Home 6CVH: primary = limit (00000187600), secondary = another amount
+    const hasPremiumSign = /[+-]$/.test(primaryStr.trim());
+
+    let premium: number | undefined;
+    let limitAmount: number | undefined;
+    let limitStr: string | undefined;
+
+    if (hasPremiumSign) {
+      // Watercraft format: primary is premium, secondary is limit
+      const premiumRaw = primaryStr.replace(/[+-]$/, '');
+      premium = parseAL3Number(premiumRaw);
+      if (premium) premium = premium / 100; // Convert cents to dollars
+      limitAmount = parseAL3Number(secondaryStr);
+      limitStr = secondaryStr || undefined;
+    } else {
+      // Home format: primary is limit, no premium in 6CVH
+      limitAmount = parseAL3Number(primaryStr);
+      const secondaryAmount = parseAL3Number(secondaryStr);
+      // Use primary limit if available, otherwise fall back to secondary
+      if (!limitAmount && secondaryAmount) {
+        limitAmount = secondaryAmount;
+        limitStr = secondaryStr;
+      } else {
+        limitStr = primaryStr || undefined;
+      }
+    }
+
+    // Skip records with no useful data (but keep discount codes that have no amounts)
+    if (!premium && !limitAmount) return null;
 
     return {
       code,
       description: code,
-      limit: (limitAmount ? limitStr : secondaryStr) || undefined,
-      limitAmount: finalLimit,
+      limit: limitStr,
+      limitAmount,
       deductible: undefined,
       deductibleAmount: undefined,
-      premium: undefined,
+      premium,
     };
   }
 }

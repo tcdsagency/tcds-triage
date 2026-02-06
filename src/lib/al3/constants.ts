@@ -215,6 +215,7 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'SD3': 'safe_driving_discount',
   'IPP': 'paperless_discount',
   'CFR': 'claim_free_discount',
+  'CFD': 'claim_free_discount',
   'PPAYD': 'auto_pay_discount',
   'DMH': 'mobile_home_discount',
   'SNRDR': 'senior_discount',
@@ -222,6 +223,29 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'DFEDR': 'defensive_driver_discount',
   'ASSOC': 'association_discount',
   'BUNDL': 'bundle_discount',
+  'RDD': 'renewal_discount',
+  'DAS': 'direct_auto_discount',
+  'ASC': 'auto_sign_discount',
+  'PIF': 'paid_in_full_discount',
+  'DPP': 'deferred_payment_discount',
+  'OOD': 'online_discount',
+
+  // Watercraft-specific coverage codes
+  'WATER': 'waterski_liability',
+  'EQP01': 'equipment_coverage',
+  'POLUT': 'pollution_liability',
+  'PE': 'personal_effects',
+  'PROPP': 'personal_property',
+  'SGLID': 'single_limit',
+  'WUI': 'watercraft_uninsured',
+  'NAVAR': 'navigation_warranty',
+  'NSDED': 'named_storm_deductible',
+  'MOT01': 'motor_coverage',
+  'TRLR': 'trailer_coverage',
+
+  // Auto-specific codes
+  'ACPE': 'accident_personal_effects',
+  'LLPP': 'loan_lease_payoff',
 };
 
 /**
@@ -253,6 +277,12 @@ export const DISCOUNT_COVERAGE_TYPES = new Set([
   'defensive_driver_discount',
   'association_discount',
   'bundle_discount',
+  'renewal_discount',
+  'direct_auto_discount',
+  'auto_sign_discount',
+  'paid_in_full_discount',
+  'deferred_payment_discount',
+  'online_discount',
 ]);
 
 /**

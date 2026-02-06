@@ -33,6 +33,20 @@ const COVERAGE_TYPE_LABELS: Record<string, string> = {
   other_structures: 'Other Structures',
   loss_of_use: 'Loss of Use',
   water_damage: 'Water Damage',
+  // Watercraft coverages
+  waterski_liability: 'Waterski Liability',
+  equipment_coverage: 'Equipment Coverage',
+  pollution_liability: 'Pollution Liability',
+  personal_effects: 'Personal Effects',
+  single_limit: 'Single Limit',
+  watercraft_uninsured: 'Uninsured Watercraft',
+  navigation_warranty: 'Navigation Warranty',
+  named_storm_deductible: 'Named Storm Deductible',
+  motor_coverage: 'Motor Coverage',
+  trailer_coverage: 'Trailer Coverage',
+  // Auto-specific
+  accident_personal_effects: 'Personal Effects',
+  loan_lease_payoff: 'Loan/Lease Payoff',
   // Discounts
   accident_free_discount: 'Accident Free',
   eft_discount: 'EFT Discount',
@@ -44,6 +58,12 @@ const COVERAGE_TYPE_LABELS: Record<string, string> = {
   paperless_discount: 'Paperless',
   claim_free_discount: 'Claim Free',
   paid_in_full_discount: 'Paid In Full',
+  renewal_discount: 'Renewal Discount',
+  direct_auto_discount: 'Direct Auto',
+  auto_sign_discount: 'Auto Sign',
+  deferred_payment_discount: 'Deferred Payment',
+  online_discount: 'Online Discount',
+  auto_pay_discount: 'Auto Pay',
 };
 
 // Coverage display order (policy-level first, then vehicle-level)
