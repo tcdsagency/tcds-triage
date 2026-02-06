@@ -170,6 +170,18 @@ function buildPropertyEntities(profile: MergedProfile): GayaEntity[] {
     addField(fields, 'heating_type', prop.heatingType);
     addField(fields, 'protection_class', prop.protectionClass);
 
+    // Additional underwriting details
+    addField(fields, 'distance_to_fire_station', prop.distanceToFireStation);
+    addField(fields, 'distance_to_fire_hydrant', prop.distanceToHydrant);
+    if (prop.poolPresent !== undefined) {
+      addField(fields, 'swimming_pool', prop.poolPresent ? 'Yes' : 'No');
+    }
+    if (prop.trampolinePresent !== undefined) {
+      addField(fields, 'trampoline', prop.trampolinePresent ? 'Yes' : 'No');
+    }
+    addField(fields, 'dog_breed', prop.dogBreed);
+    addField(fields, 'flood_zone', prop.floodZone);
+
     if (fields.length > 0) {
       entities.push({
         entity: GAYA_ENTITY_TYPES.PROPERTY,
