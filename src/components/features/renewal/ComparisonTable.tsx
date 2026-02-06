@@ -2,27 +2,11 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertTriangle, Car } from 'lucide-react';
 import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle, CanonicalDiscount, CanonicalClaim, PropertyContext } from '@/types/renewal.types';
 
-// Human-readable labels for coverage types (fallback when description is a raw code)
+// Human-readable labels for coverage types
 const COVERAGE_TYPE_LABELS: Record<string, string> = {
-  dwelling: 'Dwelling',
-  personal_property: 'Personal Property',
-  personal_liability: 'Personal Liability',
-  medical_payments: 'Medical Payments',
-  medical_payments_to_others: 'Medical Payments to Others',
-  other_structures: 'Other Structures',
-  loss_of_use: 'Loss of Use',
-  water_damage: 'Water Damage',
-  tropical_cyclone: 'Tropical Cyclone',
-  identity_fraud: 'Identity Fraud',
-  roof_surfaces: 'Roof Surfaces',
-  building_structures_extended: 'Extended Replacement Cost',
-  responsible_payment_discount: 'Responsible Payment Discount',
-  loyalty_discount: 'Loyalty Discount',
-  protective_devices: 'Protective Devices',
-  welcome_discount: 'Welcome Discount',
   bodily_injury: 'Bodily Injury',
   property_damage: 'Property Damage',
   collision: 'Collision',
@@ -31,45 +15,57 @@ const COVERAGE_TYPE_LABELS: Record<string, string> = {
   uninsured_motorist_bi: 'Uninsured Motorist BI',
   uninsured_motorist_pd: 'Uninsured Motorist PD',
   underinsured_motorist: 'Underinsured Motorist',
+  medical_payments: 'Medical Payments',
+  pip: 'Personal Injury Protection',
+  personal_injury_protection: 'Personal Injury Protection',
+  tl: 'Towing & Roadside',
+  rreim: 'Rental Reimbursement',
   rental_reimbursement: 'Rental Reimbursement',
   towing: 'Towing/Roadside',
   roadside_assistance: 'Roadside Assistance',
-  tl: 'Towing & Roadside',
-  rreim: 'Rental Reimbursement',
-  pip: 'Personal Injury Protection',
-  personal_injury_protection: 'Personal Injury Protection',
-  med_pay: 'Medical Payments',
   combined_single_limit: 'Combined Single Limit',
   gap_coverage: 'GAP Coverage',
-  extended_dwelling: 'Extended Dwelling',
-  personal_property_replacement: 'Personal Property Replacement',
-  sewer_water_backup: 'Sewer/Water Backup',
-  equipment_breakdown: 'Equipment Breakdown',
-  roof_replacement_cost: 'Roof Replacement Cost',
-  additional_insured: 'Additional Insured',
-  additional_coverage_a: 'Additional Coverage A',
-  early_signing_discount: 'Early Signing Discount',
-  esmart_discount: 'eSmart Discount',
-  account_discount: 'Account Discount',
-  established_customer: 'Established Customer',
-  // Progressive discount types
-  accident_free_discount: 'Accident Free Discount',
+  // Home coverages
+  dwelling: 'Dwelling',
+  personal_property: 'Personal Property',
+  personal_liability: 'Personal Liability',
+  medical_payments_to_others: 'Medical Payments to Others',
+  other_structures: 'Other Structures',
+  loss_of_use: 'Loss of Use',
+  water_damage: 'Water Damage',
+  // Discounts
+  accident_free_discount: 'Accident Free',
   eft_discount: 'EFT Discount',
-  homeowner_discount: 'Homeowner Discount',
-  multi_car_discount: 'Multi-Car Discount',
-  multi_policy_discount: 'Multi-Policy Discount',
-  continuous_insurance_discount: 'Continuous Insurance Discount',
-  safe_driving_discount: 'Safe Driving Discount',
-  paperless_discount: 'Paperless Discount',
-  claim_free_discount: 'Claim Free Discount',
-  auto_pay_discount: 'Auto Pay Discount',
-  mobile_home_discount: 'Mobile Home Discount',
-  senior_discount: 'Senior Discount',
-  good_driver_discount: 'Good Driver Discount',
-  defensive_driver_discount: 'Defensive Driver Discount',
-  association_discount: 'Association Discount',
-  bundle_discount: 'Bundle Discount',
+  homeowner_discount: 'Homeowner',
+  multi_car_discount: 'Multi-Car',
+  multi_policy_discount: 'Multi-Policy',
+  continuous_insurance_discount: 'Continuous Insurance',
+  safe_driving_discount: 'Safe Driving',
+  paperless_discount: 'Paperless',
+  claim_free_discount: 'Claim Free',
+  paid_in_full_discount: 'Paid In Full',
 };
+
+// Coverage display order (policy-level first, then vehicle-level)
+const COVERAGE_ORDER = [
+  'bodily_injury',
+  'property_damage',
+  'uninsured_motorist',
+  'uninsured_motorist_bi',
+  'uninsured_motorist_pd',
+  'underinsured_motorist',
+  'medical_payments',
+  'pip',
+  'personal_injury_protection',
+  'comprehensive',
+  'collision',
+  'tl',
+  'rreim',
+  'towing',
+  'roadside_assistance',
+  'rental_reimbursement',
+  'gap_coverage',
+];
 
 interface ComparisonTableProps {
   renewalSnapshot: RenewalSnapshot | null;
@@ -82,13 +78,14 @@ export default function ComparisonTable({
   baselineSnapshot,
   materialChanges,
 }: ComparisonTableProps) {
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['premium', 'coverages']));
+  const [expandedVehicles, setExpandedVehicles] = useState<Set<string>>(new Set(['all']));
+  const [showDiscounts, setShowDiscounts] = useState(true);
 
-  const toggleSection = (section: string) => {
-    const next = new Set(expandedSections);
-    if (next.has(section)) next.delete(section);
-    else next.add(section);
-    setExpandedSections(next);
+  const toggleVehicle = (vin: string) => {
+    const next = new Set(expandedVehicles);
+    if (next.has(vin)) next.delete(vin);
+    else next.add(vin);
+    setExpandedVehicles(next);
   };
 
   if (!renewalSnapshot && !baselineSnapshot) {
@@ -101,676 +98,510 @@ export default function ComparisonTable({
 
   const materialByField = new Map(materialChanges.map((c) => [c.field, c]));
 
-  const formatCurrency = (val: number | undefined | null) =>
-    val != null ? `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-';
+  // Build vehicle list from both snapshots
+  const allVehicles = buildVehicleList(baselineSnapshot, renewalSnapshot);
+
+  // Get policy-level coverages (these apply to all vehicles)
+  const baselinePolicyCovs = baselineSnapshot?.coverages || [];
+  const renewalPolicyCovs = renewalSnapshot?.coverages || [];
 
   return (
-    <div className="space-y-1">
-      {/* Premium Section */}
-      <SectionHeader
-        title="Premium"
-        expanded={expandedSections.has('premium')}
-        onToggle={() => toggleSection('premium')}
-        hasMaterial={materialChanges.some((c) => c.category === 'premium' && c.severity === 'material_negative')}
-      />
-      {expandedSections.has('premium') && (
-        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-          <ComparisonRow
-            label="Total Premium"
-            current={formatCurrency(baselineSnapshot?.premium)}
-            renewal={formatCurrency(renewalSnapshot?.premium)}
-            change={getChangeType(materialByField.get('premium'))}
-            isMaterial={materialByField.has('premium')}
+    <div className="space-y-4">
+      {/* Premium Summary */}
+      <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">Current Premium</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+              {formatCurrency(baselineSnapshot?.premium)}
+            </div>
+          </div>
+          <div className="text-2xl text-gray-400">→</div>
+          <div className="text-right">
+            <div className="text-sm text-gray-500 dark:text-gray-400">Renewal Premium</div>
+            <div className={cn(
+              'text-2xl font-bold',
+              getPremiumChangeColor(baselineSnapshot?.premium, renewalSnapshot?.premium)
+            )}>
+              {formatCurrency(renewalSnapshot?.premium)}
+            </div>
+          </div>
+        </div>
+        {baselineSnapshot?.premium && renewalSnapshot?.premium && (
+          <div className="mt-2 text-center">
+            <span className={cn(
+              'text-sm font-medium px-2 py-1 rounded',
+              getPremiumBadgeStyle(baselineSnapshot.premium, renewalSnapshot.premium)
+            )}>
+              {formatPremiumChange(baselineSnapshot.premium, renewalSnapshot.premium)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Vehicles with Coverages */}
+      <div className="space-y-3">
+        {allVehicles.map((vehicle) => (
+          <VehicleCard
+            key={vehicle.vin || vehicle.label}
+            vehicle={vehicle}
+            baselinePolicyCovs={baselinePolicyCovs}
+            renewalPolicyCovs={renewalPolicyCovs}
+            expanded={expandedVehicles.has('all') || expandedVehicles.has(vehicle.vin || '')}
+            onToggle={() => toggleVehicle(vehicle.vin || vehicle.label)}
+            materialByField={materialByField}
           />
-        </div>
-      )}
-
-      {/* Coverages Section */}
-      <SectionHeader
-        title="Coverages"
-        expanded={expandedSections.has('coverages')}
-        onToggle={() => toggleSection('coverages')}
-        hasMaterial={materialChanges.some((c) =>
-          ['coverage_limit', 'coverage_removed', 'coverage_added', 'deductible'].includes(c.category) &&
-          c.severity === 'material_negative'
-        )}
-      />
-      {expandedSections.has('coverages') && (
-        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-          {renderCoverageComparison(baselineSnapshot?.coverages, renewalSnapshot?.coverages, materialByField)}
-        </div>
-      )}
-
-      {/* Vehicles Section */}
-      <SectionHeader
-        title="Vehicles"
-        expanded={expandedSections.has('vehicles')}
-        onToggle={() => toggleSection('vehicles')}
-        hasMaterial={materialChanges.some((c) =>
-          ['vehicle_removed', 'vehicle_added'].includes(c.category) && c.severity === 'material_negative'
-        )}
-      />
-      {expandedSections.has('vehicles') && (
-        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-          {renderVehicleComparison(baselineSnapshot?.vehicles, renewalSnapshot?.vehicles, baselineSnapshot?.coverages, materialByField)}
-        </div>
-      )}
-
-      {/* Deductibles Section */}
-      <SectionHeader
-        title="Deductibles"
-        expanded={expandedSections.has('deductibles')}
-        onToggle={() => toggleSection('deductibles')}
-        hasMaterial={materialChanges.some((c) => c.category === 'deductible' && c.severity === 'material_negative')}
-      />
-      {expandedSections.has('deductibles') && (
-        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-          {renderDeductibleComparison(
-            baselineSnapshot?.coverages,
-            renewalSnapshot?.coverages,
-            baselineSnapshot?.vehicles,
-            renewalSnapshot?.vehicles,
-            materialByField
-          )}
-        </div>
-      )}
+        ))}
+      </div>
 
       {/* Discounts Section */}
-      <SectionHeader
-        title="Discounts"
-        expanded={expandedSections.has('discounts')}
-        onToggle={() => toggleSection('discounts')}
-        hasMaterial={materialChanges.some((c) =>
-          ['discount_removed', 'discount_added'].includes(c.category) && c.severity === 'material_negative'
-        )}
-      />
-      {expandedSections.has('discounts') && (
-        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-          {renderDiscountComparison(baselineSnapshot?.discounts, renewalSnapshot?.discounts, materialByField)}
+      {(baselineSnapshot?.discounts?.length || renewalSnapshot?.discounts?.length) ? (
+        <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setShowDiscounts(!showDiscounts)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
+            <span className="font-medium text-gray-700 dark:text-gray-300">Discounts</span>
+            {showDiscounts ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+          {showDiscounts && (
+            <DiscountsTable
+              baseline={baselineSnapshot?.discounts}
+              renewal={renewalSnapshot?.discounts}
+              materialByField={materialByField}
+            />
+          )}
         </div>
-      )}
-
-      {/* Claims Section */}
-      {(renewalSnapshot?.claims?.length || baselineSnapshot?.claims?.length) ? (
-        <>
-          <SectionHeader
-            title="Claims"
-            expanded={expandedSections.has('claims')}
-            onToggle={() => toggleSection('claims')}
-            hasMaterial={materialChanges.some((c) => c.category === 'claim' && c.severity === 'material_negative')}
-          />
-          {expandedSections.has('claims') && (
-            <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-              {renderClaimsSection(baselineSnapshot?.claims, renewalSnapshot?.claims, materialChanges)}
-            </div>
-          )}
-        </>
-      ) : null}
-
-      {/* Property Section (homeowners) */}
-      {baselineSnapshot?.propertyContext ? (
-        <>
-          <SectionHeader
-            title="Property"
-            expanded={expandedSections.has('property')}
-            onToggle={() => toggleSection('property')}
-            hasMaterial={materialChanges.some((c) => c.category === 'property' && c.severity === 'material_negative')}
-          />
-          {expandedSections.has('property') && (
-            <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-              {renderPropertySection(baselineSnapshot.propertyContext, materialChanges)}
-            </div>
-          )}
-        </>
       ) : null}
     </div>
   );
 }
 
 // =============================================================================
-// SUB-COMPONENTS
+// VEHICLE CARD COMPONENT
 // =============================================================================
 
-function SectionHeader({
-  title,
+interface VehicleData {
+  vin: string;
+  label: string;
+  baseline?: CanonicalVehicle;
+  renewal?: CanonicalVehicle;
+  isRemoved: boolean;
+  isAdded: boolean;
+}
+
+function VehicleCard({
+  vehicle,
+  baselinePolicyCovs,
+  renewalPolicyCovs,
   expanded,
   onToggle,
-  hasMaterial,
+  materialByField,
 }: {
-  title: string;
+  vehicle: VehicleData;
+  baselinePolicyCovs: CanonicalCoverage[];
+  renewalPolicyCovs: CanonicalCoverage[];
   expanded: boolean;
   onToggle: () => void;
-  hasMaterial: boolean;
+  materialByField: Map<string, MaterialChange>;
 }) {
-  return (
-    <button
-      onClick={onToggle}
-      className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-900/50 rounded-md hover:bg-gray-100 dark:hover:bg-gray-900/80 transition-colors"
-    >
-      <div className="flex items-center gap-2">
-        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{title}</span>
-      </div>
-      {hasMaterial && <AlertTriangle className="h-4 w-4 text-red-500" />}
-    </button>
-  );
-}
+  const { baseline, renewal, isRemoved, isAdded, label } = vehicle;
 
-function ComparisonRow({
-  label,
-  current,
-  renewal,
-  change,
-  isMaterial,
-}: {
-  label: string;
-  current: string;
-  renewal: string;
-  change?: 'better' | 'worse' | 'same' | 'different';
-  isMaterial?: boolean;
-}) {
-  const rowColor =
-    change === 'better'
-      ? 'bg-green-50/50 dark:bg-green-900/10'
-      : change === 'worse'
-        ? 'bg-red-50/50 dark:bg-red-900/10'
-        : change === 'different'
-          ? 'bg-yellow-50/50 dark:bg-yellow-900/10'
-          : '';
+  // Merge policy-level and vehicle-level coverages for comparison
+  const baselineCovs = mergeCoverages(baselinePolicyCovs, baseline?.coverages || []);
+  const renewalCovs = mergeCoverages(renewalPolicyCovs, renewal?.coverages || []);
+
+  // Build coverage comparison rows
+  const coverageRows = buildCoverageRows(baselineCovs, renewalCovs);
+
+  // Calculate vehicle premium totals
+  const baselinePremium = calculateTotalPremium(baselineCovs);
+  const renewalPremium = calculateTotalPremium(renewalCovs);
 
   return (
-    <div
-      className={cn(
-        'grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-b-0 text-sm',
-        rowColor
+    <div className={cn(
+      'border rounded-lg overflow-hidden',
+      isRemoved ? 'border-red-300 dark:border-red-800' :
+      isAdded ? 'border-green-300 dark:border-green-800' :
+      'border-gray-200 dark:border-gray-700'
+    )}>
+      {/* Vehicle Header */}
+      <button
+        onClick={onToggle}
+        className={cn(
+          'w-full flex items-center justify-between px-4 py-3 transition-colors',
+          isRemoved ? 'bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30' :
+          isAdded ? 'bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30' :
+          'bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800'
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <Car className={cn(
+            'h-5 w-5',
+            isRemoved ? 'text-red-500' : isAdded ? 'text-green-500' : 'text-gray-400'
+          )} />
+          <div className="text-left">
+            <div className={cn(
+              'font-medium',
+              isRemoved ? 'text-red-700 dark:text-red-400' :
+              isAdded ? 'text-green-700 dark:text-green-400' :
+              'text-gray-900 dark:text-gray-100'
+            )}>
+              {label}
+            </div>
+            {(isRemoved || isAdded) && (
+              <div className={cn(
+                'text-xs font-medium',
+                isRemoved ? 'text-red-600' : 'text-green-600'
+              )}>
+                {isRemoved ? 'REMOVED' : 'ADDED'}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          {!isRemoved && !isAdded && baselinePremium > 0 && renewalPremium > 0 && (
+            <div className="text-right text-sm">
+              <span className="text-gray-500">{formatCurrency(baselinePremium)}</span>
+              <span className="mx-2 text-gray-400">→</span>
+              <span className={cn('font-medium', getPremiumChangeColor(baselinePremium, renewalPremium))}>
+                {formatCurrency(renewalPremium)}
+              </span>
+            </div>
+          )}
+          {expanded ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+        </div>
+      </button>
+
+      {/* Coverage Table */}
+      {expanded && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-100 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400">
+                <th className="text-left px-4 py-2 font-medium">Coverage</th>
+                <th className="text-right px-3 py-2 font-medium w-20">Current</th>
+                <th className="text-right px-3 py-2 font-medium w-20">Renewal</th>
+                <th className="text-center px-3 py-2 font-medium w-24">Limit</th>
+                <th className="text-center px-3 py-2 font-medium w-20">Deductible</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              {coverageRows.map((row) => (
+                <CoverageRow key={row.type} row={row} materialByField={materialByField} />
+              ))}
+              {coverageRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-3 text-center text-gray-500 dark:text-gray-400 italic">
+                    No coverage data available
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
-    >
-      <div className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
-        {isMaterial && <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />}
-        <span className="truncate">{label}</span>
-      </div>
-      <div className="text-gray-900 dark:text-gray-100">{current}</div>
-      <div className={cn(
-        'font-medium',
-        change === 'better' ? 'text-green-600 dark:text-green-400' :
-        change === 'worse' ? 'text-red-600 dark:text-red-400' :
-        'text-gray-900 dark:text-gray-100'
-      )}>
-        {renewal}
-      </div>
     </div>
   );
 }
 
 // =============================================================================
-// RENDER HELPERS
+// COVERAGE ROW COMPONENT
 // =============================================================================
 
-function getChangeType(change?: MaterialChange): 'better' | 'worse' | 'same' | 'different' | undefined {
-  if (!change) return undefined;
-  if (change.severity === 'material_positive') return 'better';
-  if (change.severity === 'material_negative') return 'worse';
-  return 'different';
+interface CoverageRowData {
+  type: string;
+  label: string;
+  baseline?: CanonicalCoverage;
+  renewal?: CanonicalCoverage;
+  isRemoved: boolean;
+  isAdded: boolean;
+}
+
+function CoverageRow({ row, materialByField }: { row: CoverageRowData; materialByField: Map<string, MaterialChange> }) {
+  const { type, label, baseline, renewal, isRemoved, isAdded } = row;
+  const mc = materialByField.get(`coverage.${type}`) || materialByField.get(`coverage.${type}.limit`);
+
+  const baselinePrem = baseline?.premium;
+  const renewalPrem = renewal?.premium;
+
+  // Get limit - prefer renewal, fall back to baseline
+  const displayLimit = formatLimit(renewal) || formatLimit(baseline) || '-';
+
+  // Get deductible - compare both
+  const baselineDed = baseline?.deductibleAmount;
+  const renewalDed = renewal?.deductibleAmount;
+  const dedChanged = baselineDed != null && renewalDed != null && baselineDed !== renewalDed;
+
+  return (
+    <tr className={cn(
+      isRemoved ? 'bg-red-50/50 dark:bg-red-900/10' :
+      isAdded ? 'bg-green-50/50 dark:bg-green-900/10' :
+      ''
+    )}>
+      <td className="px-4 py-2">
+        <div className="flex items-center gap-2">
+          {mc?.severity === 'material_negative' && (
+            <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
+          )}
+          <span className={cn(
+            isRemoved ? 'text-red-600 dark:text-red-400 line-through' :
+            isAdded ? 'text-green-600 dark:text-green-400' :
+            'text-gray-700 dark:text-gray-300'
+          )}>
+            {label}
+          </span>
+          {isRemoved && <span className="text-xs text-red-500 font-medium">REMOVED</span>}
+          {isAdded && <span className="text-xs text-green-500 font-medium">NEW</span>}
+        </div>
+      </td>
+      <td className="text-right px-3 py-2 text-gray-600 dark:text-gray-400">
+        {baselinePrem != null ? formatCurrency(baselinePrem) : '-'}
+      </td>
+      <td className={cn(
+        'text-right px-3 py-2 font-medium',
+        isRemoved ? 'text-red-600 dark:text-red-400' :
+        isAdded ? 'text-green-600 dark:text-green-400' :
+        getPremiumChangeColor(baselinePrem, renewalPrem)
+      )}>
+        {renewalPrem != null ? formatCurrency(renewalPrem) : isRemoved ? '-' : '-'}
+      </td>
+      <td className="text-center px-3 py-2 text-gray-700 dark:text-gray-300">
+        {displayLimit}
+      </td>
+      <td className={cn(
+        'text-center px-3 py-2',
+        dedChanged ? (renewalDed! > baselineDed! ? 'text-red-600 dark:text-red-400 font-medium' : 'text-green-600 dark:text-green-400 font-medium') :
+        'text-gray-700 dark:text-gray-300'
+      )}>
+        {renewalDed != null ? `$${renewalDed.toLocaleString()}` : baselineDed != null ? `$${baselineDed.toLocaleString()}` : '-'}
+      </td>
+    </tr>
+  );
+}
+
+// =============================================================================
+// DISCOUNTS TABLE
+// =============================================================================
+
+function DiscountsTable({
+  baseline,
+  renewal,
+  materialByField,
+}: {
+  baseline?: CanonicalDiscount[];
+  renewal?: CanonicalDiscount[];
+  materialByField: Map<string, MaterialChange>;
+}) {
+  const allCodes = new Set<string>();
+  baseline?.forEach((d) => allCodes.add(d.code.toLowerCase()));
+  renewal?.forEach((d) => allCodes.add(d.code.toLowerCase()));
+
+  const baselineByCode = new Map(baseline?.map((d) => [d.code.toLowerCase(), d]) || []);
+  const renewalByCode = new Map(renewal?.map((d) => [d.code.toLowerCase(), d]) || []);
+
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="bg-gray-100 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400">
+          <th className="text-left px-4 py-2 font-medium">Discount</th>
+          <th className="text-center px-3 py-2 font-medium w-24">Current</th>
+          <th className="text-center px-3 py-2 font-medium w-24">Renewal</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+        {Array.from(allCodes).map((code) => {
+          const b = baselineByCode.get(code);
+          const r = renewalByCode.get(code);
+          const isRemoved = b && !r;
+          const isAdded = !b && r;
+          const label = b?.description || r?.description || COVERAGE_TYPE_LABELS[code] || code.toUpperCase();
+
+          return (
+            <tr key={code} className={cn(
+              isRemoved ? 'bg-red-50/50 dark:bg-red-900/10' :
+              isAdded ? 'bg-green-50/50 dark:bg-green-900/10' : ''
+            )}>
+              <td className="px-4 py-2">
+                <span className={cn(
+                  isRemoved ? 'text-red-600 dark:text-red-400' :
+                  isAdded ? 'text-green-600 dark:text-green-400' :
+                  'text-gray-700 dark:text-gray-300'
+                )}>
+                  {label}
+                </span>
+              </td>
+              <td className="text-center px-3 py-2 text-gray-600 dark:text-gray-400">
+                {b ? (b.percent ? `${b.percent}%` : b.amount ? formatCurrency(b.amount) : '✓') : '-'}
+              </td>
+              <td className={cn(
+                'text-center px-3 py-2 font-medium',
+                isRemoved ? 'text-red-600 dark:text-red-400' :
+                isAdded ? 'text-green-600 dark:text-green-400' :
+                'text-gray-700 dark:text-gray-300'
+              )}>
+                {r ? (r.percent ? `${r.percent}%` : r.amount ? formatCurrency(r.amount) : '✓') : 'REMOVED'}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+function formatCurrency(val: number | undefined | null): string {
+  if (val == null) return '-';
+  return `$${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
 function formatLimit(cov: CanonicalCoverage | undefined): string {
-  if (!cov) return 'N/A';
-  if (cov.limitAmount != null) return `$${cov.limitAmount.toLocaleString()}`;
+  if (!cov) return '';
+  if (cov.limitAmount != null) {
+    // Format split limits nicely (e.g., 100000 -> 100/300 for BI)
+    return `$${cov.limitAmount.toLocaleString()}`;
+  }
   if (cov.limit) {
-    // Try to parse zero-padded limit string
+    // Clean up zero-padded limit strings
     const cleaned = cov.limit.replace(/^0+/, '') || '0';
     const num = parseInt(cleaned, 10);
     if (!isNaN(num) && num > 0) return `$${num.toLocaleString()}`;
     return cov.limit;
   }
-  return '-';
+  return '';
 }
 
-function renderCoverageComparison(
-  baseline: CanonicalCoverage[] | undefined,
-  renewal: CanonicalCoverage[] | undefined,
-  materialByField: Map<string, MaterialChange>
-) {
-  // Build unique coverage entries using type+description to handle duplicates
-  interface CovEntry { key: string; type: string; baseline?: CanonicalCoverage; renewal?: CanonicalCoverage; }
-  const entries: CovEntry[] = [];
-  const entryMap = new Map<string, CovEntry>();
-
-  const getKey = (c: CanonicalCoverage) => {
-    // Use type + description to disambiguate (e.g., two personal_property with different descriptions)
-    const desc = c.description || '';
-    return `${c.type}::${desc}`;
-  };
-
-  baseline?.forEach((c) => {
-    const key = getKey(c);
-    const existing = entryMap.get(key);
-    if (existing) {
-      existing.baseline = c;
-    } else {
-      const entry: CovEntry = { key, type: c.type, baseline: c };
-      entryMap.set(key, entry);
-      entries.push(entry);
-    }
-  });
-
-  renewal?.forEach((c) => {
-    const key = getKey(c);
-    const existing = entryMap.get(key);
-    if (existing) {
-      existing.renewal = c;
-    } else {
-      const entry: CovEntry = { key, type: c.type, renewal: c };
-      entryMap.set(key, entry);
-      entries.push(entry);
-    }
-  });
-
-  if (entries.length === 0) {
-    return <div className="px-3 py-2 text-sm text-gray-500">No coverage data</div>;
-  }
-
-  return (
-    <>
-      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
-        <div>Coverage</div>
-        <div>Current Limit</div>
-        <div>Renewal Limit</div>
-      </div>
-      {entries.map((entry) => {
-        const { baseline: b, renewal: r, type } = entry;
-        const mc = materialByField.get(`coverage.${type}`) || materialByField.get(`coverage.${type}.limit`);
-
-        // Use description, but fall back to type label if description is a short raw code
-        const rawDesc = b?.description || r?.description || '';
-        const isRawCode = rawDesc.length <= 6 && /^[A-Z]+$/.test(rawDesc);
-        const label = isRawCode ? (COVERAGE_TYPE_LABELS[type] || rawDesc || type) : (rawDesc || COVERAGE_TYPE_LABELS[type] || type);
-
-        return (
-          <ComparisonRow
-            key={entry.key}
-            label={label}
-            current={b ? formatLimit(b) : 'N/A'}
-            renewal={r ? formatLimit(r) : 'REMOVED'}
-            change={!r ? 'worse' : !b ? 'better' : getChangeType(mc)}
-            isMaterial={mc?.severity === 'material_negative'}
-          />
-        );
-      })}
-    </>
-  );
+function getPremiumChangeColor(baseline?: number | null, renewal?: number | null): string {
+  if (baseline == null || renewal == null) return 'text-gray-900 dark:text-gray-100';
+  if (renewal < baseline) return 'text-green-600 dark:text-green-400';
+  if (renewal > baseline) return 'text-red-600 dark:text-red-400';
+  return 'text-gray-900 dark:text-gray-100';
 }
 
-function renderVehicleComparison(
-  baseline: CanonicalVehicle[] | undefined,
-  renewal: CanonicalVehicle[] | undefined,
-  baselinePolicyCoverages: CanonicalCoverage[] | undefined,
-  materialByField: Map<string, MaterialChange>
-) {
-  const allVins = new Set<string>();
-  baseline?.forEach((v) => v.vin && allVins.add(v.vin));
-  renewal?.forEach((v) => v.vin && allVins.add(v.vin));
-
-  if (allVins.size === 0 && !baseline?.length && !renewal?.length) {
-    return <div className="px-3 py-2 text-sm text-gray-500">No vehicle data</div>;
-  }
-
-  const baselineByVin = new Map(baseline?.filter((v) => v.vin).map((v) => [v.vin!, v]) || []);
-  const renewalByVin = new Map(renewal?.filter((v) => v.vin).map((v) => [v.vin!, v]) || []);
-
-  // Get baseline vehicle-level coverages from policy level (HawkSoft stores them there)
-  const baselineVehicleCovs = (baselinePolicyCoverages || []).filter(c =>
-    ['comprehensive', 'collision', 'tl', 'rreim', 'roadside', 'rental'].includes(c.type)
-  );
-
-  const formatDed = (val: number | undefined) => val != null ? `$${val.toLocaleString()}` : '-';
-  const formatLimit = (val: number | undefined) => val != null ? `$${val.toLocaleString()}` : '-';
-
-  return (
-    <>
-      {Array.from(allVins).map((vin) => {
-        const b = baselineByVin.get(vin);
-        const r = renewalByVin.get(vin);
-        const vehDesc = (v: CanonicalVehicle | undefined) =>
-          v ? `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin : 'Unknown';
-        const mc = materialByField.get(`vehicle.${vin}`);
-        const isRemoved = !r;
-        const isAdded = !b;
-
-        // Get vehicle-level coverages
-        const renewalCovs = (r?.coverages || []).filter(c =>
-          ['comprehensive', 'collision', 'tl', 'rreim', 'roadside', 'rental'].includes(c.type)
-        );
-
-        return (
-          <div key={vin} className="border-b border-gray-200 dark:border-gray-700 last:border-b-0">
-            {/* Vehicle header */}
-            <div className={cn(
-              'px-3 py-2 font-medium text-sm flex items-center justify-between',
-              isRemoved ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' :
-              isAdded ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' :
-              'bg-gray-50 dark:bg-gray-800'
-            )}>
-              <div className="flex items-center gap-2">
-                {mc?.severity === 'material_negative' && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                <span>{vehDesc(b || r)}</span>
-              </div>
-              <span className="text-xs">
-                {isRemoved ? 'REMOVED' : isAdded ? 'ADDED' : ''}
-              </span>
-            </div>
-
-            {/* Vehicle coverages (only for present vehicles) */}
-            {r && renewalCovs.length > 0 && (
-              <div className="px-3 py-1 space-y-1">
-                <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 text-xs text-gray-500 dark:text-gray-400 pb-1">
-                  <div>Coverage</div>
-                  <div>Current</div>
-                  <div>Renewal</div>
-                </div>
-                {renewalCovs.map((cov) => {
-                  // Find matching baseline coverage (from policy level or vehicle level)
-                  const baselineCov = baselineVehicleCovs.find(c => c.type === cov.type) ||
-                    (b?.coverages || []).find(c => c.type === cov.type);
-
-                  const label = COVERAGE_TYPE_LABELS[cov.type] || cov.description || cov.type;
-                  const hasDeductible = cov.deductibleAmount != null || baselineCov?.deductibleAmount != null;
-                  const hasLimit = cov.limitAmount != null || baselineCov?.limitAmount != null;
-
-                  return (
-                    <div key={cov.type} className="grid grid-cols-[1fr_1fr_1fr] gap-2 text-sm py-0.5">
-                      <div className="text-gray-600 dark:text-gray-400">{label}</div>
-                      <div className="text-gray-900 dark:text-gray-100">
-                        {hasDeductible && baselineCov?.deductibleAmount != null
-                          ? `${formatDed(baselineCov.deductibleAmount)} ded`
-                          : hasLimit && baselineCov?.limitAmount != null
-                            ? formatLimit(baselineCov.limitAmount)
-                            : baselineCov ? 'Included' : '-'}
-                      </div>
-                      <div className={cn(
-                        'font-medium',
-                        baselineCov?.deductibleAmount != null && cov.deductibleAmount != null &&
-                        cov.deductibleAmount !== baselineCov.deductibleAmount
-                          ? cov.deductibleAmount > baselineCov.deductibleAmount
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-green-600 dark:text-green-400'
-                          : ''
-                      )}>
-                        {hasDeductible && cov.deductibleAmount != null
-                          ? `${formatDed(cov.deductibleAmount)} ded`
-                          : hasLimit && cov.limitAmount != null
-                            ? formatLimit(cov.limitAmount)
-                            : 'Included'}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Show message if vehicle has no physical damage coverage */}
-            {r && renewalCovs.length === 0 && (
-              <div className="px-3 py-1 text-xs text-gray-500 dark:text-gray-400 italic">
-                Liability only (no physical damage coverage)
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </>
-  );
+function getPremiumBadgeStyle(baseline: number, renewal: number): string {
+  const diff = renewal - baseline;
+  if (diff < 0) return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400';
+  if (diff > 0) return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+  return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400';
 }
 
-function renderDeductibleComparison(
-  baselineCoverages: CanonicalCoverage[] | undefined,
-  renewalCoverages: CanonicalCoverage[] | undefined,
-  baselineVehicles: CanonicalVehicle[] | undefined,
-  renewalVehicles: CanonicalVehicle[] | undefined,
-  materialByField: Map<string, MaterialChange>
-) {
-  const formatDed = (val: number | undefined) => val != null ? `$${val.toLocaleString()}` : '-';
+function formatPremiumChange(baseline: number, renewal: number): string {
+  const diff = renewal - baseline;
+  const pct = ((diff / baseline) * 100).toFixed(1);
+  if (diff === 0) return 'No change';
+  const sign = diff > 0 ? '+' : '';
+  return `${sign}$${diff.toLocaleString()} (${sign}${pct}%)`;
+}
 
-  // Collect coverages that have deductibles from both policy-level and vehicle-level
-  interface DedEntry { key: string; type: string; vehicle?: string; baseline?: CanonicalCoverage; renewal?: CanonicalCoverage; }
-  const entries: DedEntry[] = [];
-  const entryMap = new Map<string, DedEntry>();
+function calculateTotalPremium(coverages: CanonicalCoverage[]): number {
+  return coverages.reduce((sum, c) => sum + (c.premium || 0), 0);
+}
 
-  // Add policy-level deductibles
-  baselineCoverages?.filter((c) => c.deductibleAmount != null).forEach((c) => {
-    const key = `policy::${c.type}`;
-    if (!entryMap.has(key)) {
-      const entry: DedEntry = { key, type: c.type, baseline: c };
-      entryMap.set(key, entry);
-      entries.push(entry);
-    }
-  });
+function buildVehicleList(baseline: BaselineSnapshot | null, renewal: RenewalSnapshot | null): VehicleData[] {
+  const vehicles: VehicleData[] = [];
+  const seenVins = new Set<string>();
 
-  renewalCoverages?.filter((c) => c.deductibleAmount != null).forEach((c) => {
-    const key = `policy::${c.type}`;
-    const existing = entryMap.get(key);
-    if (existing) {
-      existing.renewal = c;
-    } else {
-      const entry: DedEntry = { key, type: c.type, renewal: c };
-      entryMap.set(key, entry);
-      entries.push(entry);
-    }
-  });
+  // Add baseline vehicles
+  baseline?.vehicles?.forEach((v) => {
+    const vin = v.vin || `${v.year}-${v.make}-${v.model}`;
+    if (seenVins.has(vin)) return;
+    seenVins.add(vin);
 
-  // Add vehicle-level deductibles (grouped by coverage type, not per-vehicle)
-  const vehicleCovTypes = ['comprehensive', 'collision'];
-
-  // Collect baseline vehicle-level coverages (may be at policy level for HawkSoft)
-  const baselineVehCovs = new Map<string, CanonicalCoverage>();
-  baselineCoverages?.filter(c => vehicleCovTypes.includes(c.type) && c.deductibleAmount != null).forEach(c => {
-    if (!baselineVehCovs.has(c.type)) baselineVehCovs.set(c.type, c);
-  });
-  baselineVehicles?.forEach(v => {
-    v.coverages?.filter(c => vehicleCovTypes.includes(c.type) && c.deductibleAmount != null).forEach(c => {
-      if (!baselineVehCovs.has(c.type)) baselineVehCovs.set(c.type, c);
+    const renewalMatch = renewal?.vehicles?.find((rv) => rv.vin === v.vin);
+    vehicles.push({
+      vin,
+      label: `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin,
+      baseline: v,
+      renewal: renewalMatch,
+      isRemoved: !renewalMatch,
+      isAdded: false,
     });
   });
 
-  // Collect renewal vehicle-level coverages
-  const renewalVehCovs = new Map<string, CanonicalCoverage>();
-  renewalVehicles?.forEach(v => {
-    v.coverages?.filter(c => vehicleCovTypes.includes(c.type) && c.deductibleAmount != null).forEach(c => {
-      if (!renewalVehCovs.has(c.type)) renewalVehCovs.set(c.type, c);
+  // Add renewal-only vehicles
+  renewal?.vehicles?.forEach((v) => {
+    const vin = v.vin || `${v.year}-${v.make}-${v.model}`;
+    if (seenVins.has(vin)) return;
+    seenVins.add(vin);
+
+    vehicles.push({
+      vin,
+      label: `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin,
+      baseline: undefined,
+      renewal: v,
+      isRemoved: false,
+      isAdded: true,
     });
   });
 
-  // Add to entries if not already present
-  vehicleCovTypes.forEach(type => {
-    const key = `vehicle::${type}`;
-    if (entryMap.has(key) || entryMap.has(`policy::${type}`)) return;
+  return vehicles;
+}
 
-    const b = baselineVehCovs.get(type);
-    const r = renewalVehCovs.get(type);
-    if (b || r) {
-      const entry: DedEntry = { key, type, baseline: b, renewal: r };
-      entryMap.set(key, entry);
-      entries.push(entry);
+function mergeCoverages(policyCovs: CanonicalCoverage[], vehicleCovs: CanonicalCoverage[]): CanonicalCoverage[] {
+  const merged = new Map<string, CanonicalCoverage>();
+
+  // Add policy-level coverages first
+  policyCovs.forEach((c) => {
+    if (c.type && !merged.has(c.type)) {
+      merged.set(c.type, c);
     }
   });
 
-  if (entries.length === 0) {
-    return <div className="px-3 py-2 text-sm text-gray-500">No deductible data</div>;
-  }
+  // Override/add vehicle-level coverages (they have per-vehicle deductibles/limits)
+  vehicleCovs.forEach((c) => {
+    if (c.type) {
+      merged.set(c.type, c);
+    }
+  });
 
-  return (
-    <>
-      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
-        <div>Coverage</div>
-        <div>Current Ded.</div>
-        <div>Renewal Ded.</div>
-      </div>
-      {entries.map((entry) => {
-        const { baseline: b, renewal: r, type } = entry;
-        const mc = materialByField.get(`coverage.${type}.deductible`);
-
-        const rawDesc = b?.description || r?.description || '';
-        const isRawCode = rawDesc.length <= 6 && /^[A-Z]+$/.test(rawDesc);
-        const label = isRawCode ? (COVERAGE_TYPE_LABELS[type] || rawDesc || type) : (rawDesc || COVERAGE_TYPE_LABELS[type] || type);
-
-        // Determine change type based on values
-        let change: 'better' | 'worse' | 'same' | 'different' | undefined = getChangeType(mc);
-        if (!change && b?.deductibleAmount != null && r?.deductibleAmount != null) {
-          if (r.deductibleAmount > b.deductibleAmount) change = 'worse';
-          else if (r.deductibleAmount < b.deductibleAmount) change = 'better';
-        }
-
-        return (
-          <ComparisonRow
-            key={entry.key}
-            label={label}
-            current={formatDed(b?.deductibleAmount)}
-            renewal={formatDed(r?.deductibleAmount)}
-            change={change}
-            isMaterial={mc?.severity === 'material_negative' || (change === 'worse')}
-          />
-        );
-      })}
-    </>
-  );
+  return Array.from(merged.values());
 }
 
-function renderDiscountComparison(
-  baseline: CanonicalDiscount[] | undefined,
-  renewal: CanonicalDiscount[] | undefined,
-  materialByField: Map<string, MaterialChange>
-) {
-  const allCodes = new Set<string>();
-  baseline?.forEach((d) => allCodes.add(d.code.toUpperCase()));
-  renewal?.forEach((d) => allCodes.add(d.code.toUpperCase()));
+function buildCoverageRows(baselineCovs: CanonicalCoverage[], renewalCovs: CanonicalCoverage[]): CoverageRowData[] {
+  const rows: CoverageRowData[] = [];
+  const seenTypes = new Set<string>();
 
-  if (allCodes.size === 0 && !baseline?.length && !renewal?.length) {
-    return <div className="px-3 py-2 text-sm text-gray-500">No discount data</div>;
-  }
+  const baselineByType = new Map(baselineCovs.map((c) => [c.type, c]));
+  const renewalByType = new Map(renewalCovs.map((c) => [c.type, c]));
 
-  const baselineByCode = new Map(baseline?.map((d) => [d.code.toUpperCase(), d]) || []);
-  const renewalByCode = new Map(renewal?.map((d) => [d.code.toUpperCase(), d]) || []);
+  // Process in defined order first
+  COVERAGE_ORDER.forEach((type) => {
+    const b = baselineByType.get(type);
+    const r = renewalByType.get(type);
+    if (!b && !r) return;
+    seenTypes.add(type);
 
-  return (
-    <>
-      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
-        <div>Discount</div>
-        <div>Current</div>
-        <div>Renewal</div>
-      </div>
-      {Array.from(allCodes).map((code) => {
-        const b = baselineByCode.get(code);
-        const r = renewalByCode.get(code);
-        const mc = materialByField.get(`discount.${code}`);
+    rows.push({
+      type,
+      label: COVERAGE_TYPE_LABELS[type] || b?.description || r?.description || type,
+      baseline: b,
+      renewal: r,
+      isRemoved: !!b && !r,
+      isAdded: !b && !!r,
+    });
+  });
 
-        return (
-          <ComparisonRow
-            key={code}
-            label={b?.description || r?.description || COVERAGE_TYPE_LABELS[code.toLowerCase()] || code}
-            current={b ? (b.percent ? `${b.percent}%` : b.amount ? `$${b.amount}` : 'Applied') : 'N/A'}
-            renewal={r ? (r.percent ? `${r.percent}%` : r.amount ? `$${r.amount}` : 'Applied') : 'REMOVED'}
-            change={!r ? 'worse' : !b ? 'better' : 'same'}
-            isMaterial={mc?.severity === 'material_negative'}
-          />
-        );
-      })}
-    </>
-  );
-}
+  // Add any remaining coverages not in the order list
+  [...baselineByType.keys(), ...renewalByType.keys()].forEach((type) => {
+    if (seenTypes.has(type)) return;
+    seenTypes.add(type);
 
-function renderClaimsSection(
-  baseline: CanonicalClaim[] | undefined,
-  renewal: CanonicalClaim[] | undefined,
-  materialChanges: MaterialChange[]
-) {
-  const allClaims = [...(baseline || []), ...(renewal || [])];
-  const claimChanges = materialChanges.filter((c) => c.category === 'claim');
+    const b = baselineByType.get(type);
+    const r = renewalByType.get(type);
 
-  if (allClaims.length === 0 && claimChanges.length === 0) {
-    return <div className="px-3 py-2 text-sm text-gray-500">No claims data</div>;
-  }
+    rows.push({
+      type,
+      label: COVERAGE_TYPE_LABELS[type] || b?.description || r?.description || type,
+      baseline: b,
+      renewal: r,
+      isRemoved: !!b && !r,
+      isAdded: !b && !!r,
+    });
+  });
 
-  return (
-    <>
-      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
-        <div>Claim</div>
-        <div>Date</div>
-        <div>Status</div>
-      </div>
-      {allClaims.map((claim, idx) => {
-        const isNew = claimChanges.some(
-          (c) => c.field === `claim.${claim.claimNumber || 'new'}`
-        );
-        return (
-          <ComparisonRow
-            key={claim.claimNumber || `claim-${idx}`}
-            label={claim.claimType || claim.claimNumber || 'Claim'}
-            current={claim.claimDate || '-'}
-            renewal={claim.status || (claim.amount != null ? `$${claim.amount.toLocaleString()}` : '-')}
-            change={isNew ? 'worse' : 'same'}
-            isMaterial={isNew}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-function renderPropertySection(
-  propertyContext: PropertyContext,
-  materialChanges: MaterialChange[]
-) {
-  const propertyChanges = materialChanges.filter((c) => c.category === 'property');
-
-  return (
-    <>
-      <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400">
-        <div>Property Detail</div>
-        <div>Value</div>
-        <div>Flag</div>
-      </div>
-      {propertyContext.roofAge != null && (
-        <ComparisonRow
-          label="Roof Age"
-          current={`${propertyContext.roofAge} years`}
-          renewal={propertyContext.roofType || '-'}
-          change={propertyContext.roofAge >= 20 ? 'worse' : propertyContext.roofAge >= 15 ? 'different' : 'same'}
-          isMaterial={propertyContext.roofAge >= 20}
-        />
-      )}
-      {propertyContext.yearBuilt != null && (
-        <ComparisonRow
-          label="Year Built"
-          current={`${propertyContext.yearBuilt}`}
-          renewal="-"
-        />
-      )}
-      {propertyContext.constructionType != null && (
-        <ComparisonRow
-          label="Construction"
-          current={propertyContext.constructionType}
-          renewal="-"
-        />
-      )}
-      {propertyChanges.filter((c) => c.field === 'property.rce').map((c) => (
-        <ComparisonRow
-          key={c.field}
-          label="Replacement Cost Est."
-          current={c.oldValue != null ? `$${Number(c.oldValue).toLocaleString()}` : '-'}
-          renewal={c.newValue != null ? `$${Number(c.newValue).toLocaleString()}` : '-'}
-          change={getChangeType(c)}
-          isMaterial={c.severity === 'material_negative'}
-        />
-      ))}
-      {propertyChanges.filter((c) => c.field === 'property.roofCoverageType').map((c) => (
-        <ComparisonRow
-          key={c.field}
-          label="Valuation Method"
-          current={String(c.oldValue || '-')}
-          renewal={String(c.newValue || '-')}
-          change="worse"
-          isMaterial={true}
-        />
-      ))}
-    </>
-  );
+  return rows;
 }
