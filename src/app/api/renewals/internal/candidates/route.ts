@@ -1,11 +1,14 @@
 /**
  * POST /api/renewals/internal/candidates
  * Create a renewal candidate record (called by worker).
+ * Also captures baseline snapshot immediately to preserve current term data.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { renewalCandidates } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { buildBaselineSnapshot } from '@/lib/al3/baseline-builder';
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,6 +35,31 @@ export async function POST(request: NextRequest) {
 
     if (!candidate) {
       return NextResponse.json({ success: true, candidateId: null, duplicate: true });
+    }
+
+    // Capture baseline snapshot immediately to preserve current term data
+    // This prevents data staleness when HawkSoft syncs update the policy
+    try {
+      const baselineResult = await buildBaselineSnapshot(
+        body.tenantId,
+        body.policyNumber,
+        body.carrierName
+      );
+
+      if (baselineResult) {
+        await db
+          .update(renewalCandidates)
+          .set({
+            baselineSnapshot: baselineResult.snapshot,
+            baselineCapturedAt: new Date(),
+            policyId: baselineResult.policyId,
+            customerId: baselineResult.customerId,
+          })
+          .where(eq(renewalCandidates.id, candidate.id));
+      }
+    } catch (baselineError) {
+      // Log but don't fail - worker can still build baseline later
+      console.error('[Internal API] Failed to capture baseline snapshot:', baselineError);
     }
 
     return NextResponse.json({ success: true, candidateId: candidate.id });

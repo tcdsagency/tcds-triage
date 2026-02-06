@@ -331,21 +331,36 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
     // Update candidate status and snapshot
     await patchCandidate(candidateId, { status: 'comparing', renewalSnapshot });
 
-    // Fetch HawkSoft baseline via internal API
-    const baselineRes = await internalFetch('/api/renewals/internal/baseline', {
-      method: 'POST',
-      body: JSON.stringify({
-        tenantId,
-        policyNumber: candidate.policyNumber,
-        carrierName: candidate.carrierName,
-      }),
-    });
-    const baselineData = await baselineRes.json() as {
+    // Use early-captured baseline if available, otherwise fetch fresh
+    // Early capture preserves current term data before HawkSoft syncs update the policy
+    let baselineData: {
       success: boolean;
       snapshot?: Record<string, any>;
       policyId?: string;
       customerId?: string;
     };
+
+    if (candidate.baselineSnapshot && candidate.baselineCapturedAt) {
+      // Use early-captured baseline
+      logger.info({ candidateId, capturedAt: candidate.baselineCapturedAt }, 'Using early-captured baseline');
+      baselineData = {
+        success: true,
+        snapshot: candidate.baselineSnapshot,
+        policyId: candidate.policyId,
+        customerId: candidate.customerId,
+      };
+    } else {
+      // Fallback: Fetch HawkSoft baseline via internal API (for older candidates)
+      const baselineRes = await internalFetch('/api/renewals/internal/baseline', {
+        method: 'POST',
+        body: JSON.stringify({
+          tenantId,
+          policyNumber: candidate.policyNumber,
+          carrierName: candidate.carrierName,
+        }),
+      });
+      baselineData = await baselineRes.json() as typeof baselineData;
+    }
 
     if (!baselineData.success || !baselineData.snapshot) {
       // Policy not found - skip candidate

@@ -4875,6 +4875,11 @@ export const renewalCandidates = pgTable('renewal_candidates', {
   al3FileName: varchar('al3_file_name', { length: 255 }),
   renewalSnapshot: jsonb('renewal_snapshot'),
 
+  // Early baseline capture - captured at candidate creation time to preserve
+  // current term data before any HawkSoft syncs can update it
+  baselineSnapshot: jsonb('baseline_snapshot'),
+  baselineCapturedAt: timestamp('baseline_captured_at'),
+
   // Error tracking
   errorMessage: text('error_message'),
 
