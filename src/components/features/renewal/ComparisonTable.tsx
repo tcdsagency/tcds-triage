@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { ChevronDown, ChevronRight, AlertTriangle, Car, Home } from 'lucide-react';
-import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle, CanonicalDriver, CanonicalDiscount, CanonicalClaim, PropertyContext } from '@/types/renewal.types';
+import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle, CanonicalDriver, CanonicalDiscount, CanonicalClaim, PropertyContext, ComparisonSummary } from '@/types/renewal.types';
 
 // Human-readable labels for coverage types
 const COVERAGE_TYPE_LABELS: Record<string, string> = {
@@ -95,6 +95,7 @@ interface ComparisonTableProps {
   carrierName?: string | null;
   policyNumber?: string | null;
   lineOfBusiness?: string | null;
+  comparisonSummary?: ComparisonSummary | null;
 }
 
 export default function ComparisonTable({
@@ -105,6 +106,7 @@ export default function ComparisonTable({
   carrierName,
   policyNumber,
   lineOfBusiness,
+  comparisonSummary,
 }: ComparisonTableProps) {
   const [expandedVehicles, setExpandedVehicles] = useState<Set<string>>(new Set(['all']));
   const [showDiscounts, setShowDiscounts] = useState(true);
@@ -133,8 +135,29 @@ export default function ComparisonTable({
   const baselinePolicyCovs = baselineSnapshot?.coverages || [];
   const renewalPolicyCovs = renewalSnapshot?.coverages || [];
 
+  // Detect stale baseline
+  const isStaleBaseline = comparisonSummary?.baselineStatus === 'current_term';
+
   return (
     <div className="space-y-4">
+      {/* Stale Baseline Warning */}
+      {isStaleBaseline && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-lg p-3 mb-4">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                Prior Term Data Unavailable
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                {comparisonSummary?.baselineStatusReason ||
+                  'The baseline was captured from the new term. Current premium comparison may not be accurate.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Policy Header with Renewal Date */}
       {renewalEffectiveDate && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">

@@ -374,6 +374,7 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
       body: JSON.stringify({
         renewalSnapshot,
         baselineSnapshot: baselineData.snapshot,
+        renewalEffectiveDate: candidate.effectiveDate,
       }),
     });
     const compareData = await compareRes.json() as {
@@ -406,7 +407,11 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
         renewalSnapshot,
         baselineSnapshot: baselineData.snapshot,
         materialChanges: comparisonResult.materialChanges,
-        comparisonSummary: comparisonResult.summary,
+        comparisonSummary: {
+          ...comparisonResult.summary,
+          baselineStatus: comparisonResult.baselineStatus,
+          baselineStatusReason: comparisonResult.baselineStatusReason,
+        },
       }),
     });
 

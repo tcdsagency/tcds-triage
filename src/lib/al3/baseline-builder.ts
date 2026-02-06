@@ -272,6 +272,9 @@ export async function buildBaselineSnapshot(
     discounts: discountCoverages,
     claims,
     propertyContext,
+    // Capture policy term dates for stale baseline detection
+    policyEffectiveDate: policy.effectiveDate?.toISOString().split('T')[0],
+    policyExpirationDate: policy.expirationDate?.toISOString().split('T')[0],
     fetchedAt: new Date().toISOString(),
     fetchSource,
   };

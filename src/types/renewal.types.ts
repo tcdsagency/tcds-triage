@@ -229,6 +229,9 @@ export interface BaselineSnapshot {
   discounts: CanonicalDiscount[];
   claims: CanonicalClaim[];
   propertyContext?: PropertyContext;
+  // Policy term dates - used to detect stale baseline
+  policyEffectiveDate?: string; // ISO date
+  policyExpirationDate?: string; // ISO date
   fetchedAt: string; // ISO timestamp
   fetchSource: 'hawksoft_api' | 'local_cache';
 }
@@ -285,6 +288,9 @@ export interface ComparisonSummary {
   materialPositiveCount: number;
   nonMaterialCount: number;
   headline: string;
+  // Baseline data quality
+  baselineStatus?: 'prior_term' | 'current_term' | 'unknown';
+  baselineStatusReason?: string;
 }
 
 /**
@@ -296,6 +302,9 @@ export interface ComparisonResult {
   materialChanges: MaterialChange[];
   nonMaterialChanges: MaterialChange[];
   confidenceLevel: 'high' | 'medium' | 'low';
+  // Baseline data quality indicator
+  baselineStatus: 'prior_term' | 'current_term' | 'unknown';
+  baselineStatusReason?: string;
 }
 
 // =============================================================================

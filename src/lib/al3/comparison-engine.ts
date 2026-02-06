@@ -144,9 +144,17 @@ function compareVehicleLevelCoverages(
 export function compareSnapshots(
   renewal: RenewalSnapshot,
   baseline: BaselineSnapshot,
-  thresholds: ComparisonThresholds = DEFAULT_COMPARISON_THRESHOLDS
+  thresholds: ComparisonThresholds = DEFAULT_COMPARISON_THRESHOLDS,
+  renewalEffectiveDate?: string // ISO date string (YYYY-MM-DD)
 ): ComparisonResult {
   const allChanges: MaterialChange[] = [];
+
+  // Detect stale baseline: baseline policy dates match renewal effective date
+  const { baselineStatus, baselineStatusReason } = detectStaleBaseline(
+    baseline,
+    renewalEffectiveDate,
+    renewal.premium
+  );
 
   // Compare premium
   allChanges.push(...comparePremium(renewal.premium, baseline.premium, thresholds));
@@ -203,7 +211,46 @@ export function compareSnapshots(
     materialChanges,
     nonMaterialChanges,
     confidenceLevel,
+    baselineStatus,
+    baselineStatusReason,
   };
+}
+
+/**
+ * Detect if the baseline is stale (captured from new term instead of prior term).
+ */
+function detectStaleBaseline(
+  baseline: BaselineSnapshot,
+  renewalEffectiveDate?: string,
+  renewalPremium?: number
+): { baselineStatus: 'prior_term' | 'current_term' | 'unknown'; baselineStatusReason?: string } {
+  // If we don't have baseline policy dates, we can't determine
+  if (!baseline.policyEffectiveDate) {
+    // Fallback: if premiums are exactly equal, it's suspicious
+    if (baseline.premium != null && renewalPremium != null && baseline.premium === renewalPremium) {
+      return {
+        baselineStatus: 'current_term',
+        baselineStatusReason: 'Baseline premium equals renewal premium - prior term data may be unavailable',
+      };
+    }
+    return { baselineStatus: 'unknown' };
+  }
+
+  // Compare baseline effective date with renewal effective date
+  if (renewalEffectiveDate) {
+    const baselineEffDate = baseline.policyEffectiveDate;
+    const renewalEffDate = renewalEffectiveDate.split('T')[0]; // Normalize to YYYY-MM-DD
+
+    if (baselineEffDate === renewalEffDate) {
+      return {
+        baselineStatus: 'current_term',
+        baselineStatusReason: 'Baseline was captured from the new term - prior term data unavailable',
+      };
+    }
+  }
+
+  // Baseline effective date is different from renewal effective date - good!
+  return { baselineStatus: 'prior_term' };
 }
 
 // =============================================================================

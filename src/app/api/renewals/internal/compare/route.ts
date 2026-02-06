@@ -20,7 +20,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = compareSnapshots(body.renewalSnapshot, body.baselineSnapshot, body.thresholds);
+    const result = compareSnapshots(
+      body.renewalSnapshot,
+      body.baselineSnapshot,
+      body.thresholds,
+      body.renewalEffectiveDate
+    );
 
     return NextResponse.json({ success: true, result });
   } catch (error) {
