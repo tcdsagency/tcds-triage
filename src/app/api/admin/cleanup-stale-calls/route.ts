@@ -86,6 +86,57 @@ export async function GET() {
   });
 }
 
+// PUT - Clean up stuck transcriptions (active for >30 minutes)
+export async function PUT() {
+  try {
+    const tenantId = process.env.DEFAULT_TENANT_ID || "00000000-0000-0000-0000-000000000001";
+    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+
+    // Find calls with stuck transcription status
+    const stuckTranscriptions = await db
+      .select({ id: calls.id, transcriptionStatus: calls.transcriptionStatus, startedAt: calls.startedAt })
+      .from(calls)
+      .where(
+        and(
+          eq(calls.tenantId, tenantId),
+          eq(calls.transcriptionStatus, "active"),
+          lt(calls.startedAt, thirtyMinutesAgo)
+        )
+      );
+
+    if (stuckTranscriptions.length === 0) {
+      return NextResponse.json({ success: true, message: "No stuck transcriptions", cleaned: 0 });
+    }
+
+    // Mark transcriptions as completed
+    await db
+      .update(calls)
+      .set({ transcriptionStatus: "completed" })
+      .where(
+        and(
+          eq(calls.tenantId, tenantId),
+          eq(calls.transcriptionStatus, "active"),
+          lt(calls.startedAt, thirtyMinutesAgo)
+        )
+      );
+
+    console.log(`[Cleanup] Fixed ${stuckTranscriptions.length} stuck transcriptions`);
+
+    return NextResponse.json({
+      success: true,
+      message: `Fixed ${stuckTranscriptions.length} stuck transcriptions`,
+      cleaned: stuckTranscriptions.length,
+      calls: stuckTranscriptions.map(c => ({ id: c.id, startedAt: c.startedAt })),
+    });
+  } catch (error) {
+    console.error("[Cleanup] Error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Cleanup failed" },
+      { status: 500 }
+    );
+  }
+}
+
 // DELETE - Force clean ALL active calls (use with caution)
 export async function DELETE() {
   try {
