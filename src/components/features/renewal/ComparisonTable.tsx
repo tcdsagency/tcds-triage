@@ -604,7 +604,18 @@ function buildDriverList(baseline: CanonicalDriver[], renewal: CanonicalDriver[]
     }
   };
 
-  const normalizeName = (name?: string) => (name || '').toLowerCase().trim();
+  // Normalize name for matching: remove middle initials so "Ladonna B Lee" matches "Ladonna Lee"
+  const normalizeName = (name?: string) => {
+    return (name || '')
+      .toLowerCase()
+      .trim()
+      // Remove single-letter middle initials (e.g., "John A Smith" -> "John Smith")
+      .replace(/\s+[a-z]\s+/g, ' ')
+      // Remove trailing single letter (e.g., "John Smith A" -> "John Smith")
+      .replace(/\s+[a-z]$/g, '')
+      // Collapse multiple spaces
+      .replace(/\s+/g, ' ');
+  };
 
   // Add baseline drivers
   baseline.forEach((d) => {

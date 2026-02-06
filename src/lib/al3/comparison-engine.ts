@@ -509,43 +509,62 @@ function compareVehicles(
 // DRIVER COMPARISON
 // =============================================================================
 
+/**
+ * Normalize driver name for comparison.
+ * Removes middle initials and extra spaces so "Ladonna B Lee" matches "Ladonna Lee".
+ */
+function normalizeDriverName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    // Remove single-letter middle initials (e.g., "John A Smith" -> "John Smith")
+    .replace(/\s+[a-z]\s+/g, ' ')
+    // Remove trailing single letter (e.g., "John Smith A" -> "John Smith")
+    .replace(/\s+[a-z]$/g, '')
+    // Collapse multiple spaces
+    .replace(/\s+/g, ' ');
+}
+
 function compareDrivers(
   renewalDrivers: import('@/types/renewal.types').CanonicalDriver[],
   baselineDrivers: import('@/types/renewal.types').CanonicalDriver[]
 ): MaterialChange[] {
   const changes: MaterialChange[] = [];
 
-  const renewalByName = new Map(
-    renewalDrivers.filter((d) => d.name).map((d) => [d.name!.toLowerCase(), d])
+  // Build maps using normalized names for matching
+  const renewalByNormalized = new Map(
+    renewalDrivers.filter((d) => d.name).map((d) => [normalizeDriverName(d.name!), d])
   );
-  const baselineByName = new Map(
-    baselineDrivers.filter((d) => d.name).map((d) => [d.name!.toLowerCase(), d])
+  const baselineByNormalized = new Map(
+    baselineDrivers.filter((d) => d.name).map((d) => [normalizeDriverName(d.name!), d])
   );
 
-  for (const [name, _baseline] of baselineByName) {
-    if (!renewalByName.has(name)) {
+  for (const [normalizedName, baseline] of baselineByNormalized) {
+    if (!renewalByNormalized.has(normalizedName)) {
+      const displayName = baseline.name || normalizedName;
       changes.push({
-        field: `driver.${name}`,
+        field: `driver.${normalizedName}`,
         category: 'driver_removed',
         classification: 'material_negative',
-        oldValue: name,
+        oldValue: displayName,
         newValue: null,
         severity: 'material_negative',
-        description: `Driver removed: ${name}`,
+        description: `Driver removed: ${displayName}`,
       });
     }
   }
 
-  for (const [name, _renewal] of renewalByName) {
-    if (!baselineByName.has(name)) {
+  for (const [normalizedName, renewal] of renewalByNormalized) {
+    if (!baselineByNormalized.has(normalizedName)) {
+      const displayName = renewal.name || normalizedName;
       changes.push({
-        field: `driver.${name}`,
+        field: `driver.${normalizedName}`,
         category: 'driver_added',
         classification: 'material_positive',
         oldValue: null,
-        newValue: name,
+        newValue: displayName,
         severity: 'material_positive',
-        description: `Driver added: ${name}`,
+        description: `Driver added: ${displayName}`,
       });
     }
   }
