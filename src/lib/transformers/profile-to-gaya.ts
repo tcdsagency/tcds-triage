@@ -97,6 +97,42 @@ function buildVehicleEntities(profile: MergedProfile): GayaEntity[] {
   return entities;
 }
 
+function buildDriverEntities(profile: MergedProfile): GayaEntity[] {
+  const entities: GayaEntity[] = [];
+  const seenDrivers = new Set<string>(); // Avoid duplicates across policies
+  let index = 1;
+
+  for (const policy of profile.policies) {
+    if (policy.type !== 'auto' || !policy.drivers?.length) continue;
+
+    for (const driver of policy.drivers) {
+      // Skip if we've already added this driver (by name)
+      const driverKey = `${driver.firstName}-${driver.lastName}`.toLowerCase();
+      if (seenDrivers.has(driverKey)) continue;
+      seenDrivers.add(driverKey);
+
+      const fields: GayaField[] = [];
+      addField(fields, 'first_name', driver.firstName);
+      addField(fields, 'last_name', driver.lastName);
+      addField(fields, 'date_of_birth', formatDate(driver.dateOfBirth));
+      addField(fields, 'license_number', driver.licenseNumber);
+      addField(fields, 'license_state', driver.licenseState);
+      addField(fields, 'gender', driver.gender);
+      addField(fields, 'marital_status', driver.maritalStatus);
+
+      if (fields.length > 0) {
+        entities.push({
+          entity: GAYA_ENTITY_TYPES.DRIVER,
+          index: index++,
+          fields,
+        });
+      }
+    }
+  }
+
+  return entities;
+}
+
 function buildPropertyEntities(profile: MergedProfile): GayaEntity[] {
   const entities: GayaEntity[] = [];
   let index = 1;
@@ -230,6 +266,7 @@ export function transformProfileToGayaEntities(profile: MergedProfile): Transfor
   const entities: GayaEntity[] = [
     buildCustomerEntity(profile),
     ...buildHouseholdEntities(profile),
+    ...buildDriverEntities(profile),
     ...buildVehicleEntities(profile),
     ...buildPropertyEntities(profile),
     // Policy entities disabled - Gaya doesn't accept auto_policy/home_policy for clipboard creation

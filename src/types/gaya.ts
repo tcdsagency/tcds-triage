@@ -63,6 +63,7 @@ export interface GayaSearchResponse {
 export const GAYA_ENTITY_TYPES = {
   CUSTOMER: 'customer',
   HOUSEHOLD: 'household_member',
+  DRIVER: 'driver',
   CAR: 'car',
   PROPERTY: 'property',
   AUTO_POLICY: 'auto_policy',
