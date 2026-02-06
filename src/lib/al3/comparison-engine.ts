@@ -192,6 +192,15 @@ export function compareSnapshots(
   // Flag property concerns (homeowners)
   allChanges.push(...flagPropertyConcerns(renewal, baseline));
 
+  // When baseline is stale (current_term), downgrade all changes to non-material
+  // since we're comparing the same term data and differences are unreliable
+  if (baselineStatus === 'current_term') {
+    for (const change of allChanges) {
+      change.severity = 'non_material';
+      change.classification = 'non_material';
+    }
+  }
+
   // Separate material vs non-material
   const materialChanges = allChanges.filter((c) => c.severity !== 'non_material');
   const nonMaterialChanges = allChanges.filter((c) => c.severity === 'non_material');
@@ -200,7 +209,7 @@ export function compareSnapshots(
   const summary = buildSummary(renewal, baseline, materialChanges, nonMaterialChanges);
 
   // Generate recommendation
-  const recommendation = generateRecommendation(materialChanges, renewal, thresholds);
+  const recommendation = generateRecommendation(materialChanges, renewal, thresholds, baselineStatus);
 
   // Determine confidence
   const confidenceLevel = getConfidenceLevel(renewal.parseConfidence);
@@ -887,8 +896,14 @@ function buildSummary(
 function generateRecommendation(
   materialChanges: MaterialChange[],
   renewal: RenewalSnapshot,
-  thresholds: ComparisonThresholds
+  thresholds: ComparisonThresholds,
+  baselineStatus?: 'prior_term' | 'current_term' | 'unknown'
 ): 'renew_as_is' | 'reshop' | 'needs_review' {
+  // Stale baseline = can't make reliable recommendation
+  if (baselineStatus === 'current_term') {
+    return 'needs_review';
+  }
+
   const hasNegative = materialChanges.some((c) => c.severity === 'material_negative');
   const hasPositive = materialChanges.some((c) => c.severity === 'material_positive');
 
