@@ -272,30 +272,48 @@ function transformHawkSoftPolicy(hsPolicy: any, people?: any[]): Policy {
   });
   
   // Transform property details (for home policies)
+  // HawkSoft nests property underwriting data in: locations[].buildings[].personalUnderwriting
   let property: PropertyDetails | undefined;
   if (policyType === "home" || policyType === "mobile_home" || policyType === "flood") {
     const loc = hsPolicy.locations?.[0] || hsPolicy.property || hsPolicy.rawData?.locations?.[0] || {};
+    const addr = loc.address || loc;
+    // Get building underwriting data - nested inside buildings[].personalUnderwriting
+    const building = loc.buildings?.[0] || {};
+    const uw = building.personalUnderwriting || building.underwriting || {};
+
+    // Parse stories - HawkSoft returns "Unknown", "1", "1.5", "2", etc.
+    let stories: number | undefined;
+    if (uw.stories && uw.stories !== 'Unknown') {
+      const parsed = parseFloat(uw.stories);
+      if (!isNaN(parsed)) stories = parsed;
+    }
+
+    // Parse pool/trampoline types - HawkSoft returns "Unknown", "None", "InGround", "AboveGround", etc.
+    const hasPool = uw.swimmingPoolType && uw.swimmingPoolType !== 'Unknown' && uw.swimmingPoolType !== 'None';
+    const hasTrampoline = uw.trampolineType && uw.trampolineType !== 'Unknown' && uw.trampolineType !== 'None';
+
     property = {
       address: {
-        street: loc.address1 || loc.street || loc.address?.street,
-        street2: loc.address2 || loc.address?.street2,
-        city: loc.city || loc.address?.city,
-        state: loc.state || loc.address?.state,
-        zip: loc.zip || loc.zipCode || loc.address?.zip,
-        county: loc.county || loc.address?.county
+        street: addr.address1 || addr.street,
+        street2: addr.address2,
+        city: addr.city,
+        state: addr.state,
+        zip: addr.zip || addr.zipCode,
+        county: addr.county
       },
-      yearBuilt: loc.yearBuilt,
-      squareFeet: loc.squareFeet || loc.sqft,
-      stories: loc.stories || loc.numberOfStories,
-      constructionType: loc.constructionType,
-      roofType: loc.roofType,
-      roofAge: loc.roofAge,
-      heatingType: loc.heatingType,
-      protectionClass: loc.protectionClass,
-      distanceToFireStation: loc.distanceToFireStation,
-      distanceToHydrant: loc.distanceToHydrant,
-      poolPresent: loc.pool || loc.hasPool,
-      trampolinePresent: loc.trampoline || loc.hasTrampoline
+      // Building underwriting fields
+      yearBuilt: uw.yearBuilt || loc.yearBuilt,
+      squareFeet: uw.squareFootage || uw.squareFeet || loc.squareFeet,
+      stories,
+      constructionType: uw.dwellingType || uw.constructionType || loc.constructionType,
+      roofType: uw.roofTypeCode !== 'Unknown' ? uw.roofTypeCode : undefined,
+      roofAge: uw.roofYear || loc.roofAge,
+      heatingType: uw.homeHeatSourceCode !== 'Unknown' ? uw.homeHeatSourceCode : undefined,
+      protectionClass: uw.protectionClass || loc.protectionClass,
+      distanceToFireStation: uw.milesFromRFD || loc.distanceToFireStation,
+      distanceToHydrant: uw.feetFromHydrant || loc.distanceToHydrant,
+      poolPresent: hasPool,
+      trampolinePresent: hasTrampoline
     };
   }
   
