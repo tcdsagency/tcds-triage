@@ -41,6 +41,8 @@ import {
   COM_FIELDS,
   RMK_FIELDS,
   LOB_CODES,
+  COVERAGE_CODE_MAP,
+  DISCOUNT_COVERAGE_TYPES,
 } from './constants';
 
 // =============================================================================
@@ -1326,9 +1328,13 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       .replace(/\s+/g, ' ')
       .trim();
 
+    // Check if this is a known discount code
+    const mappedType = COVERAGE_CODE_MAP[code.toUpperCase()] || COVERAGE_CODE_MAP[code];
+    const isDiscountCode = mappedType && DISCOUNT_COVERAGE_TYPES.has(mappedType);
+
     // Skip truly empty records (no premium, no limit, no deductible, no description)
-    // Keep discount-code records that have a description even without numeric values
-    if (!premium && !limitAmount && !deductibleAmount && !cleanDesc) return null;
+    // BUT keep discount codes even without numeric values
+    if (!premium && !limitAmount && !deductibleAmount && !cleanDesc && !isDiscountCode) return null;
 
     // Build limit display string for split limits (BI, UM, UMBI)
     // Format: Limit 1 (10 chars) = [7 digits per-person][3 digits per-accident prefix]
@@ -1385,9 +1391,19 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       }
     }
 
+    // For discount codes, use a human-readable description from the mapped type
+    let finalDescription = cleanDesc || code;
+    if (isDiscountCode && mappedType) {
+      // Convert 'accident_free_discount' to 'Accident Free Discount'
+      finalDescription = mappedType
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    }
+
     return {
       code,
-      description: cleanDesc || code,
+      description: finalDescription,
       limit: displayLimit,
       limitAmount: finalLimitAmount,
       deductible: deductibleStr || undefined,
@@ -1429,12 +1445,25 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       }
     }
 
-    // Skip records with no useful data (but keep discount codes that have no amounts)
-    if (!premium && !limitAmount) return null;
+    // Check if this is a known discount code
+    const mappedType = COVERAGE_CODE_MAP[code.toUpperCase()] || COVERAGE_CODE_MAP[code];
+    const isDiscountCode = mappedType && DISCOUNT_COVERAGE_TYPES.has(mappedType);
+
+    // Skip records with no useful data, BUT keep discount codes that have no amounts
+    if (!premium && !limitAmount && !isDiscountCode) return null;
+
+    // For discount codes, use a human-readable description
+    let finalDescription = code;
+    if (isDiscountCode && mappedType) {
+      finalDescription = mappedType
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    }
 
     return {
       code,
-      description: code,
+      description: finalDescription,
       limit: limitStr,
       limitAmount,
       deductible: undefined,
