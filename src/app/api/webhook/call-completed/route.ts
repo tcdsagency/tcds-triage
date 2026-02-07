@@ -2063,8 +2063,8 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       console.log(`[Call-Completed] ⏭️ Skipping wrapup creation for call ${call.id}: no analysis and not detected as hangup (duration: ${body.duration}s, transcript length: ${transcript?.length || 0})`);
     }
 
-    // 5. Auto-post note to AgencyZoom for calls with AI summaries
-    // Posts to matched customer OR to NCM placeholder for unmatched inbound calls (with full transcription)
+    // 5. Auto-post note to AgencyZoom for OUTBOUND calls only
+    // Inbound calls are handled via service tickets (not notes)
     if (analysis?.summary) {
       try {
         const [wrapupForPost] = await db
@@ -2092,28 +2092,18 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             let azTargetCustomerId: number;
             let noteText: string;
 
-            if (matchedAzCustomerId && customerMatchStatus === "matched") {
-              // Matched customer — standard note
+            if (matchedAzCustomerId && customerMatchStatus === "matched" && direction === "outbound") {
+              // Outbound matched customer — auto-post note
+              // (Inbound matched calls get service tickets instead, not notes)
               azTargetCustomerId = parseInt(matchedAzCustomerId);
-              noteText = `📞 ${direction === "inbound" ? "Inbound" : "Outbound"} Call - ${formattedDate} ${formattedTime}\n\n${analysis.summary}\n\nAgent: ${resolvedAgentName}`;
+              noteText = `📞 Outbound Call - ${formattedDate} ${formattedTime}\n\n${analysis.summary}\n\nAgent: ${resolvedAgentName}`;
             } else if (direction === "inbound") {
-              // Unmatched inbound call — post to NCM placeholder with caller details + transcription
-              azTargetCustomerId = SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER;
-              const callerName = analysis?.extractedData?.customerName || "Unknown Caller";
-              const callerPhone = (call.fromNumber || callerNumber) || "Unknown Number";
-              const durationSecs = body.duration || 0;
-
-              noteText = `📞 Inbound Call - ${formattedDate} ${formattedTime}\n\nCaller: ${callerName}\nPhone: ${callerPhone}\nAgent: ${resolvedAgentName}\nDuration: ${durationSecs} seconds\n\nSummary:\n${analysis.summary}`;
-
-              // Add action items if available
-              if (analysis.actionItems && analysis.actionItems.length > 0) {
-                noteText += `\n\nAction Items:\n${analysis.actionItems.map((item: string) => `• ${item}`).join("\n")}`;
-              }
-
-              // Add transcription if available
-              if (transcript && transcript.trim().length > 0) {
-                noteText += `\n\nTranscription:\n${transcript}`;
-              }
+              // ALL inbound calls — skip note posting (service tickets handle them)
+              // Matched inbound → service ticket to customer
+              // Unmatched inbound → service ticket to NCM
+              azTargetCustomerId = 0;
+              noteText = "";
+              console.log(`[Call-Completed] ⏭️ Skipping note for inbound call - handled as service ticket`);
             } else {
               // Outbound unmatched — skip (shouldn't happen normally)
               azTargetCustomerId = 0;
