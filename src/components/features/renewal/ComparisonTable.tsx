@@ -64,6 +64,23 @@ const COVERAGE_TYPE_LABELS: Record<string, string> = {
   deferred_payment_discount: 'Deferred Payment',
   online_discount: 'Online Discount',
   auto_pay_discount: 'Auto Pay',
+  anti_lock_brakes_discount: 'Anti-Lock Brakes',
+  safe_driver_course_discount: 'Safe Driver Course',
+  first_year_buyer_discount: 'First Year Buyer',
+  early_signing_discount: 'Early Signing',
+  responsible_payment_discount: 'Responsible Payment',
+  welcome_discount: 'Welcome Discount',
+  loyalty_discount: 'Loyalty',
+  protective_devices: 'Protective Devices',
+  account_discount: 'Account Discount',
+  established_customer: 'Established Customer',
+  esmart_discount: 'eSmart Discount',
+  mobile_home_discount: 'Mobile Home',
+  senior_discount: 'Senior Discount',
+  good_driver_discount: 'Good Driver',
+  defensive_driver_discount: 'Defensive Driver',
+  association_discount: 'Association',
+  bundle_discount: 'Bundle Discount',
 };
 
 // Coverage display order (policy-level first, then vehicle-level)

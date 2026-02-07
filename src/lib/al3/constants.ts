@@ -157,7 +157,7 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'LOU': 'loss_of_use',
   'WTRDM': 'water_damage',
   'ROOF': 'roof_surfaces',
-  'LFREE': 'identity_fraud',
+  'LFREE': 'claim_free_discount',
 
   // Commercial coverages
   'GL': 'general_liability',
@@ -201,6 +201,11 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'ESTAB': 'established_customer',
   'ESMRT': 'esmart_discount',
   'ADDA': 'additional_coverage_a',
+  'HODIS': 'homeowner_discount',
+  'EPPDS': 'auto_pay_discount',
+  'ABS': 'anti_lock_brakes_discount',
+  'SDC': 'safe_driver_course_discount',
+  'FTBYR': 'first_year_buyer_discount',
 
   // Progressive-specific discount codes (stored as coverage records in HawkSoft)
   'AFR': 'accident_free_discount',
@@ -283,6 +288,9 @@ export const DISCOUNT_COVERAGE_TYPES = new Set([
   'paid_in_full_discount',
   'deferred_payment_discount',
   'online_discount',
+  'anti_lock_brakes_discount',
+  'safe_driver_course_discount',
+  'first_year_buyer_discount',
 ]);
 
 /**
