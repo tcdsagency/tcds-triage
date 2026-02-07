@@ -763,6 +763,22 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
         break;
       }
 
+      case AL3_GROUP_CODES.SUPPLEMENTARY_DRIVER: {
+        // 6SDV: Commercial supplementary driver record
+        // Format: 6SDV256 D ... 0001????P        FIRSTNAME                  LASTNAME                DOB
+        const drv = parseSupplementaryDriver(line);
+        if (drv) drivers.push(drv);
+        break;
+      }
+
+      case AL3_GROUP_CODES.COMMERCIAL_VEHICLE: {
+        // 5CAR: Commercial auto vehicle record
+        // Save previous vehicle
+        if (currentVehicle) vehicles.push(currentVehicle);
+        currentVehicle = parseCommercialVehicle(line);
+        break;
+      }
+
       case AL3_GROUP_CODES.LOCATION: {
         const loc = parseLocation(line);
         if (loc) locations.push(loc);
@@ -1881,6 +1897,106 @@ function parseDriver(line: string): AL3Driver | null {
     licenseNumber: extractField(line, DRV_FIELDS.LICENSE_NUMBER) || undefined,
     licenseState: extractField(line, DRV_FIELDS.LICENSE_STATE) || undefined,
     relationship: undefined,
+  };
+}
+
+/**
+ * Parse a 6SDV supplementary driver record (commercial auto).
+ * Format: 6SDV256 D ... driver_num + flags + P + FIRSTNAME + LASTNAME + DOB
+ */
+function parseSupplementaryDriver(line: string): AL3Driver | null {
+  if (line.length < 80) return null;
+
+  // Find name region — look for capitalized name parts after the header
+  // 6SDV format puts first name ~38 chars in, last name ~63 chars in
+  const content = line.substring(30);
+
+  // Extract first name (positions 38-62 relative to line start = 8-32 in content)
+  const firstName = content.substring(8, 35).replace(/[^\x20-\x7E]/g, ' ').trim();
+  // Extract last name (positions 63-87 = 33-57 in content)
+  const lastName = content.substring(33, 60).replace(/[^\x20-\x7E]/g, ' ').trim();
+
+  if (!firstName && !lastName) return null;
+
+  const name = [firstName, lastName].filter(Boolean).join(' ');
+  if (!name) return null;
+
+  // Extract DOB — look for YYMMDD or YYYYMMDD pattern
+  let dateOfBirth: string | undefined;
+
+  // Look for YYYYMMDD pattern (1920-2010 birth years)
+  const dobMatch = line.match(/\b(19[2-9]\d|200\d|201\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+  if (dobMatch) {
+    dateOfBirth = parseAL3Date(dobMatch[0]);
+  } else {
+    // Try YYMMDD at end of line
+    const endDigits = line.substring(line.length - 20).match(/(\d{6})/);
+    if (endDigits) {
+      const yy = parseInt(endDigits[1].substring(0, 2), 10);
+      const mm = endDigits[1].substring(2, 4);
+      const dd = endDigits[1].substring(4, 6);
+      const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
+      dateOfBirth = parseAL3Date(`${yyyy}${mm}${dd}`);
+    }
+  }
+
+  return {
+    name,
+    dateOfBirth,
+    licenseNumber: undefined,
+    licenseState: undefined,
+    relationship: undefined,
+  };
+}
+
+/**
+ * Parse a 5CAR commercial vehicle record.
+ * Format: 5CAR418 C ... vehicle_num + flags + YEAR + MAKE + MODEL + VIN
+ */
+function parseCommercialVehicle(line: string): AL3Vehicle {
+  const content = line.substring(30);
+
+  // Extract year (4 digits - may follow ???? markers without word boundary)
+  let year: number | undefined;
+  const yearMatch = content.match(/(19[89]\d|20[0-2]\d)/);
+  if (yearMatch) {
+    year = parseInt(yearMatch[1], 10);
+  }
+
+  // Extract VIN (17 alphanumeric chars pattern)
+  let vin: string | undefined;
+  const vinMatch = line.match(/[A-HJ-NPR-Z0-9]{17}/i);
+  if (vinMatch) {
+    vin = vinMatch[0].toUpperCase();
+  }
+
+  // Extract make and model — typically after year, before VIN
+  let make = '';
+  let model = '';
+
+  if (yearMatch) {
+    const afterYear = content.substring(content.indexOf(yearMatch[1]) + 4);
+    // Make is first word, model is remaining words before VIN
+    const parts = afterYear.replace(/[^\x20-\x7E]/g, ' ').trim().split(/\s+/);
+    if (parts.length > 0) {
+      make = parts[0];
+      // Model is next parts until we hit the VIN or type code
+      const modelParts: string[] = [];
+      for (let i = 1; i < parts.length && i < 5; i++) {
+        if (parts[i].length >= 17 || /^[A-Z]$/.test(parts[i])) break; // Stop at VIN or type code
+        modelParts.push(parts[i]);
+      }
+      model = modelParts.join(' ');
+    }
+  }
+
+  return {
+    vin,
+    year,
+    make,
+    model,
+    usage: undefined,
+    coverages: [],
   };
 }
 

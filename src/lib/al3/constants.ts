@@ -38,6 +38,10 @@ export const AL3_GROUP_CODES = {
   VEHICLE_DETAIL: '6PVH', // Vehicle physical details
   DRIVER_DETAIL: '6PDR', // Driver detail record
   COMMUNICATION: '6COM', // Communication record (email, phone)
+
+  // Commercial Auto records
+  COMMERCIAL_VEHICLE: '5CAR', // Commercial auto vehicle
+  SUPPLEMENTARY_DRIVER: '6SDV', // Supplementary driver (commercial)
 } as const;
 
 // =============================================================================

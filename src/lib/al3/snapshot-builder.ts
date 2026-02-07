@@ -87,24 +87,24 @@ export function buildRenewalSnapshot(
     isExcluded: drv.isExcluded,
   }));
 
-  // Flatten POLICY-LEVEL coverages from vehicles into policy coverages array
-  // Vehicle-specific coverages (Comp, Coll, Roadside, Rental) stay on vehicles
-  // Only count non-discount, non-vehicle-specific coverages to decide whether to flatten
-  const realCoverageCount = coverages.filter(c =>
-    !DISCOUNT_COVERAGE_TYPES.has(c.type) && !VEHICLE_LEVEL_COVERAGE_TYPES.has(c.type)
-  ).length;
-
-  if (realCoverageCount === 0 && vehicles.length > 0) {
+  // Flatten ALL coverages from vehicles into policy coverages array
+  // This enables apples-to-apples comparison with HawkSoft baseline (which is flat)
+  // Premium is summed across vehicles for same coverage type
+  if (vehicles.length > 0) {
+    // Build a map of existing policy-level coverages for dedup
     const seen = new Map<string, CanonicalCoverage>();
+    for (const cov of coverages) {
+      if (cov.type) seen.set(cov.type, cov);
+    }
+
+    // Add/merge vehicle coverages
     for (const veh of vehicles) {
       for (const cov of veh.coverages) {
         if (!cov.type) continue;
-        // Skip vehicle-specific coverages - they stay on the vehicle
-        if (VEHICLE_LEVEL_COVERAGE_TYPES.has(cov.type)) continue;
 
         const existing = seen.get(cov.type);
         if (existing) {
-          // Sum premiums across vehicles for policy-level coverages
+          // Sum premiums across vehicles for same coverage type
           if (cov.premium != null) {
             existing.premium = (existing.premium ?? 0) + cov.premium;
           }
@@ -113,6 +113,9 @@ export function buildRenewalSnapshot(
         }
       }
     }
+
+    // Replace coverages with flattened set
+    coverages.length = 0;
     coverages.push(...seen.values());
   }
 
