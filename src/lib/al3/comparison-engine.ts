@@ -311,6 +311,13 @@ function comparePremium(
 // COVERAGE COMPARISON
 // =============================================================================
 
+// Major coverage types that are essential - removal is significant
+const MAJOR_COVERAGE_TYPES = new Set([
+  'bodily_injury', 'property_damage', 'dwelling', 'personal_liability',
+  'uninsured_motorist', 'underinsured_motorist', 'personal_property',
+  'other_structures', 'loss_of_use', 'medical_payments',
+]);
+
 function compareCoverages(
   renewalCoverages: CanonicalCoverage[],
   baselineCoverages: CanonicalCoverage[],
@@ -322,30 +329,33 @@ function compareCoverages(
   const baselineByType = new Map(baselineCoverages.map((c) => [c.type, c]));
 
   // Check for removed coverages
+  // Note: Coverage changes are INFORMATIONAL - they help explain premium changes
+  // Only major coverage gaps are flagged for review, not reshop triggers
   for (const [type, baseline] of baselineByType) {
     if (!renewalByType.has(type)) {
+      const isMajor = MAJOR_COVERAGE_TYPES.has(type);
       changes.push({
         field: `coverage.${type}`,
         category: 'coverage_removed',
-        classification: 'material_negative',
+        classification: isMajor ? 'material_negative' : 'non_material',
         oldValue: baseline.description || type,
         newValue: null,
-        severity: 'material_negative',
+        severity: isMajor ? 'material_negative' : 'non_material',
         description: `Coverage removed: ${baseline.description || type}`,
       });
     }
   }
 
-  // Check for added coverages
+  // Check for added coverages (always positive/informational)
   for (const [type, renewal] of renewalByType) {
     if (!baselineByType.has(type)) {
       changes.push({
         field: `coverage.${type}`,
         category: 'coverage_added',
-        classification: 'material_positive',
+        classification: 'non_material', // Added coverages are informational
         oldValue: null,
         newValue: renewal.description || type,
-        severity: 'material_positive',
+        severity: 'non_material',
         description: `Coverage added: ${renewal.description || type}`,
       });
     }
@@ -904,26 +914,42 @@ function generateRecommendation(
     return 'needs_review';
   }
 
-  const hasNegative = materialChanges.some((c) => c.severity === 'material_negative');
-  const hasPositive = materialChanges.some((c) => c.severity === 'material_positive');
-
   if (renewal.parseConfidence < 0.5) {
     return 'needs_review'; // Low confidence = manual review
   }
 
-  if (hasNegative) {
+  // PRIMARY TRIGGER: Premium change
+  // The main purpose of this tool is current rate vs renewal rate comparison
+  const premiumChange = materialChanges.find((c) => c.category === 'premium');
+  const premiumIncreasePercent = premiumChange?.changePercent ?? 0;
+  const premiumIncreaseAmount = premiumChange?.changeAmount ?? 0;
+
+  // Significant premium increase → reshop
+  if (
+    premiumIncreasePercent >= thresholds.premiumIncreasePercent ||
+    premiumIncreaseAmount >= thresholds.premiumIncreaseAmount
+  ) {
     return 'reshop';
   }
 
-  if (!hasNegative && !hasPositive) {
-    return 'renew_as_is';
+  // SECONDARY: Coverage gaps (only if premium is flat/decreased but coverage worsened)
+  // These are informational to help agents understand WHY premium changed
+  // Only trigger reshop for major coverage gaps when premium didn't go up
+  const coverageRemovals = materialChanges.filter(
+    (c) => c.category === 'coverage_removed' && c.severity === 'material_negative'
+  );
+  const majorCoverageTypes = ['bodily_injury', 'property_damage', 'dwelling', 'personal_liability'];
+  const hasMajorCoverageRemoval = coverageRemovals.some((c) =>
+    majorCoverageTypes.some((t) => c.description?.toLowerCase().includes(t.replace('_', ' ')))
+  );
+
+  // If major coverage removed AND premium stayed same/decreased, that's suspicious
+  if (hasMajorCoverageRemoval && premiumIncreasePercent <= 0) {
+    return 'needs_review'; // Not reshop, just needs agent attention
   }
 
-  if (hasPositive && !hasNegative) {
-    return 'renew_as_is';
-  }
-
-  return 'needs_review';
+  // Premium flat or decreased with no major issues → renew as is
+  return 'renew_as_is';
 }
 
 function getConfidenceLevel(parseConfidence: number): 'high' | 'medium' | 'low' {

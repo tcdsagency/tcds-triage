@@ -685,6 +685,7 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
   let insuredAddress: AL3Location | undefined;
   let insuredEmail: string | undefined;
   let insuredPhone: string | undefined;
+  let totalPremium: number | undefined;
 
   let currentVehicle: AL3Vehicle | null = null;
   let confidence = 0.7; // Base confidence
@@ -1111,6 +1112,43 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
             header.lineOfBusiness = LOB_CODES[lobMatch[1].toUpperCase()] || lobMatch[1];
           }
         }
+
+        // PREMIUM EXTRACTION - this is the authoritative policy premium
+        // AL3 5BPI format: positions 109-120 = annual premium (11 digits + sign, cents)
+        // Universal pattern fallback: look for 11-digit premium patterns like "00000238000+"
+        if (!totalPremium && line.length > 120) {
+          // Look for 11-digit number followed by +/- sign (standard AL3 premium format)
+          // Must be 11 digits to avoid matching dates (8 digits) or other numbers
+          const premiumPatterns = line.substring(100).match(/(\d{11})[+-]/g);
+          if (premiumPatterns && premiumPatterns.length > 0) {
+            for (const pattern of premiumPatterns) {
+              const rawPremium = pattern.replace(/[+-]$/, '');
+              const val = parseInt(rawPremium, 10);
+              // Validate: reasonable premium range ($50 - $100,000)
+              const dollars = val / 100;
+              if (dollars >= 50 && dollars <= 100000) {
+                totalPremium = dollars;
+                break;
+              }
+            }
+          }
+        }
+        // EDIFACT fallback: Allstate uses different format
+        if (!totalPremium && isEDIFACTFormat(line)) {
+          const segments = parseEDIFACTSegments(line);
+          for (const seg of segments) {
+            // Look for premium in segment data: 8-10 digits ending with +/-
+            const match = seg.data.match(/^(\d{7,10})[+-]$/);
+            if (match) {
+              const val = parseInt(match[1], 10);
+              const dollars = val / 100;
+              if (dollars >= 50 && dollars <= 100000) {
+                totalPremium = dollars;
+                break;
+              }
+            }
+          }
+        }
         break;
       }
 
@@ -1326,6 +1364,7 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
     insuredPhone,
     rawContent: lines.join('\n'),
     parseConfidence: confidence,
+    totalPremium,
   };
 }
 

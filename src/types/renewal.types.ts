@@ -41,6 +41,8 @@ export interface AL3ParsedTransaction {
   insuredPhone?: string;
   rawContent: string;
   parseConfidence: number; // 0-1
+  // Total premium from 5BPI record (policy-level, authoritative)
+  totalPremium?: number;
 }
 
 export interface AL3Coverage {

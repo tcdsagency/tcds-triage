@@ -135,20 +135,24 @@ export function buildRenewalSnapshot(
   coverages.push(...realCoverages);
 
   // Calculate total premium
-  // - Policy-level coverages are in `coverages` (already summed across vehicles)
-  // - Vehicle-level coverages (comp, coll, etc.) are on each vehicle
-  let totalPremium: number | undefined;
-  const policyLevelPremiums = coverages
-    .filter((c) => c.premium != null)
-    .map((c) => c.premium!);
-  const vehicleLevelPremiums = vehicles.flatMap((v) =>
-    v.coverages
-      .filter((c) => c.premium != null && VEHICLE_LEVEL_COVERAGE_TYPES.has(c.type))
-      .map((c) => c.premium!)
-  );
-  const allCoveragePremiums = [...policyLevelPremiums, ...vehicleLevelPremiums];
-  if (allCoveragePremiums.length > 0) {
-    totalPremium = allCoveragePremiums.reduce((sum, p) => sum + p, 0);
+  // PRIMARY: Use 5BPI record premium (authoritative policy-level)
+  // FALLBACK: Sum coverage premiums if 5BPI not available
+  let totalPremium: number | undefined = transaction.totalPremium;
+
+  if (!totalPremium) {
+    // Fallback: sum from coverage-level premiums
+    const policyLevelPremiums = coverages
+      .filter((c) => c.premium != null)
+      .map((c) => c.premium!);
+    const vehicleLevelPremiums = vehicles.flatMap((v) =>
+      v.coverages
+        .filter((c) => c.premium != null && VEHICLE_LEVEL_COVERAGE_TYPES.has(c.type))
+        .map((c) => c.premium!)
+    );
+    const allCoveragePremiums = [...policyLevelPremiums, ...vehicleLevelPremiums];
+    if (allCoveragePremiums.length > 0) {
+      totalPremium = allCoveragePremiums.reduce((sum, p) => sum + p, 0);
+    }
   }
 
   // Map structured endorsement records to canonical format
