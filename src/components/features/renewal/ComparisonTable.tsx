@@ -81,6 +81,27 @@ const COVERAGE_TYPE_LABELS: Record<string, string> = {
   defensive_driver_discount: 'Defensive Driver',
   association_discount: 'Association',
   bundle_discount: 'Bundle Discount',
+  // Openly and other carrier-specific
+  mine_subsidence: 'Mine Subsidence',
+  sinkhole: 'Sinkhole',
+  hurricane_deductible: 'Hurricane Deductible',
+  cyber_liability: 'Cyber Liability',
+  service_line: 'Service Line',
+  sewer_water_backup: 'Sewer/Water Backup',
+  equipment_breakdown: 'Equipment Breakdown',
+  wind_hail: 'Wind/Hail',
+  watercraft_hull: 'Watercraft Hull',
+  roof_surfaces: 'Roof Surfaces',
+  roof_replacement_cost: 'Roof Replacement Cost',
+  extended_dwelling: 'Extended Dwelling',
+  personal_property_replacement: 'Personal Property Replacement',
+  liability_additional: 'Additional Liability',
+  by_operation_of_law: 'By Operation of Law',
+  additional_insured: 'Additional Insured',
+  building_structures_extended: 'Building Structures Extended',
+  tropical_cyclone: 'Tropical Cyclone',
+  additional_coverage_a: 'Additional Coverage A',
+  identity_fraud: 'Identity Fraud',
 };
 
 // Coverage display order (policy-level first, then vehicle-level)

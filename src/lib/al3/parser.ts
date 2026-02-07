@@ -1428,32 +1428,36 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       premium: premium ? premium / 100 : undefined, // IVANS premiums are in cents
     };
   } else {
-    // 6CVH: home/watercraft coverage record (standard position-based for SAFECO etc.)
-    // Note: EDIFACT format is handled separately via parseEDIFACTHomeCoverages in the caller
-    const primaryStr = extractField(line, CVH_FIELDS.LIMIT);
-    const secondaryStr = extractField(line, CVH_FIELDS.SECONDARY_AMOUNT);
+    // 6CVH: home/watercraft coverage record
+    // Different carriers use different field positions:
+    //   - SAFECO 6CVH240: limit at 60-72, secondary at 90-101
+    //   - Openly 6CVH323: limit at ~86, description at ~150
+    // Use pattern-based extraction as fallback when fixed positions yield nothing
+
+    // Try fixed positions first (works for SAFECO)
+    let primaryStr = extractField(line, CVH_FIELDS.LIMIT);
+    let secondaryStr = extractField(line, CVH_FIELDS.SECONDARY_AMOUNT);
 
     // Detect if primary field is premium (has +/- sign) or limit
-    // Watercraft 6CVH: primary = premium (00000001400+), secondary = limit (00100000)
-    // Home 6CVH: primary = limit (00000187600), secondary = another amount
     const hasPremiumSign = /[+-]$/.test(primaryStr.trim());
 
     let premium: number | undefined;
     let limitAmount: number | undefined;
     let limitStr: string | undefined;
+    let deductibleAmount: number | undefined;
+    let deductibleStr: string | undefined;
 
     if (hasPremiumSign) {
       // Watercraft format: primary is premium, secondary is limit
       const premiumRaw = primaryStr.replace(/[+-]$/, '');
       premium = parseAL3Number(premiumRaw);
-      if (premium) premium = premium / 100; // Convert cents to dollars
+      if (premium) premium = premium / 100;
       limitAmount = parseAL3Number(secondaryStr);
       limitStr = secondaryStr || undefined;
     } else {
-      // Home format: primary is limit, no premium in 6CVH
+      // Home format: primary is limit
       limitAmount = parseAL3Number(primaryStr);
       const secondaryAmount = parseAL3Number(secondaryStr);
-      // Use primary limit if available, otherwise fall back to secondary
       if (!limitAmount && secondaryAmount) {
         limitAmount = secondaryAmount;
         limitStr = secondaryStr;
@@ -1462,15 +1466,82 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       }
     }
 
+    // FALLBACK: Pattern-based extraction for non-standard formats (Openly, etc.)
+    // If fixed positions yielded no limit, scan the line for numeric patterns
+    if (!limitAmount && line.length > 100) {
+      // Extract the data portion after the coverage code (position 45+)
+      const dataSection = line.substring(45);
+
+      // AL3 limits are typically 8-digit zero-padded (e.g., "05000000" = $500,000)
+      // Openly concatenates limit+deductible like "0500000001000" (limit 8 digits + ded 5 digits)
+      // First try to find 8-digit sequences
+      const eightDigitPattern = /(\d{8})/g;
+      const eightDigitMatches = [...dataSection.matchAll(eightDigitPattern)];
+
+      if (eightDigitMatches.length > 0) {
+        // First 8-digit number is the limit
+        const rawLimit = eightDigitMatches[0][1];
+        const parsedLimit = parseInt(rawLimit.replace(/^0+/, '') || '0', 10);
+        if (parsedLimit > 0) {
+          limitAmount = parsedLimit;
+          limitStr = String(parsedLimit);
+        }
+
+        // Check if there's a deductible immediately after the limit (5-7 digits pattern)
+        const limitEndPos = (eightDigitMatches[0].index ?? 0) + 8;
+        const afterLimit = dataSection.substring(limitEndPos, limitEndPos + 10);
+        const dedMatch = afterLimit.match(/^(\d{4,7})/);
+        if (dedMatch) {
+          const parsedDed = parseInt(dedMatch[1].replace(/^0+/, '') || '0', 10);
+          if (parsedDed > 0 && parsedDed <= 25000) {
+            deductibleAmount = parsedDed;
+            deductibleStr = String(parsedDed);
+          }
+        }
+
+        // Also check if there's a duplicate limit at end of line (Openly format)
+        // This is useful for validation but we don't need to capture it twice
+      } else {
+        // No 8-digit sequence found, try shorter patterns for deductible-only records
+        const shortPattern = /(\d{5,7})/;
+        const shortMatch = dataSection.match(shortPattern);
+        if (shortMatch) {
+          const parsedVal = parseInt(shortMatch[1].replace(/^0+/, '') || '0', 10);
+          // Distinguish between small deductibles and larger limits
+          if (parsedVal > 0 && parsedVal <= 25000) {
+            deductibleAmount = parsedVal;
+            deductibleStr = String(parsedVal);
+          } else if (parsedVal > 25000) {
+            limitAmount = parsedVal;
+            limitStr = String(parsedVal);
+          }
+        }
+      }
+    }
+
+    // Extract description from end of line (pattern-based)
+    // Look for readable text after position 100 (where descriptions typically appear)
+    let description = code;
+    if (line.length > 150) {
+      const endSection = line.substring(100).trim();
+      // Find first run of alphabetic text (the description)
+      const descMatch = endSection.match(/([A-Z][a-zA-Z]+(?:\s+[A-Za-z]+)*)/);
+      if (descMatch && descMatch[1].length > 2) {
+        description = descMatch[1].trim();
+      }
+    }
+
     // Check if this is a known discount code
     const mappedType = COVERAGE_CODE_MAP[code.toUpperCase()] || COVERAGE_CODE_MAP[code];
     const isDiscountCode = mappedType && DISCOUNT_COVERAGE_TYPES.has(mappedType);
 
-    // Skip records with no useful data, BUT keep discount codes that have no amounts
-    if (!premium && !limitAmount && !isDiscountCode) return null;
+    // Skip records with no useful data, BUT keep discount codes and endorsements
+    // Some coverages (sinkhole, mine subsidence) are included even without limits
+    const hasDescription = description && description !== code && description.length > 3;
+    if (!premium && !limitAmount && !isDiscountCode && !hasDescription) return null;
 
     // For discount codes, use a human-readable description
-    let finalDescription = code;
+    let finalDescription = description;
     if (isDiscountCode && mappedType) {
       finalDescription = mappedType
         .split('_')
@@ -1483,8 +1554,8 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       description: finalDescription,
       limit: limitStr,
       limitAmount,
-      deductible: undefined,
-      deductibleAmount: undefined,
+      deductible: deductibleStr,
+      deductibleAmount,
       premium,
     };
   }

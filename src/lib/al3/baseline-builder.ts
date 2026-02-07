@@ -53,6 +53,15 @@ export async function findLocalPolicy(
 // HAWKSOFT NORMALIZATION
 // =============================================================================
 
+// HawkSoft placeholder codes that aren't real coverages (notes, references, etc.)
+const HAWKSOFT_PLACEHOLDER_CODES = new Set([
+  'CHECKDEC',    // "See Decl. Page for Additional Premiums"
+  'SEEDEC',      // "See Declaration Page"
+  'NOTE',        // General note
+  'REMARK',      // Remark
+  'MEMO',        // Memo
+]);
+
 /**
  * Normalize HawkSoft coverage format to canonical.
  * HawkSoft API returns: { code, description, limits, deductibles, premium (string) }
@@ -62,23 +71,29 @@ export function normalizeHawkSoftCoverages(
 ): CanonicalCoverage[] {
   if (!hsCoverages || !Array.isArray(hsCoverages)) return [];
 
-  return hsCoverages.map((cov) => {
-    const code = (cov.code || '').toUpperCase().trim();
-    const canonicalType = COVERAGE_CODE_MAP[code] || code.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-    const limitStr = cov.limits || '';
-    const dedStr = cov.deductibles || '';
-    const premiumVal = typeof cov.premium === 'string' ? parseFloat(cov.premium) : (cov.premium ?? undefined);
+  return hsCoverages
+    .filter((cov) => {
+      const code = (cov.code || '').toUpperCase().trim();
+      // Filter out placeholder codes that aren't real coverages
+      return !HAWKSOFT_PLACEHOLDER_CODES.has(code);
+    })
+    .map((cov) => {
+      const code = (cov.code || '').toUpperCase().trim();
+      const canonicalType = COVERAGE_CODE_MAP[code] || code.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+      const limitStr = cov.limits || '';
+      const dedStr = cov.deductibles || '';
+      const premiumVal = typeof cov.premium === 'string' ? parseFloat(cov.premium) : (cov.premium ?? undefined);
 
-    return {
-      type: canonicalType || '',
-      description: cov.description || '',
-      limit: limitStr || undefined,
-      limitAmount: parseSplitLimit(limitStr),
-      deductible: dedStr || undefined,
-      deductibleAmount: parseSplitLimit(dedStr),
-      premium: isNaN(premiumVal as number) ? undefined : premiumVal,
-    };
-  });
+      return {
+        type: canonicalType || '',
+        description: cov.description || '',
+        limit: limitStr || undefined,
+        limitAmount: parseSplitLimit(limitStr),
+        deductible: dedStr || undefined,
+        deductibleAmount: parseSplitLimit(dedStr),
+        premium: isNaN(premiumVal as number) ? undefined : premiumVal,
+      };
+    });
 }
 
 /**

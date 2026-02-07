@@ -207,6 +207,17 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'SDC': 'safe_driver_course_discount',
   'FTBYR': 'first_year_buyer_discount',
 
+  // Openly-specific coverage codes
+  'MIN01': 'mine_subsidence',
+  'SINK': 'sinkhole',
+  'HURRA': 'hurricane_deductible',
+  'CLIAB': 'cyber_liability',
+  'SRVLN': 'service_line',
+  'SEWER': 'sewer_water_backup',
+  'EQPBK': 'equipment_breakdown',
+  'WHSLS': 'wind_hail',
+  'HULL': 'watercraft_hull',
+
   // Progressive-specific discount codes (stored as coverage records in HawkSoft)
   'AFR': 'accident_free_discount',
   'EFT': 'eft_discount',
