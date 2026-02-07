@@ -715,7 +715,13 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
               }
             }
             if (nameParts.length > 0) {
-              const name = nameParts.filter(p => p.length > 0).join(' ').replace(/\s+/g, ' ').trim();
+              let name = nameParts.filter(p => p.length > 0).join(' ').replace(/\s+/g, ' ').trim();
+              // Strip leading entity type char if attached to first name part (e.g., "CHelen" → "Helen")
+              if (/^[PCGIRFN][A-Z][a-z]/.test(name)) {
+                name = name.substring(1);
+              }
+              // Also handle "R P FirstName" pattern (separate entity type chars)
+              name = name.replace(/^[PCGIRFN]\s+[PCGIRFN]\s+/i, '').trim();
               if (name.length > 2) nameResult = name;
             }
           }
@@ -1257,6 +1263,17 @@ function parseTransactionHeader(line: string): AL3TransactionHeader {
       }
       header.carrierName = name;
     }
+  }
+
+  // Clean up carrier name: strip trailing agency IDs and garbage
+  if (header.carrierName) {
+    // Strip trailing agency ID patterns like "IBMYX67JQA", "159786", "HAWKSOFT"
+    header.carrierName = header.carrierName
+      .replace(/IBM[A-Z0-9]{5,}.*$/i, '')  // IBMYX67JQA...
+      .replace(/\s*\d{5,}.*$/, '')          // 159786...
+      .replace(/\s*HAWKSOFT.*$/i, '')       // HAWKSOFT...
+      .replace(/\s*TCDS.*$/i, '')           // TCDS Insurance Agency...
+      .trim();
   }
 
   // Fallback: extract effective date via regex if position-based failed
