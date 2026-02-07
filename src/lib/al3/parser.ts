@@ -93,6 +93,135 @@ export function parseSplitLimit(str: string): number | undefined {
   return isNaN(num) ? undefined : (num || undefined);
 }
 
+// =============================================================================
+// UNIVERSAL PATTERN EXTRACTION
+// =============================================================================
+
+/**
+ * Pattern definitions for universal data extraction.
+ * These patterns identify data types regardless of field position.
+ */
+const EXTRACTION_PATTERNS = {
+  // Numeric patterns
+  LIMIT_8DIGIT: /\b(\d{8})\b/g,              // 8-digit zero-padded limit (e.g., 00300000)
+  LIMIT_7DIGIT: /\b(0\d{6})\b/g,             // 7-digit with leading zero
+  DEDUCTIBLE: /\b(\d{4,7})\b/g,              // 4-7 digit deductibles
+  PREMIUM_SIGNED: /(\d{8,12}[+-])/g,         // Premium with trailing sign (cents)
+  PREMIUM_PLAIN: /\b(\d{6,10})\b/g,          // Plain premium amount
+
+  // Date patterns
+  DATE_YYYYMMDD: /\b(20[2-3]\d[01]\d[0-3]\d)\b/g,  // 2020-2039 dates
+
+  // Identifier patterns
+  VIN: /\b([A-HJ-NPR-Z0-9]{17})\b/g,         // 17-char VIN (no I, O, Q)
+  POLICY_NUMBER: /\b([A-Z0-9]{6,15})\b/g,    // Policy number patterns
+  COVERAGE_CODE: /\b([A-Z]{2,6}[0-9]{0,2})\b/g,  // Coverage codes like BI, PD, COMP, MIN01
+
+  // Text patterns
+  DESCRIPTION: /([A-Z][a-z]+(?:\s+[A-Za-z]+)*)/g,  // Title case descriptions
+  NAME: /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/g,       // Full names (First Last)
+};
+
+/**
+ * Extract all matches of a pattern from text after a given start position.
+ */
+function extractPatternMatches(
+  text: string,
+  pattern: RegExp,
+  startPos: number = 0
+): Array<{ value: string; position: number }> {
+  const results: Array<{ value: string; position: number }> = [];
+  const section = text.substring(startPos);
+  const regex = new RegExp(pattern.source, pattern.flags);
+  let match;
+  while ((match = regex.exec(section)) !== null) {
+    results.push({
+      value: match[1] || match[0],
+      position: startPos + match.index,
+    });
+  }
+  return results;
+}
+
+/**
+ * Universal coverage data extractor.
+ * Tries fixed positions first, falls back to pattern matching.
+ */
+interface ExtractedCoverageData {
+  code?: string;
+  description?: string;
+  limitAmount?: number;
+  limitStr?: string;
+  deductibleAmount?: number;
+  deductibleStr?: string;
+  premium?: number;
+}
+
+function extractCoverageDataUniversal(
+  line: string,
+  codeStartPos: number = 30,
+  codeEndPos: number = 45
+): ExtractedCoverageData {
+  const result: ExtractedCoverageData = {};
+
+  // 1. Coverage code - usually reliable at fixed position
+  const codeSection = line.substring(codeStartPos, codeEndPos).trim();
+  const codeMatch = codeSection.match(/^([A-Z0-9_]+)/);
+  result.code = codeMatch ? codeMatch[1] : undefined;
+
+  // 2. Extract data from the remainder of the line (after code position)
+  const dataSection = line.substring(codeEndPos);
+
+  // 3. Find limit - look for 8-digit zero-padded numbers
+  const eightDigitMatches = extractPatternMatches(dataSection, /(\d{8})/g, 0);
+  if (eightDigitMatches.length > 0) {
+    const rawLimit = eightDigitMatches[0].value;
+    const parsed = parseInt(rawLimit.replace(/^0+/, '') || '0', 10);
+    if (parsed > 0) {
+      result.limitAmount = parsed;
+      result.limitStr = String(parsed);
+    }
+
+    // Check for deductible immediately after limit
+    const limitEndPos = eightDigitMatches[0].position + 8;
+    const afterLimit = dataSection.substring(limitEndPos, limitEndPos + 10);
+    const dedMatch = afterLimit.match(/^(\d{4,7})/);
+    if (dedMatch) {
+      const parsedDed = parseInt(dedMatch[1].replace(/^0+/, '') || '0', 10);
+      if (parsedDed > 0 && parsedDed <= 25000) {
+        result.deductibleAmount = parsedDed;
+        result.deductibleStr = String(parsedDed);
+      }
+    }
+  }
+
+  // 4. Find premium - look for signed amounts (digits + +/-)
+  const premiumMatches = extractPatternMatches(dataSection, /(\d{6,12})[+-]/g, 0);
+  if (premiumMatches.length > 0) {
+    const rawPremium = premiumMatches[0].value;
+    const parsed = parseInt(rawPremium, 10);
+    if (parsed > 0) {
+      result.premium = parsed / 100; // AL3 premiums are in cents
+    }
+  }
+
+  // 5. Find description - look for title case text at end of line
+  const descMatches = extractPatternMatches(line.substring(100), /([A-Z][a-zA-Z]+(?:\s*[A-Za-z]+)*)/g, 0);
+  if (descMatches.length > 0) {
+    // Use the longest match as the description
+    const longest = descMatches.reduce((a, b) => a.value.length > b.value.length ? a : b);
+    if (longest.value.length > 3) {
+      result.description = longest.value.trim();
+    }
+  }
+
+  return result;
+}
+
+// =============================================================================
+// FIELD EXTRACTION
+// =============================================================================
+
 /**
  * Extract a fixed-width field from a line.
  * Truncates at field separators (EDIFACT control chars) used by some carriers.
@@ -1614,17 +1743,46 @@ function parseForm(line: string): AL3Endorsement | null {
 
 /**
  * Parse a vehicle record (5VEH).
+ * Uses fixed positions with pattern-based fallbacks for carrier variations.
  */
 function parseVehicle(line: string): AL3Vehicle {
+  // Try fixed positions first
   let vin = extractField(line, VEH_FIELDS.VIN) || undefined;
-  const year = parseAL3Number(extractField(line, VEH_FIELDS.YEAR)) as number | undefined;
+  let year = parseAL3Number(extractField(line, VEH_FIELDS.YEAR)) as number | undefined;
   let make = extractField(line, VEH_FIELDS.MAKE) || undefined;
   let model = extractField(line, VEH_FIELDS.MODEL) || undefined;
 
-  // Regex fallback for VIN if position-based extraction fails
+  // UNIVERSAL FALLBACKS using pattern extraction
+
+  // VIN: 17 alphanumeric characters (no I, O, Q)
   if (!vin || vin.length < 17) {
     const vinMatch = line.match(/[A-HJ-NPR-Z0-9]{17}/);
     if (vinMatch) vin = vinMatch[0];
+  }
+
+  // Year: 4-digit number in 1990-2030 range
+  if (!year) {
+    const yearMatch = line.match(/\b(19[9]\d|20[0-3]\d)\b/);
+    if (yearMatch) year = parseInt(yearMatch[1], 10);
+  }
+
+  // Make/Model: Look for known auto manufacturer names if not found
+  const cleanLine = line.replace(/[^\x20-\x7E]/g, ' ');
+  if (!make) {
+    const makePatterns = [
+      'TOYOTA', 'HONDA', 'FORD', 'CHEVROLET', 'CHEVY', 'NISSAN', 'HYUNDAI', 'KIA',
+      'BMW', 'MERCEDES', 'AUDI', 'LEXUS', 'ACURA', 'INFINITI', 'SUBARU', 'MAZDA',
+      'VOLKSWAGEN', 'VW', 'JEEP', 'DODGE', 'RAM', 'CHRYSLER', 'BUICK', 'GMC',
+      'CADILLAC', 'LINCOLN', 'TESLA', 'VOLVO', 'PORSCHE', 'JAGUAR', 'LAND ROVER',
+      'MITSUBISHI', 'SUZUKI', 'FIAT', 'ALFA ROMEO', 'MINI', 'GENESIS', 'RIVIAN'
+    ];
+    for (const pattern of makePatterns) {
+      const regex = new RegExp(`\\b${pattern}\\b`, 'i');
+      if (regex.test(cleanLine)) {
+        make = pattern.charAt(0) + pattern.slice(1).toLowerCase();
+        break;
+      }
+    }
   }
 
   // Clean up make/model (remove non-printable chars)
@@ -1637,6 +1795,7 @@ function parseVehicle(line: string): AL3Vehicle {
 /**
  * Parse a driver record (5DRV).
  * IVANS format has a complex name field with type prefix and split first/last names.
+ * Uses fixed positions with pattern-based fallbacks for carrier variations.
  */
 function parseDriver(line: string): AL3Driver | null {
   // Extract raw name area (positions 39-97: first name + last name)
@@ -1647,12 +1806,17 @@ function parseDriver(line: string): AL3Driver | null {
   rawName = rawName.replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!rawName) return null;
 
-  // Parse DOB — try YYYYMMDD (positions 160-167) first, then YYMMDD (positions 140-145)
+  // Parse DOB — try multiple strategies with pattern fallback
   let dateOfBirth: string | undefined;
+
+  // Strategy 1: YYYYMMDD at fixed position
   const dobFull = extractField(line, DRV_FIELDS.DOB_FULL);
   if (dobFull && /^\d{8}$/.test(dobFull)) {
     dateOfBirth = parseAL3Date(dobFull);
-  } else {
+  }
+
+  // Strategy 2: YYMMDD at fixed position
+  if (!dateOfBirth) {
     const dobRaw = extractField(line, DRV_FIELDS.DOB);
     if (dobRaw && /^\d{6}$/.test(dobRaw)) {
       const yy = parseInt(dobRaw.substring(0, 2), 10);
@@ -1660,6 +1824,15 @@ function parseDriver(line: string): AL3Driver | null {
       const dd = dobRaw.substring(4, 6);
       const yyyy = yy > 50 ? 1900 + yy : 2000 + yy;
       dateOfBirth = parseAL3Date(`${yyyy}${mm}${dd}`);
+    }
+  }
+
+  // Strategy 3: UNIVERSAL FALLBACK - scan for date patterns anywhere in line
+  if (!dateOfBirth) {
+    // Look for YYYYMMDD pattern (1920-2010 birth years for drivers)
+    const dobMatch = line.match(/\b(19[2-9]\d|200\d|201\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+    if (dobMatch) {
+      dateOfBirth = parseAL3Date(dobMatch[0]);
     }
   }
 
