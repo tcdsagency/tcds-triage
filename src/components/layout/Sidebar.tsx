@@ -39,6 +39,7 @@ import {
   ExternalLink,
   BookOpen,
   RefreshCw,
+  FilePlus2,
 } from 'lucide-react';
 
 // Map routes to feature permission keys (must match keys in feature-permissions.ts)
@@ -61,6 +62,7 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   '/payment-advance': 'paymentAdvance',
   '/same-day-payment': 'sameDayPayment',
   '/quote-extractor': 'quoteExtractor',
+  '/policy-creator': 'policyCreator',
   '/gaya-extractor': 'gayaExtractor',
   '/canopy-connect': 'canopyConnect',
   '/travelers-application': 'travelersApplication',
@@ -119,6 +121,7 @@ const customerNav = [
 const toolsNav = [
   { name: 'Quotes', href: '/quotes', icon: FileText },
   { name: 'Quote Extractor', href: '/quote-extractor', icon: FileSearch },
+  { name: 'Policy Creator', href: '/policy-creator', icon: FilePlus2 },
   { name: 'Gaya Extractor', href: '/gaya-extractor', icon: Sparkles },
   { name: 'Coverage Guide', href: '/coverage-demo', icon: BookOpen },
   { name: 'Canopy Connect', href: '/canopy-connect', icon: Link2 },

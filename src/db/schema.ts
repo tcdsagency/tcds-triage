@@ -2963,6 +2963,114 @@ export const quoteDocumentsRelations = relations(quoteDocuments, ({ one }) => ({
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════
+// POLICY CREATOR - AL3-XML GENERATION FROM DEC PAGES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const policyCreatorStatusEnum = pgEnum('policy_creator_status', [
+  'uploaded',
+  'extracting',
+  'extracted',
+  'reviewed',
+  'generated',
+  'error',
+]);
+
+export const policyCreatorLOBEnum = pgEnum('policy_creator_lob', [
+  'Personal Auto',
+  'Homeowners',
+  'Dwelling Fire',
+  'Renters',
+  'Umbrella',
+  'Flood',
+  'Motorcycle',
+  'Recreational Vehicle',
+  'Mobile Home',
+  'Commercial Auto',
+  'General Liability',
+  'BOP',
+  'Commercial Property',
+  'Workers Comp',
+  'Professional Liability',
+  'Inland Marine',
+]);
+
+export const policyCreatorDocuments = pgTable('policy_creator_documents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  uploadedById: uuid('uploaded_by_id').references(() => users.id),
+
+  // File info
+  originalFileName: text('original_file_name').notNull(),
+  fileSize: integer('file_size'),
+
+  // Policy info
+  policyNumber: text('policy_number'),
+  carrier: text('carrier'),
+  carrierNAIC: text('carrier_naic'),
+  lineOfBusiness: policyCreatorLOBEnum('line_of_business'),
+  effectiveDate: date('effective_date'),
+  expirationDate: date('expiration_date'),
+  totalPremium: real('total_premium'),
+  transactionType: text('transaction_type'), // NBS, RWL, END, etc.
+
+  // Insured info
+  insuredFirstName: text('insured_first_name'),
+  insuredLastName: text('insured_last_name'),
+  insuredName: text('insured_name'), // Full name or business name
+  insuredEntityType: text('insured_entity_type'), // P=Person, C=Company
+  insuredAddress: text('insured_address'),
+  insuredCity: text('insured_city'),
+  insuredState: text('insured_state'),
+  insuredZip: text('insured_zip'),
+  insuredPhone: text('insured_phone'),
+  insuredEmail: text('insured_email'),
+  insuredDOB: date('insured_dob'),
+
+  // Complex data (JSONB)
+  coverages: jsonb('coverages'), // CanonicalCoverage[]
+  vehicles: jsonb('vehicles'), // CanonicalVehicle[]
+  drivers: jsonb('drivers'), // CanonicalDriver[]
+  properties: jsonb('properties'), // CanonicalProperty[]
+  mortgagees: jsonb('mortgagees'), // CanonicalMortgagee[]
+  discounts: jsonb('discounts'), // CanonicalDiscount[]
+
+  // Extraction metadata
+  status: policyCreatorStatusEnum('status').default('uploaded'),
+  confidenceScores: jsonb('confidence_scores'), // ExtractionConfidence
+  extractionError: text('extraction_error'),
+  rawExtraction: jsonb('raw_extraction'), // Full AI response
+
+  // Output
+  generatedAL3Raw: text('generated_al3_raw'), // Raw AL3 records (before XML wrap)
+  generatedAL3XML: text('generated_al3_xml'), // XML-wrapped version for HawkSoft
+  validationErrors: jsonb('validation_errors'), // Compiler validation errors
+  validationWarnings: jsonb('validation_warnings'), // Compiler validation warnings
+  generatedAt: timestamp('generated_at'),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('policy_creator_docs_tenant_idx').on(table.tenantId),
+  statusIdx: index('policy_creator_docs_status_idx').on(table.status),
+  carrierIdx: index('policy_creator_docs_carrier_idx').on(table.carrier),
+  lobIdx: index('policy_creator_docs_lob_idx').on(table.lineOfBusiness),
+  insuredNameIdx: index('policy_creator_docs_insured_name_idx').on(table.insuredName),
+  createdAtIdx: index('policy_creator_docs_created_at_idx').on(table.createdAt),
+}));
+
+export const policyCreatorDocumentsRelations = relations(policyCreatorDocuments, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [policyCreatorDocuments.tenantId],
+    references: [tenants.id],
+  }),
+  uploadedBy: one(users, {
+    fields: [policyCreatorDocuments.uploadedById],
+    references: [users.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SEMANTIC SEARCH - EMBEDDINGS
 // ═══════════════════════════════════════════════════════════════════════════
 

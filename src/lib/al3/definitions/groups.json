@@ -1,0 +1,1587 @@
+﻿{
+    "6SBF":  {
+                 "name":  "Beneficiaries\u0027 Information Group",
+                 "version":  "",
+                 "length":  186
+             },
+    "6CUA":  {
+                 "name":  "CL Umbrella - Excess Additional Exposure Group",
+                 "version":  "3",
+                 "length":  250
+             },
+    "6RBB":  {
+                 "name":  "Residence Based Business",
+                 "version":  "",
+                 "length":  217
+             },
+    "6CVA":  {
+                 "name":  "Personal Automobile Coverage and Adjustments Group",
+                 "version":  "9",
+                 "length":  262
+             },
+    "6POI":  {
+                 "name":  "Commercial Property Other Insurance Information Group",
+                 "version":  "3",
+                 "length":  138
+             },
+    "6PIS":  {
+                 "name":  "Personal Automobile Insured Additional Information Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6CDI":  {
+                 "name":  "Driver Supplement Group",
+                 "version":  "3",
+                 "length":  98
+             },
+    "6PIM":  {
+                 "name":  "Personal Inland Marine Coverage and Adjustments Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6CIE":  {
+                 "name":  "Injury Information Group",
+                 "version":  "3",
+                 "length":  240
+             },
+    "6SPO":  {
+                 "name":  "Public Official Bond Information Group",
+                 "version":  "2",
+                 "length":  125
+             },
+    "6CVL":  {
+                 "name":  "Vehicle Loss Information Group and Vehicle Loss Information",
+                 "version":  "2",
+                 "length":  173
+             },
+    "5PMI":  {
+                 "name":  "Payment Method Information Group",
+                 "version":  "8",
+                 "length":  429
+             },
+    "6SBR":  {
+                 "name":  "Basic Bond Request Group",
+                 "version":  "1",
+                 "length":  807
+             },
+    "6FTR":  {
+                 "name":  "Vacancy Information Group",
+                 "version":  "",
+                 "length":  96
+             },
+    "5GPP":  {
+                 "name":  "General Liability Prior Policy History Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6WAS":  {
+                 "name":  "Water Unit Supplementary Group",
+                 "version":  "9",
+                 "length":  202
+             },
+    "6VIO":  {
+                 "name":  "MVR Accident/Violations Group",
+                 "version":  "6",
+                 "length":  161
+             },
+    "6SMB":  {
+                 "name":  "Snowmobile Liability Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5RTL":  {
+                 "name":  "Restaurant/Tavern Liquor Group",
+                 "version":  "2",
+                 "length":  225
+             },
+    "6SUC":  {
+                 "name":  "SCAP Underlying Coverage Information Group",
+                 "version":  "5",
+                 "length":  348
+             },
+    "6CFS":  {
+                 "name":  "Claim Financial Summary Group",
+                 "version":  "3",
+                 "length":  126
+             },
+    "5CVG":  {
+                 "name":  "Commercial Lines Coverage Group",
+                 "version":  "5",
+                 "length":  627
+             },
+    "6API":  {
+                 "name":  "Agriculture Policy Information Group",
+                 "version":  "1",
+                 "length":  365
+             },
+    "5SLC":  {
+                 "name":  "Sublocation Group",
+                 "version":  "6",
+                 "length":  340
+             },
+    "5INV":  {
+                 "name":  "Inventory Information",
+                 "version":  "",
+                 "length":  98
+             },
+    "4MAK":  {
+                 "name":  "Message Acknowledgement Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6ATF":  {
+                 "name":  "Business Automobile and Truckers Filing Group",
+                 "version":  "4",
+                 "length":  123
+             },
+    "6CCV":  {
+                 "name":  "Crime Coverage and Adjustments Group",
+                 "version":  "3",
+                 "length":  247
+             },
+    "6BMA":  {
+                 "name":  "B\u0026M Occupancy/Rate Table Information Group",
+                 "version":  "1",
+                 "length":  143
+             },
+    "6WCV":  {
+                 "name":  "Workers Compensation Coverage and Adjustments Group",
+                 "version":  "2",
+                 "length":  176
+             },
+    "6WCA":  {
+                 "name":  "Workers Compensation Assigned Risk Underwriting Group (6WCA)",
+                 "version":  "4",
+                 "length":  171
+             },
+    "6CPH":  {
+                 "name":  "Commercial Property Prior Policy History Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6SCN":  {
+                 "name":  "Contract Surety Bond Information Group",
+                 "version":  "",
+                 "length":  501
+             },
+    "6PRP":  {
+                 "name":  "Personal Umbrella and Excess Primary Policy Information Group",
+                 "version":  "4",
+                 "length":  260
+             },
+    "6CSV":  {
+                 "name":  "Crime Safe/Vault Information Group",
+                 "version":  "5",
+                 "length":  266
+             },
+    "6GCM":  {
+                 "name":  "General Liability Claims Made Group",
+                 "version":  "2",
+                 "length":  79
+             },
+    "5LHG":  {
+                 "name":  "Loss History Group",
+                 "version":  "C",
+                 "length":  291
+             },
+    "6RCA":  {
+                 "name":  "Replacement Cost Additional Items Group",
+                 "version":  "1",
+                 "length":  217
+             },
+    "6CPS":  {
+                 "name":  "Crime Premises/Safe Protection Group Format",
+                 "version":  "5",
+                 "length":  219
+             },
+    "6INL":  {
+                 "name":  "International Liability Group",
+                 "version":  "",
+                 "length":  214
+             },
+    "6DBD":  {
+                 "name":  "Direct Bill Commission Statement Detail Group",
+                 "version":  "6",
+                 "length":  242
+             },
+    "6SLI":  {
+                 "name":  "SCAP Location Information Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6MVR":  {
+                 "name":  "Motor Vehicle Request/Response Group",
+                 "version":  "4",
+                 "length":  242
+             },
+    "6IMA":  {
+                 "name":  "Commercial Inland Marine Unit at Risk Group",
+                 "version":  "9",
+                 "length":  159
+             },
+    "6GLC":  {
+                 "name":  "General Liability Classification and Rating Group",
+                 "version":  "6",
+                 "length":  176
+             },
+    "5CAR":  {
+                 "name":  "Commercial Lines Automobile Unit At Risk Group",
+                 "version":  "B",
+                 "length":  409
+             },
+    "6IMB":  {
+                 "name":  "Commercial Scheduled Item Group",
+                 "version":  "8",
+                 "length":  273
+             },
+    "8CDD":  {
+                 "name":  "Company Unique Data Dictionary Group",
+                 "version":  "4",
+                 "length":  77
+             },
+    "6PST":  {
+                 "name":  "Commercial Property State Coverage Information Group",
+                 "version":  "1",
+                 "length":  77
+             },
+    "5SNG":  {
+                 "name":  "Supplementary Name Group",
+                 "version":  "8",
+                 "length":  158
+             },
+    "5RTE":  {
+                 "name":  "Restaurant/Tavern Entertainment Group",
+                 "version":  "1",
+                 "length":  646
+             },
+    "0DDT":  {
+                 "name":  "Coded Data Element Table Group",
+                 "version":  "1",
+                 "length":  120
+             },
+    "6COC":  {
+                 "name":  "Occurrence Group and Occurrence Extension Group",
+                 "version":  "3",
+                 "length":  232
+             },
+    "5LAG":  {
+                 "name":  "Location Address Group",
+                 "version":  "A",
+                 "length":  510
+             },
+    "6CVH":  {
+                 "name":  "Homeowners and Dwelling Fire Coverage and Adjustments Group",
+                 "version":  "A",
+                 "length":  322
+             },
+    "6FAU":  {
+                 "name":  "Fidelity Audit Information Group",
+                 "version":  "1",
+                 "length":  100
+             },
+    "6WCR":  {
+                 "name":  "Workers Compensation Classification and Rating Group",
+                 "version":  "7",
+                 "length":  201
+             },
+    "6COM":  {
+                 "name":  "Communications  Information Group",
+                 "version":  "4",
+                 "length":  415
+             },
+    "6EOJ":  {
+                 "name":  "Errors and Omissions Liability Job/Project Group",
+                 "version":  "",
+                 "length":  238
+             },
+    "5FOR":  {
+                 "name":  "Forms Group",
+                 "version":  "4",
+                 "length":  200
+             },
+    "5CSI":  {
+                 "name":  "Credit Score Information Group",
+                 "version":  "",
+                 "length":  428
+             },
+    "6GLS":  {
+                 "name":  "General Liability State Rating Group",
+                 "version":  "1",
+                 "length":  65
+             },
+    "5ISI":  {
+                 "name":  "Insured\u0027s Supplemental Information Group",
+                 "version":  "F",
+                 "length":  273
+             },
+    "6BAU":  {
+                 "name":  "Business Automobile and Truckers Hired/Borrowed, Non-Owned and",
+                 "version":  "3",
+                 "length":  108
+             },
+    "5PPH":  {
+                 "name":  "Prior Policy History Group",
+                 "version":  "D",
+                 "length":  308
+             },
+    "6WCU":  {
+                 "name":  "Workers Compensation Underwriting Group",
+                 "version":  "5",
+                 "length":  82
+             },
+    "5CER":  {
+                 "name":  "Certificate Holder Group",
+                 "version":  "6",
+                 "length":  277
+             },
+    "6EPE":  {
+                 "name":  "Employment Practices Liability Employee Group",
+                 "version":  "1",
+                 "length":  107
+             },
+    "5ACT":  {
+                 "name":  "Policy Activity Group",
+                 "version":  "",
+                 "length":  227
+             },
+    "6PCV":  {
+                 "name":  "Commercial Property Coverage And Adjustments Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6ARU":  {
+                 "name":  "Agriculture Rating and Underwriting Group",
+                 "version":  "2",
+                 "length":  201
+             },
+    "6CPL":  {
+                 "name":  "Property Loss Group",
+                 "version":  "2",
+                 "length":  222
+             },
+    "4STG":  {
+                 "name":  "Stream Terminator Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6IMD":  {
+                 "name":  "Inland Marine Media/Data Information Group",
+                 "version":  "1",
+                 "length":  41
+             },
+    "6SFQ":  {
+                 "name":  "Solid Fuel Heating Device Questionnaire Group",
+                 "version":  "1",
+                 "length":  386
+             },
+    "9CVL":  {
+                 "name":  "Vehicle Loss Information Extension Group",
+                 "version":  "1",
+                 "length":  209
+             },
+    "6SUB":  {
+                 "name":  "Subsidiary Information Group (6SUB)",
+                 "version":  "2",
+                 "length":  300
+             },
+    "6TTI":  {
+                 "name":  "Truckers Trailer Interchange Group",
+                 "version":  "2",
+                 "length":  65
+             },
+    "5GUR":  {
+                 "name":  "Miscellaneous Unit At Risk Group",
+                 "version":  "3",
+                 "length":  148
+             },
+    "6RRP":  {
+                 "name":  "Railroad Protective Liability Group",
+                 "version":  "",
+                 "length":  352
+             },
+    "6LUR":  {
+                 "name":  "All Location Unit at Risk Group",
+                 "version":  "2",
+                 "length":  115
+             },
+    "6CPU":  {
+                 "name":  "Commercial Property Underwriting Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6FSR":  {
+                 "name":  "Dwelling Fire State Information Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "2ACI":  {
+                 "name":  "Agency/Company Information Group",
+                 "version":  "3",
+                 "length":  249
+             },
+    "6CPO":  {
+                 "name":  "Commercial Lines Policy Information Group",
+                 "version":  "C",
+                 "length":  324
+             },
+    "5RMK":  {
+                 "name":  "Remarks Group",
+                 "version":  "1",
+                 "length":  195
+             },
+    "6STR":  {
+                 "name":  "Surety Terms Information Group",
+                 "version":  "",
+                 "length":  204
+             },
+    "6SRT":  {
+                 "name":  "Surety Rating Information Group",
+                 "version":  "1",
+                 "length":  143
+             },
+    "6CUR":  {
+                 "name":  "SCAP Crime Unit at Risk Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6EPL":  {
+                 "name":  "Employment Practices Liability Information Group",
+                 "version":  "1",
+                 "length":  158
+             },
+    "6CEC":  {
+                 "name":  "Crime Employees Classification Group",
+                 "version":  "1",
+                 "length":  126
+             },
+    "6MHT":  {
+                 "name":  "Mobile Home/Trailer Group",
+                 "version":  "7",
+                 "length":  238
+             },
+    "5OIC":  {
+                 "name":  "Other Insurance With Company Group",
+                 "version":  "4",
+                 "length":  112
+             },
+    "6SIG":  {
+                 "name":  "Insurance Information Group",
+                 "version":  "",
+                 "length":  223
+             },
+    "6WCS":  {
+                 "name":  "Workers Compensation State Rating Group",
+                 "version":  "7",
+                 "length":  184
+             },
+    "6DBS":  {
+                 "name":  "Direct Bill Payment Status Group",
+                 "version":  "5",
+                 "length":  282
+             },
+    "0IMP":  {
+                 "name":  "Implementation Guidelines Group Format",
+                 "version":  "",
+                 "length":  32
+             },
+    "6GPC":  {
+                 "name":  "Products/Completed Operations Underwriting Group",
+                 "version":  "",
+                 "length":  60
+             },
+    "6SCO":  {
+                 "name":  "Collateral Information Group",
+                 "version":  "",
+                 "length":  497
+             },
+    "4CRG":  {
+                 "name":  "Control Request Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6CUB":  {
+                 "name":  "CL Umbrella - Excess Vehicle Group",
+                 "version":  "1",
+                 "length":  119
+             },
+    "6SBL":  {
+                 "name":  "Surety Premium Billing Information Group",
+                 "version":  "2",
+                 "length":  119
+             },
+    "5HOR":  {
+                 "name":  "Horse Operations Group",
+                 "version":  "1",
+                 "length":  94
+             },
+    "5UQG":  {
+                 "name":  "Underwriting Question Group",
+                 "version":  "1",
+                 "length":  238
+             },
+    "6BRT":  {
+                 "name":  "Business Automobile and Truckers Supplementary Rating",
+                 "version":  "5",
+                 "length":  156
+             },
+    "5CLD":  {
+                 "name":  "Miscellaneous Coverage Group",
+                 "version":  "2",
+                 "length":  247
+             },
+    "9COC":  {
+                 "name":  "Occurrence Extension Group",
+                 "version":  "3",
+                 "length":  236
+             },
+    "5ORP":  {
+                 "name":  "Other Related Policies Group",
+                 "version":  "4",
+                 "length":  206
+             },
+    "6CUE":  {
+                 "name":  "CL Umbrella - Excess Coverage Group",
+                 "version":  "2",
+                 "length":  123
+             },
+    "2GCG":  {
+                 "name":  "Group Control Group",
+                 "version":  "1",
+                 "length":  110
+             },
+    "6EDU":  {
+                 "name":  "Education Course Information Group",
+                 "version":  "1",
+                 "length":  175
+             },
+    "6CPC":  {
+                 "name":  "Commercial Lines Prior Policy History Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "2TAG":  {
+                 "name":  "Transaction Agency Group",
+                 "version":  "",
+                 "length":  212
+             },
+    "6BKS":  {
+                 "name":  "BOECKH Square Foot Method",
+                 "version":  "3",
+                 "length":  419
+             },
+    "6SPI":  {
+                 "name":  "Shared Policy Information Group",
+                 "version":  "B",
+                 "length":  348
+             },
+    "6INP":  {
+                 "name":  "International Property Group",
+                 "version":  "",
+                 "length":  546
+             },
+    "6CVC":  {
+                 "name":  "Business Automobile and Truckers Coverage and Adjustment Group",
+                 "version":  "2",
+                 "length":  182
+             },
+    "6IBR":  {
+                 "name":  "Commercial Inland Marine Builders Risk Underwriting Group",
+                 "version":  "1",
+                 "length":  422
+             },
+    "6GGA":  {
+                 "name":  "Dealers Physical Damage Coverage Attributes Group",
+                 "version":  "1",
+                 "length":  80
+             },
+    "6BKH":  {
+                 "name":  "BOECKH High-Valued Dwelling Method",
+                 "version":  "3",
+                 "length":  249
+             },
+    "5ELG":  {
+                 "name":  "Extended Line Group",
+                 "version":  "1",
+                 "length":  240
+             },
+    "6SBC":  {
+                 "name":  "Surety Bond Policy Information Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6MRG":  {
+                 "name":  "Memo Routing Group",
+                 "version":  "1",
+                 "length":  107
+             },
+    "5RTG":  {
+                 "name":  "Restaurant/Tavern General Group",
+                 "version":  "1",
+                 "length":  398
+             },
+    "6YDQ":  {
+                 "name":  "Young Driver Questionnaire Group",
+                 "version":  "4",
+                 "length":  140
+             },
+    "6PTI":  {
+                 "name":  "Protection Information Group",
+                 "version":  "5",
+                 "length":  183
+             },
+    "6DBA":  {
+                 "name":  "Direct Bill Commission Statement Non-Policy Adjustments Group",
+                 "version":  "1",
+                 "length":  58
+             },
+    "5GIG":  {
+                 "name":  "General Information Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "8TBL":  {
+                 "name":  "Table Definition Group",
+                 "version":  "3",
+                 "length":  81
+             },
+    "6ADR":  {
+                 "name":  "Additional Driver/Restrictions Group",
+                 "version":  "5",
+                 "length":  320
+             },
+    "6IMC":  {
+                 "name":  "Commercial Inland Marine Coverage and Adjustment Group",
+                 "version":  "2",
+                 "length":  216
+             },
+    "6SOI":  {
+                 "name":  "Commercial Property Subject of Insurance Group",
+                 "version":  "9",
+                 "length":  269
+             },
+    "6SMI":  {
+                 "name":  "Miscellaneous Bond Information Group",
+                 "version":  "",
+                 "length":  780
+             },
+    "6PDA":  {
+                 "name":  "Personal Automobile Driving Record Group",
+                 "version":  "5",
+                 "length":  225
+             },
+    "0DDE":  {
+                 "name":  "Basic Data Element Dictionary Group",
+                 "version":  "3",
+                 "length":  120
+             },
+    "6TEQ":  {
+                 "name":  "Truckers Equipment Group",
+                 "version":  "3",
+                 "length":  117
+             },
+    "5MED":  {
+                 "name":  "Medical Statement Group",
+                 "version":  "3",
+                 "length":  331
+             },
+    "6PUR":  {
+                 "name":  "SCAP Property Unit at Risk Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5EQL":  {
+                 "name":  "Equine Liability Group",
+                 "version":  "1",
+                 "length":  542
+             },
+    "6EXI":  {
+                 "name":  "Exposure Information Group",
+                 "version":  "1",
+                 "length":  119
+             },
+    "8DER":  {
+                 "name":  "Relational Edit Definition Group",
+                 "version":  "4",
+                 "length":  0
+             },
+    "6FEG":  {
+                 "name":  "Flood Equipment Group",
+                 "version":  "1",
+                 "length":  111
+             },
+    "5BPI":  {
+                 "name":  "Basic Policy Information Group",
+                 "version":  "L",
+                 "length":  504
+             },
+    "6SAM":  {
+                 "name":  "Surety/Joint Venture Amounts Group",
+                 "version":  "",
+                 "length":  68
+             },
+    "4CRR":  {
+                 "name":  "Control Request Rejection Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6CMP":  {
+                 "name":  "Crime Messenger Protection Group",
+                 "version":  "2",
+                 "length":  56
+             },
+    "6ICR":  {
+                 "name":  "Inland Marine Computer Room Information Group",
+                 "version":  "3",
+                 "length":  50
+             },
+    "5ATH":  {
+                 "name":  "Athletic Sponsorship Group",
+                 "version":  "1",
+                 "length":  125
+             },
+    "6CPD":  {
+                 "name":  "Claim Payment Detail Group",
+                 "version":  "3",
+                 "length":  91
+             },
+    "9AOI":  {
+                 "name":  "Additional/Other Interest Extension Group",
+                 "version":  "5",
+                 "length":  252
+             },
+    "5PEX":  {
+                 "name":  "Property Exhibit Group",
+                 "version":  "",
+                 "length":  273
+             },
+    "6FDC":  {
+                 "name":  "Fidelity Computer Controls Information Group",
+                 "version":  "",
+                 "length":  47
+             },
+    "5ASI":  {
+                 "name":  "Animal Schedule Group",
+                 "version":  "",
+                 "length":  443
+             },
+    "6PDS":  {
+                 "name":  "Personal Automobile Special Driver Group",
+                 "version":  "5",
+                 "length":  235
+             },
+    "5BUS":  {
+                 "name":  "Business Operations Group",
+                 "version":  "1",
+                 "length":  116
+             },
+    "6GGK":  {
+                 "name":  "Garage Keepers Liability Group",
+                 "version":  "1",
+                 "length":  55
+             },
+    "5YRI":  {
+                 "name":  "Yearly Reporting Information Group",
+                 "version":  "2",
+                 "length":  406
+             },
+    "5VEQ":  {
+                 "name":  "Vehicle Equipment",
+                 "version":  "",
+                 "length":  97
+             },
+    "5CHG":  {
+                 "name":  "Charges Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6CPN":  {
+                 "name":  "Commercial Property Underwriting Group",
+                 "version":  "F",
+                 "length":  622
+             },
+    "6CLI":  {
+                 "name":  "Crime Location Information Group Format",
+                 "version":  "2",
+                 "length":  130
+             },
+    "6GIC":  {
+                 "name":  "Contractors Underwriting Group",
+                 "version":  "5",
+                 "length":  161
+             },
+    "6SRG":  {
+                 "name":  "Contract Surety Bid Results Group",
+                 "version":  "",
+                 "length":  514
+             },
+    "5REP":  {
+                 "name":  "Dwelling Replacement Cost Group",
+                 "version":  "9",
+                 "length":  240
+             },
+    "5PTL":  {
+                 "name":  "Long Line Group",
+                 "version":  "1",
+                 "length":  165
+             },
+    "6CRM":  {
+                 "name":  "Crime Unit At Risk Group",
+                 "version":  "1",
+                 "length":  57
+             },
+    "9BIS":  {
+                 "name":  "Basic Insured Information Extension Group",
+                 "version":  "9",
+                 "length":  343
+             },
+    "6PGS":  {
+                 "name":  "Commercial Property Glass Schedule Group",
+                 "version":  "5",
+                 "length":  127
+             },
+    "6CCI":  {
+                 "name":  "Crime Control Information Group",
+                 "version":  "3",
+                 "length":  111
+             },
+    "5PPI":  {
+                 "name":  "Personal Property Item Description Group",
+                 "version":  "C",
+                 "length":  355
+             },
+    "6REG":  {
+                 "name":  "Residence Employees Group",
+                 "version":  "",
+                 "length":  136
+             },
+    "6CCG":  {
+                 "name":  "Loss Notice Coverage Group",
+                 "version":  "4",
+                 "length":  145
+             },
+    "4SOG":  {
+                 "name":  "Signon Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6GGI":  {
+                 "name":  "Garage and Dealers Information Group",
+                 "version":  "2",
+                 "length":  115
+             },
+    "6COI":  {
+                 "name":  "Loss Notice Other Insurance Group",
+                 "version":  "2",
+                 "length":  124
+             },
+    "6SDV":  {
+                 "name":  "Commercial Lines Driver Group",
+                 "version":  "D",
+                 "length":  256
+             },
+    "6CLM":  {
+                 "name":  "Basic Claim Data/Status Group",
+                 "version":  "3",
+                 "length":  406
+             },
+    "5PCG":  {
+                 "name":  "Policy/Coverage Group",
+                 "version":  "2",
+                 "length":  333
+             },
+    "6CUL":  {
+                 "name":  "CL Umbrella - Excess Location Information Group",
+                 "version":  "1",
+                 "length":  119
+             },
+    "6PAS":  {
+                 "name":  "Account Current Summary Group",
+                 "version":  "2",
+                 "length":  95
+             },
+    "6WCP":  {
+                 "name":  "Workers Compensation Policy Information Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6CPY":  {
+                 "name":  "Claim Payment/Reserve Group",
+                 "version":  "2",
+                 "length":  218
+             },
+    "6GGP":  {
+                 "name":  "Garage Physical Damage Group",
+                 "version":  "3",
+                 "length":  73
+             },
+    "5DSP":  {
+                 "name":  "Batch Download Set-up Group",
+                 "version":  "1",
+                 "length":  155
+             },
+    "5RTK":  {
+                 "name":  "Restaurant/Tavern Kitchen Group",
+                 "version":  "1",
+                 "length":  207
+             },
+    "5DCV":  {
+                 "name":  "Coverage and Information Default Group",
+                 "version":  "2",
+                 "length":  113
+             },
+    "5BIS":  {
+                 "name":  "Basic Insured Information Group",
+                 "version":  "2",
+                 "length":  172
+             },
+    "2FID":  {
+                 "name":  "File Transfer Identification Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "2TCG":  {
+                 "name":  "Transaction Control Group",
+                 "version":  "3",
+                 "length":  135
+             },
+    "6CCC":  {
+                 "name":  "Commercial Inland Marine Care, Custody and Control",
+                 "version":  "",
+                 "length":  122
+             },
+    "6WCI":  {
+                 "name":  "Workers Compensation Individuals Included/Excluded Group",
+                 "version":  "8",
+                 "length":  202
+             },
+    "4SOF":  {
+                 "name":  "Signoff Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "8DED":  {
+                 "name":  "Single Field Edit Definition Group",
+                 "version":  "4",
+                 "length":  0
+             },
+    "5VAC":  {
+                 "name":  "Vacancy Information Group",
+                 "version":  "",
+                 "length":  185
+             },
+    "6VIG":  {
+                 "name":  "Vehicle Inspection Status",
+                 "version":  "1",
+                 "length":  279
+             },
+    "6LAB":  {
+                 "name":  "Labor Contractor Group",
+                 "version":  "",
+                 "length":  180
+             },
+    "6SBB":  {
+                 "name":  "Surety Bond Coverage and Adjustment Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5PIG":  {
+                 "name":  "Package Information Group",
+                 "version":  "4",
+                 "length":  153
+             },
+    "6MPL":  {
+                 "name":  "Medical Professional Information Group",
+                 "version":  "",
+                 "length":  330
+             },
+    "6PVH":  {
+                 "name":  "Personal Automobile Vehicle Supplement Group",
+                 "version":  "H",
+                 "length":  383
+             },
+    "6PSL":  {
+                 "name":  "Commercial Property Sub-Location Group",
+                 "version":  "B",
+                 "length":  359
+             },
+    "6IRU":  {
+                 "name":  "Personal Inland Marine Rating/Underwriting Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "9IPI":  {
+                 "name":  "Involved Party Extension Group",
+                 "version":  "3",
+                 "length":  240
+             },
+    "2FTT":  {
+                 "name":  "File Transfer Trailer Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6PDR":  {
+                 "name":  "Personal Automobile Driver Supplementary Information Group",
+                 "version":  "B",
+                 "length":  474
+             },
+    "6CMS":  {
+                 "name":  "Crime Money and Securities Group",
+                 "version":  "1",
+                 "length":  113
+             },
+    "6BVS":  {
+                 "name":  "Business Automobile and Truckers Vehicle Supplement Group",
+                 "version":  "6",
+                 "length":  297
+             },
+    "6GPD":  {
+                 "name":  "Products Detail Group",
+                 "version":  "3",
+                 "length":  240
+             },
+    "6TTR":  {
+                 "name":  "Truckers Terminal Group",
+                 "version":  "3",
+                 "length":  270
+             },
+    "5VEH":  {
+                 "name":  "Vehicle Group",
+                 "version":  "B",
+                 "length":  251
+             },
+    "4ROC":  {
+                 "name":  "Receive Options Control Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5TAI":  {
+                 "name":  "Texas Additional Insured Group",
+                 "version":  "1",
+                 "length":  55
+             },
+    "6PDC":  {
+                 "name":  "Account Current Discrepancy Summary Group",
+                 "version":  "2",
+                 "length":  95
+             },
+    "6SPL":  {
+                 "name":  "SCAP Policy Limits Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5DRV":  {
+                 "name":  "Driver Group",
+                 "version":  "A",
+                 "length":  218
+             },
+    "1MHG":  {
+                 "name":  "Message Header Group",
+                 "version":  "7",
+                 "length":  196
+             },
+    "6MSA":  {
+                 "name":  "Marshall and Swift Series 80 Data Group",
+                 "version":  "1",
+                 "length":  86
+             },
+    "9EMP":  {
+                 "name":  "Workers Compensation Employer Information Extension Group",
+                 "version":  "",
+                 "length":  240
+             },
+    "6SLP":  {
+                 "name":  "License and Permit Bond Information Group",
+                 "version":  "",
+                 "length":  178
+             },
+    "6CVF":  {
+                 "name":  "Dwelling Fire Coverage/And Adjustments Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5PIN":  {
+                 "name":  "Premium Information Group",
+                 "version":  "2",
+                 "length":  198
+             },
+    "6CUU":  {
+                 "name":  "CL Umbrella - Excess Underlying Information Group",
+                 "version":  "2",
+                 "length":  190
+             },
+    "5CTR":  {
+                 "name":  "Charter Group",
+                 "version":  "2",
+                 "length":  184
+             },
+    "6WCD":  {
+                 "name":  "Workers Compensation Coverage Default Group",
+                 "version":  "2",
+                 "length":  111
+             },
+    "6HOT":  {
+                 "name":  "Hotel Motel Information Group",
+                 "version":  "",
+                 "length":  119
+             },
+    "6EOI":  {
+                 "name":  "Errors and Omissions Information Group",
+                 "version":  "",
+                 "length":  580
+             },
+    "6EMP":  {
+                 "name":  "Workers Compensation Employer Information Group and Extension Group",
+                 "version":  "2",
+                 "length":  240
+             },
+    "5BCI":  {
+                 "name":  "Building Construction Information Group",
+                 "version":  "A",
+                 "length":  386
+             },
+    "5PUL":  {
+                 "name":  "Personal Umbrella and Excess Liability Group",
+                 "version":  "",
+                 "length":  61
+             },
+    "5QIG":  {
+                 "name":  "Quote Information Group",
+                 "version":  "4",
+                 "length":  267
+             },
+    "6CPA":  {
+                 "name":  "Claim Payment Summary Group",
+                 "version":  "4",
+                 "length":  298
+             },
+    "6TZO":  {
+                 "name":  "Business Automobile and Truckers Zone Group",
+                 "version":  "1",
+                 "length":  80
+             },
+    "9ADR":  {
+                 "name":  "Additional Driver/Restrictions Extension Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6IMS":  {
+                 "name":  "Equipment Storage Information Group",
+                 "version":  "1",
+                 "length":  82
+             },
+    "6FDL":  {
+                 "name":  "Fidelity Location Information Group",
+                 "version":  "",
+                 "length":  82
+             },
+    "5SSG":  {
+                 "name":  "State Summary Group",
+                 "version":  "3",
+                 "length":  52
+             },
+    "6WCT":  {
+                 "name":  "Workers Compensation Other States Insurance Group",
+                 "version":  "1",
+                 "length":  161
+             },
+    "6PAD":  {
+                 "name":  "Account Current Detail Group",
+                 "version":  "5",
+                 "length":  202
+             },
+    "9WCL":  {
+                 "name":  "Workers Compensation Injury or Illness Information Extension Group",
+                 "version":  "3",
+                 "length":  240
+             },
+    "6CUC":  {
+                 "name":  "Care, Custody and Control Information Group",
+                 "version":  "3",
+                 "length":  135
+             },
+    "6SBX":  {
+                 "name":  "Basic Bond Execution Group",
+                 "version":  "1",
+                 "length":  122
+             },
+    "5PAY":  {
+                 "name":  "Payment Plan Information Group",
+                 "version":  "5",
+                 "length":  101
+             },
+    "6CPK":  {
+                 "name":  "Commercial Property Blanket Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5ATT":  {
+                 "name":  "Attachments Group",
+                 "version":  "1",
+                 "length":  94
+             },
+    "6IPI":  {
+                 "name":  "Involved Party Group and Involved Party Extension Group",
+                 "version":  "4",
+                 "length":  315
+             },
+    "6FDP":  {
+                 "name":  "Fiduciary Plan Information Group",
+                 "version":  "4",
+                 "length":  191
+             },
+    "4NMK":  {
+                 "name":  "Negative Message Acknowledgement Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5NID":  {
+                 "name":  "Name Identifier Group",
+                 "version":  "4",
+                 "length":  125
+             },
+    "6CAS":  {
+                 "name":  "Business Automobile and Truckers Covered Auto Symbol Group",
+                 "version":  "6",
+                 "length":  256
+             },
+    "6BMB":  {
+                 "name":  "B\u0026M Object Covered Group",
+                 "version":  "1",
+                 "length":  60
+             },
+    "5PTS":  {
+                 "name":  "Short Line Group",
+                 "version":  "1",
+                 "length":  113
+             },
+    "6CKY":  {
+                 "name":  "Claim Keys Group",
+                 "version":  "2",
+                 "length":  266
+             },
+    "5CNR":  {
+                 "name":  "The Cancellation/Non-Renewal Group",
+                 "version":  "4",
+                 "length":  71
+             },
+    "6SWC":  {
+                 "name":  "Self Insured Workers Compensation Bond Information Group",
+                 "version":  "",
+                 "length":  265
+             },
+    "6WCH":  {
+                 "name":  "Workers Compensation Policy History Group",
+                 "version":  "4",
+                 "length":  326
+             },
+    "6SBA":  {
+                 "name":  "Surety Bond Unit at Risk Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6TCT":  {
+                 "name":  "Truckers Commodities Transported",
+                 "version":  "",
+                 "length":  93
+             },
+    "6SBT":  {
+                 "name":  "Bankruptcy/Trust/Receiver Information Group",
+                 "version":  "2",
+                 "length":  471
+             },
+    "6SUU":  {
+                 "name":  "SCAP Umbrella Unit At Risk Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6MEM":  {
+                 "name":  "Memo Header Group",
+                 "version":  "1",
+                 "length":  160
+             },
+    "6SPG":  {
+                 "name":  "Principal Information Group",
+                 "version":  "1",
+                 "length":  133
+             },
+    "6RPT":  {
+                 "name":  "The Report Ordering Information Group",
+                 "version":  "1",
+                 "length":  109
+             },
+    "5GNA":  {
+                 "name":  "General Name/Address Group",
+                 "version":  "8",
+                 "length":  460
+             },
+    "5DSF":  {
+                 "name":  "Discount-Surcharge Factor Group",
+                 "version":  "4",
+                 "length":  66
+             },
+    "4PTG":  {
+                 "name":  "Phase Terminator Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5UQO":  {
+                 "name":  "Underwriting Question Occurrence Group",
+                 "version":  "1",
+                 "length":  153
+             },
+    "6EMA":  {
+                 "name":  "Employees Abroad Group",
+                 "version":  "",
+                 "length":  108
+             },
+    "6TRV":  {
+                 "name":  "Transportation Values",
+                 "version":  "",
+                 "length":  112
+             },
+    "6BMC":  {
+                 "name":  "B\u0026M Coverage and Adjustment Group",
+                 "version":  "2",
+                 "length":  181
+             },
+    "6PAL":  {
+                 "name":  "Policy Accounting Line Group",
+                 "version":  "3",
+                 "length":  90
+             },
+    "5CFG":  {
+                 "name":  "Common Factor Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5FCI":  {
+                 "name":  "Flood Community Information Group",
+                 "version":  "5",
+                 "length":  127
+             },
+    "6CUW":  {
+                 "name":  "Commercial Umbrella Watercraft Information",
+                 "version":  "",
+                 "length":  40
+             },
+    "6SSR":  {
+                 "name":  "State Information Group",
+                 "version":  "4",
+                 "length":  140
+             },
+    "6WCC":  {
+                 "name":  "Workers Compensation Premium Information Group",
+                 "version":  "2",
+                 "length":  314
+             },
+    "6EOL":  {
+                 "name":  "Errors and Omissions Liability Information Group",
+                 "version":  "1",
+                 "length":  563
+             },
+    "6FRU":  {
+                 "name":  "Dwelling Fire Supplemental Information Group",
+                 "version":  "9",
+                 "length":  184
+             },
+    "6DRA":  {
+                 "name":  "Additional Driver Restriction Information Group",
+                 "version":  "1",
+                 "length":  200
+             },
+    "6SFI":  {
+                 "name":  "Fiduciary Bond Information Group",
+                 "version":  "2",
+                 "length":  578
+             },
+    "6WAL":  {
+                 "name":  "Water Unit Liability Group",
+                 "version":  "D",
+                 "length":  461
+             },
+    "6GGL":  {
+                 "name":  "Garage Liability Group",
+                 "version":  "5",
+                 "length":  157
+             },
+    "6BFR":  {
+                 "name":  "Business Automobile and Truckers Financial Responsibility Group",
+                 "version":  "4",
+                 "length":  196
+             },
+    "6HRU":  {
+                 "name":  "Homeowners and Dwelling Fire Rating/Underwriting Group",
+                 "version":  "N",
+                 "length":  500
+             },
+    "5BNG":  {
+                 "name":  "Binder Notification Group",
+                 "version":  "4",
+                 "length":  118
+             },
+    "5PPS":  {
+                 "name":  "Personal Property Schedule Summary Group",
+                 "version":  "5",
+                 "length":  89
+             },
+    "5RTF":  {
+                 "name":  "Restaurant/Tavern Financial Group",
+                 "version":  "1",
+                 "length":  226
+             },
+    "6PSR":  {
+                 "name":  "Commercial Property Specific Rating Group",
+                 "version":  "2",
+                 "length":  88
+             },
+    "3MTG":  {
+                 "name":  "Message Trailer Group",
+                 "version":  "1",
+                 "length":  240
+             },
+    "6SJU":  {
+                 "name":  "Judicial Bond Information Group",
+                 "version":  "",
+                 "length":  920
+             },
+    "6EOK":  {
+                 "name":  "Errors and Omissions Key Employee Group",
+                 "version":  "",
+                 "length":  148
+             },
+    "6WCL":  {
+                 "name":  "Workers Compensation Injury or Illness Information Group",
+                 "version":  "3",
+                 "length":  243
+             },
+    "6AUR":  {
+                 "name":  "Business Automobile and Truckers Underwriting Group",
+                 "version":  "9",
+                 "length":  534
+             },
+    "6EPJ":  {
+                 "name":  "Employment Practices Liability Jurisdiction Group",
+                 "version":  "1",
+                 "length":  74
+             },
+    "5AOI":  {
+                 "name":  "Additional/Other Interest Group",
+                 "version":  "8",
+                 "length":  238
+             },
+    "6SPC":  {
+                 "name":  "Specialty Lines Common Information Group Format",
+                 "version":  "2",
+                 "length":  576
+             },
+    "6GLT":  {
+                 "name":  "General Liability Transition Group",
+                 "version":  "2",
+                 "length":  71
+             },
+    "8DEF":  {
+                 "name":  "Temporary Field Definition Group",
+                 "version":  "3",
+                 "length":  123
+             },
+    "6PSO":  {
+                 "name":  "Commercial Property Subject Options Group",
+                 "version":  "",
+                 "length":  240
+             },
+    "5IIG":  {
+                 "name":  "Dwelling Inspection Information Group",
+                 "version":  "3",
+                 "length":  166
+             },
+    "6GUW":  {
+                 "name":  "General Liability Underwriting Group",
+                 "version":  "",
+                 "length":  63
+             },
+    "6PUS":  {
+                 "name":  "Personal Umbrella Supplementary Information Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6PUM":  {
+                 "name":  "Personal Umbrella Coverage and Adjustments Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6DBC":  {
+                 "name":  "Direct Bill Commission Statement Summary Group",
+                 "version":  "5",
+                 "length":  101
+             },
+    "6COL":  {
+                 "name":  "Commercial Property Cause of Loss Coverage and Adjustments Group",
+                 "version":  "2",
+                 "length":  198
+             },
+    "5PSU":  {
+                 "name":  "Print Image Element Groups",
+                 "version":  "3",
+                 "length":  138
+             },
+    "6FPC":  {
+                 "name":  "Fidelity Personnel Census Information Group",
+                 "version":  "",
+                 "length":  226
+             },
+    "5LIC":  {
+                 "name":  "License Information Group",
+                 "version":  "1",
+                 "length":  244
+             },
+    "6GSU":  {
+                 "name":  "Glass and Sign Underwriting Group",
+                 "version":  "3",
+                 "length":  87
+             },
+    "6DIS":  {
+                 "name":  "Driver Discount Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "6AEI":  {
+                 "name":  "Animal Exposure Information",
+                 "version":  "1",
+                 "length":  41
+             },
+    "4SOR":  {
+                 "name":  "Signon Rejection Group",
+                 "version":  "",
+                 "length":  0
+             },
+    "5FAR":  {
+                 "name":  "Type of Farm/Ranch Group",
+                 "version":  "",
+                 "length":  80
+             },
+    "2TRG":  {
+                 "name":  "Transaction Header Group",
+                 "version":  "7",
+                 "length":  212
+             },
+    "6WDE":  {
+                 "name":  "Watercraft Driver Experience Group",
+                 "version":  "",
+                 "length":  96
+             },
+    "9CKY":  {
+                 "name":  "Claim Keys Extension Group",
+                 "version":  "1",
+                 "length":  118
+             },
+    "6JBI":  {
+                 "name":  "Jewelers Block Information",
+                 "version":  "",
+                 "length":  351
+             },
+    "6CPP":  {
+                 "name":  "Premises/Product/Other Liability Group",
+                 "version":  "2",
+                 "length":  239
+             }
+}
