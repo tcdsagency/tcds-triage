@@ -128,10 +128,11 @@ export function ImportWizard({ onComplete }: ImportWizardProps) {
     const autoMap: Record<string, string> = {};
     const usedHeaders = new Set<string>();
 
+    const headerLower = headers.map((h) => h.toLowerCase());
+
     for (const field of SYSTEM_FIELDS) {
-      const headerLower = headers.map((h) => h.toLowerCase());
       for (const pattern of field.patterns) {
-        const idx = headerLower.findIndex((h) => h === pattern && !usedHeaders.has(headers[idx]));
+        const idx = headerLower.findIndex((h, i) => h === pattern && !usedHeaders.has(headers[i]));
         if (idx >= 0) {
           autoMap[field.key] = headers[idx];
           usedHeaders.add(headers[idx]);
@@ -141,7 +142,7 @@ export function ImportWizard({ onComplete }: ImportWizardProps) {
       // Fuzzy match: check if any header contains the pattern
       if (!autoMap[field.key]) {
         for (const pattern of field.patterns) {
-          const idx = headerLower.findIndex((h) => h.includes(pattern) && !usedHeaders.has(headers[idx]));
+          const idx = headerLower.findIndex((h, i) => h.includes(pattern) && !usedHeaders.has(headers[i]));
           if (idx >= 0) {
             autoMap[field.key] = headers[idx];
             usedHeaders.add(headers[idx]);
