@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Upload, MapPin, Eye, Play, CheckCircle, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -105,20 +105,79 @@ export function ImportWizard({ onComplete }: ImportWizardProps) {
   };
 
   const SYSTEM_FIELDS = [
-    { key: "", label: "-- Skip --" },
-    { key: "policyNumber", label: "Policy Number" },
-    { key: "carrierName", label: "Carrier Name" },
-    { key: "insuredName", label: "Insured Name" },
-    { key: "transactionType", label: "Transaction Type" },
-    { key: "lineOfBusiness", label: "Line of Business" },
-    { key: "effectiveDate", label: "Effective Date" },
-    { key: "statementDate", label: "Statement Date" },
-    { key: "agentPaidDate", label: "Agent Paid Date" },
-    { key: "grossPremium", label: "Gross Premium" },
-    { key: "commissionRate", label: "Commission Rate" },
-    { key: "commissionAmount", label: "Commission Amount" },
-    { key: "agentCode", label: "Agent Code" },
+    { key: "policyNumber", label: "Policy Number", required: true, patterns: ["policy number", "policy no", "policy #", "policy_number"] },
+    { key: "carrierName", label: "Carrier Name", required: false, patterns: ["carrier", "carrier name", "company", "insurance company"] },
+    { key: "insuredName", label: "Insured Name", required: false, patterns: ["client name", "insured name", "named insured", "insured", "customer name", "name"] },
+    { key: "transactionType", label: "Transaction Type", required: false, patterns: ["transaction type", "trans type", "type"] },
+    { key: "lineOfBusiness", label: "Line of Business", required: false, patterns: ["lob", "line of business", "line_of_business"] },
+    { key: "effectiveDate", label: "Effective Date", required: false, patterns: ["effective date", "eff date", "effective"] },
+    { key: "statementDate", label: "Statement Date", required: false, patterns: ["statement date"] },
+    { key: "agentPaidDate", label: "Agent Paid Date", required: false, patterns: ["agent paid date", "paid date", "payment date"] },
+    { key: "grossPremium", label: "Gross Premium", required: false, patterns: ["commissionable premium", "gross premium", "written premium", "premium"] },
+    { key: "commissionRate", label: "Commission Rate", required: false, patterns: ["agency commission %", "commission rate", "commission %", "comm rate", "comm %"] },
+    { key: "commissionAmount", label: "Commission Amount", required: true, patterns: ["commission paid", "commission amount", "commission amt", "comm amount", "comm paid"] },
+    { key: "agentCode", label: "Agent Code", required: false, patterns: ["agent code", "agent_code", "producer code"] },
   ];
+
+  // fieldMapping: systemFieldKey -> csvHeader (reverse of what we send to API)
+  const [fieldMapping, setFieldMapping] = useState<Record<string, string>>({});
+
+  // Auto-detect mappings when headers change
+  useEffect(() => {
+    if (headers.length === 0) return;
+    const autoMap: Record<string, string> = {};
+    const usedHeaders = new Set<string>();
+
+    for (const field of SYSTEM_FIELDS) {
+      const headerLower = headers.map((h) => h.toLowerCase());
+      for (const pattern of field.patterns) {
+        const idx = headerLower.findIndex((h) => h === pattern && !usedHeaders.has(headers[idx]));
+        if (idx >= 0) {
+          autoMap[field.key] = headers[idx];
+          usedHeaders.add(headers[idx]);
+          break;
+        }
+      }
+      // Fuzzy match: check if any header contains the pattern
+      if (!autoMap[field.key]) {
+        for (const pattern of field.patterns) {
+          const idx = headerLower.findIndex((h) => h.includes(pattern) && !usedHeaders.has(headers[idx]));
+          if (idx >= 0) {
+            autoMap[field.key] = headers[idx];
+            usedHeaders.add(headers[idx]);
+            break;
+          }
+        }
+      }
+    }
+
+    setFieldMapping(autoMap);
+    // Build the API mapping format: { csvHeader: systemFieldKey }
+    const apiMapping: Record<string, string> = {};
+    for (const [sysKey, csvHeader] of Object.entries(autoMap)) {
+      apiMapping[csvHeader] = sysKey;
+    }
+    setMapping(apiMapping);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [headers]);
+
+  const updateFieldMapping = (systemKey: string, csvHeader: string) => {
+    setFieldMapping((prev) => {
+      const next = { ...prev };
+      if (csvHeader) {
+        next[systemKey] = csvHeader;
+      } else {
+        delete next[systemKey];
+      }
+      // Rebuild API mapping
+      const apiMapping: Record<string, string> = {};
+      for (const [sysKey, header] of Object.entries(next)) {
+        apiMapping[header] = sysKey;
+      }
+      setMapping(apiMapping);
+      return next;
+    });
+  };
 
   const stepIndex = STEPS.findIndex((s) => s.key === step);
 
@@ -176,28 +235,56 @@ export function ImportWizard({ onComplete }: ImportWizardProps) {
       {step === "map" && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Map CSV Columns</h3>
-          <p className="text-sm text-gray-500">Map each CSV column to the corresponding system field.</p>
+          <p className="text-sm text-gray-500">
+            Select which CSV column maps to each system field. Auto-detected matches are pre-filled.
+          </p>
           <div className="grid gap-3">
-            {headers.map((header) => (
-              <div key={header} className="flex items-center gap-4">
-                <span className="w-48 text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{header}</span>
-                <span className="text-gray-400">→</span>
-                <select
-                  value={mapping[header] || ""}
-                  onChange={(e) => setMapping((prev) => ({ ...prev, [header]: e.target.value }))}
-                  className="flex-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  {SYSTEM_FIELDS.map((f) => (
-                    <option key={f.key} value={f.key}>{f.label}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
+            {SYSTEM_FIELDS.map((field) => {
+              const usedHeaders = new Set(
+                Object.entries(fieldMapping)
+                  .filter(([k]) => k !== field.key)
+                  .map(([, v]) => v)
+              );
+              return (
+                <div key={field.key} className="flex items-center gap-4">
+                  <span className={cn(
+                    "w-48 text-sm font-medium truncate",
+                    field.required ? "text-gray-900 dark:text-gray-100" : "text-gray-700 dark:text-gray-300"
+                  )}>
+                    {field.label}
+                    {field.required && <span className="text-red-500 ml-1">*</span>}
+                  </span>
+                  <span className="text-gray-400">←</span>
+                  <select
+                    value={fieldMapping[field.key] || ""}
+                    onChange={(e) => updateFieldMapping(field.key, e.target.value)}
+                    className={cn(
+                      "flex-1 text-sm border rounded-md px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500",
+                      fieldMapping[field.key]
+                        ? "border-emerald-300 dark:border-emerald-700"
+                        : field.required
+                          ? "border-red-300 dark:border-red-700"
+                          : "border-gray-300 dark:border-gray-600"
+                    )}
+                  >
+                    <option value="">-- None --</option>
+                    {headers.map((h) => (
+                      <option key={h} value={h} disabled={usedHeaders.has(h)}>
+                        {h}{usedHeaders.has(h) ? " (used)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
           </div>
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-400">
+              {Object.keys(fieldMapping).length} of {SYSTEM_FIELDS.length} fields mapped
+            </span>
             <button
               onClick={handleMap}
-              disabled={loading || !Object.values(mapping).some(Boolean)}
+              disabled={loading || !fieldMapping.policyNumber || !fieldMapping.commissionAmount}
               className="px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
             >
               {loading ? "Processing..." : "Continue to Preview"}
