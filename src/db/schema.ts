@@ -5133,3 +5133,613 @@ export const al3TransactionArchiveRelations = relations(al3TransactionArchive, (
   }),
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// COMMISSION TRACKER - Enums
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const commissionAgentRoleEnum = pgEnum('commission_agent_role', [
+  'owner',
+  'producer',
+  'csr',
+  'house',
+]);
+
+export const commissionTransactionTypeEnum = pgEnum('commission_transaction_type', [
+  'new_business',
+  'renewal',
+  'cancellation',
+  'endorsement',
+  'return_premium',
+  'bonus',
+  'override',
+  'contingency',
+  'other',
+]);
+
+export const commissionImportStatusEnum = pgEnum('commission_import_status', [
+  'pending',
+  'parsing',
+  'mapping',
+  'previewing',
+  'importing',
+  'completed',
+  'failed',
+]);
+
+export const commissionReconciliationStatusEnum = pgEnum('commission_reconciliation_status', [
+  'unmatched',
+  'partial_match',
+  'matched',
+  'discrepancy',
+  'resolved',
+]);
+
+export const commissionAnomalyTypeEnum = pgEnum('commission_anomaly_type', [
+  'missing_policy',
+  'duplicate_transaction',
+  'rate_deviation',
+  'negative_commission',
+  'missing_agent',
+  'unresolved_carrier',
+  'split_mismatch',
+  'other',
+]);
+
+export const commissionAnomalySeverityEnum = pgEnum('commission_anomaly_severity', [
+  'info',
+  'warning',
+  'error',
+]);
+
+export const commissionMonthCloseStatusEnum = pgEnum('commission_month_close_status', [
+  'open',
+  'in_review',
+  'locked',
+]);
+
+export const commissionAuditActionEnum = pgEnum('commission_audit_action', [
+  'create',
+  'update',
+  'delete',
+  'import',
+  'reconcile',
+  'allocate',
+  'month_close',
+  'month_reopen',
+  'draw_payment',
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COMMISSION TRACKER - Tables
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 1. Commission Agents - Agent profiles with draw configuration
+export const commissionAgents = pgTable('commission_agents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  firstName: text('first_name').notNull(),
+  lastName: text('last_name').notNull(),
+  email: text('email'),
+  role: commissionAgentRoleEnum('role').notNull().default('producer'),
+  isActive: boolean('is_active').default(true).notNull(),
+
+  // Link to app user (optional)
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+
+  // Draw configuration
+  hasDrawAccount: boolean('has_draw_account').default(false).notNull(),
+  monthlyDrawAmount: decimal('monthly_draw_amount', { precision: 10, scale: 2 }),
+
+  // Default split percentage (0-100)
+  defaultSplitPercent: decimal('default_split_percent', { precision: 5, scale: 2 }).default('100'),
+
+  notes: text('notes'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_agents_tenant_idx').on(table.tenantId),
+  index('commission_agents_active_idx').on(table.tenantId, table.isActive),
+  index('commission_agents_user_idx').on(table.userId),
+]);
+
+// 2. Commission Agent Codes - Agent code mappings (e.g., TJC, LBP)
+export const commissionAgentCodes = pgTable('commission_agent_codes', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').notNull().references(() => commissionAgents.id, { onDelete: 'cascade' }),
+
+  code: varchar('code', { length: 20 }).notNull(),
+  carrierId: uuid('carrier_id').references(() => commissionCarriers.id, { onDelete: 'set null' }),
+  description: text('description'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_agent_codes_tenant_idx').on(table.tenantId),
+  index('commission_agent_codes_agent_idx').on(table.agentId),
+  uniqueIndex('commission_agent_codes_unique').on(table.tenantId, table.code),
+]);
+
+// 3. Commission Carriers - Carrier master list
+export const commissionCarriers = pgTable('commission_carriers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  name: text('name').notNull(),
+  carrierCode: varchar('carrier_code', { length: 20 }),
+
+  // Default commission rates
+  defaultNewBusinessRate: decimal('default_new_business_rate', { precision: 5, scale: 2 }),
+  defaultRenewalRate: decimal('default_renewal_rate', { precision: 5, scale: 2 }),
+
+  isActive: boolean('is_active').default(true).notNull(),
+  notes: text('notes'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_carriers_tenant_idx').on(table.tenantId),
+  uniqueIndex('commission_carriers_name_unique').on(table.tenantId, table.name),
+]);
+
+// 4. Commission Carrier Aliases - Carrier name variations for import resolution
+export const commissionCarrierAliases = pgTable('commission_carrier_aliases', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  carrierId: uuid('carrier_id').notNull().references(() => commissionCarriers.id, { onDelete: 'cascade' }),
+
+  alias: text('alias').notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_carrier_aliases_tenant_idx').on(table.tenantId),
+  index('commission_carrier_aliases_carrier_idx').on(table.carrierId),
+  uniqueIndex('commission_carrier_aliases_unique').on(table.tenantId, table.alias),
+]);
+
+// 5. Commission Field Mappings - Saved CSV-to-field mapping templates
+export const commissionFieldMappings = pgTable('commission_field_mappings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  name: text('name').notNull(),
+  carrierId: uuid('carrier_id').references(() => commissionCarriers.id, { onDelete: 'set null' }),
+
+  // JSON mapping: { csvColumn: systemField, ... }
+  mapping: jsonb('mapping').notNull(),
+  // Column headers from the CSV for reference
+  csvHeaders: jsonb('csv_headers'),
+
+  isDefault: boolean('is_default').default(false).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_field_mappings_tenant_idx').on(table.tenantId),
+]);
+
+// 6. Commission Import Batches - Import job tracking
+export const commissionImportBatches = pgTable('commission_import_batches', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  fileName: text('file_name').notNull(),
+  status: commissionImportStatusEnum('status').notNull().default('pending'),
+  carrierId: uuid('carrier_id').references(() => commissionCarriers.id, { onDelete: 'set null' }),
+  fieldMappingId: uuid('field_mapping_id').references(() => commissionFieldMappings.id, { onDelete: 'set null' }),
+
+  // Stats
+  totalRows: integer('total_rows').default(0),
+  importedRows: integer('imported_rows').default(0),
+  skippedRows: integer('skipped_rows').default(0),
+  errorRows: integer('error_rows').default(0),
+  duplicateRows: integer('duplicate_rows').default(0),
+
+  // Raw CSV data stored as JSON for preview/re-processing
+  rawData: jsonb('raw_data'),
+  parsedHeaders: jsonb('parsed_headers'),
+
+  importedByUserId: uuid('imported_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+
+  startedAt: timestamp('started_at'),
+  completedAt: timestamp('completed_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_import_batches_tenant_idx').on(table.tenantId),
+  index('commission_import_batches_status_idx').on(table.status),
+]);
+
+// 7. Commission Import Errors - Per-row import errors
+export const commissionImportErrors = pgTable('commission_import_errors', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  batchId: uuid('batch_id').notNull().references(() => commissionImportBatches.id, { onDelete: 'cascade' }),
+
+  rowNumber: integer('row_number').notNull(),
+  field: text('field'),
+  value: text('value'),
+  errorMessage: text('error_message').notNull(),
+  rawRow: jsonb('raw_row'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_import_errors_batch_idx').on(table.batchId),
+]);
+
+// 8. Commission Policies - Policy records
+export const commissionPolicies = pgTable('commission_policies', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  policyNumber: text('policy_number').notNull(),
+  carrierId: uuid('carrier_id').references(() => commissionCarriers.id, { onDelete: 'set null' }),
+  carrierName: text('carrier_name'),
+
+  insuredName: text('insured_name'),
+  lineOfBusiness: text('line_of_business'),
+  effectiveDate: date('effective_date'),
+  expirationDate: date('expiration_date'),
+  premium: decimal('premium', { precision: 12, scale: 2 }),
+
+  // Default agent assignment
+  primaryAgentId: uuid('primary_agent_id').references(() => commissionAgents.id, { onDelete: 'set null' }),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_policies_tenant_idx').on(table.tenantId),
+  uniqueIndex('commission_policies_unique').on(table.tenantId, table.policyNumber, table.carrierId),
+  index('commission_policies_carrier_idx').on(table.carrierId),
+  index('commission_policies_agent_idx').on(table.primaryAgentId),
+]);
+
+// 9. Commission Transactions - Agency-level commission records
+export const commissionTransactions = pgTable('commission_transactions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  policyId: uuid('policy_id').references(() => commissionPolicies.id, { onDelete: 'set null' }),
+  carrierId: uuid('carrier_id').references(() => commissionCarriers.id, { onDelete: 'set null' }),
+  importBatchId: uuid('import_batch_id').references(() => commissionImportBatches.id, { onDelete: 'set null' }),
+
+  // Core fields
+  policyNumber: text('policy_number').notNull(),
+  carrierName: text('carrier_name'),
+  insuredName: text('insured_name'),
+  transactionType: commissionTransactionTypeEnum('transaction_type').default('other'),
+  lineOfBusiness: text('line_of_business'),
+
+  // Dates
+  effectiveDate: date('effective_date'),
+  statementDate: date('statement_date'),
+  agentPaidDate: date('agent_paid_date'),
+
+  // Financial
+  grossPremium: decimal('gross_premium', { precision: 12, scale: 2 }),
+  commissionRate: decimal('commission_rate', { precision: 5, scale: 4 }),
+  commissionAmount: decimal('commission_amount', { precision: 12, scale: 2 }).notNull(),
+
+  // Reporting
+  reportingMonth: varchar('reporting_month', { length: 7 }), // YYYY-MM
+
+  // Dedup
+  dedupeHash: varchar('dedupe_hash', { length: 64 }),
+
+  notes: text('notes'),
+  isManualEntry: boolean('is_manual_entry').default(false).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_transactions_tenant_idx').on(table.tenantId),
+  index('commission_transactions_policy_idx').on(table.policyId),
+  index('commission_transactions_carrier_idx').on(table.carrierId),
+  index('commission_transactions_month_idx').on(table.tenantId, table.reportingMonth),
+  index('commission_transactions_batch_idx').on(table.importBatchId),
+  uniqueIndex('commission_transactions_dedupe_idx').on(table.tenantId, table.dedupeHash),
+]);
+
+// 10. Commission Allocations - Agent splits per transaction
+export const commissionAllocations = pgTable('commission_allocations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  transactionId: uuid('transaction_id').notNull().references(() => commissionTransactions.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').notNull().references(() => commissionAgents.id, { onDelete: 'cascade' }),
+
+  splitPercent: decimal('split_percent', { precision: 5, scale: 2 }).notNull(),
+  splitAmount: decimal('split_amount', { precision: 12, scale: 2 }).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_allocations_tenant_idx').on(table.tenantId),
+  index('commission_allocations_transaction_idx').on(table.transactionId),
+  index('commission_allocations_agent_idx').on(table.agentId),
+]);
+
+// 11. Commission Bank Deposits - Bank deposit records
+export const commissionBankDeposits = pgTable('commission_bank_deposits', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  depositDate: date('deposit_date').notNull(),
+  amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  carrierId: uuid('carrier_id').references(() => commissionCarriers.id, { onDelete: 'set null' }),
+  carrierName: text('carrier_name'),
+  referenceNumber: text('reference_number'),
+  reportingMonth: varchar('reporting_month', { length: 7 }),
+  notes: text('notes'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_bank_deposits_tenant_idx').on(table.tenantId),
+  index('commission_bank_deposits_month_idx').on(table.tenantId, table.reportingMonth),
+  index('commission_bank_deposits_carrier_idx').on(table.carrierId),
+]);
+
+// 12. Commission Carrier Reconciliation - Three-way reconciliation
+export const commissionCarrierReconciliation = pgTable('commission_carrier_reconciliation', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  carrierId: uuid('carrier_id').notNull().references(() => commissionCarriers.id, { onDelete: 'cascade' }),
+  reportingMonth: varchar('reporting_month', { length: 7 }).notNull(),
+
+  // Three-way amounts
+  carrierStatementTotal: decimal('carrier_statement_total', { precision: 12, scale: 2 }),
+  bankDepositTotal: decimal('bank_deposit_total', { precision: 12, scale: 2 }),
+  systemTransactionTotal: decimal('system_transaction_total', { precision: 12, scale: 2 }),
+
+  // Differences
+  statementVsDeposit: decimal('statement_vs_deposit', { precision: 12, scale: 2 }),
+  statementVsSystem: decimal('statement_vs_system', { precision: 12, scale: 2 }),
+  depositVsSystem: decimal('deposit_vs_system', { precision: 12, scale: 2 }),
+
+  status: commissionReconciliationStatusEnum('status').notNull().default('unmatched'),
+  resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  resolutionNotes: text('resolution_notes'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_recon_tenant_idx').on(table.tenantId),
+  uniqueIndex('commission_recon_unique').on(table.tenantId, table.carrierId, table.reportingMonth),
+]);
+
+// 13. Commission Draw Payments - Draw payment records
+export const commissionDrawPayments = pgTable('commission_draw_payments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').notNull().references(() => commissionAgents.id, { onDelete: 'cascade' }),
+
+  paymentDate: date('payment_date').notNull(),
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  reportingMonth: varchar('reporting_month', { length: 7 }).notNull(),
+  notes: text('notes'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_draw_payments_tenant_idx').on(table.tenantId),
+  index('commission_draw_payments_agent_idx').on(table.agentId),
+  index('commission_draw_payments_month_idx').on(table.tenantId, table.reportingMonth),
+]);
+
+// 14. Commission Draw Balances - Monthly draw balance snapshots
+export const commissionDrawBalances = pgTable('commission_draw_balances', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  agentId: uuid('agent_id').notNull().references(() => commissionAgents.id, { onDelete: 'cascade' }),
+
+  reportingMonth: varchar('reporting_month', { length: 7 }).notNull(),
+  balanceForward: decimal('balance_forward', { precision: 12, scale: 2 }).default('0').notNull(),
+  totalCommissionsEarned: decimal('total_commissions_earned', { precision: 12, scale: 2 }).default('0').notNull(),
+  totalDrawPayments: decimal('total_draw_payments', { precision: 12, scale: 2 }).default('0').notNull(),
+  endingBalance: decimal('ending_balance', { precision: 12, scale: 2 }).default('0').notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_draw_balances_tenant_idx').on(table.tenantId),
+  uniqueIndex('commission_draw_balances_unique').on(table.tenantId, table.agentId, table.reportingMonth),
+]);
+
+// 15. Commission Anomalies - Data quality issues
+export const commissionAnomalies = pgTable('commission_anomalies', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  type: commissionAnomalyTypeEnum('type').notNull(),
+  severity: commissionAnomalySeverityEnum('severity').notNull().default('warning'),
+  message: text('message').notNull(),
+  details: jsonb('details'),
+
+  transactionId: uuid('transaction_id').references(() => commissionTransactions.id, { onDelete: 'cascade' }),
+  importBatchId: uuid('import_batch_id').references(() => commissionImportBatches.id, { onDelete: 'set null' }),
+
+  isResolved: boolean('is_resolved').default(false).notNull(),
+  resolvedByUserId: uuid('resolved_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  resolutionNotes: text('resolution_notes'),
+  resolvedAt: timestamp('resolved_at'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_anomalies_tenant_idx').on(table.tenantId),
+  index('commission_anomalies_type_idx').on(table.type, table.isResolved),
+  index('commission_anomalies_transaction_idx').on(table.transactionId),
+]);
+
+// 16. Commission Audit Log - Audit trail
+export const commissionAuditLog = pgTable('commission_audit_log', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  action: commissionAuditActionEnum('action').notNull(),
+  entityType: varchar('entity_type', { length: 50 }).notNull(),
+  entityId: uuid('entity_id'),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+
+  details: jsonb('details'),
+  previousValues: jsonb('previous_values'),
+  newValues: jsonb('new_values'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_audit_log_tenant_idx').on(table.tenantId),
+  index('commission_audit_log_entity_idx').on(table.entityType, table.entityId),
+  index('commission_audit_log_action_idx').on(table.action),
+]);
+
+// 17. Commission Month Close Status - Month lock status
+export const commissionMonthCloseStatus = pgTable('commission_month_close_status', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  reportingMonth: varchar('reporting_month', { length: 7 }).notNull(),
+  status: commissionMonthCloseStatusEnum('status').notNull().default('open'),
+
+  lockedByUserId: uuid('locked_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  lockedAt: timestamp('locked_at'),
+  unlockedByUserId: uuid('unlocked_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  unlockedAt: timestamp('unlocked_at'),
+
+  validationResults: jsonb('validation_results'),
+  notes: text('notes'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_month_close_tenant_idx').on(table.tenantId),
+  uniqueIndex('commission_month_close_unique').on(table.tenantId, table.reportingMonth),
+]);
+
+// 18. Commission Help Content - Help/FAQ content
+export const commissionHelpContent = pgTable('commission_help_content', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  category: varchar('category', { length: 50 }),
+  sortOrder: integer('sort_order').default(0),
+  isActive: boolean('is_active').default(true).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('commission_help_content_tenant_idx').on(table.tenantId),
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COMMISSION TRACKER - Relations
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const commissionAgentsRelations = relations(commissionAgents, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [commissionAgents.tenantId], references: [tenants.id] }),
+  user: one(users, { fields: [commissionAgents.userId], references: [users.id] }),
+  codes: many(commissionAgentCodes),
+  allocations: many(commissionAllocations),
+  drawPayments: many(commissionDrawPayments),
+  drawBalances: many(commissionDrawBalances),
+}));
+
+export const commissionAgentCodesRelations = relations(commissionAgentCodes, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionAgentCodes.tenantId], references: [tenants.id] }),
+  agent: one(commissionAgents, { fields: [commissionAgentCodes.agentId], references: [commissionAgents.id] }),
+  carrier: one(commissionCarriers, { fields: [commissionAgentCodes.carrierId], references: [commissionCarriers.id] }),
+}));
+
+export const commissionCarriersRelations = relations(commissionCarriers, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [commissionCarriers.tenantId], references: [tenants.id] }),
+  aliases: many(commissionCarrierAliases),
+  reconciliations: many(commissionCarrierReconciliation),
+}));
+
+export const commissionCarrierAliasesRelations = relations(commissionCarrierAliases, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionCarrierAliases.tenantId], references: [tenants.id] }),
+  carrier: one(commissionCarriers, { fields: [commissionCarrierAliases.carrierId], references: [commissionCarriers.id] }),
+}));
+
+export const commissionTransactionsRelations = relations(commissionTransactions, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [commissionTransactions.tenantId], references: [tenants.id] }),
+  policy: one(commissionPolicies, { fields: [commissionTransactions.policyId], references: [commissionPolicies.id] }),
+  carrier: one(commissionCarriers, { fields: [commissionTransactions.carrierId], references: [commissionCarriers.id] }),
+  importBatch: one(commissionImportBatches, { fields: [commissionTransactions.importBatchId], references: [commissionImportBatches.id] }),
+  allocations: many(commissionAllocations),
+  anomalies: many(commissionAnomalies),
+}));
+
+export const commissionAllocationsRelations = relations(commissionAllocations, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionAllocations.tenantId], references: [tenants.id] }),
+  transaction: one(commissionTransactions, { fields: [commissionAllocations.transactionId], references: [commissionTransactions.id] }),
+  agent: one(commissionAgents, { fields: [commissionAllocations.agentId], references: [commissionAgents.id] }),
+}));
+
+export const commissionPoliciesRelations = relations(commissionPolicies, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [commissionPolicies.tenantId], references: [tenants.id] }),
+  carrier: one(commissionCarriers, { fields: [commissionPolicies.carrierId], references: [commissionCarriers.id] }),
+  primaryAgent: one(commissionAgents, { fields: [commissionPolicies.primaryAgentId], references: [commissionAgents.id] }),
+  transactions: many(commissionTransactions),
+}));
+
+export const commissionImportBatchesRelations = relations(commissionImportBatches, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [commissionImportBatches.tenantId], references: [tenants.id] }),
+  carrier: one(commissionCarriers, { fields: [commissionImportBatches.carrierId], references: [commissionCarriers.id] }),
+  fieldMapping: one(commissionFieldMappings, { fields: [commissionImportBatches.fieldMappingId], references: [commissionFieldMappings.id] }),
+  importedByUser: one(users, { fields: [commissionImportBatches.importedByUserId], references: [users.id] }),
+  errors: many(commissionImportErrors),
+  transactions: many(commissionTransactions),
+}));
+
+export const commissionImportErrorsRelations = relations(commissionImportErrors, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionImportErrors.tenantId], references: [tenants.id] }),
+  batch: one(commissionImportBatches, { fields: [commissionImportErrors.batchId], references: [commissionImportBatches.id] }),
+}));
+
+export const commissionBankDepositsRelations = relations(commissionBankDeposits, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionBankDeposits.tenantId], references: [tenants.id] }),
+  carrier: one(commissionCarriers, { fields: [commissionBankDeposits.carrierId], references: [commissionCarriers.id] }),
+}));
+
+export const commissionCarrierReconciliationRelations = relations(commissionCarrierReconciliation, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionCarrierReconciliation.tenantId], references: [tenants.id] }),
+  carrier: one(commissionCarriers, { fields: [commissionCarrierReconciliation.carrierId], references: [commissionCarriers.id] }),
+  resolvedByUser: one(users, { fields: [commissionCarrierReconciliation.resolvedByUserId], references: [users.id] }),
+}));
+
+export const commissionDrawPaymentsRelations = relations(commissionDrawPayments, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionDrawPayments.tenantId], references: [tenants.id] }),
+  agent: one(commissionAgents, { fields: [commissionDrawPayments.agentId], references: [commissionAgents.id] }),
+}));
+
+export const commissionDrawBalancesRelations = relations(commissionDrawBalances, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionDrawBalances.tenantId], references: [tenants.id] }),
+  agent: one(commissionAgents, { fields: [commissionDrawBalances.agentId], references: [commissionAgents.id] }),
+}));
+
+export const commissionAnomaliesRelations = relations(commissionAnomalies, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionAnomalies.tenantId], references: [tenants.id] }),
+  transaction: one(commissionTransactions, { fields: [commissionAnomalies.transactionId], references: [commissionTransactions.id] }),
+  importBatch: one(commissionImportBatches, { fields: [commissionAnomalies.importBatchId], references: [commissionImportBatches.id] }),
+  resolvedByUser: one(users, { fields: [commissionAnomalies.resolvedByUserId], references: [users.id] }),
+}));
+
+export const commissionAuditLogRelations = relations(commissionAuditLog, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionAuditLog.tenantId], references: [tenants.id] }),
+  user: one(users, { fields: [commissionAuditLog.userId], references: [users.id] }),
+}));
+
+export const commissionMonthCloseStatusRelations = relations(commissionMonthCloseStatus, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionMonthCloseStatus.tenantId], references: [tenants.id] }),
+  lockedByUser: one(users, { fields: [commissionMonthCloseStatus.lockedByUserId], references: [users.id] }),
+}));
+
+export const commissionFieldMappingsRelations = relations(commissionFieldMappings, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionFieldMappings.tenantId], references: [tenants.id] }),
+  carrier: one(commissionCarriers, { fields: [commissionFieldMappings.carrierId], references: [commissionCarriers.id] }),
+}));
+
+export const commissionHelpContentRelations = relations(commissionHelpContent, ({ one }) => ({
+  tenant: one(tenants, { fields: [commissionHelpContent.tenantId], references: [tenants.id] }),
+}));
+

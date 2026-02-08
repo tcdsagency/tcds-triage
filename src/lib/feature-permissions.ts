@@ -188,6 +188,14 @@ export const FEATURES: FeatureConfig[] = [
     defaultEnabled: true,
     route: '/renewal-review',
   },
+  {
+    key: 'commissions',
+    label: 'Commission Tracker',
+    description: 'Track and reconcile carrier commissions, agent splits, and draw accounts',
+    category: 'tools',
+    defaultEnabled: true,
+    route: '/commissions',
+  },
 
   // =============================================================================
   // ADVANCED - Analytics and monitoring features

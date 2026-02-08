@@ -40,6 +40,7 @@ import {
   BookOpen,
   RefreshCw,
   FilePlus2,
+  DollarSign,
 } from 'lucide-react';
 
 // Map routes to feature permission keys (must match keys in feature-permissions.ts)
@@ -66,6 +67,7 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   '/gaya-extractor': 'gayaExtractor',
   '/canopy-connect': 'canopyConnect',
   '/travelers-application': 'travelersApplication',
+  '/commissions': 'commissions',
   // Advanced
   '/competitive-intel': 'competitiveIntel',
   '/risk-monitor': 'riskMonitor',
@@ -133,6 +135,7 @@ const toolsNav = [
   { name: 'Risk Monitor', href: '/risk-monitor', icon: ShieldAlert },
   { name: 'Mortgagee Payments', href: '/mortgagee-payments', icon: CreditCard },
   { name: 'Carriers & Brokers', href: '/carriers-brokers', icon: Building2 },
+  { name: 'Commission Tracker', href: '/commissions', icon: DollarSign },
   { name: 'Lien Holders', href: '/lien-holders', icon: Landmark },
   { name: 'Quick Links', href: '/quick-links', icon: ExternalLink },
   // { name: 'Reports', href: '/reports', icon: BarChart3 }, // Temporarily disabled
