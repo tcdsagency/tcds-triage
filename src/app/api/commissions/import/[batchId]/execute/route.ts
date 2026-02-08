@@ -10,12 +10,27 @@ import {
   commissionTransactions,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { parseCurrency, parseDate } from "@/lib/commissions/csv-parser";
+import { parseCurrency, parseDate, parsePercentage } from "@/lib/commissions/csv-parser";
 import { generateDedupeHash } from "@/lib/commissions/dedup";
 import { getReportingMonth } from "@/lib/commissions/month-utils";
 
-const AMOUNT_FIELDS = ["grossPremium", "commissionAmount"];
+const AMOUNT_FIELDS = ["grossPremium", "commissionAmount", "agent1Amount", "agent2Amount"];
 const DATE_FIELDS = ["effectiveDate", "statementDate", "agentPaidDate"];
+
+// Map CSV transaction type values to the enum
+function normalizeTransactionType(raw: string): "new_business" | "renewal" | "cancellation" | "endorsement" | "return_premium" | "bonus" | "override" | "contingency" | "other" {
+  if (!raw) return "other";
+  const lower = raw.toLowerCase().trim();
+  if (["new business", "new", "nb", "new_business"].includes(lower)) return "new_business";
+  if (["renewal", "renew", "rn"].includes(lower)) return "renewal";
+  if (["cancellation", "cancel", "cx", "cancelled"].includes(lower)) return "cancellation";
+  if (["endorsement", "endorse", "policy change", "change", "pc"].includes(lower)) return "endorsement";
+  if (["return premium", "return", "return_premium", "rp"].includes(lower)) return "return_premium";
+  if (["bonus"].includes(lower)) return "bonus";
+  if (["override"].includes(lower)) return "override";
+  if (["contingency"].includes(lower)) return "contingency";
+  return "other";
+}
 
 export async function POST(
   request: NextRequest,
@@ -100,6 +115,8 @@ export async function POST(
             mapped[sysField] = parseCurrency(rawValue);
           } else if (DATE_FIELDS.includes(sysField)) {
             mapped[sysField] = parseDate(rawValue);
+          } else if (sysField === "commissionRate" || sysField === "agent1Percent" || sysField === "agent2Percent") {
+            mapped[sysField] = rawValue; // Keep raw for display, parse when needed
           } else {
             mapped[sysField] = rawValue;
           }
@@ -145,6 +162,15 @@ export async function POST(
           (mapped.agentPaidDate as string) || null
         );
 
+        // Build agent notes for preservation
+        const agentParts: string[] = [];
+        if (mapped.agent1Code || mapped.agent1Name) {
+          agentParts.push(`Agent 1: ${mapped.agent1Code || ""} ${mapped.agent1Name || ""} ${mapped.agent1Percent || ""} ${mapped.agent1Amount != null ? "$" + mapped.agent1Amount : ""}`.trim());
+        }
+        if (mapped.agent2Code || mapped.agent2Name) {
+          agentParts.push(`Agent 2: ${mapped.agent2Code || ""} ${mapped.agent2Name || ""} ${mapped.agent2Percent || ""} ${mapped.agent2Amount != null ? "$" + mapped.agent2Amount : ""}`.trim());
+        }
+
         // Insert the transaction
         await db.insert(commissionTransactions).values({
           tenantId,
@@ -152,17 +178,7 @@ export async function POST(
           policyNumber: mapped.policyNumber as string,
           carrierName: (mapped.carrierName as string) || null,
           insuredName: (mapped.insuredName as string) || null,
-          transactionType:
-            (mapped.transactionType as
-              | "new_business"
-              | "renewal"
-              | "cancellation"
-              | "endorsement"
-              | "return_premium"
-              | "bonus"
-              | "override"
-              | "contingency"
-              | "other") || "other",
+          transactionType: normalizeTransactionType((mapped.transactionType as string) || ""),
           lineOfBusiness: (mapped.lineOfBusiness as string) || null,
           effectiveDate: (mapped.effectiveDate as string) || null,
           statementDate: (mapped.statementDate as string) || null,
@@ -171,10 +187,13 @@ export async function POST(
             mapped.grossPremium != null
               ? String(mapped.grossPremium)
               : null,
-          commissionRate: null,
+          commissionRate: mapped.commissionRate != null
+            ? String(mapped.commissionRate)
+            : null,
           commissionAmount: String(mapped.commissionAmount),
           reportingMonth,
           dedupeHash,
+          notes: agentParts.length > 0 ? agentParts.join(" | ") : null,
         });
 
         importedRows++;

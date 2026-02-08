@@ -108,15 +108,23 @@ export function ImportWizard({ onComplete }: ImportWizardProps) {
     { key: "policyNumber", label: "Policy Number", required: true, patterns: ["policy number", "policy no", "policy #", "policy_number"] },
     { key: "carrierName", label: "Carrier Name", required: false, patterns: ["carrier", "carrier name", "company", "insurance company"] },
     { key: "insuredName", label: "Insured Name", required: false, patterns: ["client name", "insured name", "named insured", "insured", "customer name", "name"] },
-    { key: "transactionType", label: "Transaction Type", required: false, patterns: ["transaction type", "trans type", "type"] },
+    { key: "transactionType", label: "Transaction Type", required: false, patterns: ["transaction type", "trans type"] },
     { key: "lineOfBusiness", label: "Line of Business", required: false, patterns: ["lob", "line of business", "line_of_business"] },
-    { key: "effectiveDate", label: "Effective Date", required: false, patterns: ["effective date", "eff date", "effective"] },
+    { key: "effectiveDate", label: "Effective Date", required: false, patterns: ["effective date", "eff date"] },
     { key: "statementDate", label: "Statement Date", required: false, patterns: ["statement date"] },
     { key: "agentPaidDate", label: "Agent Paid Date", required: false, patterns: ["agent paid date", "paid date", "payment date"] },
-    { key: "grossPremium", label: "Gross Premium", required: false, patterns: ["commissionable premium", "gross premium", "written premium", "premium"] },
-    { key: "commissionRate", label: "Commission Rate", required: false, patterns: ["agency commission %", "commission rate", "commission %", "comm rate", "comm %"] },
+    { key: "grossPremium", label: "Gross Premium", required: false, patterns: ["commissionable premium", "gross premium", "written premium"] },
+    { key: "commissionRate", label: "Commission Rate", required: false, patterns: ["agency commission %", "commission rate", "commission %", "comm rate"] },
     { key: "commissionAmount", label: "Commission Amount", required: true, patterns: ["commission paid", "commission amount", "commission amt", "comm amount", "comm paid"] },
     { key: "agentCode", label: "Agent Code", required: false, patterns: ["agent code", "agent_code", "producer code"] },
+    { key: "agent1Code", label: "Agent 1 Code", required: false, patterns: ["agent 1"] },
+    { key: "agent1Name", label: "Agent 1 Name", required: false, patterns: ["agent 1 name"] },
+    { key: "agent1Percent", label: "Agent 1 Split %", required: false, patterns: ["agent 1 commission %"] },
+    { key: "agent1Amount", label: "Agent 1 Amount", required: false, patterns: ["agent 1 commission amount"] },
+    { key: "agent2Code", label: "Agent 2 Code", required: false, patterns: ["agent 2"] },
+    { key: "agent2Name", label: "Agent 2 Name", required: false, patterns: ["agent 2 name"] },
+    { key: "agent2Percent", label: "Agent 2 Split %", required: false, patterns: ["agent 2 commission %"] },
+    { key: "agent2Amount", label: "Agent 2 Amount", required: false, patterns: ["agent 2 commission amount"] },
   ];
 
   // fieldMapping: systemFieldKey -> csvHeader (reverse of what we send to API)
@@ -305,7 +313,10 @@ export function ImportWizard({ onComplete }: ImportWizardProps) {
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Row</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Policy</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Insured</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Agent 1</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Agent 2</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 </tr>
               </thead>
@@ -315,7 +326,14 @@ export function ImportWizard({ onComplete }: ImportWizardProps) {
                     <td className="px-3 py-2 text-gray-500">{(row.rowNumber as number) || i + 1}</td>
                     <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{String(row.policyNumber || "")}</td>
                     <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{String(row.insuredName || "")}</td>
+                    <td className="px-3 py-2 text-gray-600 dark:text-gray-300 text-xs">{String(row.transactionType || "")}</td>
                     <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{String(row.commissionAmount || "")}</td>
+                    <td className="px-3 py-2 text-gray-600 dark:text-gray-300 text-xs">
+                      {row.agent1Code ? `${row.agent1Code} (${row.agent1Percent || ""})` : ""}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 dark:text-gray-300 text-xs">
+                      {row.agent2Code ? `${row.agent2Code} (${row.agent2Percent || ""})` : ""}
+                    </td>
                     <td className="px-3 py-2">
                       {row.isDuplicate ? (
                         <span className="text-yellow-600 text-xs font-medium">Duplicate</span>

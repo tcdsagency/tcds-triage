@@ -12,7 +12,7 @@ import { eq, and } from "drizzle-orm";
 import { parseCurrency, parseDate } from "@/lib/commissions/csv-parser";
 import { generateDedupeHash } from "@/lib/commissions/dedup";
 
-const AMOUNT_FIELDS = ["grossPremium", "commissionAmount"];
+const AMOUNT_FIELDS = ["grossPremium", "commissionAmount", "agent1Amount", "agent2Amount"];
 const DATE_FIELDS = ["effectiveDate", "statementDate", "agentPaidDate"];
 
 export async function GET(
@@ -73,8 +73,17 @@ export async function GET(
       policyNumber: string;
       carrierName: string;
       insuredName: string;
+      transactionType: string;
       commissionAmount: unknown;
       effectiveDate: string;
+      agent1Code: string;
+      agent1Name: string;
+      agent1Percent: string;
+      agent1Amount: unknown;
+      agent2Code: string;
+      agent2Name: string;
+      agent2Percent: string;
+      agent2Amount: unknown;
       isDuplicate: boolean;
       errors: string[];
     }> = [];
@@ -152,8 +161,17 @@ export async function GET(
         policyNumber: (mapped.policyNumber as string) || "",
         carrierName: (mapped.carrierName as string) || "",
         insuredName: (mapped.insuredName as string) || "",
+        transactionType: (mapped.transactionType as string) || "",
         commissionAmount: mapped.commissionAmount ?? 0,
         effectiveDate: (mapped.effectiveDate as string) || "",
+        agent1Code: (mapped.agent1Code as string) || "",
+        agent1Name: (mapped.agent1Name as string) || "",
+        agent1Percent: (mapped.agent1Percent as string) || "",
+        agent1Amount: mapped.agent1Amount ?? null,
+        agent2Code: (mapped.agent2Code as string) || "",
+        agent2Name: (mapped.agent2Name as string) || "",
+        agent2Percent: (mapped.agent2Percent as string) || "",
+        agent2Amount: mapped.agent2Amount ?? null,
         isDuplicate,
         errors,
       });
