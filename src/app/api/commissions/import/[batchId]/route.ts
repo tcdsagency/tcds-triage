@@ -47,8 +47,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      batch,
-      errorCount,
+      data: { ...batch, errorCount },
     });
   } catch (error) {
     console.error("[Commissions Import] Get batch error:", error);

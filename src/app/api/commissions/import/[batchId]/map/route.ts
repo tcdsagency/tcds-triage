@@ -50,31 +50,24 @@ export async function POST(
       );
     }
 
-    let fieldMappingId: string | null = null;
-
-    // If saveName provided, create a saved field mapping
-    if (saveName) {
-      const [savedMapping] = await db
-        .insert(commissionFieldMappings)
-        .values({
-          tenantId,
-          name: saveName,
-          carrierId: carrierId || batch.carrierId || null,
-          mapping,
-          csvHeaders: batch.parsedHeaders,
-        })
-        .returning();
-
-      fieldMappingId = savedMapping.id;
-    }
+    // Always create a field mapping record so preview/execute can read it
+    const [savedMapping] = await db
+      .insert(commissionFieldMappings)
+      .values({
+        tenantId,
+        name: saveName || `Import: ${batch.fileName}`,
+        carrierId: carrierId || batch.carrierId || null,
+        mapping,
+        csvHeaders: batch.parsedHeaders,
+        isDefault: false,
+      })
+      .returning();
 
     // Update batch with mapping and advance status to 'previewing'
     const updateData: Record<string, unknown> = {
       status: "previewing" as const,
+      fieldMappingId: savedMapping.id,
     };
-    if (fieldMappingId) {
-      updateData.fieldMappingId = fieldMappingId;
-    }
     if (carrierId) {
       updateData.carrierId = carrierId;
     }
@@ -87,8 +80,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      batch: updatedBatch,
-      fieldMappingId,
+      data: updatedBatch,
     });
   } catch (error) {
     console.error("[Commissions Import] Map fields error:", error);

@@ -58,12 +58,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      batch: updatedBatch,
+      data: updatedBatch,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("[Commissions Import] Upload error:", error);
     return NextResponse.json(
-      { error: "Failed to parse CSV file" },
+      { error: "Failed to parse CSV file", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }

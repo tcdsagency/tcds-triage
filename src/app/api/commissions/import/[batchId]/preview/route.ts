@@ -70,7 +70,11 @@ export async function GET(
 
     const previewRows: Array<{
       rowNumber: number;
-      mapped: Record<string, unknown>;
+      policyNumber: string;
+      carrierName: string;
+      insuredName: string;
+      commissionAmount: unknown;
+      effectiveDate: string;
       isDuplicate: boolean;
       errors: string[];
     }> = [];
@@ -145,7 +149,11 @@ export async function GET(
 
       previewRows.push({
         rowNumber: i + 1,
-        mapped,
+        policyNumber: (mapped.policyNumber as string) || "",
+        carrierName: (mapped.carrierName as string) || "",
+        insuredName: (mapped.insuredName as string) || "",
+        commissionAmount: mapped.commissionAmount ?? 0,
+        effectiveDate: (mapped.effectiveDate as string) || "",
         isDuplicate,
         errors,
       });
@@ -153,9 +161,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      totalRows: rawData.length,
-      previewCount: previewRows.length,
-      rows: previewRows,
+      data: previewRows,
     });
   } catch (error) {
     console.error("[Commissions Import] Preview error:", error);

@@ -212,13 +212,11 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      batch: updatedBatch,
-      stats: {
-        totalRows: rawData.length,
-        importedRows,
-        skippedRows,
-        errorRows,
-        duplicateRows,
+      data: {
+        imported: importedRows,
+        skipped: skippedRows,
+        duplicates: duplicateRows,
+        errors: errorRows,
       },
     });
   } catch (error) {
