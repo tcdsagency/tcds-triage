@@ -110,12 +110,24 @@ export async function GET(request: NextRequest) {
     const activeAgents = Number(agentResult?.count || 0);
 
     // Recent imports (last 5 batches)
-    const recentImports = await db
+    const rawBatches = await db
       .select()
       .from(commissionImportBatches)
       .where(eq(commissionImportBatches.tenantId, tenantId))
       .orderBy(desc(commissionImportBatches.createdAt))
       .limit(5);
+
+    const recentImports = rawBatches.map((b) => ({
+      id: b.id,
+      fileName: b.fileName,
+      status: b.status,
+      totalRows: b.totalRows || 0,
+      importedRows: b.importedRows || 0,
+      skippedRows: b.skippedRows || 0,
+      errorRows: b.errorRows || 0,
+      duplicateRows: b.duplicateRows || 0,
+      createdAt: b.createdAt,
+    }));
 
     return NextResponse.json({
       success: true,

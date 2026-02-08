@@ -10,9 +10,9 @@ interface RecentImport {
   id: string;
   fileName: string;
   status: string;
-  imported: number;
-  skipped: number;
-  errors: number;
+  importedRows: number;
+  skippedRows: number;
+  errorRows: number;
   createdAt: string;
 }
 
@@ -132,14 +132,14 @@ export default function CommissionImportPage() {
                     </td>
                     <td className="px-4 py-3">{getStatusBadge(imp.status)}</td>
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
-                      {imp.imported}
+                      {imp.importedRows ?? 0}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-500">
-                      {imp.skipped}
+                      {imp.skippedRows ?? 0}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <span className={imp.errors > 0 ? "text-red-600 font-medium" : "text-gray-500"}>
-                        {imp.errors}
+                      <span className={(imp.errorRows ?? 0) > 0 ? "text-red-600 font-medium" : "text-gray-500"}>
+                        {imp.errorRows ?? 0}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500">

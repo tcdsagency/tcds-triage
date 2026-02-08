@@ -31,10 +31,11 @@ import { formatCurrency } from "@/lib/commissions/formatters";
 interface RecentImport {
   id: string;
   fileName: string;
-  carrier: string;
-  recordCount: number;
-  totalAmount: number;
   status: string;
+  totalRows: number;
+  importedRows: number;
+  skippedRows: number;
+  errorRows: number;
   createdAt: string;
 }
 
@@ -349,20 +350,20 @@ export default function CommissionsPage() {
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       File
                     </th>
-                    <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Carrier
+                    <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Rows
                     </th>
                     <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Records
+                      Imported
                     </th>
                     <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Amount
+                      Errors
                     </th>
                     <th className="text-center px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Status
                     </th>
                     <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Imported
+                      Date
                     </th>
                   </tr>
                 </thead>
@@ -380,14 +381,16 @@ export default function CommissionsPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-3 text-gray-600 dark:text-gray-300">
-                        {imp.carrier}
-                      </td>
                       <td className="px-6 py-3 text-right text-gray-600 dark:text-gray-300">
-                        {imp.recordCount.toLocaleString()}
+                        {(imp.totalRows ?? 0).toLocaleString()}
                       </td>
                       <td className="px-6 py-3 text-right font-medium text-gray-900 dark:text-gray-100">
-                        {formatCurrency(imp.totalAmount)}
+                        {(imp.importedRows ?? 0).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-3 text-right">
+                        <span className={(imp.errorRows ?? 0) > 0 ? "text-red-600 font-medium" : "text-gray-500"}>
+                          {(imp.errorRows ?? 0).toLocaleString()}
+                        </span>
                       </td>
                       <td className="px-6 py-3 text-center">
                         <span
