@@ -116,7 +116,7 @@ export async function POST(
           } else if (DATE_FIELDS.includes(sysField)) {
             mapped[sysField] = parseDate(rawValue);
           } else if (sysField === "commissionRate" || sysField === "agent1Percent" || sysField === "agent2Percent") {
-            mapped[sysField] = rawValue; // Keep raw for display, parse when needed
+            mapped[sysField] = parsePercentage(rawValue);
           } else {
             mapped[sysField] = rawValue;
           }
@@ -165,10 +165,12 @@ export async function POST(
         // Build agent notes for preservation
         const agentParts: string[] = [];
         if (mapped.agent1Code || mapped.agent1Name) {
-          agentParts.push(`Agent 1: ${mapped.agent1Code || ""} ${mapped.agent1Name || ""} ${mapped.agent1Percent || ""} ${mapped.agent1Amount != null ? "$" + mapped.agent1Amount : ""}`.trim());
+          const pct = mapped.agent1Percent != null ? `${(Number(mapped.agent1Percent) * 100).toFixed(0)}%` : "";
+          agentParts.push(`Agent 1: ${mapped.agent1Code || ""} ${mapped.agent1Name || ""} ${pct} ${mapped.agent1Amount != null ? "$" + mapped.agent1Amount : ""}`.trim());
         }
         if (mapped.agent2Code || mapped.agent2Name) {
-          agentParts.push(`Agent 2: ${mapped.agent2Code || ""} ${mapped.agent2Name || ""} ${mapped.agent2Percent || ""} ${mapped.agent2Amount != null ? "$" + mapped.agent2Amount : ""}`.trim());
+          const pct = mapped.agent2Percent != null ? `${(Number(mapped.agent2Percent) * 100).toFixed(0)}%` : "";
+          agentParts.push(`Agent 2: ${mapped.agent2Code || ""} ${mapped.agent2Name || ""} ${pct} ${mapped.agent2Amount != null ? "$" + mapped.agent2Amount : ""}`.trim());
         }
 
         // Insert the transaction
