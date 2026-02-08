@@ -182,12 +182,26 @@ export default function PolicyCreatorPage() {
       const data = await res.json();
 
       if (data.success) {
-        // Trigger download
-        const blob = new Blob([data.al3xml], { type: 'application/xml' });
+        // Ask user which format to download
+        const format = window.confirm(
+          'Generation successful!\n\n' +
+          'Click OK to download Raw AL3 (recommended for HawkSoft)\n' +
+          'Click Cancel to download AL3-XML format'
+        ) ? 'raw' : 'xml';
+
+        // Download the selected format
+        const downloadRes = await fetch(
+          `/api/policy-creator/documents/${selectedDoc.id}/generate?format=${format}`
+        );
+        const blob = await downloadRes.blob();
+        const contentDisposition = downloadRes.headers.get('Content-Disposition');
+        const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
+        const filename = filenameMatch?.[1] || (format === 'raw' ? 'policy.al3' : 'policy.al3.xml');
+
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = data.filename || 'policy.al3.xml';
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
