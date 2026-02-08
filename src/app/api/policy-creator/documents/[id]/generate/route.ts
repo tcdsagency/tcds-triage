@@ -174,7 +174,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 }
 
-// GET - Download the previously generated AL3-XML
+// GET - Download the previously generated AL3
+// Query params:
+//   format=xml (default) - Download AL3-XML wrapped format
+//   format=raw - Download raw AL3 (plain text, fixed-width records)
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const tenantId = process.env.DEFAULT_TENANT_ID;
@@ -183,10 +186,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     const { id } = await context.params;
+    const { searchParams } = new URL(request.url);
+    const format = searchParams.get('format') || 'xml';
 
     // Fetch the document
     const [document] = await db
       .select({
+        generatedAL3Raw: policyCreatorDocuments.generatedAL3Raw,
         generatedAL3XML: policyCreatorDocuments.generatedAL3XML,
         carrier: policyCreatorDocuments.carrier,
         policyNumber: policyCreatorDocuments.policyNumber,
@@ -207,14 +213,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       );
     }
 
-    if (!document.generatedAL3XML) {
-      return NextResponse.json(
-        { success: false, error: 'AL3-XML has not been generated yet' },
-        { status: 404 }
-      );
-    }
-
-    // Generate filename
+    // Generate base filename
     const carrier = (document.carrier ?? 'UNKNOWN')
       .replace(/[^a-zA-Z0-9]/g, '_')
       .toUpperCase()
@@ -224,15 +223,39 @@ export async function GET(request: NextRequest, context: RouteContext) {
       .toUpperCase()
       .substring(0, 20);
     const date = new Date().toISOString().substring(0, 10).replace(/-/g, '');
-    const filename = `${carrier}_${policyNum}_${date}.al3.xml`;
 
-    // Return as downloadable file
-    return new NextResponse(document.generatedAL3XML, {
-      headers: {
-        'Content-Type': 'application/xml',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-      },
-    });
+    // Return based on format
+    if (format === 'raw') {
+      // Raw AL3 format (plain text, fixed-width records)
+      if (!document.generatedAL3Raw) {
+        return NextResponse.json(
+          { success: false, error: 'AL3 has not been generated yet' },
+          { status: 404 }
+        );
+      }
+      const filename = `${carrier}_${policyNum}_${date}.al3`;
+      return new NextResponse(document.generatedAL3Raw, {
+        headers: {
+          'Content-Type': 'text/plain',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+        },
+      });
+    } else {
+      // XML format (default)
+      if (!document.generatedAL3XML) {
+        return NextResponse.json(
+          { success: false, error: 'AL3-XML has not been generated yet' },
+          { status: 404 }
+        );
+      }
+      const filename = `${carrier}_${policyNum}_${date}.al3.xml`;
+      return new NextResponse(document.generatedAL3XML, {
+        headers: {
+          'Content-Type': 'application/xml',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+        },
+      });
+    }
   } catch (error: unknown) {
     console.error('[Policy Creator] Download AL3-XML error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to download AL3-XML';

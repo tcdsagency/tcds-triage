@@ -50,6 +50,9 @@ function cleanContent(str: string): string {
 
 /**
  * Wrap an array of AL3 records in XML format.
+ *
+ * Note: XML element names cannot start with numbers, so we prefix
+ * group codes with "R" (e.g., "1MHG" becomes "R1MHG").
  */
 export function wrapAL3InXML(records: AL3Record[]): string {
   const lines: string[] = [];
@@ -62,10 +65,12 @@ export function wrapAL3InXML(records: AL3Record[]): string {
   lines.push('  <Transaction>');
 
   // Each record as an XML element
+  // Prefix with "R" since XML element names can't start with numbers
   for (const record of records) {
     const cleanedContent = cleanContent(record.content);
     const escapedContent = escapeXML(cleanedContent);
-    lines.push(`    <${record.groupCode}>${escapedContent}</${record.groupCode}>`);
+    const elementName = `R${record.groupCode}`;
+    lines.push(`    <${elementName}>${escapedContent}</${elementName}>`);
   }
 
   lines.push('  </Transaction>');
