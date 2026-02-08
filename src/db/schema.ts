@@ -5191,7 +5191,7 @@ export const commissionAnomalySeverityEnum = pgEnum('commission_anomaly_severity
   'error',
 ]);
 
-export const commissionMonthCloseStatusEnum = pgEnum('commission_month_close_status', [
+export const commissionMonthCloseStatusEnum = pgEnum('commission_month_close_status_type', [
   'open',
   'in_review',
   'locked',

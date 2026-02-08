@@ -47,7 +47,7 @@ export function ImportWizard({ onComplete }: ImportWizardProps) {
         body: JSON.stringify({ fileName: file.name, csvText: text, carrierId }),
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+      if (!data.success) throw new Error(data.details || data.error || "Upload failed");
       setBatchId(data.data.id);
       setHeaders(data.data.parsedHeaders || []);
       setStep("map");
