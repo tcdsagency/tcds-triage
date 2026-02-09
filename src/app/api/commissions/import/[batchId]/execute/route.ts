@@ -137,6 +137,8 @@ export async function POST(
           commissionAmount: String(mapped.commissionAmount),
           effectiveDate: (mapped.effectiveDate as string) || "",
           transactionType: (mapped.transactionType as string) || "",
+          statementDate: (mapped.statementDate as string) || "",
+          agentPaidDate: (mapped.agentPaidDate as string) || "",
         });
 
         // Check for duplicates

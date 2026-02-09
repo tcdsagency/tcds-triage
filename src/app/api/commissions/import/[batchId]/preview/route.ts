@@ -132,6 +132,8 @@ export async function GET(
             : "0",
         effectiveDate: (mapped.effectiveDate as string) || "",
         transactionType: (mapped.transactionType as string) || "",
+        statementDate: (mapped.statementDate as string) || "",
+        agentPaidDate: (mapped.agentPaidDate as string) || "",
       });
 
       // Check against existing transactions
