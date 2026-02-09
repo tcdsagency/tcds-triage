@@ -20,6 +20,17 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 // TYPES
 // =============================================================================
 
+interface PolicyFromSearch {
+  id: string;
+  policyNumber: string;
+  carrier: string | null;
+  lineOfBusiness: string | null;
+  type: string | null;
+  status: string;
+  isActive: boolean;
+  expirationDate: string | null;
+}
+
 interface SearchResult {
   id: string;
   type: "customer" | "lead";
@@ -32,6 +43,7 @@ interface SearchResult {
   agencyzoomId?: string;
   policyCount?: number;
   policyTypes?: string[];
+  policies?: PolicyFromSearch[];
 }
 
 interface CustomerPolicy {
@@ -94,7 +106,6 @@ export default function ReceiptGeneratorPage() {
 
   // Policy state
   const [policies, setPolicies] = useState<CustomerPolicy[]>([]);
-  const [policiesLoading, setPoliciesLoading] = useState(false);
   const [selectedPolicy, setSelectedPolicy] = useState<string>("");
   const [manualPolicyEntry, setManualPolicyEntry] = useState(false);
 
@@ -167,31 +178,21 @@ export default function ReceiptGeneratorPage() {
       customerName: displayName,
     }));
 
-    // Load policies
-    if (customer.hawksoftClientNumber || customer.type === "customer") {
-      setPoliciesLoading(true);
-      try {
-        const params = new URLSearchParams({
-          customerId: customer.id,
-          customerType: customer.type,
-        });
-        if (customer.hawksoftClientNumber) {
-          params.set("hawksoftClientNumber", customer.hawksoftClientNumber);
-        }
-        if (customer.agencyzoomId) {
-          params.set("agencyzoomId", customer.agencyzoomId);
-        }
-
-        const res = await fetch(`/api/payment-advance/customer/policies?${params}`);
-        const data = await res.json();
-        if (data.success) {
-          setPolicies(data.policies);
-        }
-      } catch (error) {
-        console.error("Policies error:", error);
-      } finally {
-        setPoliciesLoading(false);
-      }
+    // Use policies from search result (already includes all active policies)
+    if (customer.policies && customer.policies.length > 0) {
+      // Filter to only active policies and map to our format
+      const activePolicies = customer.policies
+        .filter((p) => p.isActive)
+        .map((p) => ({
+          policyNumber: p.policyNumber,
+          carrier: p.carrier || "Unknown Carrier",
+          type: p.type || p.lineOfBusiness || "Unknown",
+          status: p.status,
+          expirationDate: p.expirationDate || undefined,
+        }));
+      setPolicies(activePolicies);
+    } else {
+      setPolicies([]);
     }
   };
 
@@ -795,12 +796,7 @@ export default function ReceiptGeneratorPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Policy *
               </label>
-              {policiesLoading ? (
-                <div className="flex items-center gap-2 text-gray-500 py-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Loading policies...</span>
-                </div>
-              ) : policies.length > 0 && !manualPolicyEntry ? (
+              {policies.length > 0 && !manualPolicyEntry ? (
                 <select
                   value={selectedPolicy}
                   onChange={(e) => handlePolicyChange(e.target.value)}
