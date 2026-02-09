@@ -244,7 +244,7 @@ export const personalAutoSteps: StepConfig[] = [
 ];
 
 export const homeownersSteps: StepConfig[] = [
-  contactStep,
+  contactWithAddressStep,
   propertyStep,
   detailsStep,
   homeCoverageStep,
@@ -252,14 +252,14 @@ export const homeownersSteps: StepConfig[] = [
 ];
 
 export const rentersSteps: StepConfig[] = [
-  contactStep,
+  contactWithAddressStep,
   propertyStepRenters,
   rentersCoverageStep,
   reviewStep,
 ];
 
 export const mobileHomeSteps: StepConfig[] = [
-  contactStep,
+  contactWithAddressStep,
   propertyStep,
   detailsStep,
   homeCoverageStep,
@@ -267,7 +267,7 @@ export const mobileHomeSteps: StepConfig[] = [
 ];
 
 export const floodSteps: StepConfig[] = [
-  contactStep,
+  contactWithAddressStep,
   propertyStepFlood,
   floodDetailsStep,
   floodCoverageStep,
