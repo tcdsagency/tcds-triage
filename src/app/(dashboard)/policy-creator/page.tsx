@@ -189,7 +189,7 @@ export default function PolicyCreatorPage() {
         const blob = await downloadRes.blob();
         const contentDisposition = downloadRes.headers.get('Content-Disposition');
         const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
-        const filename = filenameMatch?.[1] || data.filename || 'policy.CMSEZLynxXML';
+        const filename = filenameMatch?.[1] || data.filename || 'ACORD.xml';
 
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -261,7 +261,7 @@ export default function PolicyCreatorPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Policy Creator</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Extract policy data from dec pages and generate EZLynx XML for HawkSoft import
+              Extract policy data from dec pages and generate ACORD XML for HawkSoft import
             </p>
           </div>
 

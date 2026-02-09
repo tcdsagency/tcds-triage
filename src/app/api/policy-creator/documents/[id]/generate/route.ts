@@ -1,21 +1,21 @@
 /**
  * API Route: /api/policy-creator/documents/[id]/generate
- * Generate EZLynx XML from a policy creator document for HawkSoft import.
+ * Generate ACORD XML from a policy creator document for HawkSoft import.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { policyCreatorDocuments } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { generateEZLynxXML } from '@/lib/ezlynx/emitter';
+import { generateACORDXML } from '@/lib/acord/emitter';
 import type { PolicyCreatorDocument } from '@/types/policy-creator.types';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-// Validate document has required fields for EZLynx generation
-function validateForEZLynx(doc: PolicyCreatorDocument): { valid: boolean; errors: string[]; warnings: string[] } {
+// Validate document has required fields for ACORD generation
+function validateForACORD(doc: PolicyCreatorDocument): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     };
 
     // Step 1: Validate required fields
-    const validation = validateForEZLynx(doc);
+    const validation = validateForACORD(doc);
     if (!validation.valid) {
       return NextResponse.json(
         {
@@ -162,14 +162,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Step 2: Generate EZLynx XML
-    const result = generateEZLynxXML(doc);
+    // Step 2: Generate ACORD XML
+    const result = generateACORDXML(doc);
 
     // Step 3: Update the document with generated output
     await db
       .update(policyCreatorDocuments)
       .set({
-        generatedAL3XML: result.xml, // Store EZLynx XML in this field
+        generatedAL3XML: result.xml, // Store ACORD XML in this field
         validationErrors: [],
         validationWarnings: validation.warnings,
         generatedAt: new Date(),
@@ -186,8 +186,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       warnings: validation.warnings,
     });
   } catch (error: unknown) {
-    console.error('[Policy Creator] Generate EZLynx XML error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to generate EZLynx XML';
+    console.error('[Policy Creator] Generate ACORD XML error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to generate ACORD XML';
     return NextResponse.json(
       { success: false, error: errorMessage },
       { status: 500 }
@@ -195,7 +195,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 }
 
-// GET - Download the previously generated EZLynx XML
+// GET - Download the previously generated ACORD XML
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const tenantId = process.env.DEFAULT_TENANT_ID;
@@ -226,22 +226,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     if (!document.generatedAL3XML) {
       return NextResponse.json(
-        { success: false, error: 'EZLynx XML has not been generated yet' },
+        { success: false, error: 'ACORD XML has not been generated yet' },
         { status: 404 }
       );
     }
-
-    // Build full name if not present
-    let insuredName = document.insuredName;
-    if (!insuredName && (document.insuredFirstName || document.insuredLastName)) {
-      insuredName = [document.insuredFirstName, document.insuredLastName].filter(Boolean).join(' ');
-    }
-
-    // Generate filename
-    const safeName = (insuredName || 'Policy')
-      .replace(/[^a-zA-Z0-9]/g, '_')
-      .replace(/_+/g, '_')
-      .substring(0, 50);
 
     // Detect if home or auto based on LOB
     const lob = document.lineOfBusiness?.toLowerCase() || '';
@@ -251,7 +239,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       lob.includes('car') ||
       lob.includes('pauto');
 
-    const filename = `${safeName}_${isAuto ? 'Auto' : 'Home'}.CMSEZLynxXML`;
+    // ACORD files use standard naming: ACORD-AUTO.xml or ACORD-HOME.xml
+    const filename = isAuto ? 'ACORD-AUTO.xml' : 'ACORD-HOME.xml';
 
     return new NextResponse(document.generatedAL3XML, {
       headers: {
