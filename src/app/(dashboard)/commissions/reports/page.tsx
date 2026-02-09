@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   Loader2,
   AlertTriangle,
@@ -8,16 +8,28 @@ import {
   Building2,
   Download,
   BarChart3,
+  DollarSign,
+  TrendingUp,
+  RefreshCw,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { MonthSelector } from "@/components/commissions/MonthSelector";
 import { AgentSelector } from "@/components/commissions/AgentSelector";
-import { formatCurrency } from "@/lib/commissions/formatters";
+import { StatsCard } from "@/components/commissions/StatsCard";
+import { formatCurrency, formatTransactionType } from "@/lib/commissions/formatters";
 import { useCommissionUser } from "@/hooks/useCommissionUser";
 
 // =============================================================================
 // TYPES
 // =============================================================================
+
+interface TypeBreakdown {
+  type: string;
+  label: string;
+  count: number;
+  total: number;
+}
 
 interface AgentStatementData {
   agentName: string;
@@ -25,6 +37,10 @@ interface AgentStatementData {
   totalDrawPayments: number;
   netPayable: number;
   transactions: AgentTransaction[];
+  byType: TypeBreakdown[];
+  positiveTotal: number;
+  negativeTotal: number;
+  transactionCount: number;
 }
 
 interface AgentTransaction {
@@ -67,6 +83,7 @@ export default function ReportsPage() {
   const [agentStatement, setAgentStatement] = useState<AgentStatementData | null>(null);
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<string>("all");
 
   // Carrier Summary state
   const [carrierSummary, setCarrierSummary] = useState<CarrierSummaryRow[]>([]);
@@ -89,6 +106,7 @@ export default function ReportsPage() {
     setAgentLoading(true);
     setAgentError(null);
     setAgentStatement(null);
+    setTypeFilter("all");
     try {
       const res = await fetch(
         `/api/commissions/reports/agent-statement?agentId=${encodeURIComponent(agentId)}&month=${encodeURIComponent(selectedMonth)}`
@@ -97,7 +115,7 @@ export default function ReportsPage() {
       const json = await res.json();
       if (json.success && json.data) {
         setAgentStatement(json.data);
-        toast.success("Agent statement generated");
+        if (isAdmin) toast.success("Agent statement generated");
       } else {
         throw new Error(json.error || "No data returned");
       }
@@ -108,7 +126,16 @@ export default function ReportsPage() {
     } finally {
       setAgentLoading(false);
     }
-  }, [agentId, selectedMonth]);
+  }, [agentId, selectedMonth, isAdmin]);
+
+  // Auto-generate for non-admins once agentId is set
+  useEffect(() => {
+    if (!isAdmin && agentId && !agentStatement && !agentLoading) {
+      handleGenerateAgentStatement();
+    }
+    // Only run when agentId first becomes available for non-admins
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, isAdmin]);
 
   // ---------------------------------------------------------------------------
   // CARRIER SUMMARY
@@ -171,16 +198,19 @@ export default function ReportsPage() {
   };
 
   // ---------------------------------------------------------------------------
-  // FORMAT HELPERS
+  // DERIVED DATA
   // ---------------------------------------------------------------------------
 
-  function formatTransactionType(type: string | null): string {
-    if (!type) return "Other";
-    return type
-      .split("_")
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ");
-  }
+  const filteredTransactions = useMemo(() => {
+    if (!agentStatement) return [];
+    if (typeFilter === "all") return agentStatement.transactions;
+    return agentStatement.transactions.filter(
+      (txn) => (txn.transactionType || "other") === typeFilter
+    );
+  }, [agentStatement, typeFilter]);
+
+  const newBusinessType = agentStatement?.byType.find((t) => t.type === "new_business");
+  const renewalType = agentStatement?.byType.find((t) => t.type === "renewal");
 
   // ---------------------------------------------------------------------------
   // RENDER
@@ -256,83 +286,195 @@ export default function ReportsPage() {
             )}
 
             {agentStatement && (
-              <div className="mt-6 space-y-4">
-                {/* Summary */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Agent</p>
-                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mt-0.5">
-                      {agentStatement.agentName}
-                    </p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Total Commission</p>
-                    <p className="text-sm font-semibold text-green-600 mt-0.5">
-                      {formatCurrency(agentStatement.totalCommission)}
-                    </p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Draw Payments</p>
-                    <p className="text-sm font-semibold text-red-600 mt-0.5">
-                      {formatCurrency(agentStatement.totalDrawPayments)}
-                    </p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Net Payable</p>
-                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100 mt-0.5">
-                      {formatCurrency(agentStatement.netPayable)}
-                    </p>
-                  </div>
+              <div className="mt-6 space-y-6">
+                {/* Agent Info Bar */}
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm bg-gray-50 dark:bg-gray-700/50 rounded-lg px-4 py-2.5">
+                  <span className="font-semibold text-gray-900 dark:text-gray-100">
+                    {agentStatement.agentName}
+                  </span>
+                  <span className="text-gray-500 dark:text-gray-400">
+                    Gross: <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(agentStatement.totalCommission)}</span>
+                  </span>
+                  {agentStatement.totalDrawPayments > 0 && (
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Draw: <span className="font-medium text-red-600 dark:text-red-400">-{formatCurrency(agentStatement.totalDrawPayments)}</span>
+                    </span>
+                  )}
                 </div>
 
-                {/* Transactions */}
-                {agentStatement.transactions.length > 0 && (
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <StatsCard
+                    title="Net Commission"
+                    value={formatCurrency(agentStatement.netPayable)}
+                    subtitle={`${agentStatement.transactionCount} transaction${agentStatement.transactionCount !== 1 ? "s" : ""}`}
+                    icon={DollarSign}
+                  />
+                  <StatsCard
+                    title="New Business"
+                    value={formatCurrency(newBusinessType?.total ?? 0)}
+                    subtitle={newBusinessType ? `${newBusinessType.count} transaction${newBusinessType.count !== 1 ? "s" : ""}` : "0 transactions"}
+                    icon={TrendingUp}
+                  />
+                  <StatsCard
+                    title="Renewals"
+                    value={formatCurrency(renewalType?.total ?? 0)}
+                    subtitle={renewalType ? `${renewalType.count} transaction${renewalType.count !== 1 ? "s" : ""}` : "0 transactions"}
+                    icon={RefreshCw}
+                  />
+                  <StatsCard
+                    title="Cancellations & Returns"
+                    value={formatCurrency(agentStatement.negativeTotal)}
+                    subtitle={`${agentStatement.byType.filter((t) => t.total < 0).reduce((s, t) => s + t.count, 0)} transaction${agentStatement.byType.filter((t) => t.total < 0).reduce((s, t) => s + t.count, 0) !== 1 ? "s" : ""}`}
+                    icon={XCircle}
+                    valueClassName="text-red-600 dark:text-red-400"
+                    iconClassName="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400"
+                  />
+                </div>
+
+                {/* Transaction Type Breakdown */}
+                {agentStatement.byType.length > 0 && (
                   <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                           <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Policy
-                          </th>
-                          <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Carrier
-                          </th>
-                          <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Insured
-                          </th>
-                          <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Type
+                            Transaction Type
                           </th>
                           <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                            Amount
+                            Count
+                          </th>
+                          <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Total
                           </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {agentStatement.transactions.map((txn) => (
+                        {agentStatement.byType.map((row) => (
                           <tr
-                            key={txn.id}
+                            key={row.type}
                             className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                           >
-                            <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-gray-100">
-                              {txn.policyNumber}
+                            <td className="px-4 py-2.5 text-gray-900 dark:text-gray-100">
+                              <span className="inline-flex items-center gap-2">
+                                <span
+                                  className={`inline-block h-2 w-2 rounded-full ${
+                                    row.total >= 0
+                                      ? "bg-emerald-500"
+                                      : "bg-red-500"
+                                  }`}
+                                />
+                                {row.label}
+                              </span>
                             </td>
-                            <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">
-                              {txn.carrierName || "-"}
+                            <td className="px-4 py-2.5 text-right text-gray-600 dark:text-gray-300">
+                              {row.count}
                             </td>
-                            <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">
-                              {txn.insuredName || "-"}
-                            </td>
-                            <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">
-                              {formatTransactionType(txn.transactionType)}
-                            </td>
-                            <td className="px-4 py-2.5 text-right font-medium text-gray-900 dark:text-gray-100">
-                              {formatCurrency(txn.commissionAmount)}
+                            <td
+                              className={`px-4 py-2.5 text-right font-medium ${
+                                row.total < 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : "text-gray-900 dark:text-gray-100"
+                              }`}
+                            >
+                              {formatCurrency(row.total)}
                             </td>
                           </tr>
                         ))}
+                        {/* Grand total row */}
+                        <tr className="bg-gray-50 dark:bg-gray-700/50 font-semibold">
+                          <td className="px-4 py-2.5 text-gray-900 dark:text-gray-100">
+                            Total
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-gray-900 dark:text-gray-100">
+                            {agentStatement.transactionCount}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-gray-900 dark:text-gray-100">
+                            {formatCurrency(agentStatement.totalCommission)}
+                          </td>
+                        </tr>
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {/* Detail Transactions */}
+                {agentStatement.transactions.length > 0 && (
+                  <div className="space-y-3">
+                    {/* Type filter dropdown */}
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Filter by type:
+                      </label>
+                      <select
+                        value={typeFilter}
+                        onChange={(e) => setTypeFilter(e.target.value)}
+                        className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <option value="all">
+                          All Types ({agentStatement.transactionCount})
+                        </option>
+                        {agentStatement.byType.map((t) => (
+                          <option key={t.type} value={t.type}>
+                            {t.label} ({t.count})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                              Policy
+                            </th>
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                              Carrier
+                            </th>
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                              Insured
+                            </th>
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                              Type
+                            </th>
+                            <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                              Amount
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                          {filteredTransactions.map((txn) => (
+                            <tr
+                              key={txn.id}
+                              className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                            >
+                              <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-gray-100">
+                                {txn.policyNumber}
+                              </td>
+                              <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">
+                                {txn.carrierName || "-"}
+                              </td>
+                              <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">
+                                {txn.insuredName || "-"}
+                              </td>
+                              <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">
+                                {formatTransactionType(txn.transactionType)}
+                              </td>
+                              <td
+                                className={`px-4 py-2.5 text-right font-medium ${
+                                  txn.commissionAmount < 0
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-gray-900 dark:text-gray-100"
+                                }`}
+                              >
+                                {formatCurrency(txn.commissionAmount)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
 

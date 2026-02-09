@@ -73,6 +73,10 @@ export async function GET(request: NextRequest) {
           totalDrawPayments: 0,
           netPayable: 0,
           transactions: [],
+          byType: [],
+          positiveTotal: 0,
+          negativeTotal: 0,
+          transactionCount: 0,
         },
       });
     }
@@ -133,6 +137,35 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Aggregate by transaction type
+    const typeMap = new Map<string, { count: number; total: number }>();
+    let positiveTotal = 0;
+    let negativeTotal = 0;
+    for (const txn of mappedTransactions) {
+      const type = txn.transactionType || "other";
+      const entry = typeMap.get(type) || { count: 0, total: 0 };
+      entry.count += 1;
+      entry.total += txn.commissionAmount;
+      typeMap.set(type, entry);
+      if (txn.commissionAmount >= 0) {
+        positiveTotal += txn.commissionAmount;
+      } else {
+        negativeTotal += txn.commissionAmount;
+      }
+    }
+
+    const byType = Array.from(typeMap.entries())
+      .map(([type, { count, total }]) => ({
+        type,
+        label: type
+          .split("_")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" "),
+        count,
+        total: Math.round(total * 100) / 100,
+      }))
+      .sort((a, b) => b.total - a.total);
+
     const totalCommission = mappedTransactions.reduce(
       (sum, t) => sum + t.commissionAmount,
       0
@@ -165,6 +198,10 @@ export async function GET(request: NextRequest) {
         totalDrawPayments: Math.round(totalDrawPayments * 100) / 100,
         netPayable: Math.round(netPayable * 100) / 100,
         transactions: mappedTransactions,
+        byType,
+        positiveTotal: Math.round(positiveTotal * 100) / 100,
+        negativeTotal: Math.round(negativeTotal * 100) / 100,
+        transactionCount: mappedTransactions.length,
       },
     });
   } catch (error: unknown) {
