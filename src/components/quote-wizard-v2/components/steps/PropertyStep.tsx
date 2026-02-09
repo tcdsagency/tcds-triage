@@ -98,29 +98,72 @@ export function PropertyStep() {
         body: JSON.stringify({ address: fullAddress }),
       });
 
-      if (!response.ok) {
-        throw new Error('Property lookup failed');
-      }
-
       const data = await response.json();
 
+      if (!response.ok) {
+        throw new Error(data.error || 'Property lookup failed');
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || 'No property data found');
+      }
+
+      // Track how many fields we populated
+      let fieldsPopulated = 0;
+
       // Populate property detail fields from lookup response
-      if (data.yearBuilt) setValue('yearBuilt', data.yearBuilt);
-      if (data.squareFootage) setValue('squareFootage', data.squareFootage);
-      if (data.stories) setValue('stories', String(data.stories));
-      if (data.constructionType) setValue('constructionType', data.constructionType);
-      if (data.foundationType) setValue('foundationType', data.foundationType);
-      if (data.roofMaterial) setValue('roofMaterial', data.roofMaterial);
-      if (data.heatingType) setValue('heatingType', data.heatingType);
-      if (data.garageType) setValue('garageType', data.garageType);
-      if (data.hasPool !== undefined) setValue('hasPool', data.hasPool);
-      if (data.poolType) setValue('poolType', data.poolType);
+      // Use != null to allow 0 values but reject null/undefined
+      if (data.yearBuilt != null) {
+        setValue('yearBuilt', data.yearBuilt);
+        fieldsPopulated++;
+      }
+      if (data.squareFootage != null) {
+        setValue('squareFootage', data.squareFootage);
+        fieldsPopulated++;
+      }
+      if (data.stories != null) {
+        setValue('stories', String(data.stories));
+        fieldsPopulated++;
+      }
+      if (data.constructionType) {
+        setValue('constructionType', data.constructionType);
+        fieldsPopulated++;
+      }
+      if (data.foundationType) {
+        setValue('foundationType', data.foundationType);
+        fieldsPopulated++;
+      }
+      if (data.roofMaterial) {
+        setValue('roofMaterial', data.roofMaterial);
+        fieldsPopulated++;
+      }
+      if (data.heatingType) {
+        setValue('heatingType', data.heatingType);
+        fieldsPopulated++;
+      }
+      if (data.garageType) {
+        setValue('garageType', data.garageType);
+        fieldsPopulated++;
+      }
+      if (data.hasPool !== undefined) {
+        setValue('hasPool', data.hasPool);
+        fieldsPopulated++;
+      }
+      if (data.poolType) {
+        setValue('poolType', data.poolType);
+        fieldsPopulated++;
+      }
 
       // Store full RPR data for reference
       setValue('rprData', data);
 
-      setLookupSuccess(true);
-      setTimeout(() => setLookupSuccess(false), 3000);
+      if (fieldsPopulated > 0) {
+        setLookupSuccess(true);
+        setTimeout(() => setLookupSuccess(false), 3000);
+      } else {
+        setLookupError('Property found but no details available');
+        setTimeout(() => setLookupError(null), 5000);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Lookup failed';
       setLookupError(message);

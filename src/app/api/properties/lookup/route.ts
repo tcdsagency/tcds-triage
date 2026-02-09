@@ -24,11 +24,18 @@ export async function POST(request: NextRequest) {
     const propertyData = await rprClient.lookupProperty(address);
 
     if (!propertyData) {
+      console.log('[Property Lookup] No data returned from RPR for:', address);
       return NextResponse.json(
-        { error: 'Property not found' },
+        { success: false, error: 'Property not found in records' },
         { status: 404 }
       );
     }
+
+    console.log('[Property Lookup] Found property:', {
+      yearBuilt: propertyData.yearBuilt,
+      sqft: propertyData.sqft,
+      stories: propertyData.stories,
+    });
 
     // Map RPR data to format expected by PropertyStep
     // PropertyStep expects: yearBuilt, squareFootage, stories, constructionType,
