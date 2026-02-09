@@ -1,17 +1,73 @@
 /**
  * API Route: /api/policy-creator/documents/[id]/generate
- * Generate AL3-XML from a policy creator document.
+ * Generate EZLynx XML from a policy creator document for HawkSoft import.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { policyCreatorDocuments } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { generateAL3XMLValidated, generateAL3XMLFilename, validateForAL3 } from '@/lib/al3/xml-wrapper';
+import { generateEZLynxXML } from '@/lib/ezlynx/emitter';
 import type { PolicyCreatorDocument } from '@/types/policy-creator.types';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
+}
+
+// Validate document has required fields for EZLynx generation
+function validateForEZLynx(doc: PolicyCreatorDocument): { valid: boolean; errors: string[]; warnings: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Required fields
+  if (!doc.insuredName && !doc.insuredFirstName && !doc.insuredLastName) {
+    errors.push('Insured name is required');
+  }
+  if (!doc.insuredAddress) {
+    warnings.push('Address is missing - may need manual entry');
+  }
+  if (!doc.insuredCity) {
+    warnings.push('City is missing');
+  }
+  if (!doc.insuredState) {
+    errors.push('State is required');
+  }
+  if (!doc.insuredZip) {
+    warnings.push('ZIP code is missing');
+  }
+  if (!doc.effectiveDate) {
+    errors.push('Effective date is required');
+  }
+
+  // Line of business detection
+  const lob = doc.lineOfBusiness?.toLowerCase() || '';
+  const isAuto =
+    lob.includes('auto') ||
+    lob.includes('vehicle') ||
+    lob.includes('car') ||
+    lob.includes('pauto') ||
+    (doc.vehicles && doc.vehicles.length > 0 && !doc.properties?.length);
+
+  if (isAuto) {
+    // Auto-specific validation
+    if (!doc.vehicles || doc.vehicles.length === 0) {
+      errors.push('At least one vehicle is required for auto policies');
+    }
+    if (!doc.drivers || doc.drivers.length === 0) {
+      warnings.push('No drivers found - will need manual entry');
+    }
+  } else {
+    // Home-specific validation
+    if (!doc.properties || doc.properties.length === 0) {
+      warnings.push('No property details found');
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  };
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -42,6 +98,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
+    // Build full name if not present
+    let insuredName = document.insuredName;
+    if (!insuredName && (document.insuredFirstName || document.insuredLastName)) {
+      insuredName = [document.insuredFirstName, document.insuredLastName].filter(Boolean).join(' ');
+    }
+
     // Convert database document to PolicyCreatorDocument type
     const doc: PolicyCreatorDocument = {
       id: document.id,
@@ -58,7 +120,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       transactionType: document.transactionType ?? undefined,
       insuredFirstName: document.insuredFirstName ?? undefined,
       insuredLastName: document.insuredLastName ?? undefined,
-      insuredName: document.insuredName ?? undefined,
+      insuredName: insuredName ?? undefined,
       insuredEntityType: document.insuredEntityType as 'P' | 'C' | undefined,
       insuredAddress: document.insuredAddress ?? undefined,
       insuredCity: document.insuredCity ?? undefined,
@@ -86,71 +148,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
       updatedAt: document.updatedAt.toISOString(),
     };
 
-    // Step 1: Basic document validation (required fields)
-    const preValidation = validateForAL3(doc);
-    if (!preValidation.valid) {
+    // Step 1: Validate required fields
+    const validation = validateForEZLynx(doc);
+    if (!validation.valid) {
       return NextResponse.json(
         {
           success: false,
           error: 'Required fields missing',
-          errors: preValidation.errors,
-          warnings: preValidation.warnings,
+          errors: validation.errors,
+          warnings: validation.warnings,
         },
         { status: 400 }
       );
     }
 
-    // Step 2: Generate AL3-XML with compiler validation (Gate E)
-    const generateResult = generateAL3XMLValidated(doc);
-    const filename = generateAL3XMLFilename(doc);
+    // Step 2: Generate EZLynx XML
+    const result = generateEZLynxXML(doc);
 
-    // Combine all errors and warnings
-    const allErrors: string[] = [
-      ...generateResult.compilerErrors.map((e) => `[${e.groupCode}${e.field ? '.' + e.field : ''}] ${e.message}`),
-      ...generateResult.roundTripErrors,
-    ];
-    const allWarnings: string[] = [
-      ...preValidation.warnings,
-      ...generateResult.compilerWarnings,
-      ...generateResult.roundTripWarnings,
-    ];
-
-    // Step 3: Block if compiler validation failed
-    if (!generateResult.valid) {
-      // Still save the raw AL3 and errors for debugging
-      await db
-        .update(policyCreatorDocuments)
-        .set({
-          generatedAL3Raw: generateResult.rawAL3,
-          validationErrors: allErrors,
-          validationWarnings: allWarnings,
-          status: 'error',
-          updatedAt: new Date(),
-        })
-        .where(eq(policyCreatorDocuments.id, id));
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'AL3 compiler validation failed (Gate E)',
-          errors: allErrors,
-          warnings: allWarnings,
-          recordCount: generateResult.recordCount,
-          // Include raw AL3 for debugging
-          rawAL3Preview: generateResult.rawAL3.substring(0, 500) + '...',
-        },
-        { status: 400 }
-      );
-    }
-
-    // Step 4: Update the document with generated output
+    // Step 3: Update the document with generated output
     await db
       .update(policyCreatorDocuments)
       .set({
-        generatedAL3Raw: generateResult.rawAL3,
-        generatedAL3XML: generateResult.al3xml,
-        validationErrors: [], // Clear any previous errors
-        validationWarnings: allWarnings,
+        generatedAL3XML: result.xml, // Store EZLynx XML in this field
+        validationErrors: [],
+        validationWarnings: validation.warnings,
         generatedAt: new Date(),
         status: 'generated',
         updatedAt: new Date(),
@@ -159,14 +180,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       success: true,
-      al3xml: generateResult.al3xml,
-      filename,
-      recordCount: generateResult.recordCount,
-      warnings: allWarnings,
+      xml: result.xml,
+      format: result.format,
+      filename: result.filename,
+      warnings: validation.warnings,
     });
   } catch (error: unknown) {
-    console.error('[Policy Creator] Generate AL3-XML error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to generate AL3-XML';
+    console.error('[Policy Creator] Generate EZLynx XML error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to generate EZLynx XML';
     return NextResponse.json(
       { success: false, error: errorMessage },
       { status: 500 }
@@ -174,10 +195,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 }
 
-// GET - Download the previously generated AL3
-// Query params:
-//   format=xml (default) - Download AL3-XML wrapped format
-//   format=raw - Download raw AL3 (plain text, fixed-width records)
+// GET - Download the previously generated EZLynx XML
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const tenantId = process.env.DEFAULT_TENANT_ID;
@@ -186,17 +204,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     const { id } = await context.params;
-    const { searchParams } = new URL(request.url);
-    const format = searchParams.get('format') || 'xml';
 
     // Fetch the document
     const [document] = await db
-      .select({
-        generatedAL3Raw: policyCreatorDocuments.generatedAL3Raw,
-        generatedAL3XML: policyCreatorDocuments.generatedAL3XML,
-        carrier: policyCreatorDocuments.carrier,
-        policyNumber: policyCreatorDocuments.policyNumber,
-      })
+      .select()
       .from(policyCreatorDocuments)
       .where(
         and(
@@ -213,52 +224,44 @@ export async function GET(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Generate base filename
-    const carrier = (document.carrier ?? 'UNKNOWN')
-      .replace(/[^a-zA-Z0-9]/g, '_')
-      .toUpperCase()
-      .substring(0, 20);
-    const policyNum = (document.policyNumber ?? 'NEW')
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .toUpperCase()
-      .substring(0, 20);
-    const date = new Date().toISOString().substring(0, 10).replace(/-/g, '');
-
-    // Return based on format
-    if (format === 'raw') {
-      // Raw AL3 format (plain text, fixed-width records)
-      if (!document.generatedAL3Raw) {
-        return NextResponse.json(
-          { success: false, error: 'AL3 has not been generated yet' },
-          { status: 404 }
-        );
-      }
-      const filename = `${carrier}_${policyNum}_${date}.al3`;
-      return new NextResponse(document.generatedAL3Raw, {
-        headers: {
-          'Content-Type': 'text/plain',
-          'Content-Disposition': `attachment; filename="${filename}"`,
-        },
-      });
-    } else {
-      // XML format (default)
-      if (!document.generatedAL3XML) {
-        return NextResponse.json(
-          { success: false, error: 'AL3-XML has not been generated yet' },
-          { status: 404 }
-        );
-      }
-      const filename = `${carrier}_${policyNum}_${date}.al3.xml`;
-      return new NextResponse(document.generatedAL3XML, {
-        headers: {
-          'Content-Type': 'application/xml',
-          'Content-Disposition': `attachment; filename="${filename}"`,
-        },
-      });
+    if (!document.generatedAL3XML) {
+      return NextResponse.json(
+        { success: false, error: 'EZLynx XML has not been generated yet' },
+        { status: 404 }
+      );
     }
+
+    // Build full name if not present
+    let insuredName = document.insuredName;
+    if (!insuredName && (document.insuredFirstName || document.insuredLastName)) {
+      insuredName = [document.insuredFirstName, document.insuredLastName].filter(Boolean).join(' ');
+    }
+
+    // Generate filename
+    const safeName = (insuredName || 'Policy')
+      .replace(/[^a-zA-Z0-9]/g, '_')
+      .replace(/_+/g, '_')
+      .substring(0, 50);
+
+    // Detect if home or auto based on LOB
+    const lob = document.lineOfBusiness?.toLowerCase() || '';
+    const isAuto =
+      lob.includes('auto') ||
+      lob.includes('vehicle') ||
+      lob.includes('car') ||
+      lob.includes('pauto');
+
+    const filename = `${safeName}_${isAuto ? 'Auto' : 'Home'}.CMSEZLynxXML`;
+
+    return new NextResponse(document.generatedAL3XML, {
+      headers: {
+        'Content-Type': 'application/xml',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
   } catch (error: unknown) {
-    console.error('[Policy Creator] Download AL3-XML error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to download AL3-XML';
+    console.error('[Policy Creator] Download EZLynx XML error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to download EZLynx XML';
     return NextResponse.json(
       { success: false, error: errorMessage },
       { status: 500 }

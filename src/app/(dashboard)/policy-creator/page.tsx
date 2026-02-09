@@ -182,21 +182,14 @@ export default function PolicyCreatorPage() {
       const data = await res.json();
 
       if (data.success) {
-        // Ask user which format to download
-        const format = window.confirm(
-          'Generation successful!\n\n' +
-          'Click OK to download Raw AL3 (recommended for HawkSoft)\n' +
-          'Click Cancel to download AL3-XML format'
-        ) ? 'raw' : 'xml';
-
-        // Download the selected format
+        // Download the EZLynx XML file
         const downloadRes = await fetch(
-          `/api/policy-creator/documents/${selectedDoc.id}/generate?format=${format}`
+          `/api/policy-creator/documents/${selectedDoc.id}/generate`
         );
         const blob = await downloadRes.blob();
         const contentDisposition = downloadRes.headers.get('Content-Disposition');
         const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
-        const filename = filenameMatch?.[1] || (format === 'raw' ? 'policy.al3' : 'policy.al3.xml');
+        const filename = filenameMatch?.[1] || data.filename || 'policy.CMSEZLynxXML';
 
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -268,7 +261,7 @@ export default function PolicyCreatorPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Policy Creator</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Extract policy data from dec pages and generate AL3-XML for HawkSoft
+              Extract policy data from dec pages and generate EZLynx XML for HawkSoft import
             </p>
           </div>
 
