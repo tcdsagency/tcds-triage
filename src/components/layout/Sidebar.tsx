@@ -56,6 +56,7 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   '/policy-notices': 'policyNotices',
   // Tools
   '/invoice': 'invoice',
+  '/receipt': 'receipt',
   '/policy-change': 'policyChange',
   '/id-cards': 'idCards',
   '/birthday-cards': 'birthdayCards',
@@ -116,6 +117,7 @@ const customerNav = [
   { name: 'Policy Change', href: '/policy-change', icon: FilePen },
   { name: 'Payment Advance', href: '/payment-advance', icon: CreditCard },
   { name: 'Same-Day Payment', href: '/same-day-payment', icon: Zap },
+  { name: 'Payment Receipt', href: '/receipt', icon: Receipt },
   { name: 'ID Cards', href: '/id-cards', icon: IdCard },
 ];
 
