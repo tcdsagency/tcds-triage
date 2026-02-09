@@ -10,10 +10,19 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { pendingTranscriptJobs, wrapupDrafts, calls, customers, liveTranscriptSegments, users } from "@/db/schema";
-import { eq, lte, and, sql, asc } from "drizzle-orm";
+import { pendingTranscriptJobs, wrapupDrafts, calls, customers, liveTranscriptSegments, users, tenants, serviceTickets } from "@/db/schema";
+import { eq, lte, and, sql, asc, or, ilike } from "drizzle-orm";
 import { getMSSQLTranscriptsClient, TranscriptRecord } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import {
+  SERVICE_PIPELINES,
+  PIPELINE_STAGES,
+  SERVICE_CATEGORIES,
+  SERVICE_PRIORITIES,
+  SPECIAL_HOUSEHOLDS,
+  EMPLOYEE_IDS,
+  getDefaultDueDate,
+} from "@/lib/api/agencyzoom-service-tickets";
 
 // Retry schedule (exponential backoff)
 const RETRY_DELAYS = [
@@ -666,6 +675,239 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
 }
 
 // =============================================================================
+// Auto-Create Service Ticket for Poll-Discovered Calls
+// Mirrors the call-completed webhook's auto-ticket logic (simplified)
+// =============================================================================
+
+async function createAutoTicketForPollCall(params: {
+  tenantId: string;
+  callId: string;
+  agentId: string | null;
+  customerPhone: string | null;
+  customerName: string | null;
+  aiResult: AIExtractionResult;
+  transcript: string;
+  durationSeconds: number;
+  wrapupId: string;
+}): Promise<void> {
+  const { tenantId, callId, agentId, customerPhone, customerName, aiResult, transcript, durationSeconds, wrapupId } = params;
+
+  try {
+    // 1. Feature flag check
+    const [tenantData] = await db
+      .select({ features: tenants.features })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1);
+
+    const features = tenantData?.features as Record<string, unknown> | undefined;
+    if (features?.autoCreateServiceTickets !== true) {
+      console.log(`[TranscriptWorker] Auto-ticket feature not enabled, skipping`);
+      return;
+    }
+
+    // 2. Phone validation - skip internal/test calls
+    const callerDigits = (customerPhone || '').replace(/\D/g, '');
+    if (
+      !customerPhone ||
+      customerPhone === 'Unknown' ||
+      customerPhone === 'PlayFile' ||
+      customerPhone.toLowerCase().includes('playfile') ||
+      callerDigits.length < 7 ||
+      callerDigits.length > 11
+    ) {
+      console.log(`[TranscriptWorker] Skipping ticket for invalid phone: ${customerPhone}`);
+      return;
+    }
+
+    // 3. Customer lookup - search local DB by last 10 digits
+    const phoneSuffix = callerDigits.slice(-10);
+    let matchedAzCustomerId: number | null = null;
+    let localCustomerId: string | null = null;
+
+    const [foundCustomer] = await db
+      .select({
+        id: customers.id,
+        agencyzoomId: customers.agencyzoomId,
+      })
+      .from(customers)
+      .where(
+        and(
+          eq(customers.tenantId, tenantId),
+          or(
+            ilike(customers.phone, `%${phoneSuffix}`),
+            ilike(customers.phoneAlt, `%${phoneSuffix}`)
+          )
+        )
+      )
+      .limit(1);
+
+    if (foundCustomer?.agencyzoomId) {
+      matchedAzCustomerId = parseInt(foundCustomer.agencyzoomId, 10);
+      localCustomerId = foundCustomer.id;
+      if (isNaN(matchedAzCustomerId) || matchedAzCustomerId <= 0) {
+        matchedAzCustomerId = null;
+      }
+    }
+
+    const azCustomerId = matchedAzCustomerId || SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER;
+
+    // 4. CSR assignment - prefer call's agent, fallback to AI Agent
+    let assignedCsrId: number = EMPLOYEE_IDS.AI_AGENT;
+    let assignedCsrName = 'AI Agent';
+
+    if (agentId) {
+      try {
+        const [agentData] = await db
+          .select({
+            firstName: users.firstName,
+            lastName: users.lastName,
+            agencyzoomId: users.agencyzoomId,
+          })
+          .from(users)
+          .where(eq(users.id, agentId))
+          .limit(1);
+
+        if (agentData?.agencyzoomId) {
+          const azCsrId = parseInt(agentData.agencyzoomId, 10);
+          if (!isNaN(azCsrId) && azCsrId > 0) {
+            assignedCsrId = azCsrId;
+            assignedCsrName = `${agentData.firstName || ''} ${agentData.lastName || ''}`.trim() || 'Agent';
+          }
+        }
+      } catch (agentLookupError) {
+        console.error(`[TranscriptWorker] Failed to look up agent CSR ID, using AI Agent:`, agentLookupError);
+      }
+    }
+
+    // 5. Build subject from summary
+    let callReason = aiResult.summary || '';
+    const firstSentenceEnd = callReason.search(/[.!?]/);
+    if (firstSentenceEnd > 0 && firstSentenceEnd < 80) {
+      callReason = callReason.substring(0, firstSentenceEnd);
+    } else if (callReason.length > 60) {
+      callReason = callReason.substring(0, 60).replace(/\s+\S*$/, '');
+    }
+    callReason = callReason.trim().replace(/^(the\s+)?(caller\s+)?(called\s+)?(about\s+)?/i, '');
+    if (!callReason || callReason.length < 5) {
+      callReason = aiResult.requestType || 'general inquiry';
+    }
+
+    const isNCMTicket = !matchedAzCustomerId;
+    const subjectSuffix = isNCMTicket
+      ? ` - ${customerName || customerPhone || 'Unknown Caller'}`
+      : '';
+    const ticketSubject = `Inbound Call: ${callReason}${subjectSuffix}`;
+
+    // 6. Build description
+    let ticketDescription = `Inbound Call - AI Processed (SQL Poll)\n\n`;
+    ticketDescription += `Summary: ${aiResult.summary || 'No summary available'}\n\n`;
+
+    if (aiResult.actionItems && aiResult.actionItems.length > 0) {
+      ticketDescription += `Action Items:\n`;
+      aiResult.actionItems.forEach((item: string) => {
+        ticketDescription += `- ${item}\n`;
+      });
+      ticketDescription += '\n';
+    }
+
+    if (customerName) ticketDescription += `Customer: ${customerName}\n`;
+    if (aiResult.policyNumbers.length > 0) ticketDescription += `Policy: ${aiResult.policyNumbers.join(', ')}\n`;
+
+    ticketDescription += `\nCall Duration: ${durationSeconds}s`;
+    ticketDescription += `\nCaller: ${customerPhone || 'Unknown'}`;
+
+    if (!matchedAzCustomerId && customerPhone) {
+      ticketDescription += `\n\n--- Original Caller Info ---`;
+      ticketDescription += `\nPhone: ${customerPhone}`;
+      if (customerName) {
+        ticketDescription += `\nName: ${customerName}`;
+      }
+    }
+
+    if (transcript && transcript.length > 0) {
+      ticketDescription += `\n\n===================================\n`;
+      ticketDescription += `CALL TRANSCRIPTION\n`;
+      ticketDescription += `===================================\n\n`;
+      ticketDescription += transcript;
+    }
+
+    // 7. Create ticket via AgencyZoom API
+    const categoryId = SERVICE_CATEGORIES.GENERAL_SERVICE;
+    const azClient = getAgencyZoomClient();
+    const ticketResult = await azClient.createServiceTicket({
+      subject: ticketSubject,
+      description: ticketDescription,
+      customerId: azCustomerId,
+      pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
+      stageId: PIPELINE_STAGES.POLICY_SERVICE_NEW,
+      priorityId: SERVICE_PRIORITIES.STANDARD,
+      categoryId: categoryId,
+      csrId: assignedCsrId,
+      dueDate: getDefaultDueDate(),
+    });
+
+    if (ticketResult.success || ticketResult.serviceTicketId) {
+      const azTicketId = ticketResult.serviceTicketId;
+      console.log(`[TranscriptWorker] Service ticket created: ${azTicketId} (assigned to ${assignedCsrName})`);
+
+      // 8. Store ticket locally
+      if (typeof azTicketId === 'number' && azTicketId > 0) {
+        try {
+          await db.insert(serviceTickets).values({
+            tenantId,
+            azTicketId: azTicketId,
+            azHouseholdId: azCustomerId,
+            wrapupDraftId: wrapupId,
+            customerId: localCustomerId,
+            subject: ticketSubject,
+            description: ticketDescription,
+            status: 'active',
+            pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
+            pipelineName: 'Policy Service',
+            stageId: PIPELINE_STAGES.POLICY_SERVICE_NEW,
+            stageName: 'New',
+            categoryId: categoryId,
+            categoryName: 'General Service',
+            priorityId: SERVICE_PRIORITIES.STANDARD,
+            priorityName: 'Standard',
+            csrId: assignedCsrId,
+            csrName: assignedCsrName,
+            dueDate: getDefaultDueDate(),
+            azCreatedAt: new Date(),
+            source: 'mssql_poll',
+            lastSyncedFromAz: new Date(),
+          });
+          console.log(`[TranscriptWorker] Ticket stored locally`);
+        } catch (localDbError) {
+          console.error(`[TranscriptWorker] Failed to store ticket locally:`, localDbError);
+        }
+      }
+
+      // 9. Update wrapup - mark completed with ticket
+      try {
+        await db
+          .update(wrapupDrafts)
+          .set({
+            status: 'completed',
+            outcome: 'ticket',
+            agencyzoomTicketId: azTicketId?.toString() || null,
+            completedAt: new Date(),
+          })
+          .where(eq(wrapupDrafts.id, wrapupId));
+        console.log(`[TranscriptWorker] Wrapup ${wrapupId} marked completed (auto-ticket created)`);
+      } catch (wrapupUpdateError) {
+        console.error(`[TranscriptWorker] Failed to mark wrapup completed:`, wrapupUpdateError);
+      }
+    } else {
+      console.error(`[TranscriptWorker] Failed to create service ticket:`, ticketResult);
+    }
+  } catch (error) {
+    console.error(`[TranscriptWorker] Auto-ticket creation failed for call ${callId}:`, error instanceof Error ? error.message : error);
+  }
+}
+
+// =============================================================================
 // Poll SQL Server for Missed Calls (catches outbound calls not in webhook flow)
 // =============================================================================
 
@@ -775,33 +1017,61 @@ async function pollSQLForMissedCalls(): Promise<{ found: number; processed: numb
         console.log(`[TranscriptWorker] Created call record ${newCall.id} from SQL poll (${transcript.direction})`);
 
         // Create wrapup draft linked to the real call
-        await db
+        const wrapupValues = {
+          tenantId,
+          callId: newCall.id, // Use real call ID
+          status: "pending_review" as const,
+          summary: aiResult.summary,
+          customerName: aiResult.customerName,
+          customerPhone: customerPhone || null,
+          policyNumbers: aiResult.policyNumbers,
+          insuranceType: aiResult.insuranceType,
+          requestType: aiResult.requestType,
+          direction: (transcript.direction === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
+          agentExtension: transcript.extension || null,
+          matchStatus: "unmatched",
+          aiExtraction: {
+            ...aiResult,
+            transcriptSource: "mssql_poll",
+            sqlRecordId: transcript.id,
+            polledAt: new Date().toISOString(),
+          },
+          aiProcessingStatus: "completed",
+          aiProcessedAt: new Date(),
+        };
+
+        const [wrapup] = await db
           .insert(wrapupDrafts)
-          .values({
-            tenantId,
-            callId: newCall.id, // Use real call ID
-            status: "pending_review",
-            summary: aiResult.summary,
-            customerName: aiResult.customerName,
-            customerPhone: customerPhone || null,
-            policyNumbers: aiResult.policyNumbers,
-            insuranceType: aiResult.insuranceType,
-            requestType: aiResult.requestType,
-            direction: (transcript.direction === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
-            agentExtension: transcript.extension || null,
-            matchStatus: "unmatched",
-            aiExtraction: {
-              ...aiResult,
-              transcriptSource: "mssql_poll",
-              sqlRecordId: transcript.id,
-              polledAt: new Date().toISOString(),
+          .values(wrapupValues)
+          .onConflictDoUpdate({
+            target: wrapupDrafts.callId,
+            set: {
+              summary: wrapupValues.summary,
+              customerName: wrapupValues.customerName,
+              aiExtraction: wrapupValues.aiExtraction,
+              aiProcessingStatus: wrapupValues.aiProcessingStatus,
+              aiProcessedAt: wrapupValues.aiProcessedAt,
             },
-            aiProcessingStatus: "completed",
-            aiProcessedAt: new Date(),
           })
-          .onConflictDoNothing(); // Skip if somehow already exists
+          .returning({ id: wrapupDrafts.id });
 
         console.log(`[TranscriptWorker] Created wrapup from SQL poll: ${transcript.id} (${transcript.direction})`);
+
+        // Auto-create service ticket for inbound calls
+        if (transcript.direction === "inbound" && wrapup?.id) {
+          await createAutoTicketForPollCall({
+            tenantId,
+            callId: newCall.id,
+            agentId: agent?.id || null,
+            customerPhone,
+            customerName: aiResult.customerName,
+            aiResult,
+            transcript: transcript.transcript,
+            durationSeconds: parseDuration(transcript.duration),
+            wrapupId: wrapup.id,
+          });
+        }
+
         processed++;
       } catch (err) {
         console.error(`[TranscriptWorker] Error processing SQL transcript ${transcript.id}:`, err);
