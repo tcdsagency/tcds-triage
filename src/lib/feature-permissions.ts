@@ -141,6 +141,14 @@ export const FEATURES: FeatureConfig[] = [
     route: '/same-day-payment',
   },
   {
+    key: 'receipt',
+    label: 'Payment Receipt',
+    description: 'Generate receipts for in-office cash and check payments',
+    category: 'tools',
+    defaultEnabled: true,
+    route: '/receipt',
+  },
+  {
     key: 'quoteExtractor',
     label: 'Quote Extractor',
     description: 'Extract data from quote documents',
