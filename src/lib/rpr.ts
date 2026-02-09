@@ -647,7 +647,7 @@ class RPRClient {
         },
         // Basic property details - check both root level and searchResult
         beds: topLevel?.bedrooms || commonData?.searchResult?.bedrooms || 0,
-        baths: topLevel?.bathrooms || commonData?.searchResult?.bathrooms || commonData?.searchResult?.totalBaths || commonData?.searchResult?.bathsFull || 0,
+        baths: topLevel?.bathrooms || commonData?.searchResult?.totalBaths || commonData?.searchResult?.bathsFull || 0,
         sqft: topLevel?.livingAreaInSqFt || commonData?.searchResult?.livingAreaInSqFt || 0,
         buildingSqft: topLevel?.buildingAreaSqFt || commonData?.searchResult?.buildingAreaSqFt,
         yearBuilt: topLevel?.yearBuilt || commonData?.searchResult?.yearBuilt || 0,
