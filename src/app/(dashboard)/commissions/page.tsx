@@ -23,6 +23,7 @@ import { AnomalyBanner } from "@/components/commissions/AnomalyBanner";
 import { MonthSelector } from "@/components/commissions/MonthSelector";
 import { StatsCard } from "@/components/commissions/StatsCard";
 import { formatCurrency } from "@/lib/commissions/formatters";
+import { useCommissionUser } from "@/hooks/useCommissionUser";
 
 // =============================================================================
 // TYPES
@@ -47,6 +48,7 @@ interface DashboardData {
   unresolvedAnomalies: number;
   activeAgents: number;
   recentImports: RecentImport[];
+  isAdmin: boolean;
 }
 
 // =============================================================================
@@ -61,6 +63,7 @@ const QUICK_LINKS = [
     icon: Upload,
     color: "text-blue-600 dark:text-blue-400",
     bg: "bg-blue-50 dark:bg-blue-900/20",
+    adminOnly: true,
   },
   {
     label: "Transactions",
@@ -69,6 +72,7 @@ const QUICK_LINKS = [
     icon: FileText,
     color: "text-emerald-600 dark:text-emerald-400",
     bg: "bg-emerald-50 dark:bg-emerald-900/20",
+    adminOnly: false,
   },
   {
     label: "Reconciliation",
@@ -77,6 +81,7 @@ const QUICK_LINKS = [
     icon: CheckSquare,
     color: "text-purple-600 dark:text-purple-400",
     bg: "bg-purple-50 dark:bg-purple-900/20",
+    adminOnly: true,
   },
   {
     label: "Reports",
@@ -85,6 +90,7 @@ const QUICK_LINKS = [
     icon: BarChart3,
     color: "text-amber-600 dark:text-amber-400",
     bg: "bg-amber-50 dark:bg-amber-900/20",
+    adminOnly: false,
   },
   {
     label: "Agents",
@@ -93,6 +99,7 @@ const QUICK_LINKS = [
     icon: UserCog,
     color: "text-indigo-600 dark:text-indigo-400",
     bg: "bg-indigo-50 dark:bg-indigo-900/20",
+    adminOnly: true,
   },
   {
     label: "Carriers",
@@ -101,6 +108,7 @@ const QUICK_LINKS = [
     icon: Building2,
     color: "text-rose-600 dark:text-rose-400",
     bg: "bg-rose-50 dark:bg-rose-900/20",
+    adminOnly: true,
   },
   {
     label: "Draw Accounts",
@@ -109,6 +117,7 @@ const QUICK_LINKS = [
     icon: Wallet,
     color: "text-cyan-600 dark:text-cyan-400",
     bg: "bg-cyan-50 dark:bg-cyan-900/20",
+    adminOnly: false,
   },
   {
     label: "Month Close",
@@ -117,6 +126,7 @@ const QUICK_LINKS = [
     icon: Lock,
     color: "text-gray-600 dark:text-gray-400",
     bg: "bg-gray-100 dark:bg-gray-800",
+    adminOnly: true,
   },
 ];
 
@@ -162,6 +172,7 @@ function formatTimeAgo(dateStr: string): string {
 // =============================================================================
 
 export default function CommissionsPage() {
+  const { isAdmin } = useCommissionUser();
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().slice(0, 7)
   );
@@ -218,9 +229,9 @@ export default function CommissionsPage() {
         </div>
 
         {/* ================================================================= */}
-        {/* ANOMALY BANNER                                                     */}
+        {/* ANOMALY BANNER (admin only)                                        */}
         {/* ================================================================= */}
-        <AnomalyBanner />
+        {isAdmin && <AnomalyBanner />}
 
         {/* ================================================================= */}
         {/* STATS CARDS                                                        */}
@@ -245,9 +256,9 @@ export default function CommissionsPage() {
             </div>
           </div>
         ) : data ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className={`grid grid-cols-1 sm:grid-cols-2 ${isAdmin ? "lg:grid-cols-4" : ""} gap-4`}>
             <StatsCard
-              title="Total Commissions This Month"
+              title={isAdmin ? "Total Commissions This Month" : "My Commissions This Month"}
               value={formatCurrency(data.totalCommissionsThisMonth)}
               icon={DollarSign}
               trend={
@@ -265,26 +276,30 @@ export default function CommissionsPage() {
               icon={TrendingUp}
               subtitle="Previous period total"
             />
-            <StatsCard
-              title="Month-over-Month"
-              value={`${data.monthOverMonthChange > 0 ? "+" : ""}${data.monthOverMonthChange.toFixed(1)}%`}
-              icon={AlertTriangle}
-              subtitle={
-                data.pendingReconciliations > 0
-                  ? `${data.pendingReconciliations} pending reconciliation${data.pendingReconciliations !== 1 ? "s" : ""}`
-                  : "All reconciled"
-              }
-            />
-            <StatsCard
-              title="Active Agents"
-              value={data.activeAgents}
-              icon={Users}
-              subtitle={
-                data.unresolvedAnomalies > 0
-                  ? `${data.unresolvedAnomalies} unresolved anomal${data.unresolvedAnomalies !== 1 ? "ies" : "y"}`
-                  : "No anomalies"
-              }
-            />
+            {isAdmin && (
+              <>
+                <StatsCard
+                  title="Month-over-Month"
+                  value={`${data.monthOverMonthChange > 0 ? "+" : ""}${data.monthOverMonthChange.toFixed(1)}%`}
+                  icon={AlertTriangle}
+                  subtitle={
+                    data.pendingReconciliations > 0
+                      ? `${data.pendingReconciliations} pending reconciliation${data.pendingReconciliations !== 1 ? "s" : ""}`
+                      : "All reconciled"
+                  }
+                />
+                <StatsCard
+                  title="Active Agents"
+                  value={data.activeAgents}
+                  icon={Users}
+                  subtitle={
+                    data.unresolvedAnomalies > 0
+                      ? `${data.unresolvedAnomalies} unresolved anomal${data.unresolvedAnomalies !== 1 ? "ies" : "y"}`
+                      : "No anomalies"
+                  }
+                />
+              </>
+            )}
           </div>
         ) : null}
 
@@ -296,7 +311,7 @@ export default function CommissionsPage() {
             Quick Links
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {QUICK_LINKS.map((link) => {
+            {QUICK_LINKS.filter((link) => isAdmin || !link.adminOnly).map((link) => {
               const Icon = link.icon;
               return (
                 <Link key={link.href} href={link.href}>
@@ -319,9 +334,9 @@ export default function CommissionsPage() {
         </section>
 
         {/* ================================================================= */}
-        {/* RECENT IMPORTS TABLE                                               */}
+        {/* RECENT IMPORTS TABLE (admin only)                                  */}
         {/* ================================================================= */}
-        <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+        {isAdmin && <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
               Recent Imports
@@ -427,7 +442,7 @@ export default function CommissionsPage() {
               </Link>
             </div>
           )}
-        </section>
+        </section>}
       </div>
     </div>
   );

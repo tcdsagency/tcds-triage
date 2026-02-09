@@ -6,14 +6,16 @@ import { db } from "@/db";
 import { commissionDrawBalances, commissionAgents } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { calculateAllDrawBalances } from "@/lib/commissions/draw-calculator";
+import { getCommissionUser } from "@/lib/commissions/auth";
 
 // GET - Get draw balances for a month
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    const { tenantId, isAdmin } = commUser;
 
     const { searchParams } = new URL(request.url);
     const month = searchParams.get("month");
@@ -26,8 +28,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Recalculate if requested
+    // Recalculate is admin-only
     if (recalculate === "true") {
+      if (!isAdmin) {
+        return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+      }
       const calcResults = await calculateAllDrawBalances(tenantId, month);
       return NextResponse.json({
         success: true,
@@ -37,7 +42,19 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Otherwise return stored balances with agent info
+    // Build conditions - non-admins only see their own draw balance
+    const conditions = [
+      eq(commissionDrawBalances.tenantId, tenantId),
+      eq(commissionDrawBalances.reportingMonth, month),
+    ];
+    if (!isAdmin) {
+      if (!commUser.agentId) {
+        return NextResponse.json({ success: true, data: [], count: 0 });
+      }
+      conditions.push(eq(commissionDrawBalances.agentId, commUser.agentId));
+    }
+
+    // Return stored balances with agent info
     const results = await db
       .select({
         id: commissionDrawBalances.id,
@@ -58,12 +75,7 @@ export async function GET(request: NextRequest) {
         commissionAgents,
         eq(commissionDrawBalances.agentId, commissionAgents.id)
       )
-      .where(
-        and(
-          eq(commissionDrawBalances.tenantId, tenantId),
-          eq(commissionDrawBalances.reportingMonth, month)
-        )
-      );
+      .where(and(...conditions));
 
     return NextResponse.json({
       success: true,

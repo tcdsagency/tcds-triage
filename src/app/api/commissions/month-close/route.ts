@@ -5,14 +5,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionMonthCloseStatus } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { requireAdmin } from "@/lib/commissions/auth";
 
 // GET - Get month close status
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const { searchParams } = new URL(request.url);
     const month = searchParams.get("month");

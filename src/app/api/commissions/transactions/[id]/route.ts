@@ -5,6 +5,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionTransactions, commissionAllocations } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { getCommissionUser, getAgentTransactionFilter } from "@/lib/commissions/auth";
+
+/**
+ * For non-admin users, verify a transaction belongs to them (notes contains their agent code).
+ */
+function canAccessTransaction(transaction: { notes: string | null }, agentCodes: string[]): boolean {
+  if (!transaction.notes) return false;
+  return agentCodes.some((code) => transaction.notes!.includes(`Agent 1: ${code} `));
+}
 
 // GET - Get single transaction
 export async function GET(
@@ -13,10 +22,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    const { tenantId, isAdmin } = commUser;
 
     const [transaction] = await db
       .select()
@@ -25,6 +35,10 @@ export async function GET(
       .limit(1);
 
     if (!transaction) {
+      return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
+    }
+
+    if (!isAdmin && !canAccessTransaction(transaction, commUser.agentCodes)) {
       return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
     }
 
@@ -41,17 +55,21 @@ export async function GET(
   }
 }
 
-// PATCH - Update transaction fields
+// PATCH - Update transaction fields (admin-only)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    if (!commUser.isAdmin) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+    const { tenantId } = commUser;
 
     const body = await request.json();
 
@@ -81,17 +99,21 @@ export async function PATCH(
   }
 }
 
-// DELETE - Delete transaction and related allocations
+// DELETE - Delete transaction and related allocations (admin-only)
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    if (!commUser.isAdmin) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+    const { tenantId } = commUser;
 
     // Explicitly delete related allocations for safety (FK cascade also handles this)
     await db

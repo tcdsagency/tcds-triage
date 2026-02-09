@@ -5,14 +5,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionDrawPayments } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { getCommissionUser } from "@/lib/commissions/auth";
 
 // GET - List draw payments with optional month and agent filtering
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    const { tenantId, isAdmin } = commUser;
 
     const { searchParams } = new URL(request.url);
     const month = searchParams.get("month");
@@ -20,11 +22,18 @@ export async function GET(request: NextRequest) {
 
     const conditions = [eq(commissionDrawPayments.tenantId, tenantId)];
 
+    // Non-admins only see their own draw payments
+    if (!isAdmin) {
+      if (!commUser.agentId) {
+        return NextResponse.json({ success: true, data: [], count: 0 });
+      }
+      conditions.push(eq(commissionDrawPayments.agentId, commUser.agentId));
+    } else if (agentId) {
+      conditions.push(eq(commissionDrawPayments.agentId, agentId));
+    }
+
     if (month) {
       conditions.push(eq(commissionDrawPayments.reportingMonth, month));
-    }
-    if (agentId) {
-      conditions.push(eq(commissionDrawPayments.agentId, agentId));
     }
 
     const results = await db
@@ -47,13 +56,17 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create new draw payment
+// POST - Create new draw payment (admin-only)
 export async function POST(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    if (!commUser.isAdmin) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+    const { tenantId } = commUser;
 
     const body = await request.json();
 

@@ -10,14 +10,16 @@ import {
   commissionDrawPayments,
 } from "@/db/schema";
 import { eq, and, sql, like, or } from "drizzle-orm";
+import { getCommissionUser } from "@/lib/commissions/auth";
 
 // GET - Agent statement for a given agent and month
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    const { tenantId, isAdmin } = commUser;
 
     const { searchParams } = new URL(request.url);
     const agentId = searchParams.get("agentId");
@@ -28,6 +30,11 @@ export async function GET(request: NextRequest) {
         { error: "agentId and month query parameters are required" },
         { status: 400 }
       );
+    }
+
+    // Non-admins can only request their own agent statement
+    if (!isAdmin && commUser.agentId !== agentId) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     // Get agent info

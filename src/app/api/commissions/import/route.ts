@@ -6,13 +6,13 @@ import { db } from "@/db";
 import { commissionImportBatches } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { parseCSV } from "@/lib/commissions/csv-parser";
+import { requireAdmin } from "@/lib/commissions/auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const body = await request.json();
     const { fileName, csvText, carrierId } = body;

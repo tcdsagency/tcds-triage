@@ -11,6 +11,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { parseCurrency, parseDate } from "@/lib/commissions/csv-parser";
 import { generateDedupeHash } from "@/lib/commissions/dedup";
+import { requireAdmin } from "@/lib/commissions/auth";
 
 const AMOUNT_FIELDS = ["grossPremium", "commissionAmount", "agent1Amount", "agent2Amount"];
 const DATE_FIELDS = ["effectiveDate", "statementDate", "agentPaidDate"];
@@ -20,10 +21,9 @@ export async function GET(
   { params }: { params: Promise<{ batchId: string }> }
 ) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const { batchId } = await params;
 

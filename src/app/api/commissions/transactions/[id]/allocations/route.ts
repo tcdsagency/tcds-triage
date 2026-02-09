@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionTransactions, commissionAllocations, commissionAgents } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { requireAdmin } from "@/lib/commissions/auth";
 
 // GET - List allocations for a transaction with agent names
 export async function GET(
@@ -13,10 +14,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const results = await db
       .select({
@@ -55,10 +55,9 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const body = await request.json();
 

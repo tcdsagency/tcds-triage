@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionAnomalies } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { requireAdmin } from "@/lib/commissions/auth";
 
 // PATCH - Resolve anomaly
 export async function PATCH(
@@ -13,10 +14,9 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const body = await request.json();
 

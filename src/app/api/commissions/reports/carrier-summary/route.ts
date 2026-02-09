@@ -5,14 +5,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionTransactions } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
+import { getCommissionUser, getAgentTransactionFilter } from "@/lib/commissions/auth";
 
 // GET - Carrier summary for a month
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    const { tenantId, isAdmin } = commUser;
 
     const { searchParams } = new URL(request.url);
     const month = searchParams.get("month");
@@ -24,6 +26,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Build conditions
+    const conditions = [
+      eq(commissionTransactions.tenantId, tenantId),
+      eq(commissionTransactions.reportingMonth, month),
+    ];
+
+    if (!isAdmin) {
+      const agentFilter = getAgentTransactionFilter(commUser.agentCodes);
+      if (!agentFilter) {
+        return NextResponse.json({ success: true, data: [], count: 0 });
+      }
+      conditions.push(agentFilter);
+    }
+
     // Group by carrier name directly (carrierId may not be populated)
     const results = await db
       .select({
@@ -33,12 +49,7 @@ export async function GET(request: NextRequest) {
         totalPremium: sql<string>`COALESCE(SUM(CAST(${commissionTransactions.grossPremium} AS DECIMAL(12,2))), 0)`,
       })
       .from(commissionTransactions)
-      .where(
-        and(
-          eq(commissionTransactions.tenantId, tenantId),
-          eq(commissionTransactions.reportingMonth, month)
-        )
-      )
+      .where(and(...conditions))
       .groupBy(commissionTransactions.carrierName)
       .orderBy(sql`COALESCE(SUM(CAST(${commissionTransactions.commissionAmount} AS DECIMAL(12,2))), 0) DESC`);
 

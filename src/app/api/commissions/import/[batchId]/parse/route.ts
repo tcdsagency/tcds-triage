@@ -5,16 +5,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionImportBatches } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { requireAdmin } from "@/lib/commissions/auth";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ batchId: string }> }
 ) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const { batchId } = await params;
 

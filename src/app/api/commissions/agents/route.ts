@@ -5,14 +5,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionAgents } from "@/db/schema";
 import { eq, and, ilike, or } from "drizzle-orm";
+import { requireAdmin } from "@/lib/commissions/auth";
 
 // GET - List agents with optional search and active filtering
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search");
@@ -65,10 +65,9 @@ export async function GET(request: NextRequest) {
 // POST - Create new commission agent
 export async function POST(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const body = await request.json();
 

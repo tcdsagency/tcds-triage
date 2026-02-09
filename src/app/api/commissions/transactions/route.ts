@@ -5,14 +5,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionTransactions } from "@/db/schema";
 import { eq, and, ilike, or, desc, sql } from "drizzle-orm";
+import { getCommissionUser, getAgentTransactionFilter } from "@/lib/commissions/auth";
 
 // GET - List transactions with filters and pagination
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    const { tenantId, isAdmin } = commUser;
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search");
@@ -24,6 +26,15 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
 
     const conditions = [eq(commissionTransactions.tenantId, tenantId)];
+
+    // Non-admins only see their own transactions
+    if (!isAdmin) {
+      const agentFilter = getAgentTransactionFilter(commUser.agentCodes);
+      if (!agentFilter) {
+        return NextResponse.json({ success: true, data: [], count: 0, page, limit, totalPages: 0 });
+      }
+      conditions.push(agentFilter);
+    }
 
     if (carrierId) {
       conditions.push(eq(commissionTransactions.carrierId, carrierId));
@@ -80,10 +91,11 @@ export async function GET(request: NextRequest) {
 // POST - Create manual transaction entry
 export async function POST(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    const { tenantId } = commUser;
 
     const body = await request.json();
 

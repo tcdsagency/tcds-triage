@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionCarriers, commissionCarrierAliases } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { requireAdmin } from "@/lib/commissions/auth";
 
 // GET - Get single carrier with aliases
 export async function GET(
@@ -13,10 +14,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const [carrier] = await db
       .select()
@@ -53,10 +53,9 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const body = await request.json();
 
@@ -98,10 +97,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const [deleted] = await db
       .delete(commissionCarriers)

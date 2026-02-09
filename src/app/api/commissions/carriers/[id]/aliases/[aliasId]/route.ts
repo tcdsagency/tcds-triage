@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionCarrierAliases } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { requireAdmin } from "@/lib/commissions/auth";
 
 // DELETE - Delete a carrier alias
 export async function DELETE(
@@ -13,10 +14,9 @@ export async function DELETE(
 ) {
   try {
     const { id, aliasId } = await params;
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const [deleted] = await db
       .delete(commissionCarrierAliases)

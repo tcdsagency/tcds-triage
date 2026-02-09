@@ -5,14 +5,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { commissionFieldMappings } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { requireAdmin } from "@/lib/commissions/auth";
 
 // GET - List field mappings
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const results = await db
       .select()
@@ -36,10 +36,9 @@ export async function GET(request: NextRequest) {
 // POST - Create new field mapping
 export async function POST(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
+    const adminResult = await requireAdmin();
+    if (adminResult instanceof NextResponse) return adminResult;
+    const { tenantId } = adminResult;
 
     const body = await request.json();
 

@@ -9,15 +9,17 @@ import {
   commissionCarriers,
   commissionAgents,
 } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, SQL } from "drizzle-orm";
+import { getCommissionUser, getAgentTransactionFilter } from "@/lib/commissions/auth";
 
 // GET - Export CSV
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    const { tenantId, isAdmin } = commUser;
 
     const { searchParams } = new URL(request.url);
     const month = searchParams.get("month");
@@ -33,9 +35,12 @@ export async function GET(request: NextRequest) {
     let csv = "";
     let filename = "";
 
+    // Build agent filter for non-admins
+    const agentFilter = !isAdmin ? getAgentTransactionFilter(commUser.agentCodes) : undefined;
+
     switch (type) {
       case "transactions": {
-        csv = await exportTransactions(tenantId, month);
+        csv = await exportTransactions(tenantId, month, agentFilter);
         filename = `commission-transactions-${month}.csv`;
         break;
       }
@@ -47,12 +52,16 @@ export async function GET(request: NextRequest) {
             { status: 400 }
           );
         }
+        // Non-admins can only export their own agent statement
+        if (!isAdmin && commUser.agentId !== agentId) {
+          return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        }
         csv = await exportAgentStatement(tenantId, month, agentId);
         filename = `agent-statement-${month}.csv`;
         break;
       }
       case "carrier-summary": {
-        csv = await exportCarrierSummary(tenantId, month);
+        csv = await exportCarrierSummary(tenantId, month, agentFilter);
         filename = `carrier-summary-${month}.csv`;
         break;
       }
@@ -88,16 +97,17 @@ function escapeCsv(value: string | number | null | undefined): string {
   return str;
 }
 
-async function exportTransactions(tenantId: string, month: string): Promise<string> {
+async function exportTransactions(tenantId: string, month: string, agentFilter?: SQL): Promise<string> {
+  const conditions = [
+    eq(commissionTransactions.tenantId, tenantId),
+    eq(commissionTransactions.reportingMonth, month),
+  ];
+  if (agentFilter) conditions.push(agentFilter);
+
   const rows = await db
     .select()
     .from(commissionTransactions)
-    .where(
-      and(
-        eq(commissionTransactions.tenantId, tenantId),
-        eq(commissionTransactions.reportingMonth, month)
-      )
-    );
+    .where(and(...conditions));
 
   const headers = [
     "Policy Number",
@@ -206,7 +216,13 @@ async function exportAgentStatement(tenantId: string, month: string, agentId: st
   return lines.join("\n");
 }
 
-async function exportCarrierSummary(tenantId: string, month: string): Promise<string> {
+async function exportCarrierSummary(tenantId: string, month: string, agentFilter?: SQL): Promise<string> {
+  const conditions = [
+    eq(commissionTransactions.tenantId, tenantId),
+    eq(commissionTransactions.reportingMonth, month),
+  ];
+  if (agentFilter) conditions.push(agentFilter);
+
   const results = await db
     .select({
       carrierName: commissionCarriers.name,
@@ -220,12 +236,7 @@ async function exportCarrierSummary(tenantId: string, month: string): Promise<st
       commissionCarriers,
       eq(commissionTransactions.carrierId, commissionCarriers.id)
     )
-    .where(
-      and(
-        eq(commissionTransactions.tenantId, tenantId),
-        eq(commissionTransactions.reportingMonth, month)
-      )
-    )
+    .where(and(...conditions))
     .groupBy(
       commissionCarriers.name,
       commissionTransactions.transactionType

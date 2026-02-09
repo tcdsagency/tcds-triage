@@ -11,14 +11,16 @@ import {
   commissionImportBatches,
 } from "@/db/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
+import { getCommissionUser, getAgentTransactionFilter } from "@/lib/commissions/auth";
 
 // GET - Dashboard stats
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
+    const commUser = await getCommissionUser();
+    if (!commUser) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+    const { tenantId, isAdmin } = commUser;
 
     // Current month in YYYY-MM format
     const now = new Date();
@@ -28,33 +30,52 @@ export async function GET(request: NextRequest) {
     const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
 
+    // Agent filter for non-admins
+    const agentFilter = !isAdmin ? getAgentTransactionFilter(commUser.agentCodes) : undefined;
+    // If non-admin with no agent codes, they have no transactions
+    if (!isAdmin && !agentFilter) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          totalCommissionsThisMonth: 0,
+          totalCommissionsLastMonth: 0,
+          monthOverMonthChange: 0,
+          currentMonth,
+          lastMonth,
+          isAdmin: false,
+        },
+      });
+    }
+
     // Total commissions this month
+    const thisMonthConditions = [
+      eq(commissionTransactions.tenantId, tenantId),
+      eq(commissionTransactions.reportingMonth, currentMonth),
+    ];
+    if (agentFilter) thisMonthConditions.push(agentFilter);
+
     const [thisMonthResult] = await db
       .select({
         total: sql<string>`COALESCE(SUM(CAST(${commissionTransactions.commissionAmount} AS DECIMAL(12,2))), 0)`,
       })
       .from(commissionTransactions)
-      .where(
-        and(
-          eq(commissionTransactions.tenantId, tenantId),
-          eq(commissionTransactions.reportingMonth, currentMonth)
-        )
-      );
+      .where(and(...thisMonthConditions));
 
     const totalCommissionsThisMonth = parseFloat(thisMonthResult?.total || "0");
 
     // Total commissions last month
+    const lastMonthConditions = [
+      eq(commissionTransactions.tenantId, tenantId),
+      eq(commissionTransactions.reportingMonth, lastMonth),
+    ];
+    if (agentFilter) lastMonthConditions.push(agentFilter);
+
     const [lastMonthResult] = await db
       .select({
         total: sql<string>`COALESCE(SUM(CAST(${commissionTransactions.commissionAmount} AS DECIMAL(12,2))), 0)`,
       })
       .from(commissionTransactions)
-      .where(
-        and(
-          eq(commissionTransactions.tenantId, tenantId),
-          eq(commissionTransactions.reportingMonth, lastMonth)
-        )
-      );
+      .where(and(...lastMonthConditions));
 
     const totalCommissionsLastMonth = parseFloat(lastMonthResult?.total || "0");
 
@@ -64,70 +85,71 @@ export async function GET(request: NextRequest) {
         ? ((totalCommissionsThisMonth - totalCommissionsLastMonth) / totalCommissionsLastMonth) * 100
         : 0;
 
-    // Pending reconciliations (status != 'matched')
-    const [reconResult] = await db
-      .select({
-        count: sql<number>`COUNT(*)`,
-      })
-      .from(commissionCarrierReconciliation)
-      .where(
-        and(
-          eq(commissionCarrierReconciliation.tenantId, tenantId),
-          sql`${commissionCarrierReconciliation.status} != 'matched'`
-        )
-      );
+    // Admin-only stats
+    let pendingReconciliations = 0;
+    let unresolvedAnomalies = 0;
+    let activeAgents = 0;
+    let recentImports: any[] = [];
 
-    const pendingReconciliations = Number(reconResult?.count || 0);
+    if (isAdmin) {
+      const [reconResult] = await db
+        .select({
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(commissionCarrierReconciliation)
+        .where(
+          and(
+            eq(commissionCarrierReconciliation.tenantId, tenantId),
+            sql`${commissionCarrierReconciliation.status} != 'matched'`
+          )
+        );
+      pendingReconciliations = Number(reconResult?.count || 0);
 
-    // Unresolved anomalies
-    const [anomalyResult] = await db
-      .select({
-        count: sql<number>`COUNT(*)`,
-      })
-      .from(commissionAnomalies)
-      .where(
-        and(
-          eq(commissionAnomalies.tenantId, tenantId),
-          eq(commissionAnomalies.isResolved, false)
-        )
-      );
+      const [anomalyResult] = await db
+        .select({
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(commissionAnomalies)
+        .where(
+          and(
+            eq(commissionAnomalies.tenantId, tenantId),
+            eq(commissionAnomalies.isResolved, false)
+          )
+        );
+      unresolvedAnomalies = Number(anomalyResult?.count || 0);
 
-    const unresolvedAnomalies = Number(anomalyResult?.count || 0);
+      const [agentResult] = await db
+        .select({
+          count: sql<number>`COUNT(*)`,
+        })
+        .from(commissionAgents)
+        .where(
+          and(
+            eq(commissionAgents.tenantId, tenantId),
+            eq(commissionAgents.isActive, true)
+          )
+        );
+      activeAgents = Number(agentResult?.count || 0);
 
-    // Active agents
-    const [agentResult] = await db
-      .select({
-        count: sql<number>`COUNT(*)`,
-      })
-      .from(commissionAgents)
-      .where(
-        and(
-          eq(commissionAgents.tenantId, tenantId),
-          eq(commissionAgents.isActive, true)
-        )
-      );
+      const rawBatches = await db
+        .select()
+        .from(commissionImportBatches)
+        .where(eq(commissionImportBatches.tenantId, tenantId))
+        .orderBy(desc(commissionImportBatches.createdAt))
+        .limit(5);
 
-    const activeAgents = Number(agentResult?.count || 0);
-
-    // Recent imports (last 5 batches)
-    const rawBatches = await db
-      .select()
-      .from(commissionImportBatches)
-      .where(eq(commissionImportBatches.tenantId, tenantId))
-      .orderBy(desc(commissionImportBatches.createdAt))
-      .limit(5);
-
-    const recentImports = rawBatches.map((b) => ({
-      id: b.id,
-      fileName: b.fileName,
-      status: b.status,
-      totalRows: b.totalRows || 0,
-      importedRows: b.importedRows || 0,
-      skippedRows: b.skippedRows || 0,
-      errorRows: b.errorRows || 0,
-      duplicateRows: b.duplicateRows || 0,
-      createdAt: b.createdAt,
-    }));
+      recentImports = rawBatches.map((b) => ({
+        id: b.id,
+        fileName: b.fileName,
+        status: b.status,
+        totalRows: b.totalRows || 0,
+        importedRows: b.importedRows || 0,
+        skippedRows: b.skippedRows || 0,
+        errorRows: b.errorRows || 0,
+        duplicateRows: b.duplicateRows || 0,
+        createdAt: b.createdAt,
+      }));
+    }
 
     return NextResponse.json({
       success: true,
@@ -141,6 +163,7 @@ export async function GET(request: NextRequest) {
         recentImports,
         currentMonth,
         lastMonth,
+        isAdmin,
       },
     });
   } catch (error: unknown) {

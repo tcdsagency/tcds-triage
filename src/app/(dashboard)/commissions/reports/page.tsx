@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Loader2,
   AlertTriangle,
@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { MonthSelector } from "@/components/commissions/MonthSelector";
 import { AgentSelector } from "@/components/commissions/AgentSelector";
 import { formatCurrency } from "@/lib/commissions/formatters";
+import { useCommissionUser } from "@/hooks/useCommissionUser";
 
 // =============================================================================
 // TYPES
@@ -48,13 +49,21 @@ interface CarrierSummaryRow {
 // =============================================================================
 
 export default function ReportsPage() {
+  const { data: commUser, isAdmin } = useCommissionUser();
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().slice(0, 7)
   );
 
-  // Agent Statement state
+  // Agent Statement state - non-admins auto-select their own agentId
   const [agentId, setAgentId] = useState<string | null>(null);
   const [agentName, setAgentName] = useState<string | null>(null);
+
+  // Auto-set agentId for non-admin users once we know their commission context
+  useEffect(() => {
+    if (commUser && !commUser.isAdmin && commUser.agentId && !agentId) {
+      setAgentId(commUser.agentId);
+    }
+  }, [commUser, agentId]);
   const [agentStatement, setAgentStatement] = useState<AgentStatementData | null>(null);
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
@@ -208,19 +217,21 @@ export default function ReportsPage() {
 
           <div className="px-6 py-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
-              <div className="w-full sm:w-64">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Agent
-                </label>
-                <AgentSelector
-                  value={agentId}
-                  onChange={(id, name) => {
-                    setAgentId(id);
-                    setAgentName(name || null);
-                  }}
-                  placeholder="Select agent..."
-                />
-              </div>
+              {isAdmin && (
+                <div className="w-full sm:w-64">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Agent
+                  </label>
+                  <AgentSelector
+                    value={agentId}
+                    onChange={(id, name) => {
+                      setAgentId(id);
+                      setAgentName(name || null);
+                    }}
+                    placeholder="Select agent..."
+                  />
+                </div>
+              )}
               <button
                 onClick={handleGenerateAgentStatement}
                 disabled={agentLoading || !agentId}
