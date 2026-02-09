@@ -105,7 +105,7 @@ const QUICK_LINKS = [
   {
     label: "Draw Accounts",
     description: "Draw balances and repayments",
-    href: "/commissions/draws",
+    href: "/commissions/draw-accounts",
     icon: Wallet,
     color: "text-cyan-600 dark:text-cyan-400",
     bg: "bg-cyan-50 dark:bg-cyan-900/20",

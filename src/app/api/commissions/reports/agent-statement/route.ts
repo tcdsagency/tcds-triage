@@ -1,15 +1,15 @@
 // API Route: /api/commissions/reports/agent-statement
-// Agent statement report - transactions, totals, and net payable
+// Agent statement report - transactions and totals for an agent
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import {
   commissionAgents,
-  commissionAllocations,
+  commissionAgentCodes,
   commissionTransactions,
   commissionDrawPayments,
 } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, like, or } from "drizzle-orm";
 
 // GET - Agent statement for a given agent and month
 export async function GET(request: NextRequest) {
@@ -46,55 +46,90 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
 
-    // Get allocations + transaction details for this agent/month
+    // Get agent codes for this agent
+    const agentCodes = await db
+      .select({ code: commissionAgentCodes.code })
+      .from(commissionAgentCodes)
+      .where(
+        and(
+          eq(commissionAgentCodes.tenantId, tenantId),
+          eq(commissionAgentCodes.agentId, agentId)
+        )
+      );
+
+    if (agentCodes.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          agentName: `${agent.firstName} ${agent.lastName}`,
+          totalCommission: 0,
+          totalDrawPayments: 0,
+          netPayable: 0,
+          transactions: [],
+        },
+      });
+    }
+
+    // Query transactions where notes contain any of this agent's codes
+    // Notes format: "Agent 1: TJC TJC - Todd Conn 50% $-8.83"
+    const codeConditions = agentCodes.map((ac) =>
+      like(commissionTransactions.notes, `%Agent 1: ${ac.code} %`)
+    );
+
     const transactions = await db
       .select({
-        allocationId: commissionAllocations.id,
-        transactionId: commissionTransactions.id,
+        id: commissionTransactions.id,
         policyNumber: commissionTransactions.policyNumber,
         carrierName: commissionTransactions.carrierName,
         insuredName: commissionTransactions.insuredName,
         transactionType: commissionTransactions.transactionType,
-        lineOfBusiness: commissionTransactions.lineOfBusiness,
-        effectiveDate: commissionTransactions.effectiveDate,
-        grossPremium: commissionTransactions.grossPremium,
-        commissionRate: commissionTransactions.commissionRate,
         commissionAmount: commissionTransactions.commissionAmount,
-        splitPercent: commissionAllocations.splitPercent,
-        splitAmount: commissionAllocations.splitAmount,
+        effectiveDate: commissionTransactions.effectiveDate,
+        notes: commissionTransactions.notes,
       })
-      .from(commissionAllocations)
-      .innerJoin(
-        commissionTransactions,
-        eq(commissionAllocations.transactionId, commissionTransactions.id)
-      )
+      .from(commissionTransactions)
       .where(
         and(
-          eq(commissionAllocations.tenantId, tenantId),
-          eq(commissionAllocations.agentId, agentId),
-          eq(commissionTransactions.reportingMonth, month)
+          eq(commissionTransactions.tenantId, tenantId),
+          eq(commissionTransactions.reportingMonth, month),
+          codeConditions.length === 1 ? codeConditions[0] : or(...codeConditions)
         )
       );
 
-    // Sum total commission for the agent
-    const [commTotal] = await db
-      .select({
-        total: sql<string>`COALESCE(SUM(CAST(${commissionAllocations.splitAmount} AS DECIMAL(12,2))), 0)`,
-      })
-      .from(commissionAllocations)
-      .innerJoin(
-        commissionTransactions,
-        eq(commissionAllocations.transactionId, commissionTransactions.id)
-      )
-      .where(
-        and(
-          eq(commissionAllocations.tenantId, tenantId),
-          eq(commissionAllocations.agentId, agentId),
-          eq(commissionTransactions.reportingMonth, month)
-        )
-      );
+    // Parse agent split amount from notes
+    // Format: "Agent 1: TJC TJC - Todd Conn 50% $-8.83"
+    function parseAgentAmount(notes: string | null, codes: string[]): number | null {
+      if (!notes) return null;
+      for (const code of codes) {
+        // Match "Agent 1: CODE ... $amount" or "Agent 2: CODE ... $amount"
+        const pattern = new RegExp(`Agent \\d: ${code} .*?\\$([-\\d.]+)`);
+        const match = notes.match(pattern);
+        if (match) {
+          return parseFloat(match[1]);
+        }
+      }
+      return null;
+    }
 
-    const totalCommission = parseFloat(commTotal?.total || "0");
+    const codes = agentCodes.map((ac) => ac.code);
+
+    const mappedTransactions = transactions.map((txn) => {
+      const splitAmount = parseAgentAmount(txn.notes, codes);
+      return {
+        id: txn.id,
+        policyNumber: txn.policyNumber,
+        carrierName: txn.carrierName,
+        insuredName: txn.insuredName,
+        transactionType: txn.transactionType,
+        commissionAmount: splitAmount ?? parseFloat(txn.commissionAmount),
+        effectiveDate: txn.effectiveDate,
+      };
+    });
+
+    const totalCommission = mappedTransactions.reduce(
+      (sum, t) => sum + t.commissionAmount,
+      0
+    );
 
     // Get draw payments for this agent/month
     const drawPayments = await db
@@ -118,18 +153,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        agent: {
-          id: agent.id,
-          firstName: agent.firstName,
-          lastName: agent.lastName,
-          email: agent.email,
-          role: agent.role,
-        },
-        transactions,
-        totalCommission,
-        drawPayments,
-        totalDrawPayments,
-        netPayable,
+        agentName: `${agent.firstName} ${agent.lastName}`,
+        totalCommission: Math.round(totalCommission * 100) / 100,
+        totalDrawPayments: Math.round(totalDrawPayments * 100) / 100,
+        netPayable: Math.round(netPayable * 100) / 100,
+        transactions: mappedTransactions,
       },
     });
   } catch (error: unknown) {
