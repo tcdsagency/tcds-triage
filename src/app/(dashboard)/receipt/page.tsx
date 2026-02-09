@@ -553,21 +553,22 @@ export default function ReceiptGeneratorPage() {
       const pdfBytes = await pdfDoc.save();
       setGeneratedPdf(pdfBytes);
 
-      // Auto-download the PDF (create new Uint8Array to avoid SharedArrayBuffer type issues)
+      // Auto-print the PDF
       const downloadBytes = new Uint8Array(pdfBytes);
       const blob = new Blob([downloadBytes], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Receipt-${formData.receiptNumber}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+
+      // Open in new window and trigger print
+      const printWindow = window.open(url, "_blank");
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+      }
 
       setNotification({
         type: "success",
-        message: "Receipt generated and downloaded!",
+        message: "Receipt generated!",
       });
     } catch (error) {
       console.error("PDF generation error:", error);
