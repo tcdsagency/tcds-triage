@@ -856,6 +856,29 @@ async function createAutoTicketForPollCall(params: {
       return;
     }
 
+    // Phone-based dedup: check if a ticket was already created for this phone in the last hour
+    // This catches cross-wrapup duplicates where the webhook and SQL poll created separate wrapups
+    if (customerPhone) {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const [recentPhoneTicket] = await db
+        .select({ id: serviceTickets.id, azTicketId: serviceTickets.azTicketId, subject: serviceTickets.subject })
+        .from(serviceTickets)
+        .innerJoin(wrapupDrafts, eq(serviceTickets.wrapupDraftId, wrapupDrafts.id))
+        .where(
+          and(
+            eq(serviceTickets.tenantId, tenantId),
+            gte(serviceTickets.createdAt, oneHourAgo),
+            ilike(wrapupDrafts.customerPhone, `%${phoneSuffix}`)
+          )
+        )
+        .limit(1);
+
+      if (recentPhoneTicket) {
+        console.log(`[TranscriptWorker] Recent ticket already exists for phone ${phoneSuffix} (AZ#${recentPhoneTicket.azTicketId}: ${recentPhoneTicket.subject?.slice(0, 50)}), skipping duplicate`);
+        return;
+      }
+    }
+
     // 8. Create ticket via AgencyZoom API
     const categoryId = SERVICE_CATEGORIES.GENERAL_SERVICE;
     const azClient = getAgencyZoomClient();
@@ -991,8 +1014,9 @@ async function pollSQLForMissedCalls(): Promise<{ found: number; processed: numb
       const phoneSuffix = (customerPhone || '').replace(/\D/g, '').slice(-10);
 
       if (phoneSuffix.length >= 7) {
-        // Check if a call already exists from this phone within ±3 minutes of the recording
-        const windowMs = 3 * 60 * 1000;
+        // Check if a call already exists from this phone within ±15 minutes of the recording
+        // (SQL Server recording timestamps can drift significantly from webhook call times)
+        const windowMs = 15 * 60 * 1000;
         const windowStart = new Date(transcript.recordingDate.getTime() - windowMs);
         const windowEnd = new Date(transcript.recordingDate.getTime() + windowMs);
 
