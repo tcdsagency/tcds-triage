@@ -1980,6 +1980,16 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
               : '';
             const ticketSubject = `Inbound Call: ${callReason}${subjectSuffix}`;
 
+            // Deduplication - check if ticket already exists for this wrapup
+            const [existingTicketForWrapup] = await db
+              .select({ id: serviceTickets.id, azTicketId: serviceTickets.azTicketId })
+              .from(serviceTickets)
+              .where(eq(serviceTickets.wrapupDraftId, txResult.wrapup!.id))
+              .limit(1);
+
+            if (existingTicketForWrapup) {
+              console.log(`[Call-Completed] 🎫 Ticket already exists for wrapup ${txResult.wrapup!.id} (AZ#${existingTicketForWrapup.azTicketId}), skipping`);
+            } else {
             // Create service ticket via AgencyZoom API
             const azClient = getAgencyZoomClient();
             const ticketResult = await azClient.createServiceTicket({
@@ -2049,6 +2059,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             } else {
               console.error(`[Call-Completed] ⚠️ Failed to create service ticket:`, ticketResult);
             }
+            } // end else (deduplication - no existing ticket)
             } // end else (not internal/test call)
           }
         } catch (ticketError) {

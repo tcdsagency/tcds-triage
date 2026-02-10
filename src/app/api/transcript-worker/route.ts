@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { pendingTranscriptJobs, wrapupDrafts, calls, customers, liveTranscriptSegments, users, tenants, serviceTickets } from "@/db/schema";
-import { eq, lte, and, sql, asc, or, ilike } from "drizzle-orm";
+import { eq, lte, gte, and, sql, asc, or, ilike } from "drizzle-orm";
 import { getMSSQLTranscriptsClient, TranscriptRecord } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 import {
@@ -832,7 +832,31 @@ async function createAutoTicketForPollCall(params: {
       ticketDescription += transcript;
     }
 
-    // 7. Create ticket via AgencyZoom API
+    // 7. Deduplication - check if ticket already exists for this wrapup
+    const [existingTicket] = await db
+      .select({ id: serviceTickets.id, azTicketId: serviceTickets.azTicketId })
+      .from(serviceTickets)
+      .where(eq(serviceTickets.wrapupDraftId, wrapupId))
+      .limit(1);
+
+    if (existingTicket) {
+      console.log(`[TranscriptWorker] Ticket already exists for wrapup ${wrapupId} (AZ#${existingTicket.azTicketId}), skipping`);
+      return;
+    }
+
+    // Also check if wrapup already has a ticket ID (set by webhook path)
+    const [currentWrapup] = await db
+      .select({ agencyzoomTicketId: wrapupDrafts.agencyzoomTicketId, status: wrapupDrafts.status })
+      .from(wrapupDrafts)
+      .where(eq(wrapupDrafts.id, wrapupId))
+      .limit(1);
+
+    if (currentWrapup?.agencyzoomTicketId) {
+      console.log(`[TranscriptWorker] Wrapup ${wrapupId} already has ticket AZ#${currentWrapup.agencyzoomTicketId}, skipping`);
+      return;
+    }
+
+    // 8. Create ticket via AgencyZoom API
     const categoryId = SERVICE_CATEGORIES.GENERAL_SERVICE;
     const azClient = getAgencyZoomClient();
     const ticketResult = await azClient.createServiceTicket({
@@ -950,10 +974,58 @@ async function pollSQLForMissedCalls(): Promise<{ found: number; processed: numb
       }
     }
 
-    // Find transcripts without wrapups
-    const missedTranscripts = records.filter(r => !existingSqlIds.has(r.id));
+    // Find transcripts without wrapups (by sqlRecordId)
+    let missedTranscripts = records.filter(r => !existingSqlIds.has(r.id));
 
     if (missedTranscripts.length === 0) {
+      return { found: records.length, processed: 0 };
+    }
+
+    // Secondary deduplication: check for existing calls with matching phone + timestamp
+    // This catches calls already processed by the webhook (which don't have sqlRecordId)
+    const furtherFiltered: typeof missedTranscripts = [];
+    for (const transcript of missedTranscripts) {
+      const customerPhone = transcript.direction === "inbound"
+        ? transcript.callerNumber
+        : transcript.calledNumber;
+      const phoneSuffix = (customerPhone || '').replace(/\D/g, '').slice(-10);
+
+      if (phoneSuffix.length >= 7) {
+        // Check if a call already exists from this phone within ±3 minutes of the recording
+        const windowMs = 3 * 60 * 1000;
+        const windowStart = new Date(transcript.recordingDate.getTime() - windowMs);
+        const windowEnd = new Date(transcript.recordingDate.getTime() + windowMs);
+
+        const [existingCall] = await db
+          .select({ id: calls.id })
+          .from(calls)
+          .where(
+            and(
+              eq(calls.tenantId, tenantId),
+              gte(calls.startedAt, windowStart),
+              lte(calls.startedAt, windowEnd),
+              or(
+                sql`${calls.fromNumber} LIKE ${'%' + phoneSuffix}`,
+                sql`${calls.toNumber} LIKE ${'%' + phoneSuffix}`,
+                sql`${calls.externalNumber} LIKE ${'%' + phoneSuffix}`
+              )
+            )
+          )
+          .limit(1);
+
+        if (existingCall) {
+          console.log(`[TranscriptWorker] Call already exists for ${phoneSuffix} at ${transcript.recordingDate.toISOString()} (call ${existingCall.id.slice(0, 8)}), skipping SQL record ${transcript.id}`);
+          continue;
+        }
+      }
+
+      furtherFiltered.push(transcript);
+    }
+
+    missedTranscripts = furtherFiltered;
+
+    if (missedTranscripts.length === 0) {
+      console.log(`[TranscriptWorker] All missed transcripts already have matching calls, nothing to process`);
       return { found: records.length, processed: 0 };
     }
 
