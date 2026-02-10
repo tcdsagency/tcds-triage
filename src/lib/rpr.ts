@@ -206,6 +206,7 @@ export interface RPRPropertyData {
     status: string;
   };
   currentStatus: "off_market" | "active" | "pending" | "sold" | "unknown";
+  listingPhotoUrl?: string;
 }
 
 interface TokenData {
@@ -633,7 +634,13 @@ class RPRClient {
         console.log(`[RPR] Listing data: price=${price}, DOM=${dom}, agent=${agent || 'N/A'}, status=${listingStatus}`);
       }
 
-      console.log(`[RPR] Lookup succeeded, status: ${currentStatus}`);
+      // Extract listing photo URL from RPR response
+      const listingPhotoUrl: string | undefined =
+        sr?.photos?.[0] || sr?.photoUrl || sr?.primaryPhoto ||
+        topLevel?.photos?.[0] || topLevel?.photoUrl || topLevel?.primaryPhotoUrl ||
+        undefined;
+
+      console.log(`[RPR] Lookup succeeded, status: ${currentStatus}${listingPhotoUrl ? ', has photo' : ''}`);
 
       // Build property data from API responses
       return {
@@ -715,6 +722,7 @@ class RPRClient {
         // Listing data
         listing,
         currentStatus,
+        listingPhotoUrl,
       };
     } catch (error: any) {
       console.error("[RPR] Lookup error:", error.message);

@@ -82,6 +82,7 @@ interface Alert {
   acknowledgedAt?: string;
   resolvedAt?: string;
   serviceTicketId?: string;
+  listingPhotoUrl?: string;
   policy?: {
     id: string;
     policyNumber: string;
@@ -852,8 +853,16 @@ function ExpandedPropertyPanel({
   creatingTicket: string | null;
   ticketMessage: { alertId: string; success: boolean; message: string } | null;
 }) {
+  // Get listing photo from the newest alert's rawData
+  const photoUrl = alerts.length > 0 ? alerts[0].listingPhotoUrl : undefined;
+
   return (
     <div className="px-4 pb-4 bg-gray-50 border-t border-gray-100">
+      {photoUrl && (
+        <div className="pt-3 pb-1">
+          <img src={photoUrl} alt="Property" className="w-full max-h-48 object-cover rounded-lg" />
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3">
         {/* Contact Info */}
         <div className="space-y-2">

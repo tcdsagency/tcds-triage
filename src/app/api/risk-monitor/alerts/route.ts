@@ -79,6 +79,7 @@ export async function GET(request: NextRequest) {
       success: true,
       alerts: results.map((r) => ({
         ...r.alert,
+        listingPhotoUrl: (r.alert.rawData as any)?.listingPhotoUrl || null,
         policy: r.policy,
       })),
       counts: statusCounts,

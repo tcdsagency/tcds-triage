@@ -18,7 +18,7 @@ import { mmiClient, type MMIPropertyData } from "@/lib/mmi";
 import { outlookClient } from "@/lib/outlook";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 import { normalizeAddress, type NormalizedAddress } from "./addressUtils";
-import { buildZillowUrl } from "@/lib/utils/zillow";
+import { buildZillowUrl, fetchZillowPropertyImage } from "@/lib/utils/zillow";
 
 // =============================================================================
 // TYPES
@@ -781,6 +781,21 @@ export class RiskMonitorScheduler {
       result.mmiData?.lastSalePrice ||
       result.rprData?.lastSalePrice;
 
+    // Fetch listing photo: try RPR first, fall back to Zillow OG image
+    let listingPhotoUrl: string | null = result.rprData?.listingPhotoUrl || null;
+    if (!listingPhotoUrl) {
+      try {
+        listingPhotoUrl = await fetchZillowPropertyImage({
+          street: policy.addressLine1,
+          city: policy.city,
+          state: policy.state,
+          zip: policy.zipCode,
+        });
+      } catch {
+        // Zillow scrape is best-effort
+      }
+    }
+
     // Create alert with full raw data for verification
     await db.insert(riskMonitorAlerts).values({
       tenantId: this.tenantId,
@@ -799,6 +814,7 @@ export class RiskMonitorScheduler {
         mmi: result.mmiData || null,
         rpr: result.rprData || null,
         checkedAt: new Date().toISOString(),
+        listingPhotoUrl,
         confidence: {
           score: result.confidenceScore ?? 0,
           factors: result.confidenceFactors ?? null,
@@ -820,7 +836,7 @@ export class RiskMonitorScheduler {
     // Send email notification if enabled (for all alert types: sold, pending, active)
     if (this.settings?.emailAlertsEnabled) {
       try {
-        await this.sendEmailAlert(policy, alertType, result);
+        await this.sendEmailAlert(policy, alertType, result, listingPhotoUrl);
       } catch (emailErr: any) {
         console.error(`[RiskMonitor] sendEmailAlert failed for ${policy.addressLine1}: ${emailErr.message}`);
         await this.logEvent("email_failed", policy.id, `Email send error: ${emailErr.message}`);
@@ -1084,7 +1100,8 @@ Detected: ${new Date().toLocaleString()}
   private async sendEmailAlert(
     policy: typeof riskMonitorPolicies.$inferSelect,
     alertType: string,
-    result: PropertyCheckResult
+    result: PropertyCheckResult,
+    listingPhotoUrl?: string | null
   ): Promise<void> {
     // Look up agent emails for this policy (CSR + Producer)
     const agentEmails = await this.getAgentEmailsForPolicy(policy);
@@ -1120,57 +1137,83 @@ Detected: ${new Date().toLocaleString()}
     const statusEmoji = alertType === "sold" ? "🏠" : alertType === "pending_sale" ? "⏳" : "📋";
     const zillowUrl = buildZillowUrl({ street: policy.addressLine1, city: policy.city, state: policy.state, zip: policy.zipCode });
 
+    // Fetch the listing photo URL from the just-created alert rawData
+    const photoUrl = listingPhotoUrl;
+
+    const statusLabel = alertType === "sold" ? "SOLD" : alertType === "pending_sale" ? "Pending Sale" : "Listed for Sale";
+    const statusColor = alertType === "sold" ? "#DC2626" : alertType === "pending_sale" ? "#EA580C" : "#CA8A04";
+
+    const whatThisMeans = alertType === "listing_detected"
+      ? "This customer's insured property has been listed for sale. This may indicate they are planning to move and could cancel or need changes to their policy."
+      : alertType === "pending_sale"
+      ? "This customer's insured property is under contract. A sale is likely imminent. Policy changes or cancellation may be needed soon."
+      : "This customer's insured property has sold. They may need to cancel their homeowners policy or transfer coverage to a new address.";
+
+    const suggestedActions = alertType === "listing_detected"
+      ? `<ol><li>Reach out to confirm they are selling</li><li>Ask if they have a new home that needs coverage</li><li>Discuss any policy changes needed during the listing period</li><li>Set a follow-up reminder to check back in 30 days</li></ol>`
+      : alertType === "pending_sale"
+      ? `<ol><li>Contact the customer to confirm the pending sale</li><li>Ask about the closing date and whether they need coverage through closing</li><li>Discuss coverage for their next home</li><li>Prepare for policy cancellation or transfer at closing</li></ol>`
+      : `<ol><li>Confirm the sale has closed</li><li>Process policy cancellation or update the insured property address</li><li>Check if they need coverage for a new home</li><li>Review their remaining policies for any cross-sell opportunities</li></ol>`;
+
+    const azProfileUrl = policy.azContactId ? `https://app.agencyzoom.com/customer/index?id=${policy.azContactId}` : null;
+    const tcdsAppUrl = policy.azContactId ? `https://tcds-triage.vercel.app/customers/${policy.azContactId}?azId=${policy.azContactId}` : null;
+
     const emailBody = `
-${statusEmoji} RISK MONITOR ALERT - ${title}
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
+  <div style="background: ${statusColor}; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+    <h2 style="margin: 0; font-size: 18px;">${statusEmoji} RISK MONITOR ALERT</h2>
+    <p style="margin: 4px 0 0; font-size: 14px; opacity: 0.9;">${title}</p>
+  </div>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  <div style="border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px; padding: 24px;">
+    ${photoUrl ? `<div style="margin-bottom: 16px;"><img src="${photoUrl}" alt="Property Photo" style="width: 100%; max-height: 250px; object-fit: cover; border-radius: 6px;" /></div>` : ""}
 
-CUSTOMER INFORMATION
-• Name: ${policy.contactName || "Unknown"}
-• Phone: ${policy.contactPhone || "N/A"}
-• Email: ${policy.contactEmail || "N/A"}
+    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+      <tr><td colspan="2" style="padding: 8px 0 4px; font-weight: 600; font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">Customer Information</td></tr>
+      <tr><td style="padding: 2px 0; color: #6b7280; width: 100px;">Name:</td><td style="padding: 2px 0; font-weight: 500;">${policy.contactName || "Unknown"}</td></tr>
+      <tr><td style="padding: 2px 0; color: #6b7280;">Phone:</td><td style="padding: 2px 0;">${policy.contactPhone || "N/A"}</td></tr>
+      <tr><td style="padding: 2px 0; color: #6b7280;">Email:</td><td style="padding: 2px 0;">${policy.contactEmail || "N/A"}</td></tr>
 
-PROPERTY DETAILS
-• Address: ${result.address}${zillowUrl ? `\n• Zillow: ${zillowUrl}` : ""}
-• Policy #: ${policy.policyNumber || "N/A"}
-• Carrier: ${policy.carrier || "N/A"}
+      <tr><td colspan="2" style="padding: 12px 0 4px; font-weight: 600; font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; border-top: 1px solid #f3f4f6;">Property Details</td></tr>
+      <tr><td style="padding: 2px 0; color: #6b7280;">Address:</td><td style="padding: 2px 0;">${result.address}</td></tr>
+      ${zillowUrl ? `<tr><td style="padding: 2px 0; color: #6b7280;">Zillow:</td><td style="padding: 2px 0;"><a href="${zillowUrl}" style="color: #2563eb;">${zillowUrl}</a></td></tr>` : ""}
+      <tr><td style="padding: 2px 0; color: #6b7280;">Policy #:</td><td style="padding: 2px 0;">${policy.policyNumber || "N/A"}</td></tr>
+      <tr><td style="padding: 2px 0; color: #6b7280;">Carrier:</td><td style="padding: 2px 0;">${policy.carrier || "N/A"}</td></tr>
 
-LISTING / SALE INFORMATION
-• Status: ${alertType === "sold" ? "SOLD" : alertType === "pending_sale" ? "Pending Sale" : "Listed for Sale"}
-• List Price: ${listPrice ? "$" + listPrice.toLocaleString() : "N/A"}
-${alertType === "sold" ? `• Sale Price: ${salePrice ? "$" + salePrice.toLocaleString() : "N/A"}` : ""}
-• List Date: ${listDate}
-${alertType === "sold" ? `• Sale Date: ${saleDate}` : ""}
-• Data Source: ${dataSource}
+      <tr><td colspan="2" style="padding: 12px 0 4px; font-weight: 600; font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; border-top: 1px solid #f3f4f6;">Listing / Sale Information</td></tr>
+      <tr><td style="padding: 2px 0; color: #6b7280;">Status:</td><td style="padding: 2px 0; font-weight: 600; color: ${statusColor};">${statusLabel}</td></tr>
+      <tr><td style="padding: 2px 0; color: #6b7280;">List Price:</td><td style="padding: 2px 0;">${listPrice ? "$" + listPrice.toLocaleString() : "N/A"}</td></tr>
+      ${alertType === "sold" ? `<tr><td style="padding: 2px 0; color: #6b7280;">Sale Price:</td><td style="padding: 2px 0;">${salePrice ? "$" + salePrice.toLocaleString() : "N/A"}</td></tr>` : ""}
+      <tr><td style="padding: 2px 0; color: #6b7280;">List Date:</td><td style="padding: 2px 0;">${listDate}</td></tr>
+      ${alertType === "sold" ? `<tr><td style="padding: 2px 0; color: #6b7280;">Sale Date:</td><td style="padding: 2px 0;">${saleDate}</td></tr>` : ""}
+      <tr><td style="padding: 2px 0; color: #6b7280;">Data Source:</td><td style="padding: 2px 0;">${dataSource}</td></tr>
+    </table>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    <div style="margin-top: 16px; padding: 12px; background: #f9fafb; border-radius: 6px;">
+      <p style="margin: 0 0 4px; font-weight: 600; font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">What This Means</p>
+      <p style="margin: 0; font-size: 14px; line-height: 1.5;">${whatThisMeans}</p>
+    </div>
 
-WHAT THIS MEANS
-${alertType === "listing_detected" ? "This customer's insured property has been listed for sale. This may indicate they are planning to move and could cancel or need changes to their policy." : alertType === "pending_sale" ? "This customer's insured property is under contract. A sale is likely imminent. Policy changes or cancellation may be needed soon." : "This customer's insured property has sold. They may need to cancel their homeowners policy or transfer coverage to a new address."}
+    <div style="margin-top: 12px; padding: 12px; background: #f9fafb; border-radius: 6px;">
+      <p style="margin: 0 0 4px; font-weight: 600; font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">Suggested Actions</p>
+      <div style="font-size: 14px; line-height: 1.6;">${suggestedActions}</div>
+    </div>
 
-SUGGESTED ACTIONS
-${alertType === "listing_detected" ? `1. Reach out to confirm they are selling
-2. Ask if they have a new home that needs coverage
-3. Discuss any policy changes needed during the listing period
-4. Set a follow-up reminder to check back in 30 days` : alertType === "pending_sale" ? `1. Contact the customer to confirm the pending sale
-2. Ask about the closing date and whether they need coverage through closing
-3. Discuss coverage for their next home
-4. Prepare for policy cancellation or transfer at closing` : `1. Confirm the sale has closed
-2. Process policy cancellation or update the insured property address
-3. Check if they need coverage for a new home
-4. Review their remaining policies for any cross-sell opportunities`}
+    <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+      <p style="margin: 0 0 8px; font-weight: 600; font-size: 13px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">Quick Links</p>
+      <div style="font-size: 14px; line-height: 1.8;">
+        ${azProfileUrl ? `<a href="${azProfileUrl}" style="color: #2563eb;">AgencyZoom Profile</a><br/>` : ""}
+        ${tcdsAppUrl ? `<a href="${tcdsAppUrl}" style="color: #2563eb;">TCDS App Profile</a><br/>` : ""}
+        ${zillowUrl ? `<a href="${zillowUrl}" style="color: #2563eb;">Zillow Property Page</a><br/>` : ""}
+        <a href="https://tcds-triage.vercel.app/risk-monitor" style="color: #2563eb;">Risk Monitor Dashboard</a>
+      </div>
+    </div>
+  </div>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-QUICK LINKS
-• AgencyZoom Profile: ${policy.azContactId ? `https://app.agencyzoom.com/customer/index?id=${policy.azContactId}` : "N/A"}
-• TCDS App: ${policy.azContactId ? `https://tcds-triage.vercel.app/customers/${policy.azContactId}?azId=${policy.azContactId}` : "N/A"}${zillowUrl ? `\n• Zillow Property: ${zillowUrl}` : ""}
-• Risk Monitor Dashboard: https://tcds-triage.vercel.app/risk-monitor
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-This is an automated alert from the TCDS Risk Monitor.
-Please review and take appropriate action.
+  <p style="text-align: center; font-size: 12px; color: #9ca3af; margin-top: 16px;">
+    This is an automated alert from the TCDS Risk Monitor.<br/>Please review and take appropriate action.
+  </p>
+</div>
     `.trim();
 
     try {
@@ -1178,7 +1221,7 @@ Please review and take appropriate action.
         to: allRecipients,
         subject: `🚨 ${title}`,
         body: emailBody,
-        isHtml: false,
+        isHtml: true,
       });
 
       if (sendResult.success) {
