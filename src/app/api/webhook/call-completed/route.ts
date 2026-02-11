@@ -1093,6 +1093,100 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       const phoneForLookup = hasValidCallPhone ? customerPhone : (analysis?.extractedData?.phone || customerPhone);
       console.log(`[Call-Completed] 📞 Customer phone for lookup: ${phoneForLookup} (direction: ${callDir}, callPhone: ${customerPhone}, aiPhone: ${analysis?.extractedData?.phone || 'none'})`);
 
+      // =========================================================================
+      // FAST PATH: After-hours Twilio calls
+      // These calls come through Twilio only (no 3CX counterpart), so they need
+      // wrapups created immediately. Skip slow customer matching / AZ lookup
+      // since after-hours calls just need caller info + AI summary + ticket.
+      // =========================================================================
+      if (call.disposition === "after_hours" && analysis) {
+        console.log(`[Call-Completed] 📞 FAST PATH: After-hours call ${call.id} — creating wrapup immediately`);
+
+        try {
+          const [ahWrapup] = await db
+            .insert(wrapupDrafts)
+            .values({
+              tenantId,
+              callId: call.id,
+              direction: (callDir === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
+              agentExtension: "after-hours",
+              agentName: "After-Hours Service",
+              summary: analysis.summary || "After-hours call - forwarded to voicemail service",
+              customerName: analysis.extractedData?.customerName || null,
+              customerPhone: phoneForLookup,
+              customerEmail: analysis.extractedData?.email || null,
+              requestType: analysis.serviceRequestType || analysis.callType || "after_hours",
+              status: "pending_review" as const,
+              matchStatus: "unmatched",
+              aiCleanedSummary: analysis.summary,
+              aiProcessingStatus: "completed",
+              aiProcessedAt: new Date(),
+              aiExtraction: analysis.extractedData as Record<string, unknown> || null,
+              aiConfidence: "0.85",
+              isAutoVoided: false,
+            })
+            .onConflictDoUpdate({
+              target: wrapupDrafts.callId,
+              set: {
+                summary: analysis.summary || "After-hours call - forwarded to voicemail service",
+                customerName: analysis.extractedData?.customerName || null,
+                customerPhone: phoneForLookup,
+                aiCleanedSummary: analysis.summary,
+                aiProcessingStatus: "completed",
+                aiProcessedAt: new Date(),
+                updatedAt: new Date(),
+              },
+            })
+            .returning();
+
+          if (ahWrapup) {
+            wrapupId = ahWrapup.id;
+            console.log(`[Call-Completed] ✅ After-hours wrapup created: ${ahWrapup.id}`);
+
+            // Create after-hours service ticket
+            try {
+              const afterHoursTicketId = await createAfterHoursServiceTicket({
+                tenantId,
+                callerName: analysis.extractedData?.customerName || null,
+                callerPhone: phoneForLookup || "Unknown",
+                reason: analysis.summary || null,
+                agencyzoomCustomerId: null,
+                localCustomerId: call.customerId || null,
+                isUrgent: false,
+                transcript: transcript || null,
+                emailBody: null,
+                aiSummary: analysis.summary || null,
+                actionItems: analysis.actionItems || [],
+                wrapupDraftId: ahWrapup.id,
+                source: "after_hours_call",
+              });
+
+              if (afterHoursTicketId) {
+                await db
+                  .update(wrapupDrafts)
+                  .set({
+                    status: "completed",
+                    outcome: "ticket",
+                    agencyzoomTicketId: afterHoursTicketId.toString(),
+                    completedAt: new Date(),
+                  })
+                  .where(eq(wrapupDrafts.id, ahWrapup.id));
+                console.log(`[Call-Completed] 🎫 After-hours ticket created: ${afterHoursTicketId}, wrapup marked completed`);
+              }
+            } catch (ticketError) {
+              console.error(`[Call-Completed] ⚠️ After-hours ticket creation failed (wrapup still created):`, ticketError);
+            }
+          }
+        } catch (ahError) {
+          console.error(`[Call-Completed] ❌ After-hours fast path failed:`, ahError);
+        }
+
+        // Skip the slow customer matching pipeline — after-hours processing is done
+        console.log(`[Call-Completed] 📞 After-hours fast path complete for call ${call.id}`);
+      } else {
+      // =========================================================================
+      // NORMAL PATH: Regular calls — full customer matching + triage
+      // =========================================================================
 
       // 4.1 Customer matching - PRIORITY: Use screen pop match if available
       let azMatches: AgencyZoomCustomer[] = [];
@@ -2131,6 +2225,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       } else {
         console.log(`[Call-Completed] 🎫 Auto-ticket skipped: wrapup=${!!txResult.wrapup}, analysis=${!!analysis}, direction=${direction}, shouldAutoVoid=${shouldAutoVoid}`);
       }
+    } // end normal path else block
     } else {
       // No analysis and not a hangup - log why we're skipping wrapup creation
       console.log(`[Call-Completed] ⏭️ Skipping wrapup creation for call ${call.id}: no analysis and not detected as hangup (duration: ${body.duration}s, transcript length: ${transcript?.length || 0})`);
