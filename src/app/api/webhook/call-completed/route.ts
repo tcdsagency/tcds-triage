@@ -2273,9 +2273,21 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
               noteText = "";
               console.log(`[Call-Completed] ⏭️ Skipping note for inbound call - handled as service ticket`);
             } else {
-              // Outbound unmatched — skip (shouldn't happen normally)
+              // Outbound unmatched — auto-complete wrapup so it doesn't appear in review queue
               azTargetCustomerId = 0;
               noteText = "";
+              if (direction === "outbound") {
+                await db
+                  .update(wrapupDrafts)
+                  .set({
+                    status: "completed",
+                    completionAction: "auto_completed",
+                    completedAt: now,
+                    autoVoidReason: "outbound_unmatched",
+                  })
+                  .where(eq(wrapupDrafts.id, wrapupForPost.id));
+                console.log(`[Call-Completed] ✅ Auto-completed outbound unmatched wrapup ${wrapupForPost.id} (no ticket needed)`);
+              }
             }
 
             if (azTargetCustomerId > 0) {
