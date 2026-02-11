@@ -124,6 +124,12 @@ export async function POST(request: NextRequest) {
 
     for (const customer of newCustomers) {
       try {
+        // Safely coerce date fields (may be strings from SQL subqueries)
+        const rawExp = (customer as any).expirationDate;
+        const expDate = rawExp instanceof Date ? rawExp : rawExp ? new Date(rawExp) : null;
+        const rawSince = (customer as any).customerSinceDate;
+        const sinceDate = rawSince instanceof Date ? rawSince : rawSince ? new Date(rawSince) : null;
+
         await db.insert(riskMonitorPolicies).values({
           tenantId,
           policyNumber: (customer as any).policyNumber || null,
@@ -137,8 +143,8 @@ export async function POST(request: NextRequest) {
           zipCode: customer.address!.zip || "",
           carrier: (customer as any).carrier || null,
           policyType: "homeowners",
-          expirationDate: (customer as any).expirationDate || null,
-          customerSinceDate: (customer as any).customerSinceDate || null, // When they became a customer
+          expirationDate: expDate && !isNaN(expDate.getTime()) ? expDate : null,
+          customerSinceDate: sinceDate && !isNaN(sinceDate.getTime()) ? sinceDate : null,
           currentStatus: "off_market",
           isActive: true,
         });
