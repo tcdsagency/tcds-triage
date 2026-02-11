@@ -6,8 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { renewalBatches, renewalCandidates, al3TransactionArchive } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { renewalBatches, renewalCandidates, renewalComparisons, al3TransactionArchive } from '@/db/schema';
+import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { queueRenewalBatchProcessing } from '@/lib/queues/client';
 
 const TENANT_ID = process.env.DEFAULT_TENANT_ID || '';
@@ -53,6 +53,27 @@ export async function POST(
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Collect comparison IDs linked to candidates about to be deleted
+    const candidatesWithComparisons = await db
+      .select({ comparisonId: renewalCandidates.comparisonId })
+      .from(renewalCandidates)
+      .where(eq(renewalCandidates.batchId, id));
+
+    const comparisonIds = candidatesWithComparisons
+      .map(c => c.comparisonId)
+      .filter((cid): cid is string => cid != null);
+
+    // Delete linked comparisons that have no agent decision (safe to re-create)
+    if (comparisonIds.length > 0) {
+      await db.delete(renewalComparisons)
+        .where(
+          and(
+            inArray(renewalComparisons.id, comparisonIds),
+            isNull(renewalComparisons.agentDecision)
+          )
+        );
+    }
 
     // Delete old candidates and archived transactions for this batch
     await db.delete(al3TransactionArchive).where(eq(al3TransactionArchive.batchId, id));

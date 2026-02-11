@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { renewalComparisons } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 import { logRenewalEvent } from '@/lib/api/renewal-audit';
 
 export async function POST(request: NextRequest) {
@@ -45,7 +46,25 @@ export async function POST(request: NextRequest) {
       .returning();
 
     if (!comparison) {
-      return NextResponse.json({ success: true, comparisonId: null, duplicate: true });
+      // Duplicate detected — look up the existing comparison to return its ID
+      const [existing] = await db
+        .select({ id: renewalComparisons.id })
+        .from(renewalComparisons)
+        .where(
+          and(
+            eq(renewalComparisons.tenantId, body.tenantId),
+            eq(renewalComparisons.policyNumber, body.policyNumber),
+            eq(renewalComparisons.carrierName, body.carrierName),
+            eq(renewalComparisons.renewalEffectiveDate, new Date(body.renewalEffectiveDate))
+          )
+        )
+        .limit(1);
+
+      return NextResponse.json({
+        success: true,
+        comparisonId: existing?.id || null,
+        duplicate: true,
+      });
     }
 
     // Log audit events

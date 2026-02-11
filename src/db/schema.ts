@@ -4865,7 +4865,7 @@ export const renewalComparisons = pgTable('renewal_comparisons', {
   index('renewal_comparisons_date_idx').on(table.tenantId, table.renewalEffectiveDate),
   index('renewal_comparisons_carrier_idx').on(table.tenantId, table.carrierName),
   index('renewal_comparisons_lob_idx').on(table.tenantId, table.lineOfBusiness),
-  uniqueIndex('renewal_comparisons_policy_date_unique').on(table.policyId, table.renewalEffectiveDate),
+  uniqueIndex('renewal_comparisons_dedup_unique').on(table.tenantId, table.policyNumber, table.carrierName, table.renewalEffectiveDate),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
