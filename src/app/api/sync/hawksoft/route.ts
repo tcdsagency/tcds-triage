@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { customers, policies, vehicles, drivers, mortgagees } from '@/db/schema';
+import { customers, policies, vehicles, drivers, mortgagees, syncMetadata } from '@/db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
 
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
 
   try {
     const url = new URL(request.url);
+    const mode = url.searchParams.get('mode') || 'full'; // 'full' or 'incremental'
     const rawOffset = parseInt(url.searchParams.get('offset') || '0');
     const rawLimit = parseInt(url.searchParams.get('limit') || '500');
 
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });
     }
 
-    log(`Starting HawkSoft sync (offset=${offset}, limit=${limit})...`);
+    log(`Starting HawkSoft sync (mode=${mode}, offset=${offset}, limit=${limit})...`);
 
     // Initialize HawkSoft client
     let hsClient;
@@ -55,7 +56,10 @@ export async function POST(request: Request) {
         logs,
       }, { status: 500 });
     }
-    
+
+    // Capture sync start time BEFORE any API calls (so we don't miss changes during sync)
+    const syncStartTime = new Date().toISOString();
+
     // Get customers with HawkSoft codes
     log('Querying customers with HawkSoft links...');
     const allCustomers = await db.select({
@@ -64,40 +68,86 @@ export async function POST(request: Request) {
     })
       .from(customers)
       .where(eq(customers.tenantId, tenantId));
-    
+
     // Filter to only those with hawksoft codes
-    const customersWithHs = allCustomers.filter(c => 
+    const customersWithHs = allCustomers.filter(c =>
       c.hawksoftClientCode && c.hawksoftClientCode.trim() !== ''
     );
-    
-    const totalWithHs = customersWithHs.length;
-    const batch = customersWithHs.slice(offset, offset + limit);
-    
-    log(`Total with HS codes: ${totalWithHs}, processing ${batch.length} (offset ${offset})`);
 
-    if (batch.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: offset === 0 ? 'No customers with HawkSoft codes' : 'All customers processed',
-        totalWithHs,
-        offset,
-        customersUpdated: 0,
-        policiesSynced: 0,
-        hasMore: false,
-        logs,
-      });
-    }
-
-    // Build lookup map for this batch
+    // Build full lookup map (needed for both modes)
     const hsCodeToCustomerId = new Map<number, string>();
-    for (const c of batch) {
+    for (const c of customersWithHs) {
       const hsId = parseInt(c.hawksoftClientCode!);
       if (!isNaN(hsId)) {
         hsCodeToCustomerId.set(hsId, c.id);
       }
     }
 
-    const hsClientNumbers = Array.from(hsCodeToCustomerId.keys());
+    const totalWithHs = customersWithHs.length;
+    let hsClientNumbers: number[];
+
+    if (mode === 'incremental') {
+      // INCREMENTAL: Only sync clients that changed since last sync
+      const [meta] = await db.select()
+        .from(syncMetadata)
+        .where(and(
+          eq(syncMetadata.tenantId, tenantId),
+          eq(syncMetadata.integration, 'hawksoft')
+        ))
+        .limit(1);
+
+      const asOf = meta?.incrementalSyncCursor || meta?.lastIncrementalSyncAt?.toISOString();
+
+      if (!asOf) {
+        log('No previous sync cursor found — falling back to full sync');
+        // Fall through to full mode behavior
+        const batch = customersWithHs.slice(offset, offset + limit);
+        hsClientNumbers = batch.map(c => parseInt(c.hawksoftClientCode!)).filter(n => !isNaN(n));
+      } else {
+        log(`Fetching changes since ${asOf}...`);
+        const changedIds = await hsClient.getChangedClients({ asOf, deleted: false });
+
+        // Filter to only IDs we have in our DB
+        hsClientNumbers = changedIds.filter(id => hsCodeToCustomerId.has(id));
+        log(`HawkSoft reports ${changedIds.length} changed clients, ${hsClientNumbers.length} match our DB`);
+
+        if (hsClientNumbers.length === 0) {
+          // Update cursor even when nothing changed
+          await upsertSyncMetadata(tenantId, syncStartTime, 'success', 0);
+          return NextResponse.json({
+            success: true,
+            mode: 'incremental',
+            message: 'No changes since last sync',
+            totalWithHs,
+            changedInHawkSoft: changedIds.length,
+            matchedInDb: 0,
+            customersUpdated: 0,
+            policiesSynced: 0,
+            logs,
+          });
+        }
+      }
+    } else {
+      // FULL: Paginate through all customers
+      const batch = customersWithHs.slice(offset, offset + limit);
+
+      if (batch.length === 0) {
+        return NextResponse.json({
+          success: true,
+          mode: 'full',
+          message: offset === 0 ? 'No customers with HawkSoft codes' : 'All customers processed',
+          totalWithHs,
+          offset,
+          customersUpdated: 0,
+          policiesSynced: 0,
+          hasMore: false,
+          logs,
+        });
+      }
+
+      hsClientNumbers = batch.map(c => parseInt(c.hawksoftClientCode!)).filter(n => !isNaN(n));
+    }
+
     log(`Fetching ${hsClientNumbers.length} clients from HawkSoft API...`);
 
     // Fetch from HawkSoft in batches
@@ -343,17 +393,41 @@ export async function POST(request: Request) {
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+    log(`Done! ${customersUpdated} updated, ${policiesSynced} policies, ${mortgageesSynced} mortgagees in ${duration}s`);
+
+    // Update sync metadata cursor for incremental mode
+    if (mode === 'incremental') {
+      const status = apiErrors > 0 ? 'partial' : 'success';
+      await upsertSyncMetadata(tenantId, syncStartTime, status, customersUpdated);
+      log(`Sync cursor updated to ${syncStartTime}`);
+    }
+
+    if (mode === 'incremental') {
+      return NextResponse.json({
+        success: true,
+        mode: 'incremental',
+        totalWithHs,
+        customersUpdated,
+        policiesSynced,
+        mortgageesSynced,
+        policyErrors,
+        apiErrors,
+        duration: `${duration}s`,
+        logs,
+      });
+    }
+
     const nextOffset = offset + limit;
     const hasMore = nextOffset < totalWithHs;
-    
-    log(`Done! ${customersUpdated} updated, ${policiesSynced} policies, ${mortgageesSynced} mortgagees in ${duration}s`);
 
     return NextResponse.json({
       success: true,
+      mode: 'full',
       totalWithHs,
       offset,
       limit,
-      processed: batch.length,
+      processed: hsClientNumbers.length,
       customersUpdated,
       policiesSynced,
       mortgageesSynced,
@@ -453,4 +527,46 @@ function normalizeLienholderType(type?: string): string {
   if (lower.includes('additional') || lower.includes('interest')) return 'additional_interest';
   if (lower.includes('second') || lower === '2nd' || lower === '2') return 'mortgagee'; // 2nd mortgagee
   return 'mortgagee';
+}
+
+/**
+ * Upsert sync metadata to track incremental sync cursor
+ */
+async function upsertSyncMetadata(
+  tenantId: string,
+  syncTimestamp: string,
+  status: string,
+  recordsProcessed: number
+) {
+  const [existing] = await db.select()
+    .from(syncMetadata)
+    .where(and(
+      eq(syncMetadata.tenantId, tenantId),
+      eq(syncMetadata.integration, 'hawksoft')
+    ))
+    .limit(1);
+
+  if (existing) {
+    await db.update(syncMetadata)
+      .set({
+        lastIncrementalSyncAt: new Date(),
+        incrementalSyncCursor: syncTimestamp,
+        lastSyncStatus: status,
+        lastSyncRecordsProcessed: recordsProcessed,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(syncMetadata.tenantId, tenantId),
+        eq(syncMetadata.integration, 'hawksoft')
+      ));
+  } else {
+    await db.insert(syncMetadata).values({
+      tenantId,
+      integration: 'hawksoft',
+      lastIncrementalSyncAt: new Date(),
+      incrementalSyncCursor: syncTimestamp,
+      lastSyncStatus: status,
+      lastSyncRecordsProcessed: recordsProcessed,
+    });
+  }
 }

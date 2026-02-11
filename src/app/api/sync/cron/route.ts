@@ -49,32 +49,20 @@ export async function GET(request: NextRequest) {
       results.customers = { error: String(e) };
     }
 
-    // 2. Sync policies from HawkSoft (multiple batches)
-    logs.push('Syncing policies from HawkSoft...');
-    let totalPolicies = 0;
-    let totalUpdated = 0;
-    
-    for (let offset = 0; offset < 2000; offset += 500) {
-      try {
-        const hawksoftRes = await fetch(`${getBaseUrl(request)}/api/sync/hawksoft?offset=${offset}&limit=500`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        const batch = await hawksoftRes.json();
-        
-        if (batch.success) {
-          totalUpdated += batch.updated || 0;
-          totalPolicies += batch.policiesSynced || 0;
-          logs.push(`HawkSoft batch ${offset}: ${batch.updated} customers, ${batch.policiesSynced} policies`);
-        }
-        
-        // Stop if we got fewer than limit
-        if ((batch.updated || 0) < 500) break;
-      } catch (e) {
-        logs.push(`HawkSoft batch ${offset} error: ${e}`);
-      }
+    // 2. Sync policies from HawkSoft (incremental — only changed since last sync)
+    logs.push('Syncing policies from HawkSoft (incremental)...');
+    try {
+      const hawksoftRes = await fetch(`${getBaseUrl(request)}/api/sync/hawksoft?mode=incremental`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const hsResult = await hawksoftRes.json();
+      results.hawksoft = hsResult;
+      logs.push(`HawkSoft: ${hsResult.customersUpdated || 0} customers, ${hsResult.policiesSynced || 0} policies (${hsResult.mode || 'unknown'} mode)`);
+    } catch (e) {
+      logs.push(`HawkSoft sync error: ${e}`);
+      results.hawksoft = { error: String(e) };
     }
-    results.hawksoft = { updated: totalUpdated, policiesSynced: totalPolicies };
 
     // 3. Sync leads from AgencyZoom
     logs.push('Syncing leads from AgencyZoom...');
