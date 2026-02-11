@@ -169,7 +169,7 @@ export async function POST(request: Request) {
 
                 // Normalize coverages from HawkSoft format to DB format
                 const normalizedCoverages = (policy.coverages || []).map((c: any) => ({
-                  type: c.code || '',
+                  type: c.code || c.description || '',
                   limit: c.limits || '',
                   deductible: c.deductibles || '',
                   premium: typeof c.premium === 'string' ? parseFloat(c.premium) : (c.premium ?? undefined),
