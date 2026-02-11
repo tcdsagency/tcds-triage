@@ -1082,8 +1082,16 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       const customerPhone = callDir === "inbound"
         ? (call.fromNumber || callerNumber)
         : (call.toNumber || calledNumber);
-      const phoneForLookup = analysis?.extractedData?.phone || customerPhone;
-      console.log(`[Call-Completed] 📞 Customer phone for lookup: ${phoneForLookup} (direction: ${callDir})`);
+
+      // Validate the call phone: must be ≥7 digits and not just an extension
+      const callPhoneDigits = (customerPhone || "").replace(/\D/g, "");
+      const hasValidCallPhone = callPhoneDigits.length >= 7;
+
+      // IMPORTANT: Prioritize the actual caller/called number over AI-extracted phone.
+      // AI may extract a phone mentioned in conversation (agency line, carrier 800 number, etc.)
+      // which would cause a wrong customer match. Only use AI phone as fallback.
+      const phoneForLookup = hasValidCallPhone ? customerPhone : (analysis?.extractedData?.phone || customerPhone);
+      console.log(`[Call-Completed] 📞 Customer phone for lookup: ${phoneForLookup} (direction: ${callDir}, callPhone: ${customerPhone}, aiPhone: ${analysis?.extractedData?.phone || 'none'})`);
 
 
       // 4.1 Customer matching - PRIORITY: Use screen pop match if available
@@ -1120,7 +1128,58 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         }
       }
 
-      // Only do phone lookup if no screen pop match
+      // Cross-leg matching: check if another call record for this phone in the last 10min has customerId
+      // (handles PBX multi-leg calls where trunk leg got screen-popped but extension leg didn't)
+      if (customerMatchStatus === "unmatched" && phoneForLookup) {
+        const crossLegDigits = phoneForLookup.replace(/\D/g, "").slice(-10);
+        if (crossLegDigits.length >= 7) {
+          try {
+            const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+            const [crossLegCall] = await db
+              .select({ customerId: calls.customerId })
+              .from(calls)
+              .where(
+                and(
+                  eq(calls.tenantId, tenantId),
+                  isNotNull(calls.customerId),
+                  gte(calls.startedAt, tenMinAgo),
+                  or(
+                    sql`REPLACE(REPLACE(REPLACE(REPLACE(${calls.fromNumber}, '+', ''), '(', ''), ')', ''), '-', '') LIKE ${'%' + crossLegDigits}`,
+                    sql`REPLACE(REPLACE(REPLACE(REPLACE(${calls.toNumber}, '+', ''), '(', ''), ')', ''), '-', '') LIKE ${'%' + crossLegDigits}`
+                  )
+                )
+              )
+              .limit(1);
+
+            if (crossLegCall?.customerId) {
+              const [crossCustomer] = await db
+                .select({
+                  id: customers.id,
+                  firstName: customers.firstName,
+                  lastName: customers.lastName,
+                  agencyzoomId: customers.agencyzoomId,
+                })
+                .from(customers)
+                .where(eq(customers.id, crossLegCall.customerId))
+                .limit(1);
+
+              if (crossCustomer) {
+                customerMatchStatus = "matched";
+                matchedAzCustomerId = crossCustomer.agencyzoomId || null;
+                matchedCustomerName = `${crossCustomer.firstName || ""} ${crossCustomer.lastName || ""}`.trim() || null;
+                matchType = "customer";
+                // Backfill customerId on this call too
+                await db.update(calls).set({ customerId: crossCustomer.id, updatedAt: new Date() }).where(eq(calls.id, call.id));
+                console.log(`[Call-Completed] Cross-leg match: ${matchedCustomerName} (from sibling call record)`);
+              }
+            }
+          } catch (crossLegErr) {
+            console.error("[Call-Completed] Cross-leg lookup error:", crossLegErr);
+          }
+        }
+      }
+
+      // Only do phone lookup if no screen pop or cross-leg match
       if (customerMatchStatus === "unmatched" && phoneForLookup) {
         // FIRST: Search local customers table (faster and more reliable than AZ API)
         const phoneDigits = phoneForLookup.replace(/\D/g, "").slice(-10);
@@ -1137,7 +1196,10 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             .where(
               and(
                 eq(customers.tenantId, tenantId),
-                sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '(', ''), ')', ''), '-', ''), ' ', '') LIKE ${'%' + phoneDigits}`
+                or(
+                  sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phone}, '(', ''), ')', ''), '-', ''), ' ', '') LIKE ${'%' + phoneDigits}`,
+                  sql`REPLACE(REPLACE(REPLACE(REPLACE(${customers.phoneAlt}, '(', ''), ')', ''), '-', ''), ' ', '') LIKE ${'%' + phoneDigits}`
+                )
               )
             )
             .limit(5);

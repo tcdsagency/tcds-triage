@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
 
       // Build SMS message
       const firstName = req.customerName.split(" ")[0];
-      const message = `Hi ${firstName}! Thank you for being a valued TCDS Insurance customer. If you have a moment, we'd love to hear about your experience. Please leave us a review: ${googleReviewLink} Reply STOP to opt out.`;
+      const message = `Hi ${firstName}! Thank you for contacting TCDS Insurance today. Your feedback helps us serve our clients better. If you have a moment, please leave us a review: ${googleReviewLink}`;
 
       // Send SMS via AgencyZoom API (or Twilio fallback)
       try {

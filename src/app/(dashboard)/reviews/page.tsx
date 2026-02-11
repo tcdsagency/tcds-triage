@@ -699,11 +699,10 @@ export default function ReviewManagerPage() {
                   SMS Template Preview
                 </label>
                 <div className="p-4 bg-gray-100 rounded-lg text-sm text-gray-700 font-mono">
-                  Hi [FirstName]! Thank you for being a valued TCDS Insurance
-                  customer. If you have a moment, we'd love to hear about your
-                  experience. Please leave us a review:{" "}
-                  <span className="text-blue-600">[Google Review Link]</span>{" "}
-                  Reply STOP to opt out.
+                  Hi [FirstName]! Thank you for contacting TCDS Insurance
+                  today. Your feedback helps us serve our clients better. If you
+                  have a moment, please leave us a review:{" "}
+                  <span className="text-blue-600">[Google Review Link]</span>
                 </div>
               </div>
 
