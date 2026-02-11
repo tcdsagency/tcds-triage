@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
           policyNumber: policies.policyNumber,
           carrier: policies.carrier,
           expirationDate: policies.expirationDate,
-          customerSinceDate: customers.createdAt, // When customer record was created
+          customerSinceDate: sql<Date>`(SELECT min(${policies.effectiveDate}) FROM ${policies} WHERE ${policies.customerId} = ${customers.id})`.as('customer_since_date'),
         })
         .from(customers)
         .innerJoin(policies, eq(policies.customerId, customers.id))
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
           phone: customers.phone,
           address: customers.address,
           agencyzoomId: customers.agencyzoomId,
-          customerSinceDate: customers.createdAt, // When customer record was created
+          customerSinceDate: sql<Date>`(SELECT min(${policies.effectiveDate}) FROM ${policies} WHERE ${policies.customerId} = ${customers.id})`.as('customer_since_date'),
         })
         .from(customers)
         .where(

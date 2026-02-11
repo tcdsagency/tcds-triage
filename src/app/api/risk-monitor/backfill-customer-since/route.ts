@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { customers, riskMonitorPolicies } from "@/db/schema";
+import { customers, riskMonitorPolicies, policies } from "@/db/schema";
 import { eq, and, isNull, sql } from "drizzle-orm";
 
 export async function POST(request: NextRequest) {
@@ -44,7 +44,10 @@ export async function POST(request: NextRequest) {
 
       if (policy.azContactId) {
         [customer] = await db
-          .select({ createdAt: customers.createdAt })
+          .select({
+            id: customers.id,
+            customerSince: sql<Date>`(SELECT min(${policies.effectiveDate}) FROM ${policies} WHERE ${policies.customerId} = ${customers.id})`.as('customer_since'),
+          })
           .from(customers)
           .where(
             and(
@@ -57,7 +60,10 @@ export async function POST(request: NextRequest) {
 
       if (!customer && policy.contactEmail) {
         [customer] = await db
-          .select({ createdAt: customers.createdAt })
+          .select({
+            id: customers.id,
+            customerSince: sql<Date>`(SELECT min(${policies.effectiveDate}) FROM ${policies} WHERE ${policies.customerId} = ${customers.id})`.as('customer_since'),
+          })
           .from(customers)
           .where(
             and(
@@ -76,7 +82,10 @@ export async function POST(request: NextRequest) {
 
         if (firstName && lastName) {
           [customer] = await db
-            .select({ createdAt: customers.createdAt })
+            .select({
+              id: customers.id,
+              customerSince: sql<Date>`(SELECT min(${policies.effectiveDate}) FROM ${policies} WHERE ${policies.customerId} = ${customers.id})`.as('customer_since'),
+            })
             .from(customers)
             .where(
               and(
@@ -89,10 +98,10 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      if (customer?.createdAt) {
+      if (customer?.customerSince) {
         await db
           .update(riskMonitorPolicies)
-          .set({ customerSinceDate: customer.createdAt })
+          .set({ customerSinceDate: customer.customerSince })
           .where(eq(riskMonitorPolicies.id, policy.policyId));
         updated++;
       } else {
