@@ -189,12 +189,21 @@ export async function POST(request: NextRequest) {
             .limit(1);
 
           if (match.length > 0 && (match[0].policyNumber || match[0].carrier)) {
+            // Safely coerce expirationDate to a Date (may be string or null)
+            let expDate: Date | null = null;
+            if (match[0].expirationDate) {
+              const d = match[0].expirationDate instanceof Date
+                ? match[0].expirationDate
+                : new Date(match[0].expirationDate);
+              if (!isNaN(d.getTime())) expDate = d;
+            }
+
             await db
               .update(riskMonitorPolicies)
               .set({
                 policyNumber: match[0].policyNumber,
                 carrier: match[0].carrier,
-                expirationDate: match[0].expirationDate,
+                expirationDate: expDate,
                 updatedAt: new Date(),
               })
               .where(eq(riskMonitorPolicies.id, rm.rmId));
