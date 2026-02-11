@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { customers, policies, mortgagees } from '@/db/schema';
+import { customers, policies, vehicles, drivers, mortgagees } from '@/db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
 
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         const hsClients = await hsClient.getClients(
           apiBatch,
           ['details', 'policies', 'people'],
-          ['policies.autos', 'policies.locations', 'policies.drivers', 'policies.additionalInterests']
+          ['policies.autos', 'policies.locations', 'policies.drivers', 'policies.coverages', 'policies.additionalInterests']
         );
         log(`API batch ${Math.floor(i / apiBatchSize) + 1}: ${hsClients.length} clients`);
 
@@ -167,7 +167,15 @@ export async function POST(request: Request) {
                 const debugLogger = policiesSynced < 5 ? log : undefined;
                 const extractedLOB = extractLineOfBusiness(policy, debugLogger);
 
-                const policyData = {
+                // Normalize coverages from HawkSoft format to DB format
+                const normalizedCoverages = (policy.coverages || []).map((c: any) => ({
+                  type: c.code || '',
+                  limit: c.limits || '',
+                  deductible: c.deductibles || '',
+                  premium: typeof c.premium === 'string' ? parseFloat(c.premium) : (c.premium ?? undefined),
+                }));
+
+                const policyData: Record<string, any> = {
                   tenantId,
                   customerId,
                   hawksoftPolicyId: policyId,
@@ -178,19 +186,85 @@ export async function POST(request: Request) {
                   expirationDate: policy.expirationDate ? new Date(policy.expirationDate) : new Date(),
                   premium: policy.premium ? policy.premium.toString() : null,
                   status: mapPolicyStatus(policy.status),
+                  coverages: normalizedCoverages.length > 0 ? normalizedCoverages : undefined,
                 };
 
                 let savedPolicyId: string;
                 if (existingPolicy.length > 0) {
+                  // Preserve prior-term snapshot when effectiveDate changes
+                  const existingFull = await db.select().from(policies).where(eq(policies.id, existingPolicy[0].id)).limit(1);
+                  if (existingFull.length > 0) {
+                    const oldEff = existingFull[0].effectiveDate?.toISOString().split('T')[0];
+                    const newEff = policyData.effectiveDate instanceof Date
+                      ? policyData.effectiveDate.toISOString().split('T')[0]
+                      : undefined;
+                    if (oldEff && newEff && oldEff !== newEff) {
+                      const oldVehicles = await db.select().from(vehicles).where(eq(vehicles.policyId, existingPolicy[0].id));
+                      const oldDrivers = await db.select().from(drivers).where(eq(drivers.policyId, existingPolicy[0].id));
+                      policyData.priorTermSnapshot = {
+                        premium: existingFull[0].premium,
+                        effectiveDate: oldEff,
+                        expirationDate: existingFull[0].expirationDate?.toISOString().split('T')[0],
+                        coverages: existingFull[0].coverages,
+                        vehicles: oldVehicles.map((v: any) => ({ vin: v.vin, year: v.year, make: v.make, model: v.model, use: v.use })),
+                        drivers: oldDrivers.map((d: any) => ({
+                          firstName: d.firstName, lastName: d.lastName,
+                          dateOfBirth: d.dateOfBirth?.toISOString().split('T')[0],
+                          licenseNumber: d.licenseNumber, licenseState: d.licenseState,
+                        })),
+                        savedAt: new Date().toISOString(),
+                      };
+                      log(`Prior-term snapshot saved for ${policy.policyNumber} (${oldEff} → ${newEff})`);
+                    }
+                  }
+
                   await db.update(policies)
                     .set(policyData)
                     .where(eq(policies.id, existingPolicy[0].id));
                   savedPolicyId = existingPolicy[0].id;
                 } else {
-                  const [newPolicy] = await db.insert(policies).values(policyData).returning({ id: policies.id });
+                  const [newPolicy] = await db.insert(policies).values(policyData as any).returning({ id: policies.id });
                   savedPolicyId = newPolicy.id;
                 }
                 policiesSynced++;
+
+                // Sync vehicles (delete+insert)
+                const hsVehicles = policy.autos || (policy as any).vehicles || [];
+                if (hsVehicles.length > 0) {
+                  await db.delete(vehicles).where(eq(vehicles.policyId, savedPolicyId));
+                  for (const v of hsVehicles) {
+                    await db.insert(vehicles).values({
+                      tenantId,
+                      policyId: savedPolicyId,
+                      vin: v.vin || null,
+                      year: v.year || null,
+                      make: v.make || null,
+                      model: v.model || null,
+                      use: v.use || v.usage || null,
+                      annualMiles: v.annualMiles || null,
+                      coverages: v.coverages || null,
+                    });
+                  }
+                }
+
+                // Sync drivers (delete+insert)
+                const hsDrivers = policy.drivers || [];
+                if (hsDrivers.length > 0) {
+                  await db.delete(drivers).where(eq(drivers.policyId, savedPolicyId));
+                  for (const d of hsDrivers) {
+                    await db.insert(drivers).values({
+                      tenantId,
+                      policyId: savedPolicyId,
+                      firstName: d.firstName || 'Unknown',
+                      lastName: d.lastName || '',
+                      dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth) : null,
+                      licenseNumber: d.licenseNumber || null,
+                      licenseState: d.licenseState || null,
+                      relationship: (d as any).relationship || null,
+                      isExcluded: (d as any).isExcluded ?? false,
+                    });
+                  }
+                }
 
                 // Sync additionalInterests (mortgagees, lienholders, loss payees) for this policy
                 const additionalInterests = (policy as any).additionalInterests as any[] || [];
