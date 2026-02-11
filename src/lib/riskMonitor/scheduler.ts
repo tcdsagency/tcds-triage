@@ -11,6 +11,7 @@ import {
   riskMonitorActivityEvents,
   customers,
   users,
+  referralSources,
 } from "@/db/schema";
 import { eq, and, lte, desc, isNull, sql, not, inArray, or, lt } from "drizzle-orm";
 import { rprClient, type RPRPropertyData } from "@/lib/rpr";
@@ -843,6 +844,15 @@ export class RiskMonitorScheduler {
       }
     }
 
+    // Send lender referral notification for listing_detected alerts
+    if (alertType === "listing_detected") {
+      try {
+        await this.sendLenderNotification(policy, result);
+      } catch (err: any) {
+        await this.logEvent("lender_email_failed", policy.id, `Lender notification error: ${err.message}`);
+      }
+    }
+
     // Create AgencyZoom note for the customer
     if (policy.azContactId) {
       try {
@@ -1091,6 +1101,111 @@ Detected: ${new Date().toLocaleString()}
     } catch (err: any) {
       console.error(`[RiskMonitor] Error looking up agent emails for policy ${policy.id}: ${err.message}`);
       return [];
+    }
+  }
+
+  /**
+   * Send a notification email to a lender referral source when their referred
+   * client's home is listed for sale.
+   */
+  private async sendLenderNotification(
+    policy: typeof riskMonitorPolicies.$inferSelect,
+    result: PropertyCheckResult
+  ): Promise<void> {
+    if (!policy.azContactId) return;
+
+    // 1. Look up customer's leadSource
+    const [customer] = await db
+      .select({
+        leadSource: customers.leadSource,
+        producerId: customers.producerId,
+        csrId: customers.csrId,
+      })
+      .from(customers)
+      .where(eq(customers.agencyzoomId, policy.azContactId))
+      .limit(1);
+
+    if (!customer?.leadSource) return;
+
+    // 2. Find matching referral source of type 'lender'
+    const [lender] = await db
+      .select()
+      .from(referralSources)
+      .where(
+        and(
+          eq(referralSources.tenantId, this.tenantId),
+          eq(referralSources.isActive, true),
+          eq(referralSources.type, "lender"),
+          or(
+            sql`${referralSources.name} ILIKE '%' || ${customer.leadSource} || '%'`,
+            sql`${customer.leadSource} ILIKE '%' || ${referralSources.name} || '%'`
+          )
+        )
+      )
+      .limit(1);
+
+    if (!lender?.email) return;
+
+    // 3. Get agent emails for CC
+    const agentEmails = await this.getAgentEmailsForPolicy(policy);
+
+    // 4. Build and send lender email
+    const zillowUrl = buildZillowUrl({
+      street: policy.addressLine1,
+      city: policy.city,
+      state: policy.state,
+      zip: policy.zipCode,
+    });
+
+    const lenderName = lender.contactName || lender.name;
+    const customerName = policy.contactName || "your referred client";
+    const address = `${policy.addressLine1}, ${policy.city}, ${policy.state} ${policy.zipCode}`;
+
+    const emailBody = `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
+  <div style="padding: 24px;">
+    <p style="margin: 0 0 16px;">Hi ${lenderName},</p>
+
+    <p style="margin: 0 0 16px; line-height: 1.6;">
+      We wanted to let you know that <strong>${customerName}</strong>, who you referred to us,
+      has listed their home for sale at <strong>${address}</strong>.
+    </p>
+
+    <p style="margin: 0 0 16px; line-height: 1.6;">
+      This could mean they're looking to purchase a new home soon &mdash;
+      it may be a great time to reach out and connect.
+    </p>
+
+    ${zillowUrl ? `<p style="margin: 0 0 16px;"><a href="${zillowUrl}" style="color: #2563eb;">View the listing on Zillow</a></p>` : ""}
+
+    <p style="margin: 0 0 16px; line-height: 1.6;">
+      As always, thank you for your referrals. We truly appreciate
+      the partnership!
+    </p>
+
+    <p style="margin: 0 0 4px;">Best regards,</p>
+    <p style="margin: 0; font-weight: 600;">TCDS Insurance Agency</p>
+    <p style="margin: 0; color: #6b7280; font-size: 14px;">(205) 847-5616</p>
+  </div>
+</div>
+    `.trim();
+
+    const sendResult = await outlookClient.sendEmail({
+      to: lender.email,
+      cc: agentEmails.length > 0 ? agentEmails : undefined,
+      subject: `Client Update — ${customerName}'s Home Listed for Sale`,
+      body: emailBody,
+      isHtml: true,
+    });
+
+    if (sendResult.success) {
+      await this.logEvent("lender_email_sent", policy.id,
+        `Lender notification sent to ${lender.email} (${lender.name})${agentEmails.length > 0 ? `, CC: ${agentEmails.join(", ")}` : ""}`
+      );
+    } else {
+      await this.logEvent("lender_email_failed", policy.id,
+        `Lender notification failed: ${sendResult.error}`
+      );
     }
   }
 

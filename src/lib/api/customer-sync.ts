@@ -847,6 +847,8 @@ async function upsertFromHawkSoft(
     dateOfBirth: hsClient.dateOfBirth ? new Date(hsClient.dateOfBirth) : existing?.dateOfBirth,
     // HawkSoft customers are real customers (not leads)
     isLead: false,
+    // Only set leadSource from HawkSoft if there isn't already an AZ-supplied value
+    leadSource: existing?.leadSource || hsClient.source || null,
     lastSyncedFromHs: new Date(),
     updatedAt: new Date(),
   };

@@ -7,6 +7,7 @@
 
 export interface SendEmailParams {
   to: string | string[];
+  cc?: string | string[];
   subject: string;
   body: string;
   isHtml?: boolean;
@@ -103,6 +104,7 @@ class OutlookClient {
    */
   async sendEmail({
     to,
+    cc,
     subject,
     body,
     isHtml = false,
@@ -139,6 +141,16 @@ class OutlookClient {
         },
         saveToSentItems: true,
       };
+
+      // Add CC recipients if provided
+      if (cc) {
+        const ccList = Array.isArray(cc) ? cc : [cc];
+        if (ccList.length > 0) {
+          message.message.ccRecipients = ccList.map((email) => ({
+            emailAddress: { address: email },
+          }));
+        }
+      }
 
       // Add attachments if any
       if (attachments.length > 0) {

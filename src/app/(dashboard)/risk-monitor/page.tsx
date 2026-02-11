@@ -112,6 +112,18 @@ interface ActivityLog {
   errorMessage?: string;
 }
 
+interface ReferralSource {
+  id: string;
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  company?: string;
+  type: string;
+  isActive: boolean;
+  notes?: string;
+}
+
 interface SettingsData {
   schedulerEnabled: boolean;
   checkIntervalDays: number;
@@ -1123,6 +1135,9 @@ function SettingsPanel({
               className="mt-3"
             />
           </Section>
+
+          {/* Referral Sources */}
+          <ReferralSourcesManager />
         </div>
 
         {/* Save Footer */}
@@ -1136,6 +1151,242 @@ function SettingsPanel({
         </div>
       </div>
     </>
+  );
+}
+
+// =============================================================================
+// REFERRAL SOURCES MANAGER
+// =============================================================================
+
+function ReferralSourcesManager() {
+  const [sources, setSources] = useState<ReferralSource[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: '', contactName: '', email: '', phone: '', company: '', type: 'lender', notes: '' });
+
+  const fetchSources = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/risk-monitor/referral-sources?includeInactive=true');
+      const data = await res.json();
+      if (data.success) setSources(data.data);
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchSources(); }, [fetchSources]);
+
+  const resetForm = () => {
+    setForm({ name: '', contactName: '', email: '', phone: '', company: '', type: 'lender', notes: '' });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    try {
+      if (editingId) {
+        await fetch(`/api/risk-monitor/referral-sources/${editingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        });
+      } else {
+        await fetch('/api/risk-monitor/referral-sources', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        });
+      }
+      resetForm();
+      fetchSources();
+    } catch { /* ignore */ }
+  };
+
+  const handleEdit = (source: ReferralSource) => {
+    setForm({
+      name: source.name,
+      contactName: source.contactName || '',
+      email: source.email || '',
+      phone: source.phone || '',
+      company: source.company || '',
+      type: source.type,
+      notes: source.notes || '',
+    });
+    setEditingId(source.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await fetch(`/api/risk-monitor/referral-sources/${id}`, { method: 'DELETE' });
+      fetchSources();
+    } catch { /* ignore */ }
+  };
+
+  const typeLabels: Record<string, string> = {
+    lender: 'Lender',
+    realtor: 'Realtor',
+    attorney: 'Attorney',
+    financial_advisor: 'Financial Advisor',
+    other: 'Other',
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-900">Referral Sources</h3>
+        <button
+          onClick={() => { resetForm(); setShowForm(true); }}
+          className="text-xs font-medium text-emerald-600 hover:text-emerald-700"
+        >
+          + Add Source
+        </button>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        Lender sources receive automatic emails when their referred clients list a home for sale.
+      </p>
+
+      {/* Form */}
+      {showForm && (
+        <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-0.5">Source Name *</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g. First National Mortgage"
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-emerald-500 focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-0.5">Type</label>
+              <select
+                value={form.type}
+                onChange={(e) => setForm({ ...form, type: e.target.value })}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-emerald-500 focus:border-emerald-500"
+              >
+                {Object.entries(typeLabels).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-0.5">Contact Name</label>
+              <input
+                type="text"
+                value={form.contactName}
+                onChange={(e) => setForm({ ...form, contactName: e.target.value })}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-emerald-500 focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-0.5">Email</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-emerald-500 focus:border-emerald-500"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-0.5">Phone</label>
+              <input
+                type="text"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-emerald-500 focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-0.5">Company</label>
+              <input
+                type="text"
+                value={form.company}
+                onChange={(e) => setForm({ ...form, company: e.target.value })}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-emerald-500 focus:border-emerald-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-0.5">Notes</label>
+            <textarea
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              rows={2}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-emerald-500 focus:border-emerald-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSave}
+              disabled={!form.name.trim()}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {editingId ? 'Update' : 'Add'}
+            </button>
+            <button onClick={resetForm} className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-200 rounded hover:bg-gray-300">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Sources List */}
+      {loading ? (
+        <p className="text-xs text-gray-400">Loading...</p>
+      ) : sources.length === 0 ? (
+        <p className="text-xs text-gray-400">No referral sources configured.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {sources.map((source) => (
+            <div
+              key={source.id}
+              className={`flex items-center justify-between px-3 py-2 rounded-lg border ${source.isActive ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'}`}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium text-gray-900 truncate">{source.name}</p>
+                  <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600">
+                    {typeLabels[source.type] || source.type}
+                  </span>
+                </div>
+                {(source.contactName || source.email) && (
+                  <p className="text-xs text-gray-500 truncate">
+                    {source.contactName}{source.contactName && source.email && ' — '}{source.email}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                <button
+                  onClick={() => handleEdit(source)}
+                  className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                  title="Edit"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                </button>
+                {source.isActive && (
+                  <button
+                    onClick={() => handleDelete(source.id)}
+                    className="p-1 text-gray-400 hover:text-red-500 rounded"
+                    title="Remove"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -2568,6 +2568,43 @@ export const riskMonitorActivityEvents = pgTable('risk_monitor_activity_events',
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════
+// REFERRAL SOURCES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const referralSources = pgTable('referral_sources', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // The source name as it appears in HawkSoft/AgencyZoom (for matching)
+  name: varchar('name', { length: 200 }).notNull(),
+
+  // Contact info for this referral source
+  contactName: varchar('contact_name', { length: 200 }),
+  email: varchar('email', { length: 200 }),
+  phone: varchar('phone', { length: 20 }),
+  company: varchar('company', { length: 200 }),
+
+  // Type of referral source: 'lender', 'realtor', 'attorney', 'financial_advisor', 'other'
+  type: varchar('type', { length: 50 }).notNull().default('other'),
+
+  isActive: boolean('is_active').default(true).notNull(),
+  notes: text('notes'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('referral_sources_tenant_idx').on(table.tenantId),
+  nameIdx: index('referral_sources_name_idx').on(table.tenantId, table.name),
+}));
+
+export const referralSourcesRelations = relations(referralSources, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [referralSources.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
 // RISK MONITOR RELATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 

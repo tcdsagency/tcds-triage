@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { customers, riskMonitorPolicies, policies } from "@/db/schema";
-import { eq, and, isNotNull, sql } from "drizzle-orm";
+import { eq, and, or, isNotNull, isNull, sql } from "drizzle-orm";
 
 // POST - Sync all customer addresses to risk monitor
 export async function POST(request: NextRequest) {
@@ -148,12 +148,73 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Backfill existing records missing policy data (fixes N/A in emails)
+    let backfilled = 0;
+    try {
+      const existingWithMissingData = await db
+        .select({
+          rmId: riskMonitorPolicies.id,
+          azContactId: riskMonitorPolicies.azContactId,
+        })
+        .from(riskMonitorPolicies)
+        .where(
+          and(
+            eq(riskMonitorPolicies.tenantId, tenantId),
+            or(
+              isNull(riskMonitorPolicies.policyNumber),
+              isNull(riskMonitorPolicies.carrier)
+            )
+          )
+        );
+
+      for (const rm of existingWithMissingData) {
+        if (!rm.azContactId) continue;
+        try {
+          const match = await db
+            .select({
+              policyNumber: policies.policyNumber,
+              carrier: policies.carrier,
+              expirationDate: policies.expirationDate,
+            })
+            .from(policies)
+            .innerJoin(customers, eq(policies.customerId, customers.id))
+            .where(
+              and(
+                eq(customers.tenantId, tenantId),
+                eq(customers.agencyzoomId, rm.azContactId),
+                eq(policies.status, "active"),
+                sql`${policies.lineOfBusiness} ILIKE '%home%' OR ${policies.lineOfBusiness} ILIKE '%dwelling%'`
+              )
+            )
+            .limit(1);
+
+          if (match.length > 0 && (match[0].policyNumber || match[0].carrier)) {
+            await db
+              .update(riskMonitorPolicies)
+              .set({
+                policyNumber: match[0].policyNumber,
+                carrier: match[0].carrier,
+                expirationDate: match[0].expirationDate,
+                updatedAt: new Date(),
+              })
+              .where(eq(riskMonitorPolicies.id, rm.rmId));
+            backfilled++;
+          }
+        } catch {
+          // Skip individual backfill errors
+        }
+      }
+    } catch (err: any) {
+      console.error("[Risk Monitor] Backfill error:", err.message);
+    }
+
     return NextResponse.json({
       success: true,
       stats: {
         totalCustomers: customersWithAddresses.length,
         existingMonitored: existingPolicies.length,
         newImported: imported,
+        backfilled,
         errors: errors.length,
       },
       errors: errors.slice(0, 10), // Only show first 10 errors

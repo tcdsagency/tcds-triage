@@ -78,6 +78,7 @@ export interface HawkSoftClient {
   csrEmail?: string;
   serviceRepId?: number;
   serviceRepName?: string;
+  source?: string;
   // Nested data (when included)
   policies?: HawkSoftPolicy[];
   claims?: HawkSoftClaim[];
@@ -366,6 +367,12 @@ export class HawkSoftAPI {
         id: 0,
         name: csrCode, // Use code as name for now
       };
+    }
+
+    // Source / referral source
+    const source = details.source || details.Source;
+    if (source && typeof source === 'string') {
+      normalized.source = source;
     }
 
     return normalized;
