@@ -547,7 +547,11 @@ export class HawkSoftAPI {
     
     for (let i = 0; i < changedIds.length; i += batchSize) {
       const batch = changedIds.slice(i, i + batchSize);
-      const clients = await this.getClients(batch, ['details', 'policies', 'people']);
+      const clients = await this.getClients(
+        batch,
+        ['details', 'policies', 'people'],
+        ['policies.coverages', 'policies.drivers', 'policies.autos']
+      );
       results.push(...clients);
     }
 

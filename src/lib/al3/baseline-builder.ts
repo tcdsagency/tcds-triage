@@ -64,24 +64,28 @@ const HAWKSOFT_PLACEHOLDER_CODES = new Set([
 
 /**
  * Normalize HawkSoft coverage format to canonical.
- * HawkSoft API returns: { code, description, limits, deductibles, premium (string) }
+ * Handles BOTH formats:
+ *   - HawkSoft API: { code, description, limits, deductibles, premium (string) }
+ *   - Local DB:     { type, limit, deductible, premium (number) }
  */
 export function normalizeHawkSoftCoverages(
-  hsCoverages: Array<{ code?: string; description?: string; limits?: string | null; deductibles?: string | null; premium?: string | number | null }> | null | undefined
+  hsCoverages: Array<Record<string, any>> | null | undefined
 ): CanonicalCoverage[] {
   if (!hsCoverages || !Array.isArray(hsCoverages)) return [];
 
   return hsCoverages
     .filter((cov) => {
-      const code = (cov.code || '').toUpperCase().trim();
+      // Accept both DB format (type) and HawkSoft format (code)
+      const code = (cov.code || cov.type || '').toUpperCase().trim();
       // Filter out placeholder codes that aren't real coverages
       return !HAWKSOFT_PLACEHOLDER_CODES.has(code);
     })
     .map((cov) => {
-      const code = (cov.code || '').toUpperCase().trim();
+      // Accept both DB format (type/limit/deductible) and HawkSoft format (code/limits/deductibles)
+      const code = (cov.code || cov.type || '').toUpperCase().trim();
       const canonicalType = COVERAGE_CODE_MAP[code] || code.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-      const limitStr = cov.limits || '';
-      const dedStr = cov.deductibles || '';
+      const limitStr = cov.limits || cov.limit || '';
+      const dedStr = cov.deductibles || cov.deductible || '';
       const premiumVal = typeof cov.premium === 'string' ? parseFloat(cov.premium) : (cov.premium ?? undefined);
 
       return {
@@ -148,13 +152,100 @@ function normalizeHawkSoftDrivers(
 // =============================================================================
 
 /**
+ * Check if the local policy data is stale (already updated to new term).
+ * Returns true if the policy's effectiveDate matches or is after the renewal effective date.
+ */
+function isLocalPolicyStale(
+  policyEffectiveDate: Date | null | undefined,
+  renewalEffectiveDate?: string
+): boolean {
+  if (!renewalEffectiveDate || !policyEffectiveDate) return false;
+  const policyEff = policyEffectiveDate.toISOString().split('T')[0];
+  const renewalEff = renewalEffectiveDate.split('T')[0];
+  return policyEff >= renewalEff;
+}
+
+/**
+ * Reconstruct a BaselineSnapshot from a prior-term snapshot stored on the policy.
+ */
+function reconstructFromPriorTerm(
+  priorTerm: Record<string, any>,
+  propertyContext?: PropertyContext,
+  claims?: CanonicalClaim[]
+): BaselineSnapshot {
+  const coverages = normalizeHawkSoftCoverages(priorTerm.coverages);
+
+  const realCoverages: CanonicalCoverage[] = [];
+  const discountCoverages: CanonicalDiscount[] = [];
+  for (const cov of coverages) {
+    if (DISCOUNT_COVERAGE_TYPES.has(cov.type)) {
+      discountCoverages.push({
+        code: cov.type,
+        description: cov.description || cov.type,
+        amount: cov.premium,
+      });
+    } else {
+      realCoverages.push(cov);
+    }
+  }
+
+  // Calculate premium from coverages, fall back to stored premium
+  let calculatedPremium: number | undefined;
+  const allCoveragePremiums = realCoverages.filter(c => c.premium != null).map(c => c.premium!);
+  if (allCoveragePremiums.length > 0) {
+    calculatedPremium = allCoveragePremiums.reduce((sum, p) => sum + p, 0);
+  }
+  const premium = calculatedPremium ?? (priorTerm.premium ? parseFloat(priorTerm.premium) : undefined);
+
+  // Reconstruct vehicles
+  const priorVehicles: CanonicalVehicle[] = (priorTerm.vehicles || []).map((v: any) => ({
+    vin: v.vin || undefined,
+    year: v.year || undefined,
+    make: v.make || undefined,
+    model: v.model || undefined,
+    usage: v.use || v.usage || undefined,
+    coverages: [],
+  }));
+
+  // Reconstruct drivers
+  const priorDrivers: CanonicalDriver[] = (priorTerm.drivers || []).map((d: any) => ({
+    name: `${d.firstName || ''} ${d.lastName || ''}`.trim(),
+    dateOfBirth: d.dateOfBirth || undefined,
+    licenseNumber: d.licenseNumber || undefined,
+    licenseState: d.licenseState || undefined,
+    relationship: d.relationship || undefined,
+    isExcluded: d.isExcluded ?? undefined,
+  }));
+
+  return {
+    premium,
+    coverages: realCoverages,
+    vehicles: priorVehicles,
+    drivers: priorDrivers,
+    endorsements: [],
+    discounts: discountCoverages,
+    claims: claims || [],
+    propertyContext,
+    policyEffectiveDate: priorTerm.effectiveDate,
+    policyExpirationDate: priorTerm.expirationDate,
+    fetchedAt: new Date().toISOString(),
+    fetchSource: 'prior_term_snapshot',
+  };
+}
+
+/**
  * Build a BaselineSnapshot for a policy.
- * Checks local DB first, then enriches from HawkSoft API when local data is incomplete.
+ *
+ * Priority chain:
+ * 1. Local DB (now populated by enhanced sync with coverages/vehicles/drivers)
+ * 2. Prior-term snapshot (if local data is stale — already updated to renewal term)
+ * 3. HawkSoft API (last resort, may also be stale)
  */
 export async function buildBaselineSnapshot(
   tenantId: string,
   policyNumber: string,
-  _carrierName?: string
+  _carrierName?: string,
+  renewalEffectiveDate?: string
 ): Promise<{ snapshot: BaselineSnapshot; policyId: string; customerId: string } | null> {
   // Find local policy
   const localPolicy = await findLocalPolicy(tenantId, policyNumber);
@@ -171,40 +262,7 @@ export async function buildBaselineSnapshot(
 
   if (!policy) return null;
 
-  // Fetch vehicles and drivers from local DB
-  let policyVehicles = await db
-    .select()
-    .from(vehicles)
-    .where(eq(vehicles.policyId, policy.id));
-
-  let policyDrivers = await db
-    .select()
-    .from(drivers)
-    .where(eq(drivers.policyId, policy.id));
-
-  let localCoverages = normalizeHawkSoftCoverages(policy.coverages as any);
-
-  // Fill gaps from HawkSoft API — check each category independently
-  let fetchSource: 'hawksoft_api' | 'local_cache' = 'local_cache';
-  let hsVehicles: CanonicalVehicle[] = [];
-  let hsDrivers: CanonicalDriver[] = [];
-  let hsCoverages: CanonicalCoverage[] = [];
-
-  const needsVehicles = policyVehicles.length === 0;
-  const needsDrivers = policyDrivers.length === 0;
-  const needsCoverages = localCoverages.length === 0;
-
-  if (needsVehicles || needsDrivers || needsCoverages) {
-    const hsData = await fetchHawkSoftPolicyData(localPolicy.customerId, policyNumber);
-    if (hsData) {
-      if (needsVehicles) hsVehicles = hsData.vehicles;
-      if (needsDrivers) hsDrivers = hsData.drivers;
-      if (needsCoverages) hsCoverages = hsData.coverages;
-      fetchSource = 'hawksoft_api';
-    }
-  }
-
-  // Fetch property context
+  // Fetch property context (used by all paths)
   let propertyContext: PropertyContext | undefined;
   const [prop] = await db
     .select({
@@ -226,7 +284,7 @@ export async function buildBaselineSnapshot(
     };
   }
 
-  // Fetch claims from policy notices
+  // Fetch claims (used by all paths)
   const claimNotices = await db
     .select({
       claimNumber: policyNotices.claimNumber,
@@ -248,6 +306,53 @@ export async function buildBaselineSnapshot(
     claimType: n.description ?? undefined,
     status: n.claimStatus ?? undefined,
   }));
+
+  // Check if local data is stale (already updated to renewal term)
+  const stale = isLocalPolicyStale(policy.effectiveDate, renewalEffectiveDate);
+
+  // If stale and we have a prior-term snapshot, use it
+  if (stale && (policy as any).priorTermSnapshot) {
+    console.log(`[Baseline] Using prior-term snapshot for ${policyNumber} (local data is stale)`);
+    const snapshot = reconstructFromPriorTerm(
+      (policy as any).priorTermSnapshot,
+      propertyContext,
+      claims
+    );
+    return { snapshot, policyId: localPolicy.policyId, customerId: localPolicy.customerId };
+  }
+
+  // Fetch vehicles and drivers from local DB
+  let policyVehicles = await db
+    .select()
+    .from(vehicles)
+    .where(eq(vehicles.policyId, policy.id));
+
+  let policyDrivers = await db
+    .select()
+    .from(drivers)
+    .where(eq(drivers.policyId, policy.id));
+
+  let localCoverages = normalizeHawkSoftCoverages(policy.coverages as any);
+
+  // Fill gaps from HawkSoft API — check each category independently
+  let fetchSource: 'hawksoft_api' | 'local_cache' | 'prior_term_snapshot' = 'local_cache';
+  let hsVehicles: CanonicalVehicle[] = [];
+  let hsDrivers: CanonicalDriver[] = [];
+  let hsCoverages: CanonicalCoverage[] = [];
+
+  const needsVehicles = policyVehicles.length === 0;
+  const needsDrivers = policyDrivers.length === 0;
+  const needsCoverages = localCoverages.length === 0;
+
+  if (needsVehicles || needsDrivers || needsCoverages) {
+    const hsData = await fetchHawkSoftPolicyData(localPolicy.customerId, policyNumber);
+    if (hsData) {
+      if (needsVehicles) hsVehicles = hsData.vehicles;
+      if (needsDrivers) hsDrivers = hsData.drivers;
+      if (needsCoverages) hsCoverages = hsData.coverages;
+      fetchSource = 'hawksoft_api';
+    }
+  }
 
   // Partition discount-type coverages into discounts array
   const allCoverages = localCoverages.length > 0 ? localCoverages : hsCoverages;

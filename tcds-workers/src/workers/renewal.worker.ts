@@ -357,14 +357,52 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
           tenantId,
           policyNumber: candidate.policyNumber,
           carrierName: candidate.carrierName,
+          renewalEffectiveDate: candidate.effectiveDate,
         }),
       });
       baselineData = await baselineRes.json() as typeof baselineData;
     }
 
     if (!baselineData.success || !baselineData.snapshot) {
-      // Policy not found - skip candidate
-      await patchCandidate(candidateId, { status: 'skipped', errorMessage: 'Policy not found in HawkSoft' });
+      // No baseline available — still create a comparison with needs_review
+      // so the agent can review the renewal offer even without prior-term data
+      logger.warn({ candidateId }, 'No baseline available — creating needs_review comparison');
+
+      const comparisonRes = await internalFetch('/api/renewals/internal/comparisons', {
+        method: 'POST',
+        body: JSON.stringify({
+          tenantId,
+          candidateId,
+          customerId: baselineData.customerId || null,
+          policyId: baselineData.policyId || null,
+          policyNumber: candidate.policyNumber,
+          carrierName: candidate.carrierName,
+          lineOfBusiness: candidate.lineOfBusiness,
+          renewalEffectiveDate: candidate.effectiveDate,
+          renewalExpirationDate: candidate.expirationDate,
+          currentPremium: null,
+          renewalPremium: renewalSnapshot.premium,
+          recommendation: 'needs_review',
+          renewalSnapshot,
+          baselineSnapshot: null,
+          materialChanges: [],
+          comparisonSummary: {
+            baselineStatus: 'unknown',
+            baselineStatusReason: 'Policy not found in HawkSoft — prior-term data unavailable',
+          },
+        }),
+      });
+
+      const comparison = await comparisonRes.json() as { success: boolean; comparisonId?: string };
+
+      await patchCandidate(candidateId, {
+        status: 'completed',
+        comparisonId: comparison.comparisonId,
+        policyId: baselineData.policyId || null,
+        customerId: baselineData.customerId || null,
+      });
+
+      logger.info({ candidateId, comparisonId: comparison.comparisonId }, 'Created needs_review comparison (no baseline)');
       return;
     }
 

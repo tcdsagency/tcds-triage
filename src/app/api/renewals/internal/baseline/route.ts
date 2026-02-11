@@ -9,7 +9,7 @@ import { buildBaselineSnapshot } from '@/lib/al3/baseline-builder';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { tenantId, policyNumber, carrierName } = body;
+    const { tenantId, policyNumber, carrierName, renewalEffectiveDate } = body;
 
     if (!tenantId || !policyNumber) {
       return NextResponse.json(
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await buildBaselineSnapshot(tenantId, policyNumber, carrierName);
+    const result = await buildBaselineSnapshot(tenantId, policyNumber, carrierName, renewalEffectiveDate);
 
     if (!result) {
       return NextResponse.json({

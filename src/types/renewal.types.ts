@@ -235,7 +235,7 @@ export interface BaselineSnapshot {
   policyEffectiveDate?: string; // ISO date
   policyExpirationDate?: string; // ISO date
   fetchedAt: string; // ISO timestamp
-  fetchSource: 'hawksoft_api' | 'local_cache';
+  fetchSource: 'hawksoft_api' | 'local_cache' | 'prior_term_snapshot';
 }
 
 // =============================================================================

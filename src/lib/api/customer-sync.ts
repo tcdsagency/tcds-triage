@@ -17,7 +17,7 @@
  */
 
 import { db } from '@/db';
-import { customers, policies, syncLogs, users } from '@/db/schema';
+import { customers, policies, vehicles, drivers, syncLogs, users } from '@/db/schema';
 import { eq, and, or, isNull, sql } from 'drizzle-orm';
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from './agencyzoom';
 import { getHawkSoftClient, type HawkSoftClient } from './hawksoft';
@@ -353,8 +353,12 @@ export async function syncFromHawkSoft(options: SyncOptions): Promise<SyncResult
       const batchIds = changedIds.slice(i, i + batchSize);
       
       try {
-        const clients = await client.getClients(batchIds, ['details', 'policies', 'people']);
-        
+        const clients = await client.getClients(
+          batchIds,
+          ['details', 'policies', 'people'],
+          ['policies.coverages', 'policies.drivers', 'policies.autos']
+        );
+
         for (const hsClient of clients) {
           try {
             const action = await upsertFromHawkSoft(options.tenantId, hsClient, options.dryRun);
@@ -936,6 +940,14 @@ async function syncHawkSoftPolicies(
       // Determine line of business (loBs is more reliable than type)
       const lineOfBusiness = extractLineOfBusiness(hsPolicy);
 
+      // Normalize coverages from HawkSoft format to DB format
+      const normalizedCoverages = (hsPolicy.coverages || []).map((c: any) => ({
+        type: c.code || '',
+        limit: c.limits || '',
+        deductible: c.deductibles || '',
+        premium: typeof c.premium === 'string' ? parseFloat(c.premium) : (c.premium ?? undefined),
+      }));
+
       const policyData = {
         tenantId,
         customerId,
@@ -947,21 +959,94 @@ async function syncHawkSoftPolicies(
         expirationDate: new Date(hsPolicy.expirationDate),
         status: activeStatus.status,
         premium: hsPolicy.premium ? hsPolicy.premium.toString() : null,
+        coverages: normalizedCoverages.length > 0 ? normalizedCoverages : undefined,
         lastSyncedAt: new Date(),
         updatedAt: new Date(),
         rawData: hsPolicy as any, // Store full response for reference
       };
 
+      let policyId: string;
+
       if (existing) {
+        // Preserve prior-term snapshot when effectiveDate changes
+        const oldEffective = existing.effectiveDate?.toISOString().split('T')[0];
+        const newEffective = new Date(hsPolicy.effectiveDate).toISOString().split('T')[0];
+
+        if (oldEffective && newEffective && oldEffective !== newEffective) {
+          // Term changed — save the old data as prior-term snapshot
+          const oldVehicles = await db.select().from(vehicles).where(eq(vehicles.policyId, existing.id));
+          const oldDrivers = await db.select().from(drivers).where(eq(drivers.policyId, existing.id));
+
+          const priorTermSnapshot = {
+            premium: existing.premium,
+            effectiveDate: existing.effectiveDate?.toISOString().split('T')[0],
+            expirationDate: existing.expirationDate?.toISOString().split('T')[0],
+            coverages: existing.coverages,
+            vehicles: oldVehicles.map((v: any) => ({
+              vin: v.vin, year: v.year, make: v.make, model: v.model, use: v.use,
+            })),
+            drivers: oldDrivers.map((d: any) => ({
+              firstName: d.firstName, lastName: d.lastName,
+              dateOfBirth: d.dateOfBirth?.toISOString().split('T')[0],
+              licenseNumber: d.licenseNumber, licenseState: d.licenseState,
+              relationship: d.relationship, isExcluded: d.isExcluded,
+            })),
+            savedAt: new Date().toISOString(),
+          };
+
+          (policyData as any).priorTermSnapshot = priorTermSnapshot;
+          console.log(`[HawkSoft] Prior-term snapshot saved for ${hsPolicy.policyNumber} (${oldEffective} → ${newEffective})`);
+        }
+
         await db
           .update(policies)
           .set(policyData)
           .where(eq(policies.id, existing.id));
+        policyId = existing.id;
       } else {
-        await db.insert(policies).values({
+        const [newPolicy] = await db.insert(policies).values({
           ...policyData,
           createdAt: new Date(),
-        });
+        }).returning({ id: policies.id });
+        policyId = newPolicy.id;
+      }
+
+      // Sync vehicles (delete+insert to stay in sync)
+      const hsVehicles = (hsPolicy as any).autos || (hsPolicy as any).vehicles || [];
+      if (hsVehicles.length > 0) {
+        await db.delete(vehicles).where(eq(vehicles.policyId, policyId));
+        for (const v of hsVehicles) {
+          await db.insert(vehicles).values({
+            tenantId,
+            policyId,
+            vin: v.vin || null,
+            year: v.year || null,
+            make: v.make || null,
+            model: v.model || null,
+            use: v.use || v.usage || null,
+            annualMiles: v.annualMiles || null,
+            coverages: v.coverages || null,
+          });
+        }
+      }
+
+      // Sync drivers (delete+insert to stay in sync)
+      const hsDrivers = (hsPolicy as any).drivers || [];
+      if (hsDrivers.length > 0) {
+        await db.delete(drivers).where(eq(drivers.policyId, policyId));
+        for (const d of hsDrivers) {
+          await db.insert(drivers).values({
+            tenantId,
+            policyId,
+            firstName: d.firstName || 'Unknown',
+            lastName: d.lastName || '',
+            dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth) : null,
+            licenseNumber: d.licenseNumber || null,
+            licenseState: d.licenseState || null,
+            relationship: d.relationship || null,
+            isExcluded: d.isExcluded ?? false,
+          });
+        }
       }
     } catch (error) {
       console.error(`[HawkSoft] Error syncing policy ${hsPolicy.policyNumber}:`, error);

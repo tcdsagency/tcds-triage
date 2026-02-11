@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
       const baselineResult = await buildBaselineSnapshot(
         body.tenantId,
         body.policyNumber,
-        body.carrierName
+        body.carrierName,
+        body.effectiveDate  // pass renewal effective date for stale detection
       );
 
       if (baselineResult) {

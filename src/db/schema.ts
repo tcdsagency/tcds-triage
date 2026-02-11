@@ -565,10 +565,14 @@ export const policies = pgTable('policies', {
     premium?: number;
   }>>(),
   
+  // Prior-term snapshot — preserved when effectiveDate changes during sync
+  // so baseline builder can use prior-term data if HawkSoft already has new-term data
+  priorTermSnapshot: jsonb('prior_term_snapshot'),
+
   // Sync
   lastSyncedAt: timestamp('last_synced_at'),
   rawData: jsonb('raw_data'), // Full HawkSoft response for reference
-  
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
