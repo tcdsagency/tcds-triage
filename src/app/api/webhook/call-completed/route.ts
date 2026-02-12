@@ -853,7 +853,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       // - Extension is the agency main number (IVR/forwarded)
       // - Extension looks like a phone number (not a real agent extension)
       // =========================================================================
-      const isAfterHoursOrFallback = isAgencyMainNumber || extensionLooksLikePhone;
+      const isAfterHoursOrFallback = direction === "inbound" && (isAgencyMainNumber || extensionLooksLikePhone);
 
       if (isAfterHoursOrFallback) {
         console.log("[Call-Completed] 📞 AFTER-HOURS/FALLBACK CALL DETECTED");
