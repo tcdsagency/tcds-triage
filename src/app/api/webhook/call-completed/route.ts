@@ -808,6 +808,39 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         console.log(`[Call-Completed] 📞 Backfilling toNumber: "Unknown" → ${normalizePhone(calledNumber)} for call ${call.id}`);
       }
 
+      // Backfill agentId if not set (e.g., outbound calls where extension was a phone number)
+      if (!call.agentId && extension) {
+        const extDigits = extension.replace(/\D/g, "");
+        let foundAgent: { id: string } | undefined;
+        if (!extensionLooksLikePhone) {
+          [foundAgent] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(and(eq(users.tenantId, tenantId), eq(users.extension, extDigits)))
+            .limit(1);
+        }
+        if (!foundAgent && extensionLooksLikePhone) {
+          const phoneDigits = extDigits.slice(-10);
+          [foundAgent] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(
+              and(
+                eq(users.tenantId, tenantId),
+                or(
+                  ilike(users.phone, `%${phoneDigits}`),
+                  ilike(users.directDial, `%${phoneDigits}`)
+                )
+              )
+            )
+            .limit(1);
+        }
+        if (foundAgent) {
+          updateFields.agentId = foundAgent.id;
+          console.log(`[Call-Completed] 👤 Backfilling agentId: ${foundAgent.id} for call ${call.id}`);
+        }
+      }
+
       // Backfill customerId if phone was backfilled and no customer is linked
       if ((needsFromBackfill || needsToBackfill) && !call.customerId) {
         const backfilledPhone = direction === "inbound"
@@ -888,16 +921,40 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         customer = found;
       }
 
-      // Find agent by extension - skip if extension is a phone number (won't match anyway)
+      // Find agent by extension, or by phone number for outbound calls
       let agentId: string | undefined;
       if (extension && !isAfterHoursOrFallback) {
         const extDigits = extension.replace(/\D/g, "");
-        const [agent] = await db
-          .select({ id: users.id })
-          .from(users)
-          .where(and(eq(users.tenantId, tenantId), eq(users.extension, extDigits)))
-          .limit(1);
-        agentId = agent?.id;
+        // First try matching by short extension (e.g., "102")
+        if (!extensionLooksLikePhone) {
+          const [agent] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(and(eq(users.tenantId, tenantId), eq(users.extension, extDigits)))
+            .limit(1);
+          agentId = agent?.id;
+        }
+        // Fallback: if extension is a phone number, match against users.phone or directDial
+        if (!agentId && extensionLooksLikePhone) {
+          const phoneDigits = extDigits.slice(-10);
+          const [agent] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(
+              and(
+                eq(users.tenantId, tenantId),
+                or(
+                  ilike(users.phone, `%${phoneDigits}`),
+                  ilike(users.directDial, `%${phoneDigits}`)
+                )
+              )
+            )
+            .limit(1);
+          agentId = agent?.id;
+          if (agentId) {
+            console.log(`[Call-Completed] 👤 Matched agent by phone/directDial: ${phoneDigits}`);
+          }
+        }
       }
 
       const [created] = await db
