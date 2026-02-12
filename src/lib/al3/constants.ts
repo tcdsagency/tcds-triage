@@ -118,6 +118,7 @@ export const LOB_CODES: Record<string, string> = {
   'FLOOD': 'Flood',
   'PBOAT': 'Watercraft',
   'BOAT': 'Watercraft',
+  'FMGBN': 'Umbrella',
 };
 
 // =============================================================================

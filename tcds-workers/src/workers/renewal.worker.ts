@@ -172,7 +172,26 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
         deduped.set(key, r);
       }
     }
-    const unique = Array.from(deduped.values());
+    const uniqueAll = Array.from(deduped.values());
+
+    // Filter out renewals whose effective date is today or in the past.
+    // Once a policy has renewed, HawkSoft updates to the new term data,
+    // so prior term data is no longer available for baseline comparison.
+    const today = new Date().toISOString().split('T')[0];
+    const unique: typeof uniqueAll = [];
+    let expiredSkipped = 0;
+    for (const r of uniqueAll) {
+      const effDate = r.header?.effectiveDate?.split('T')[0];
+      if (effDate && effDate <= today) {
+        expiredSkipped++;
+        logger.info({
+          policyNumber: r.header?.policyNumber,
+          effectiveDate: effDate,
+        }, 'Skipping renewal with effective date today or past - prior term data unavailable');
+      } else {
+        unique.push(r);
+      }
+    }
 
     // Archive non-renewal transactions
     let totalArchived = 0;
@@ -211,6 +230,7 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
       totalRenewals: allRenewals.length,
       uniqueRenewals: unique.length,
       duplicatesRemoved,
+      expiredSkipped,
       nonRenewalsArchived: totalArchived,
     }, 'Renewals filtered and non-renewals archived');
 
