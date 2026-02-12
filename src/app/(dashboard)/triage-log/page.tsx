@@ -593,7 +593,10 @@ function EntryRow({
         )}
       </td>
       <td className="px-4 py-3">
-        <span className="text-sm text-gray-700 dark:text-gray-300">{entry.agentName}</span>
+        <div className="flex items-center gap-1.5">
+          <User className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{entry.agentName}</span>
+        </div>
       </td>
       <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
         {formatDuration(entry.durationSeconds)}
@@ -1147,7 +1150,7 @@ export default function TriageLogPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
