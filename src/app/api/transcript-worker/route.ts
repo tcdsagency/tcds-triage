@@ -1168,6 +1168,75 @@ async function pollSQLForMissedCalls(): Promise<{ found: number; processed: numb
           });
         }
 
+        // Outbound calls: auto-match + post note + complete (no ticket)
+        if (transcript.direction === "outbound" && wrapup?.id && customerPhone) {
+          try {
+            const phoneSuffix = customerPhone.replace(/\D/g, '').slice(-10);
+            const [foundCustomer] = phoneSuffix.length >= 7 ? await db
+              .select({ id: customers.id, agencyzoomId: customers.agencyzoomId })
+              .from(customers)
+              .where(
+                and(
+                  eq(customers.tenantId, tenantId),
+                  or(
+                    ilike(customers.phone, `%${phoneSuffix}`),
+                    ilike(customers.phoneAlt, `%${phoneSuffix}`)
+                  )
+                )
+              )
+              .limit(1) : [];
+
+            if (foundCustomer?.agencyzoomId) {
+              const azCustomerId = parseInt(foundCustomer.agencyzoomId, 10);
+              if (!isNaN(azCustomerId) && azCustomerId > 0) {
+                // Post note to AgencyZoom
+                const azClient = getAgencyZoomClient();
+                const now = new Date();
+                const formattedDate = now.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+                const formattedTime = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+                const agentName = agent ? transcript.extension || "Agent" : "Unknown Agent";
+                const noteText = `📞 Outbound Call - ${formattedDate} ${formattedTime}\n\n${aiResult.summary}\n\nAgent: ${agentName}`;
+                const noteResult = await azClient.addNote(azCustomerId, noteText);
+
+                await db.update(wrapupDrafts).set({
+                  status: "completed",
+                  matchStatus: "matched",
+                  noteAutoPosted: noteResult.success || false,
+                  noteAutoPostedAt: noteResult.success ? now : undefined,
+                  completionAction: noteResult.success ? "posted" : "auto_completed",
+                  completedAt: now,
+                  agencyzoomNoteId: noteResult.id?.toString() || null,
+                }).where(eq(wrapupDrafts.id, wrapup.id));
+
+                // Link customer to call
+                await db.update(calls).set({ customerId: foundCustomer.id }).where(eq(calls.id, newCall.id));
+                console.log(`[TranscriptWorker] Outbound call: matched + note posted to AZ customer ${azCustomerId}`);
+              } else {
+                // Matched but no valid AZ ID - auto-complete
+                await db.update(wrapupDrafts).set({
+                  status: "completed",
+                  completionAction: "auto_completed",
+                  completedAt: new Date(),
+                  autoVoidReason: "outbound_unmatched",
+                }).where(eq(wrapupDrafts.id, wrapup.id));
+                console.log(`[TranscriptWorker] Outbound call: customer found but no AZ ID, auto-completed`);
+              }
+            } else {
+              // No match - auto-complete outbound wrapup
+              await db.update(wrapupDrafts).set({
+                status: "completed",
+                completionAction: "auto_completed",
+                completedAt: new Date(),
+                autoVoidReason: "outbound_unmatched",
+              }).where(eq(wrapupDrafts.id, wrapup.id));
+              console.log(`[TranscriptWorker] Outbound call: no customer match, auto-completed`);
+            }
+          } catch (outboundErr) {
+            // Non-fatal - at worst the wrapup stays pending_review
+            console.error(`[TranscriptWorker] Outbound auto-post failed:`, outboundErr);
+          }
+        }
+
         processed++;
       } catch (err) {
         console.error(`[TranscriptWorker] Error processing SQL transcript ${transcript.id}:`, err);
