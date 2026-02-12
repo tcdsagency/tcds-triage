@@ -190,8 +190,8 @@ export async function attemptLinkQuoteToTicket(quoteId: string): Promise<
   // AZ PUT requires all required fields echoed back
   if (azTicket) {
     try {
-      const separator = "\n\n===================================\nQUOTE INTAKE DETAILS\n===================================\n\n";
-      const updatedDesc = (azTicket.serviceDesc || "") + separator + noteText;
+      const separator = "\n\n===================================\nCALL SUMMARY\n===================================\n\n";
+      const updatedDesc = noteText + separator + (azTicket.serviceDesc || "");
       await azClient.updateServiceTicket(azTicketId, {
         // Echo all required fields from current ticket
         customerId: azTicket.householdId,
