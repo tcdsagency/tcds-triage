@@ -1,8 +1,14 @@
 // =============================================================================
 // Shared AZ Service Ticket Description Formatter
 // =============================================================================
-// Provides a consistent, UI-friendly format for all service ticket descriptions.
+// Provides a consistent, UI-friendly HTML format for all service ticket
+// descriptions. AgencyZoom renders description fields as HTML.
 // =============================================================================
+
+/** Line break */
+const BR = '<br />';
+/** Paragraph break (blank line) */
+const PBR = `<br />&nbsp;<br />`;
 
 export interface TicketDescriptionParams {
   /** The AI summary of the call */
@@ -27,59 +33,51 @@ export interface TicketDescriptionParams {
  * Format a standard inbound call ticket description.
  */
 export function formatInboundCallDescription(params: TicketDescriptionParams): string {
-  const lines: string[] = [];
+  const parts: string[] = [];
 
   // --- Service Request Details ---
-  lines.push('🛠️ Service Request Details');
-  lines.push(params.summary || 'No summary available');
-  lines.push('');
-  lines.push('');
+  parts.push(`<b>🛠️ Service Request Details</b>${BR}`);
+  parts.push(esc(params.summary || 'No summary available'));
+  parts.push(PBR);
 
   // --- Extracted Data ---
-  const extractedLines: string[] = [];
+  const extractedParts: string[] = [];
   if (params.actionItems && params.actionItems.length > 0) {
-    extractedLines.push('Action Items:');
-    params.actionItems.forEach(item => extractedLines.push(`• ${item}`));
+    extractedParts.push(`Action Items:${BR}`);
+    params.actionItems.forEach(item => extractedParts.push(`&bull; ${esc(item)}${BR}`));
   }
   if (params.extractedData) {
     const d = params.extractedData;
-    if (d.customerName) extractedLines.push(`Customer: ${d.customerName}`);
-    if (d.policyNumber) extractedLines.push(`Policy: ${d.policyNumber}`);
-    if (d.reason) extractedLines.push(`Reason: ${d.reason}`);
+    if (d.customerName) extractedParts.push(`Customer: ${esc(d.customerName)}${BR}`);
+    if (d.policyNumber) extractedParts.push(`Policy: ${esc(d.policyNumber)}${BR}`);
+    if (d.reason) extractedParts.push(`Reason: ${esc(d.reason)}${BR}`);
   }
-  if (extractedLines.length > 0) {
-    lines.push('📊 Extracted Data from Call');
-    lines.push(...extractedLines);
-    lines.push('');
-    lines.push('');
+  if (extractedParts.length > 0) {
+    parts.push(`<b>📊 Extracted Data from Call</b>${BR}`);
+    parts.push(...extractedParts);
+    parts.push(PBR);
   }
 
   // --- Call Information ---
-  lines.push('📞 Call Information');
+  parts.push(`<b>📞 Call Information</b>${BR}`);
   if (params.callerPhone) {
-    lines.push(`Phone Number: ${params.callerPhone}`);
-    lines.push('');
+    parts.push(`Phone Number: ${esc(params.callerPhone)}${PBR}`);
   }
   if (params.durationSeconds != null) {
-    lines.push(`Call Duration: ${params.durationSeconds} seconds`);
-    lines.push('');
+    parts.push(`Call Duration: ${params.durationSeconds} seconds${PBR}`);
   }
   if (params.isNCM && params.callerPhone) {
-    lines.push('Caller Information: ' + (params.customerName || 'Unknown'));
-    lines.push('');
-    lines.push(`Phone Number: ${params.callerPhone}`);
-    lines.push('');
+    parts.push(`Caller Information: ${esc(params.customerName || 'Unknown')}${BR}`);
+    parts.push(`Phone Number: ${esc(params.callerPhone)}${PBR}`);
   }
-  lines.push('');
 
   // --- Transcript ---
   if (params.transcript) {
-    lines.push('🗣️ Call Transcription');
-    lines.push(cleanTranscript(params.transcript));
-    lines.push('');
+    parts.push(`<b>🗣️ Call Transcription</b>${BR}`);
+    parts.push(cleanTranscriptHtml(params.transcript));
   }
 
-  return lines.join('\n').trimEnd();
+  return parts.join('\n');
 }
 
 /**
@@ -95,62 +93,53 @@ export function formatAfterHoursDescription(params: {
   actionItems?: string[];
   isNCM?: boolean;
 }): string {
-  const lines: string[] = [];
+  const parts: string[] = [];
 
   // --- Service Request Details ---
-  lines.push('🛠️ Service Request Details');
-  lines.push(params.aiSummary || params.reason || 'After-hours call - callback requested');
-  lines.push('');
-  lines.push('');
+  parts.push(`<b>🛠️ Service Request Details</b>${BR}`);
+  parts.push(esc(params.aiSummary || params.reason || 'After-hours call - callback requested'));
+  parts.push(PBR);
 
   // --- Extracted Data ---
-  const extractedLines: string[] = [];
+  const extractedParts: string[] = [];
   if (params.reason && params.reason !== params.aiSummary) {
-    extractedLines.push(`Reason: ${params.reason}`);
+    extractedParts.push(`Reason: ${esc(params.reason)}${BR}`);
   }
   if (params.actionItems && params.actionItems.length > 0) {
-    extractedLines.push('Action Items:');
-    params.actionItems.forEach(item => extractedLines.push(`• ${item}`));
+    extractedParts.push(`Action Items:${BR}`);
+    params.actionItems.forEach(item => extractedParts.push(`&bull; ${esc(item)}${BR}`));
   }
-  if (extractedLines.length > 0) {
-    lines.push('📊 Extracted Data from Call');
-    lines.push(...extractedLines);
-    lines.push('');
-    lines.push('');
+  if (extractedParts.length > 0) {
+    parts.push(`<b>📊 Extracted Data from Call</b>${BR}`);
+    parts.push(...extractedParts);
+    parts.push(PBR);
   }
 
   // --- Call Information ---
-  lines.push('📞 Call Information');
+  parts.push(`<b>📞 Call Information</b>${BR}`);
   if (params.callerName) {
-    lines.push(`Caller: ${params.callerName}`);
-    lines.push('');
+    parts.push(`Caller: ${esc(params.callerName)}${BR}`);
   }
-  lines.push(`Phone Number: ${params.callerPhone}`);
-  lines.push('');
+  parts.push(`Phone Number: ${esc(params.callerPhone)}${PBR}`);
   if (params.isNCM) {
-    lines.push('Caller Information: ' + (params.callerName || 'Unknown'));
-    lines.push('');
-    lines.push(`Phone Number: ${params.callerPhone}`);
-    lines.push('');
+    parts.push(`Caller Information: ${esc(params.callerName || 'Unknown')}${BR}`);
+    parts.push(`Phone Number: ${esc(params.callerPhone)}${PBR}`);
   }
-  lines.push('');
 
   // --- Voicemail / ReceptionHQ ---
   if (params.transcript) {
-    lines.push('🗣️ Voicemail Transcript');
-    lines.push(cleanTranscript(params.transcript));
-    lines.push('');
-    lines.push('');
+    parts.push(`<b>🗣️ Voicemail Transcript</b>${BR}`);
+    parts.push(cleanTranscriptHtml(params.transcript));
+    parts.push(PBR);
   }
 
   if (params.emailBody && params.emailBody !== params.reason) {
-    lines.push('📝 ReceptionHQ Notes');
-    lines.push(params.emailBody);
-    lines.push('');
-    lines.push('');
+    parts.push(`<b>📝 ReceptionHQ Notes</b>${BR}`);
+    parts.push(esc(params.emailBody).replace(/\n/g, BR));
+    parts.push(PBR);
   }
 
-  return lines.join('\n').trimEnd();
+  return parts.join('\n');
 }
 
 /**
@@ -180,64 +169,63 @@ export function formatQuoteSection(params: {
   } | null;
   notes?: string | null;
 }): string {
-  const lines: string[] = [];
+  const parts: string[] = [];
 
-  lines.push(`📋 Quote Intake - ${params.typeLabel}`);
-  lines.push('');
+  parts.push(`<b>📋 Quote Intake - ${esc(params.typeLabel)}</b>${PBR}`);
 
   // Contact info
   if (params.contact) {
     const c = params.contact;
     const name = `${c.firstName || ''} ${c.lastName || ''}`.trim();
-    const parts: string[] = [];
-    if (name) parts.push(name);
-    if (c.phone) parts.push(c.phone);
-    if (c.email) parts.push(c.email);
-    if (parts.length > 0) lines.push(`Contact: ${parts.join(' | ')}`);
+    const items: string[] = [];
+    if (name) items.push(name);
+    if (c.phone) items.push(c.phone);
+    if (c.email) items.push(c.email);
+    if (items.length > 0) parts.push(`Contact: ${esc(items.join(' | '))}${BR}`);
     if (c.address) {
       const addrParts = [c.address.street, c.address.city, c.address.state, c.address.zip].filter(Boolean);
-      if (addrParts.length > 0) lines.push(`Address: ${addrParts.join(', ')}`);
+      if (addrParts.length > 0) parts.push(`Address: ${esc(addrParts.join(', '))}${BR}`);
     }
-    lines.push('');
+    parts.push(PBR);
   }
 
   // Vehicles
   if (params.vehicles && params.vehicles.length > 0) {
-    lines.push('Vehicles:');
+    parts.push(`Vehicles:${BR}`);
     params.vehicles.forEach((v, i) => {
       const desc = [v.year, v.make, v.model].filter(Boolean).join(' ');
       const details: string[] = [];
       if (v.use) details.push(v.use);
       if (v.annualMiles) details.push(`${v.annualMiles.toLocaleString()} mi/yr`);
-      lines.push(`  ${i + 1}. ${desc}${details.length ? ` - ${details.join(', ')}` : ''}`);
+      parts.push(`&nbsp;&nbsp;${i + 1}. ${esc(desc)}${details.length ? ` - ${esc(details.join(', '))}` : ''}${BR}`);
     });
-    lines.push('');
+    parts.push(PBR);
   }
 
   // Drivers
   if (params.drivers && params.drivers.length > 0) {
-    lines.push('Drivers:');
+    parts.push(`Drivers:${BR}`);
     params.drivers.forEach((d, i) => {
       const name = `${d.firstName || ''} ${d.lastName || ''}`.trim();
       const details: string[] = [];
       if (d.dob) details.push(`DOB: ${d.dob}`);
       if (d.licenseNumber) details.push(`DL# ${d.licenseNumber}`);
       if (d.licenseState) details.push(d.licenseState);
-      lines.push(`  ${i + 1}. ${name}${details.length ? ` (${details.join(', ')})` : ''}`);
+      parts.push(`&nbsp;&nbsp;${i + 1}. ${esc(name)}${details.length ? ` (${esc(details.join(', '))})` : ''}${BR}`);
     });
-    lines.push('');
+    parts.push(PBR);
   }
 
   // Property
   if (params.property) {
     const p = params.property;
-    lines.push('Property:');
+    parts.push(`Property:${BR}`);
     if (p.address) {
       if (typeof p.address === 'string') {
-        lines.push(`  Address: ${p.address}`);
+        parts.push(`&nbsp;&nbsp;Address: ${esc(p.address)}${BR}`);
       } else {
-        const parts = [p.address.street, p.address.city, p.address.state, p.address.zip].filter(Boolean);
-        if (parts.length) lines.push(`  Address: ${parts.join(', ')}`);
+        const items = [p.address.street, p.address.city, p.address.state, p.address.zip].filter(Boolean);
+        if (items.length) parts.push(`&nbsp;&nbsp;Address: ${esc(items.join(', '))}${BR}`);
       }
     }
     const propDetails: string[] = [];
@@ -246,34 +234,45 @@ export function formatQuoteSection(params: {
     if (p.constructionType) propDetails.push(p.constructionType);
     if (p.roofType) propDetails.push(`${p.roofType} roof`);
     if (p.roofAge) propDetails.push(`Roof age: ${p.roofAge}yr`);
-    if (propDetails.length) lines.push(`  ${propDetails.join(', ')}`);
-    lines.push('');
+    if (propDetails.length) parts.push(`&nbsp;&nbsp;${esc(propDetails.join(', '))}${BR}`);
+    parts.push(PBR);
   }
 
   // Notes
   if (params.notes) {
-    lines.push(`Notes: ${params.notes}`);
-    lines.push('');
+    parts.push(`Notes: ${esc(params.notes)}${PBR}`);
   }
 
-  return lines.join('\n').trimEnd();
+  return parts.join('\n');
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/** Escape HTML special characters */
+function esc(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 /**
- * Strip HTML tags and clean up transcript text for plain-text display.
- * - Removes <p>, </p>, <br />, <br> tags
- * - Collapses repeated filler lines (e.g. repeated "Okay." or "Mm-hmm.")
- * - Trims excessive blank lines
+ * Clean up transcript and convert to HTML line-broken format.
+ * - Converts <p> wrapped lines to <br /> separated lines
+ * - Collapses repeated filler lines
+ * - Strips stray HTML tags
  */
-function cleanTranscript(raw: string): string {
+function cleanTranscriptHtml(raw: string): string {
   let text = raw;
 
-  // Strip <p> tags → newlines
+  // Strip <p> tags → newlines first (to normalize)
   text = text.replace(/<p>/gi, '');
   text = text.replace(/<\/p>/gi, '\n');
 
   // Strip <br /> and <br> tags
-  text = text.replace(/<br\s*\/?>/gi, '');
+  text = text.replace(/<br\s*\/?>/gi, '\n');
 
   // Strip any remaining HTML tags
   text = text.replace(/<[^>]+>/g, '');
@@ -284,5 +283,10 @@ function cleanTranscript(raw: string): string {
   // Clean up excessive blank lines
   text = text.replace(/\n{3,}/g, '\n\n');
 
-  return text.trim();
+  text = text.trim();
+
+  // Convert back to HTML: each line gets a <br />
+  // Escape HTML entities in the transcript text, then add line breaks
+  const htmlLines = text.split('\n').map(line => esc(line.trim())).filter(l => l.length > 0);
+  return htmlLines.join(BR + '\n');
 }
