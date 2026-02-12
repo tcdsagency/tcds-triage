@@ -89,7 +89,7 @@ export class VMBridgeClient {
     }
 
     return new VMBridgeClient(tenantId, {
-      bridgeUrl: bridgeUrl.replace(/\/$/, ""), // Remove trailing slash
+      bridgeUrl: bridgeUrl.trim().replace(/\/$/, ""), // Remove whitespace/newlines and trailing slash
       apiKey,
       deepgramApiKey,
     });
