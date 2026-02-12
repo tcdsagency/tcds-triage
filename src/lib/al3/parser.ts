@@ -977,7 +977,7 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
           // Pattern: "5BPI...<spaces>POLICYNUMBER"
           if (!header.policyNumber) {
             const cleanLine = line.replace(/[\x00-\x1F\x7F-\xFF]/g, ' ');
-            const policyMatch = cleanLine.match(/5BPI\d{3}[^]*?\s{2,}(\d{7,15})\b/);
+            const policyMatch = cleanLine.match(/5BPI\d{3}[^]*?\s{2,}(\d[\d-]{5,15}\d)\b/);
             if (policyMatch) header.policyNumber = policyMatch[1];
           }
           // Extract LOB and dates from embedded 5BPI data
@@ -1148,7 +1148,8 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
           if (policyMatch) {
             header.policyNumber = policyMatch[1];
           } else {
-            const altMatch = bpiContent.match(/\b(\d{7,15})\b/);
+            // Match numeric or hyphenated policy numbers (e.g., "0301-2100-0999")
+            const altMatch = bpiContent.match(/\b(\d[\d-]{5,15}\d)\b/);
             if (altMatch) header.policyNumber = altMatch[1];
           }
         }
@@ -1222,6 +1223,13 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
             if (phone && /^\d{7,}$/.test(phone)) {
               insuredPhone = phone;
             }
+          }
+        } else if (gc === '5ISI' && isEDIFACTFormat(line)) {
+          // 5ISI: Insured Supplemental Info — may contain embedded 5BPI with policy number
+          if (!header.policyNumber) {
+            const cleanLine = line.replace(/[\x00-\x1F\x7F-\xFF]/g, ' ');
+            const policyMatch = cleanLine.match(/5BPI\d{3}[^]*?\s{2,}(\d[\d-]{5,15}\d)\b/);
+            if (policyMatch) header.policyNumber = policyMatch[1];
           }
         } else if (gc === '5AOI') {
           // 5AOI: Additional Other Insured (mortgagee/lienholder)
@@ -1453,6 +1461,7 @@ function parseTransactionHeader(line: string): AL3TransactionHeader {
   // Fix truncated carrier names from EDIFACT-delimited records
   if (cleanCarrierName === 'LSTATE') cleanCarrierName = 'ALLSTATE';
   if (cleanCarrierName === 'CAN STRATEGIC') cleanCarrierName = 'AMERICAN STRATEGIC';
+  if (cleanCarrierName === 'RSAL P&C INS CO') cleanCarrierName = 'UNIVERSAL P&C INS CO';
 
   // Fallback: try extracting LOB from anywhere in the first 40 chars if position-based failed
   let resolvedLob = LOB_CODES[lobCode] || lobCode || undefined;
