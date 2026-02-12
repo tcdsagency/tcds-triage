@@ -1301,26 +1301,31 @@ export class AgencyZoomClient {
     csrId?: number;
     priorityId?: number;
     categoryId?: number;
-    searchText?: string;
+    fullName?: string;
+    serviceTicketIds?: number[];
   }): Promise<{ data: ServiceTicket[]; total: number }> {
+    const body: Record<string, unknown> = {
+      page: params?.page ?? 0, // API pages are 0-indexed
+      pageSize: params?.limit || 50,
+      sort: 'id',
+      order: 'desc',
+    };
+    if (params?.status !== undefined) body.status = params.status;
+    else body.status = 1; // Default to active
+    if (params?.pipelineId) body.workflowId = params.pipelineId;
+    if (params?.stageId) body.workflowStageId = params.stageId;
+    if (params?.csrId) body.csr = params.csrId;
+    if (params?.priorityId) body.priorityId = params.priorityId;
+    if (params?.categoryId) body.categoryId = params.categoryId;
+    if (params?.fullName) body.fullName = params.fullName;
+    if (params?.serviceTicketIds?.length) body.serviceTicketIds = params.serviceTicketIds;
+
     const result = await this.request<{
       serviceTickets: ServiceTicket[];
       totalCount: number;
     }>('/v1/api/serviceTicket/service-tickets/list', {
       method: 'POST',
-      body: JSON.stringify({
-        page: params?.page || 1,      // NOTE: API uses 'page' not 'pageNo'
-        pageSize: params?.limit || 50,
-        status: params?.status ?? 1, // Default to active
-        workflowId: params?.pipelineId,
-        workflowStageId: params?.stageId,
-        csr: params?.csrId,
-        priorityId: params?.priorityId,
-        categoryId: params?.categoryId,
-        searchText: params?.searchText || '',
-        sortColumn: 'createDate',
-        sortOrder: 'desc',
-      }),
+      body: JSON.stringify(body),
     });
 
     return { data: result.serviceTickets || [], total: result.totalCount || 0 };
@@ -1381,32 +1386,43 @@ export class AgencyZoomClient {
   /**
    * Update a service ticket
    * PUT /v1/api/serviceTicket/service-tickets/{serviceTicketId}
+   *
+   * NOTE: AZ requires ALL these fields in every update (they're all "required"):
+   * id, customerId, workflowId, workflowStageId, csr, subject, priorityId, categoryId
+   * Optional: description, policyIds, bizBookIds, dueDate
+   *
+   * Callers that only need partial updates (e.g., stage change) should first read the
+   * ticket via getServiceTickets({ serviceTicketIds: [id] }) and echo current values.
    */
   async updateServiceTicket(
     ticketId: number,
     updates: {
-      stageId?: number;
-      status?: number;
-      csrId?: number;
+      customerId?: number;
+      workflowId?: number;
+      workflowStageId?: number;
+      csr?: number;
+      subject?: string;
       priorityId?: number;
       categoryId?: number;
-      dueDate?: string;
-      subject?: string;
       description?: string;
+      dueDate?: string;
+      status?: number;
       resolutionId?: number;
       resolutionDesc?: string;
     }
   ): Promise<{ success: boolean }> {
-    const body: Record<string, unknown> = {};
+    const body: Record<string, unknown> = { id: ticketId };
 
-    if (updates.stageId !== undefined) body.workflowStageId = updates.stageId;
-    if (updates.status !== undefined) body.status = updates.status;
-    if (updates.csrId !== undefined) body.csr = updates.csrId;
+    if (updates.customerId !== undefined) body.customerId = updates.customerId;
+    if (updates.workflowId !== undefined) body.workflowId = updates.workflowId;
+    if (updates.workflowStageId !== undefined) body.workflowStageId = updates.workflowStageId;
+    if (updates.csr !== undefined) body.csr = updates.csr;
+    if (updates.subject !== undefined) body.subject = updates.subject;
     if (updates.priorityId !== undefined) body.priorityId = updates.priorityId;
     if (updates.categoryId !== undefined) body.categoryId = updates.categoryId;
-    if (updates.dueDate !== undefined) body.dueDate = updates.dueDate;
-    if (updates.subject !== undefined) body.subject = updates.subject;
     if (updates.description !== undefined) body.description = updates.description;
+    if (updates.dueDate !== undefined) body.dueDate = updates.dueDate;
+    if (updates.status !== undefined) body.status = updates.status;
     if (updates.resolutionId !== undefined) body.resolutionId = updates.resolutionId;
     if (updates.resolutionDesc !== undefined) body.resolutionDesc = updates.resolutionDesc;
 

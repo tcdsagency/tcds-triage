@@ -43,7 +43,7 @@ export async function PATCH(
     // 2. Update in AgencyZoom
     const client = getAgencyZoomClient();
     await client.updateServiceTicket(ticket.azTicketId, {
-      csrId,
+      csr: csrId,
     });
 
     // 3. Update local DB

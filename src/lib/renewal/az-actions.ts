@@ -47,7 +47,7 @@ export async function moveRenewalSRStage(
     if (!stageId) return { success: false, error: `Could not resolve stage: ${targetStage}` };
 
     await azClient.updateServiceTicket(azTicketId, {
-      stageId,
+      workflowStageId: stageId,
     });
 
     return { success: true };

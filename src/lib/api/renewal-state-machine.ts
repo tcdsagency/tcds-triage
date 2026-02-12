@@ -112,7 +112,7 @@ export async function moveRenewalToStage(
           });
         } else {
           await azClient.updateServiceTicket(renewal.agencyzoomSrId, {
-            stageId: targetStageId,
+            workflowStageId: targetStageId,
           });
         }
       }

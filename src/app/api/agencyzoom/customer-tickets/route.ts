@@ -24,12 +24,12 @@ export async function GET(request: NextRequest) {
     const client = getAgencyZoomClient();
 
     // Search for open (status=1) tickets
-    // AgencyZoom searchText can match customer name
+    // AgencyZoom fullName matches household name
     const result = await client.getServiceTickets({
-      page: 1,
+      page: 0,
       limit: 20,
       status: 1, // Active only
-      searchText: customerName || '',
+      fullName: customerName || undefined,
     });
 
     // Filter to only include tickets for this customer if we have the ID

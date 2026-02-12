@@ -189,7 +189,7 @@ export async function GET(request: NextRequest) {
         const azClient = getAgencyZoomClient();
         const ticketResult = await azClient.getServiceTickets({
           status: 1, // Active tickets only
-          searchText: `${customer.firstName} ${customer.lastName}`.trim(),
+          fullName: `${customer.firstName} ${customer.lastName}`.trim(),
           limit: 20,
         });
 

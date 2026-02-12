@@ -49,8 +49,8 @@ export async function PATCH(
     const updates: Parameters<typeof azClient.updateServiceTicket>[1] = {};
 
     if (body.status !== undefined) updates.status = body.status;
-    if (body.stageId !== undefined) updates.stageId = body.stageId;
-    if (body.csrId !== undefined) updates.csrId = body.csrId;
+    if (body.stageId !== undefined) updates.workflowStageId = body.stageId;
+    if (body.csrId !== undefined) updates.csr = body.csrId;
     if (body.priorityId !== undefined) updates.priorityId = body.priorityId;
     if (body.categoryId !== undefined) updates.categoryId = body.categoryId;
     if (body.dueDate !== undefined) updates.dueDate = body.dueDate;

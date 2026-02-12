@@ -177,31 +177,40 @@ export async function attemptLinkQuoteToTicket(quoteId: string): Promise<
 
   let notePosted = false;
 
-  // Try adding as a service ticket note first
+  // Read current ticket via list API (GET single doesn't work in AZ)
+  let azTicket: any = null;
   try {
-    const result = await azClient.addServiceTicketNote(azTicketId, noteText);
-    if (result.success) {
-      notePosted = true;
-    } else {
-      console.warn(`[QuoteTicketLinker] Service ticket note endpoint failed for AZ#${azTicketId}`);
-    }
+    const listResult = await azClient.getServiceTickets({ serviceTicketIds: [azTicketId] });
+    azTicket = listResult.data?.[0] as any;
   } catch (err) {
-    console.warn(`[QuoteTicketLinker] Service ticket note endpoint not available, will append to description`);
+    console.warn(`[QuoteTicketLinker] Could not read ticket #${azTicketId} via list API`);
   }
 
-  // Fallback: append quote details to the ticket description
-  if (!notePosted) {
+  // Append quote details to the ticket description via PUT
+  // AZ PUT requires all required fields echoed back
+  if (azTicket) {
     try {
-      const existingTicket = await azClient.getServiceTicket(azTicketId);
-      const existingDesc = (existingTicket as any)?.description || "";
       const separator = "\n\n===================================\nQUOTE INTAKE DETAILS\n===================================\n\n";
-      const updatedDesc = existingDesc + separator + noteText;
-      await azClient.updateServiceTicket(azTicketId, { description: updatedDesc });
+      const updatedDesc = (azTicket.serviceDesc || "") + separator + noteText;
+      await azClient.updateServiceTicket(azTicketId, {
+        // Echo all required fields from current ticket
+        customerId: azTicket.householdId,
+        workflowId: azTicket.workflowId,
+        workflowStageId: azTicket.workflowStageId,
+        csr: azTicket.csr,
+        subject: azTicket.subject,
+        priorityId: azTicket.priorityId,
+        categoryId: azTicket.categoryId,
+        // Updated field
+        description: updatedDesc,
+      });
       notePosted = true;
-      console.log(`[QuoteTicketLinker] Appended quote details to ticket #${azTicketId} description`);
+      console.log(`[QuoteTicketLinker] Appended quote details to AZ ticket #${azTicketId}`);
     } catch (err) {
-      console.error(`[QuoteTicketLinker] Failed to update ticket description:`, err);
+      console.error(`[QuoteTicketLinker] Failed to update ticket description:`, err instanceof Error ? err.message : err);
     }
+  } else {
+    console.warn(`[QuoteTicketLinker] Could not find AZ ticket #${azTicketId} to update`);
   }
 
   // 4. Also post to customer note if we have a customer match

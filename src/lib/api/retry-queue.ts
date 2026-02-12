@@ -378,7 +378,7 @@ async function executeRetryOperation(
         });
       } else {
         await azClient.updateServiceTicket(payload.srId as number, {
-          stageId: payload.targetStageId as number,
+          workflowStageId: payload.targetStageId as number,
         });
       }
 
