@@ -56,6 +56,7 @@ interface QuoteWizardProviderProps {
   quoteType: QuoteType;
   steps: StepConfig[];
   draftId?: string;
+  callId?: string;
 }
 
 export function QuoteWizardProvider({
@@ -63,6 +64,7 @@ export function QuoteWizardProvider({
   quoteType,
   steps,
   draftId,
+  callId,
 }: QuoteWizardProviderProps) {
   const router = useRouter();
   const { trigger, handleSubmit, watch, reset, getValues, setValue } = useFormContext();
@@ -256,6 +258,7 @@ export function QuoteWizardProvider({
           body: JSON.stringify({
             type: quoteType,
             status: 'submitted',
+            callId,
             contactInfo: {
               firstName: formData.firstName,
               lastName: formData.lastName,
@@ -313,7 +316,7 @@ export function QuoteWizardProvider({
     } finally {
       setIsSubmitting(false);
     }
-  }, [eligibility.result?.status, getValues, handleSubmit, quoteType, router, steps, storageKey]);
+  }, [eligibility.result?.status, getValues, handleSubmit, quoteType, router, steps, storageKey, callId]);
 
   // =============================================================================
   // RESET

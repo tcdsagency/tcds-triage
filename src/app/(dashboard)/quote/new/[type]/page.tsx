@@ -8,7 +8,7 @@
  */
 
 import { use } from 'react';
-import { notFound } from 'next/navigation';
+import { notFound, useSearchParams } from 'next/navigation';
 import { QuoteFormProvider } from '@/components/quote-wizard-v2/QuoteFormProvider';
 import { QuoteWizardProvider } from '@/components/quote-wizard-v2/QuoteWizardProvider';
 import { QuoteWizardLayout } from '@/components/quote-wizard-v2/QuoteWizardLayout';
@@ -46,7 +46,9 @@ interface PageProps {
 
 export default function QuoteWizardPage({ params }: PageProps) {
   const resolvedParams = use(params);
+  const searchParams = useSearchParams();
   const quoteType = resolvedParams.type as QuoteType;
+  const callId = searchParams.get('callId') || undefined;
 
   if (!VALID_TYPES.has(quoteType)) {
     notFound();
@@ -58,7 +60,7 @@ export default function QuoteWizardPage({ params }: PageProps) {
 
   return (
     <QuoteFormProvider quoteType={quoteType} defaultValues={defaults}>
-      <QuoteWizardProvider quoteType={quoteType} steps={steps}>
+      <QuoteWizardProvider quoteType={quoteType} steps={steps} callId={callId}>
         <QuoteWizardLayout title={`New ${label} Quote`}>
           <WizardContent />
         </QuoteWizardLayout>

@@ -23,6 +23,7 @@ import {
   EMPLOYEE_IDS,
   getDefaultDueDate,
 } from "@/lib/api/agencyzoom-service-tickets";
+import { processPendingQuoteTicketLinks } from "@/lib/quote-ticket-linker";
 
 // Retry schedule (exponential backoff)
 const RETRY_DELAYS = [
@@ -1269,6 +1270,17 @@ export async function GET(request: NextRequest) {
     const pollResult = await pollSQLForMissedCalls();
     console.log(`[TranscriptWorker] SQL poll: found ${pollResult.found}, processed ${pollResult.processed} missed calls`);
 
+    // Process pending quote-ticket links (quotes submitted during calls that need AZ ticket notes)
+    let quoteLinksProcessed = 0;
+    try {
+      quoteLinksProcessed = await processPendingQuoteTicketLinks();
+      if (quoteLinksProcessed > 0) {
+        console.log(`[TranscriptWorker] Linked ${quoteLinksProcessed} quote(s) to AZ tickets`);
+      }
+    } catch (err) {
+      console.error(`[TranscriptWorker] Quote-ticket linking error:`, err);
+    }
+
     // Get pending jobs that are ready to process
     const jobs = await db
       .select()
@@ -1288,6 +1300,7 @@ export async function GET(request: NextRequest) {
         message: "No pending jobs",
         processed: 0,
         sqlPoll: pollResult,
+        quoteLinksProcessed,
       });
     }
 
@@ -1311,6 +1324,7 @@ export async function GET(request: NextRequest) {
       retrying,
       results,
       sqlPoll: pollResult,
+      quoteLinksProcessed,
     });
   } catch (error) {
     console.error("[TranscriptWorker] Error:", error);

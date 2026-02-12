@@ -1,10 +1,11 @@
 // API Route: /api/quotes/route.ts
 // Quotes Management API
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/db";
 import { quotes, customers, users } from "@/db/schema";
 import { eq, and, desc, count, inArray, ilike, or, sql } from "drizzle-orm";
+import { linkQuoteToTicketWithRetries } from "@/lib/quote-ticket-linker";
 
 // =============================================================================
 // TYPES
@@ -17,6 +18,7 @@ type QuoteType = "personal_auto" | "homeowners" | "renters" | "umbrella" | "mobi
 
 interface CreateQuoteRequest {
   type: QuoteType;
+  callId?: string;
   customerId?: string;
   contactInfo?: {
     firstName: string;
@@ -56,6 +58,9 @@ interface CreateQuoteRequest {
   };
   notes?: string;
 }
+
+// Allow after() enough time for background ticket linking (immediate + 15s retry)
+export const maxDuration = 30;
 
 // =============================================================================
 // GET - List Quotes
@@ -292,6 +297,7 @@ export async function POST(request: NextRequest) {
         type: body.type,
         status: "draft",
         customerId: body.customerId,
+        callId: body.callId || null,
         contactInfo: body.contactInfo,
         quoteData: body.quoteData,
         vehicles: body.vehicles,
@@ -300,6 +306,17 @@ export async function POST(request: NextRequest) {
         notes: body.notes,
       })
       .returning();
+
+    // If linked to a call, try to post quote details to the AZ service ticket
+    if (body.callId) {
+      after(async () => {
+        try {
+          await linkQuoteToTicketWithRetries(quote.id, body.callId!);
+        } catch (err) {
+          console.error(`[Quotes API] Background ticket linking failed:`, err);
+        }
+      });
+    }
 
     return NextResponse.json({
       success: true,

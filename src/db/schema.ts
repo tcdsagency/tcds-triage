@@ -1374,6 +1374,11 @@ export const quotes = pgTable('quotes', {
   aiExtractedData: jsonb('ai_extracted_data'),
   aiSuggestions: jsonb('ai_suggestions').$type<string[]>().default([]),
   
+  // Call linkage (for quotes started during a live call)
+  callId: uuid('call_id').references(() => calls.id, { onDelete: 'set null' }),
+  azTicketNotePosted: boolean('az_ticket_note_posted').default(false),
+  azTicketNoteError: text('az_ticket_note_error'),
+
   // Follow-up
   followUpDate: timestamp('follow_up_date'),
   notes: text('notes'),
