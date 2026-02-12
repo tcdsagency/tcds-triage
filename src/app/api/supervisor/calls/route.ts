@@ -189,7 +189,35 @@ export async function GET(request: NextRequest) {
       );
 
       if (!hasActiveCall) {
-        // Create a call record from presence detection
+        // First, check for VM Bridge auto-created calls (from segment webhook) that
+        // have no agentId. These are created when auto-transcription starts before
+        // any other webhook fires. Claim them instead of creating duplicates.
+        const vmBridgeCall = todaysCalls.find(c =>
+          !c.endedAt && c.vmSessionId && !c.agentId
+        );
+
+        if (vmBridgeCall) {
+          // Claim the VM Bridge auto-created call for this agent
+          try {
+            await db
+              .update(calls)
+              .set({
+                agentId: agent.id,
+                extension: agent.extension,
+                toNumber: agent.extension || vmBridgeCall.toNumber,
+                updatedAt: new Date(),
+              })
+              .where(eq(calls.id, vmBridgeCall.id));
+            vmBridgeCall.agentId = agent.id;
+            vmBridgeCall.extension = agent.extension || null;
+            console.log(`[Supervisor] Claimed VM Bridge call ${vmBridgeCall.id} (vm=${vmBridgeCall.vmSessionId}) for ${agent.firstName} ${agent.lastName} (${agent.extension})`);
+          } catch (err) {
+            console.error(`[Supervisor] Failed to claim VM Bridge call:`, err);
+          }
+          continue;
+        }
+
+        // No VM Bridge call to claim - create a new call record from presence
         try {
           const [newCall] = await db
             .insert(calls)

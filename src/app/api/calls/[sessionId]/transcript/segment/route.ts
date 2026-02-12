@@ -459,11 +459,49 @@ export async function GET(
       }
     }
 
-    const segments = await db
+    let segments = await db
       .select()
       .from(liveTranscriptSegments)
       .where(eq(liveTranscriptSegments.callId, callId))
       .orderBy(liveTranscriptSegments.sequenceNumber);
+
+    // Fallback: if no segments found, check if this call has an agent/extension
+    // and look for a related VM Bridge call with the same extension that has segments.
+    // This handles the case where a duplicate call record was created.
+    if (segments.length === 0) {
+      const [thisCall] = await db
+        .select({ agentId: calls.agentId, extension: calls.extension, vmSessionId: calls.vmSessionId })
+        .from(calls)
+        .where(eq(calls.id, callId))
+        .limit(1);
+
+      if (thisCall && !thisCall.vmSessionId) {
+        // This call has no VM session - look for another call with vmSessionId
+        // that has segments (the VM Bridge auto-created one)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const relatedCalls = await db
+          .select({ id: calls.id, vmSessionId: calls.vmSessionId })
+          .from(calls)
+          .where(sql`${calls.vmSessionId} IS NOT NULL AND ${calls.startedAt} >= ${today}`)
+          .orderBy(sql`${calls.startedAt} DESC`)
+          .limit(5);
+
+        for (const related of relatedCalls) {
+          const relatedSegments = await db
+            .select()
+            .from(liveTranscriptSegments)
+            .where(eq(liveTranscriptSegments.callId, related.id))
+            .orderBy(liveTranscriptSegments.sequenceNumber);
+
+          if (relatedSegments.length > 0) {
+            console.log(`[Transcript GET] Fallback: found ${relatedSegments.length} segments on related VM Bridge call ${related.id} (vm=${related.vmSessionId})`);
+            segments = relatedSegments;
+            break;
+          }
+        }
+      }
+    }
 
     // Filter to only segments after the given sequence number
     const filtered = afterSeq > 0
