@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { quotes, wrapupDrafts, customers } from "@/db/schema";
 import { eq, and, isNotNull } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { SERVICE_CATEGORIES } from "@/lib/api/agencyzoom-service-tickets";
 import { formatQuoteSection } from "@/lib/format-ticket-description";
 
 const QUOTE_TYPE_LABELS: Record<string, string> = {
@@ -109,7 +110,8 @@ export async function attemptLinkQuoteToTicket(quoteId: string): Promise<
         csr: azTicket.csr,
         subject: azTicket.subject,
         priorityId: azTicket.priorityId,
-        categoryId: azTicket.categoryId,
+        // Set category to "New Quote Request" when quote data is attached
+        categoryId: SERVICE_CATEGORIES.QUOTE_REQUEST,
         // Updated field
         description: updatedDesc,
       });
