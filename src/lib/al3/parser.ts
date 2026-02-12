@@ -285,9 +285,36 @@ function parseEDIFACTSegments(line: string): { tag: string; data: string }[] {
       let data = part.replace(/[\x00-\x1F\x7F-\xFF]/g, '');
 
       // Truncate at embedded record boundaries: "?<digit><3 uppercase><3 digits>"
+      // When found, extract the embedded header as a separate SUB segment so it isn't lost.
+      // E.g., "71?6CVH292 8 W100016HRUR10001    DWELL" → truncate to "71", push "6CVH292..." as SUB
       const boundaryMatch = data.match(/\?\d[A-Z]{3}\d{3}/);
       if (boundaryMatch && boundaryMatch.index !== undefined) {
+        const embeddedHeader = data.substring(boundaryMatch.index + 1); // skip the "?"
         data = data.substring(0, boundaryMatch.index);
+        // Push the embedded header as a SUB if it looks like a record header
+        if (/^\d[A-Z]{3}\d{3}/.test(embeddedHeader)) {
+          // Process current data first (below), then add the SUB
+          const currentTagMatch = data.match(/^([0-9A-Fa-f]{2})\s?(.*)/);
+          let currentTag = '';
+          let currentData = data;
+          if (currentTagMatch) {
+            currentTag = currentTagMatch[1].toUpperCase();
+            currentData = currentTagMatch[2].replace(/\?+/g, '').trim();
+          }
+          if (currentData) {
+            segments.push({ tag: currentTag, data: currentData });
+          }
+          segments.push({ tag: 'SUB', data: embeddedHeader });
+          continue;
+        }
+      }
+
+      // Check if the FULL data (before hex tag strip) is an embedded sub-record header.
+      // Headers like "6CVH292..." or "6FRU144..." start with chars that look like hex tags
+      // (e.g., "6C", "6F") — must detect them BEFORE stripping, or the header is destroyed.
+      if (/^\d[A-Z]{3}\d{3}/.test(data)) {
+        segments.push({ tag: 'SUB', data });
+        continue;
       }
 
       // Strip 2-char hex tag at start (e.g., "0E ", "08 ", "1E ")
@@ -418,12 +445,12 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
       }
 
       // Limit: tag "1E" with digit-only data (leading zeros, e.g., "00025000")
-      // Standard format: 8 zero-padded digits. Compound: >10 digits = limit + extra.
+      // Standard format: 8 zero-padded digits. Compound: >8 digits = limit(8) + extra.
       // Short values (<8 digits) occur when records are truncated at field boundaries —
       // right-pad with zeros to 8 digits (e.g., "0065" → "00650000" → 650,000).
       if (limitAmount === undefined && t === '1E' && /^0{1,}\d+$/.test(d) && d.length >= 3) {
         let limitPortion = d;
-        if (limitPortion.length > 10) {
+        if (limitPortion.length > 8) {
           limitPortion = limitPortion.substring(0, 8);
         } else if (limitPortion.length < 8) {
           limitPortion = limitPortion.padEnd(8, '0');
@@ -695,10 +722,14 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
   // These auto coverages should be excluded from homeowners transactions.
   let inAutoSection = false;
   let hasHomeCoverages = false;
-  // First pass: check if this transaction has any 6CVH (home) records
+  // First pass: check if this transaction has any 6CVH (home) records.
+  // Also check for 6CVH sub-records embedded inside 6HRU/5REP lines.
   for (const line of lines) {
     const gc = getGroupCode(line);
     if (gc === '6CVH') { hasHomeCoverages = true; break; }
+    if ((gc === '6HRU' || gc === '6FRU' || gc === '5REP') && line.includes('6CVH')) {
+      hasHomeCoverages = true; break;
+    }
   }
 
   for (const line of lines) {
@@ -1280,6 +1311,7 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
           if (loc) locations.push(loc);
         } else if ((gc === '6HRU' || gc === '6FRU') && isEDIFACTFormat(line)) {
           // 6HRU/6FRU: Home/Fire Underwriting — may contain embedded 5AOI mortgagee data
+          // AND embedded 6CVH coverage sub-records (DWELL, OS, CONT, LOU, PL).
           // In Allstate EDIFACT, the mortgagee name is embedded in a segment containing "5AOI"
           // Pattern: "50?5AOI204 6 R200016HRUR10001    001MG01?CHometown Bank Of Alabama"
           const rawParts: string[] = [];
@@ -1325,6 +1357,19 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
               }
             }
           }
+
+          // Extract embedded 6CVH coverage sub-records from 6HRU/6FRU lines.
+          // Some carriers pack the first few coverages (DWELL, OS, CONT, LOU, PL)
+          // inside the 6HRU line rather than as standalone 6CVH lines.
+          if (line.includes('6CVH')) {
+            const cvhList = parseEDIFACTHomeCoverages(line);
+            coverages.push(...cvhList);
+          }
+        } else if (gc === '5REP' && isEDIFACTFormat(line) && line.includes('6CVH')) {
+          // 5REP: Replacement cost/property report — some carriers (CAN STRATEGIC)
+          // embed the first coverage sub-records (DWELL, OS, PP) inside this line.
+          const cvhList = parseEDIFACTHomeCoverages(line);
+          coverages.push(...cvhList);
         }
         break;
       }
@@ -1407,6 +1452,7 @@ function parseTransactionHeader(line: string): AL3TransactionHeader {
   if (!cleanCarrierName || /^IBM/i.test(cleanCarrierName)) cleanCarrierName = '';
   // Fix truncated carrier names from EDIFACT-delimited records
   if (cleanCarrierName === 'LSTATE') cleanCarrierName = 'ALLSTATE';
+  if (cleanCarrierName === 'CAN STRATEGIC') cleanCarrierName = 'AMERICAN STRATEGIC';
 
   // Fallback: try extracting LOB from anywhere in the first 40 chars if position-based failed
   let resolvedLob = LOB_CODES[lobCode] || lobCode || undefined;
