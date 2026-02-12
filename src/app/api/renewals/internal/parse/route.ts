@@ -42,8 +42,23 @@ export async function POST(request: NextRequest) {
 
       case 'partition-transactions': {
         const { renewals, nonRenewals } = partitionTransactions(body.transactions);
-        const { unique, duplicatesRemoved } = deduplicateRenewals(renewals);
-        console.log(`[Parse] partition-transactions — total=${body.transactions.length} renewals=${renewals.length} unique=${unique.length} duplicatesRemoved=${duplicatesRemoved} nonRenewals=${nonRenewals.length}`);
+        const { unique: deduped, duplicatesRemoved } = deduplicateRenewals(renewals);
+
+        // Filter out renewals whose effective date is today or in the past.
+        // Once a policy has renewed, HawkSoft updates to the new term data,
+        // so prior term data is no longer available for baseline comparison.
+        const today = new Date().toISOString().split('T')[0];
+        const unique = deduped.filter((r: any) => {
+          const effDate = r.header?.effectiveDate?.split('T')[0];
+          if (effDate && effDate <= today) {
+            console.log(`[Parse] Skipping already-renewed policy ${r.header?.policyNumber} (eff ${effDate})`);
+            return false;
+          }
+          return true;
+        });
+        const expiredSkipped = deduped.length - unique.length;
+
+        console.log(`[Parse] partition-transactions — total=${body.transactions.length} renewals=${renewals.length} unique=${unique.length} duplicatesRemoved=${duplicatesRemoved} expiredSkipped=${expiredSkipped} nonRenewals=${nonRenewals.length}`);
         return NextResponse.json({ success: true, unique, duplicatesRemoved, nonRenewals });
       }
 
