@@ -24,6 +24,7 @@ import {
   getDefaultDueDate,
 } from "@/lib/api/agencyzoom-service-tickets";
 import { processPendingQuoteTicketLinks } from "@/lib/quote-ticket-linker";
+import { formatInboundCallDescription } from "@/lib/format-ticket-description";
 
 // Retry schedule (exponential backoff)
 const RETRY_DELAYS = [
@@ -801,37 +802,19 @@ async function createAutoTicketForPollCall(params: {
     const ticketSubject = `Inbound Call: ${callReason}${subjectSuffix}`;
 
     // 6. Build description
-    let ticketDescription = `Inbound Call - AI Processed (SQL Poll)\n\n`;
-    ticketDescription += `Summary: ${aiResult.summary || 'No summary available'}\n\n`;
-
-    if (aiResult.actionItems && aiResult.actionItems.length > 0) {
-      ticketDescription += `Action Items:\n`;
-      aiResult.actionItems.forEach((item: string) => {
-        ticketDescription += `- ${item}\n`;
-      });
-      ticketDescription += '\n';
-    }
-
-    if (customerName) ticketDescription += `Customer: ${customerName}\n`;
-    if (aiResult.policyNumbers.length > 0) ticketDescription += `Policy: ${aiResult.policyNumbers.join(', ')}\n`;
-
-    ticketDescription += `\nCall Duration: ${durationSeconds}s`;
-    ticketDescription += `\nCaller: ${customerPhone || 'Unknown'}`;
-
-    if (!matchedAzCustomerId && customerPhone) {
-      ticketDescription += `\n\n--- Original Caller Info ---`;
-      ticketDescription += `\nPhone: ${customerPhone}`;
-      if (customerName) {
-        ticketDescription += `\nName: ${customerName}`;
-      }
-    }
-
-    if (transcript && transcript.length > 0) {
-      ticketDescription += `\n\n===================================\n`;
-      ticketDescription += `CALL TRANSCRIPTION\n`;
-      ticketDescription += `===================================\n\n`;
-      ticketDescription += transcript;
-    }
+    const ticketDescription = formatInboundCallDescription({
+      summary: aiResult.summary,
+      actionItems: aiResult.actionItems,
+      extractedData: {
+        customerName: customerName || undefined,
+        policyNumber: aiResult.policyNumbers.length > 0 ? aiResult.policyNumbers.join(', ') : undefined,
+      },
+      callerPhone: customerPhone || undefined,
+      customerName: customerName || undefined,
+      durationSeconds,
+      transcript: transcript || undefined,
+      isNCM: !matchedAzCustomerId,
+    });
 
     // 7. Deduplication - check if ticket already exists for this wrapup
     const [existingTicket] = await db

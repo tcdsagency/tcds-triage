@@ -19,6 +19,7 @@ import {
   SPECIAL_HOUSEHOLDS,
   getDefaultDueDate,
 } from "@/lib/api/agencyzoom-service-tickets";
+import { formatAfterHoursDescription } from "@/lib/format-ticket-description";
 
 // ============================================================================
 // TYPES
@@ -141,47 +142,16 @@ export async function createAfterHoursServiceTicket(
     // -----------------------------------------------------------------------
     // 5. Build ticket description
     // -----------------------------------------------------------------------
-    let ticketDescription = `🌙 After-Hours Call\n\n`;
-
-    if (callerName) {
-      ticketDescription += `Caller: ${callerName}\n`;
-    }
-    ticketDescription += `Phone: ${callerPhone}\n`;
-
-    if (reason) {
-      ticketDescription += `Reason: ${reason}\n`;
-    }
-
-    ticketDescription += '\n';
-
-    if (aiSummary) {
-      ticketDescription += `Summary: ${aiSummary}\n\n`;
-    }
-
-    if (transcript) {
-      ticketDescription += `--- Voicemail Transcript ---\n${transcript}\n\n`;
-    }
-
-    if (emailBody && emailBody !== reason) {
-      ticketDescription += `--- ReceptionHQ Notes ---\n${emailBody}\n\n`;
-    }
-
-    if (actionItems && actionItems.length > 0) {
-      ticketDescription += `Action Items:\n`;
-      actionItems.forEach((item: string) => {
-        ticketDescription += `• ${item}\n`;
-      });
-      ticketDescription += '\n';
-    }
-
-    // If NCM, append original caller info block
-    if (isNCMTicket && callerPhone) {
-      ticketDescription += `--- Original Caller Info ---\n`;
-      ticketDescription += `Phone: ${callerPhone}\n`;
-      if (callerName) {
-        ticketDescription += `Name: ${callerName}\n`;
-      }
-    }
+    const ticketDescription = formatAfterHoursDescription({
+      callerName: callerName || undefined,
+      callerPhone,
+      reason: reason || undefined,
+      aiSummary: aiSummary || undefined,
+      transcript: transcript || undefined,
+      emailBody: emailBody || undefined,
+      actionItems: actionItems || undefined,
+      isNCM: isNCMTicket,
+    });
 
     // -----------------------------------------------------------------------
     // 6. Build subject

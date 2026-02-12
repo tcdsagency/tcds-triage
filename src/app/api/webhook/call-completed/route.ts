@@ -29,6 +29,7 @@ import { trestleIQClient, quickLeadCheck } from "@/lib/api/trestleiq";
 import { getServiceRequestTypeId } from "@/lib/constants/agencyzoom";
 import { findRelatedTickets, determineTriageRecommendation } from "@/lib/triage/related-tickets";
 import { createAfterHoursServiceTicket } from "@/lib/api/after-hours-ticket";
+import { formatInboundCallDescription } from "@/lib/format-ticket-description";
 
 // =============================================================================
 // AGENCY MAIN NUMBER
@@ -2041,43 +2042,17 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             const azCustomerId = matchedAzCustomerId ? parseInt(String(matchedAzCustomerId)) : SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER;
 
             // Build ticket description
-            let ticketDescription = `📞 Inbound Call - AI Processed\n\n`;
-            ticketDescription += `Summary: ${analysis.summary || 'No summary available'}\n\n`;
-
-            if (analysis.actionItems && analysis.actionItems.length > 0) {
-              ticketDescription += `Action Items:\n`;
-              analysis.actionItems.forEach((item: string) => {
-                ticketDescription += `• ${item}\n`;
-              });
-              ticketDescription += '\n';
-            }
-
-            if (analysis.extractedData) {
-              const extracted = analysis.extractedData as Record<string, string | undefined>;
-              if (extracted.customerName) ticketDescription += `Customer: ${extracted.customerName}\n`;
-              if (extracted.policyNumber) ticketDescription += `Policy: ${extracted.policyNumber}\n`;
-              if (extracted.reason) ticketDescription += `Reason: ${extracted.reason}\n`;
-            }
-
-            ticketDescription += `\nCall Duration: ${body.duration}s`;
-            ticketDescription += `\nCaller: ${phoneForLookup || 'Unknown'}`;
-
-            // If using NCM, append original caller info
-            if (!matchedAzCustomerId && phoneForLookup) {
-              ticketDescription += `\n\n--- Original Caller Info ---`;
-              ticketDescription += `\nPhone: ${phoneForLookup}`;
-              if (txResult.wrapup.customerName) {
-                ticketDescription += `\nName: ${txResult.wrapup.customerName}`;
-              }
-            }
-
-            // Append full transcription at the bottom
-            if (transcript && transcript.length > 0) {
-              ticketDescription += `\n\n═══════════════════════════════════════\n`;
-              ticketDescription += `CALL TRANSCRIPTION\n`;
-              ticketDescription += `═══════════════════════════════════════\n\n`;
-              ticketDescription += transcript;
-            }
+            const extracted = analysis.extractedData as Record<string, string | undefined> | undefined;
+            const ticketDescription = formatInboundCallDescription({
+              summary: analysis.summary,
+              actionItems: analysis.actionItems,
+              extractedData: extracted,
+              callerPhone: phoneForLookup || undefined,
+              customerName: txResult.wrapup.customerName || undefined,
+              durationSeconds: body.duration,
+              transcript: transcript || undefined,
+              isNCM: !matchedAzCustomerId,
+            });
 
             // Determine category based on AI analysis
             const serviceRequestType = analysis.serviceRequestType || 'general';
