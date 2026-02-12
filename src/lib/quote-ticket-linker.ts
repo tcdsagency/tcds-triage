@@ -171,27 +171,41 @@ export async function attemptLinkQuoteToTicket(quoteId: string): Promise<
     return { linked: false, reason: "invalid_ticket_id" };
   }
 
-  // 3. Format and post note
+  // 3. Format and post note to the AZ service ticket
   const noteText = formatQuoteNote(quote);
   const azClient = getAgencyZoomClient();
 
+  let notePosted = false;
+
+  // Try adding as a service ticket note first
   try {
     const result = await azClient.addServiceTicketNote(azTicketId, noteText);
-    if (!result.success) {
-      console.warn(`[QuoteTicketLinker] Service ticket note failed for AZ#${azTicketId}, trying customer note fallback`);
+    if (result.success) {
+      notePosted = true;
+    } else {
+      console.warn(`[QuoteTicketLinker] Service ticket note endpoint failed for AZ#${azTicketId}`);
     }
   } catch (err) {
-    console.error(`[QuoteTicketLinker] Error posting ticket note:`, err);
+    console.warn(`[QuoteTicketLinker] Service ticket note endpoint not available, will append to description`);
+  }
+
+  // Fallback: append quote details to the ticket description
+  if (!notePosted) {
+    try {
+      const existingTicket = await azClient.getServiceTicket(azTicketId);
+      const existingDesc = (existingTicket as any)?.description || "";
+      const separator = "\n\n===================================\nQUOTE INTAKE DETAILS\n===================================\n\n";
+      const updatedDesc = existingDesc + separator + noteText;
+      await azClient.updateServiceTicket(azTicketId, { description: updatedDesc });
+      notePosted = true;
+      console.log(`[QuoteTicketLinker] Appended quote details to ticket #${azTicketId} description`);
+    } catch (err) {
+      console.error(`[QuoteTicketLinker] Failed to update ticket description:`, err);
+    }
   }
 
   // 4. Also post to customer note if we have a customer match
   try {
-    const [wrapupFull] = await db
-      .select({ customerPhone: wrapupDrafts.customerPhone })
-      .from(wrapupDrafts)
-      .where(eq(wrapupDrafts.id, wrapup.id))
-      .limit(1);
-
     if (quote.customerId) {
       const [cust] = await db
         .select({ agencyzoomId: customers.agencyzoomId })
@@ -207,7 +221,7 @@ export async function attemptLinkQuoteToTicket(quoteId: string): Promise<
       }
     }
   } catch (err) {
-    // Non-fatal - ticket note is the primary target
+    // Non-fatal - ticket note/description is the primary target
     console.error(`[QuoteTicketLinker] Customer note failed (non-fatal):`, err);
   }
 
