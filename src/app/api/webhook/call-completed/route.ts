@@ -809,18 +809,20 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       }
 
       // Backfill agentId if not set (e.g., outbound calls where extension was a phone number)
-      if (!call.agentId && extension) {
-        const extDigits = extension.replace(/\D/g, "");
+      if (!call.agentId) {
         let foundAgent: { id: string } | undefined;
-        if (!extensionLooksLikePhone) {
+        // Try by short extension
+        if (extension && !extensionLooksLikePhone) {
+          const extDigits = extension.replace(/\D/g, "");
           [foundAgent] = await db
             .select({ id: users.id })
             .from(users)
             .where(and(eq(users.tenantId, tenantId), eq(users.extension, extDigits)))
             .limit(1);
         }
-        if (!foundAgent && extensionLooksLikePhone) {
-          const phoneDigits = extDigits.slice(-10);
+        // Try by phone/directDial
+        if (!foundAgent && extension && extensionLooksLikePhone) {
+          const phoneDigits = extension.replace(/\D/g, "").slice(-10);
           [foundAgent] = await db
             .select({ id: users.id })
             .from(users)
@@ -834,6 +836,19 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
               )
             )
             .limit(1);
+        }
+        // Try by agentName from webhook payload
+        if (!foundAgent && body.agentName) {
+          const nameParts = body.agentName.trim().split(/\s+/);
+          if (nameParts.length >= 2) {
+            const [first, ...rest] = nameParts;
+            const last = rest.join(" ");
+            [foundAgent] = await db
+              .select({ id: users.id })
+              .from(users)
+              .where(and(eq(users.tenantId, tenantId), ilike(users.firstName, first), ilike(users.lastName, last)))
+              .limit(1);
+          }
         }
         if (foundAgent) {
           updateFields.agentId = foundAgent.id;
@@ -953,6 +968,24 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
           agentId = agent?.id;
           if (agentId) {
             console.log(`[Call-Completed] 👤 Matched agent by phone/directDial: ${phoneDigits}`);
+          }
+        }
+      }
+
+      // Fallback: match by agentName from webhook payload (e.g., "Lee Tidwell")
+      if (!agentId && body.agentName && !isAfterHoursOrFallback) {
+        const nameParts = body.agentName.trim().split(/\s+/);
+        if (nameParts.length >= 2) {
+          const [first, ...rest] = nameParts;
+          const last = rest.join(" ");
+          const [agent] = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(and(eq(users.tenantId, tenantId), ilike(users.firstName, first), ilike(users.lastName, last)))
+            .limit(1);
+          agentId = agent?.id;
+          if (agentId) {
+            console.log(`[Call-Completed] 👤 Matched agent by name: ${body.agentName}`);
           }
         }
       }
