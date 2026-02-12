@@ -33,6 +33,7 @@ export function formatInboundCallDescription(params: TicketDescriptionParams): s
   lines.push('🛠️ Service Request Details');
   lines.push(params.summary || 'No summary available');
   lines.push('');
+  lines.push('');
 
   // --- Extracted Data ---
   const extractedLines: string[] = [];
@@ -50,16 +51,24 @@ export function formatInboundCallDescription(params: TicketDescriptionParams): s
     lines.push('📊 Extracted Data from Call');
     lines.push(...extractedLines);
     lines.push('');
+    lines.push('');
   }
 
   // --- Call Information ---
   lines.push('📞 Call Information');
-  if (params.callerPhone) lines.push(`Phone Number: ${params.callerPhone}`);
-  if (params.durationSeconds != null) lines.push(`Call Duration: ${params.durationSeconds} seconds`);
-  if (params.isNCM && params.callerPhone) {
-    lines.push('');
-    lines.push('Caller Information: ' + (params.customerName || 'Unknown'));
+  if (params.callerPhone) {
     lines.push(`Phone Number: ${params.callerPhone}`);
+    lines.push('');
+  }
+  if (params.durationSeconds != null) {
+    lines.push(`Call Duration: ${params.durationSeconds} seconds`);
+    lines.push('');
+  }
+  if (params.isNCM && params.callerPhone) {
+    lines.push('Caller Information: ' + (params.customerName || 'Unknown'));
+    lines.push('');
+    lines.push(`Phone Number: ${params.callerPhone}`);
+    lines.push('');
   }
   lines.push('');
 
@@ -92,6 +101,7 @@ export function formatAfterHoursDescription(params: {
   lines.push('🛠️ Service Request Details');
   lines.push(params.aiSummary || params.reason || 'After-hours call - callback requested');
   lines.push('');
+  lines.push('');
 
   // --- Extracted Data ---
   const extractedLines: string[] = [];
@@ -106,16 +116,22 @@ export function formatAfterHoursDescription(params: {
     lines.push('📊 Extracted Data from Call');
     lines.push(...extractedLines);
     lines.push('');
+    lines.push('');
   }
 
   // --- Call Information ---
   lines.push('📞 Call Information');
-  if (params.callerName) lines.push(`Caller: ${params.callerName}`);
-  lines.push(`Phone Number: ${params.callerPhone}`);
-  if (params.isNCM) {
+  if (params.callerName) {
+    lines.push(`Caller: ${params.callerName}`);
     lines.push('');
+  }
+  lines.push(`Phone Number: ${params.callerPhone}`);
+  lines.push('');
+  if (params.isNCM) {
     lines.push('Caller Information: ' + (params.callerName || 'Unknown'));
+    lines.push('');
     lines.push(`Phone Number: ${params.callerPhone}`);
+    lines.push('');
   }
   lines.push('');
 
@@ -124,11 +140,13 @@ export function formatAfterHoursDescription(params: {
     lines.push('🗣️ Voicemail Transcript');
     lines.push(cleanTranscript(params.transcript));
     lines.push('');
+    lines.push('');
   }
 
   if (params.emailBody && params.emailBody !== params.reason) {
     lines.push('📝 ReceptionHQ Notes');
     lines.push(params.emailBody);
+    lines.push('');
     lines.push('');
   }
 
