@@ -181,7 +181,7 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
     const unique: typeof uniqueAll = [];
     let expiredSkipped = 0;
     for (const r of uniqueAll) {
-      const effDate = r.header?.effectiveDate?.split('T')[0];
+      const effDate = (r.header?.effectiveDate as string | undefined)?.split('T')[0];
       if (effDate && effDate <= today) {
         expiredSkipped++;
         logger.info({
