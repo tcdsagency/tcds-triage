@@ -297,10 +297,12 @@ export default function MessagesPage() {
     setSending(true);
 
     try {
-      // Get the phone number to send to
-      const toPhone = selectedConversation.messages[0]?.direction === 'inbound'
-        ? selectedConversation.messages[0].fromNumber
-        : selectedConversation.messages[0].toNumber;
+      // Get the phone number to send to — fall back to conversation ID (normalized phone)
+      // when messages array is empty (new conversation from URL params)
+      const firstMsg = selectedConversation.messages[0];
+      const toPhone = firstMsg
+        ? (firstMsg.direction === 'inbound' ? firstMsg.fromNumber : firstMsg.toNumber)
+        : selectedConversation.id;
 
       const res = await fetch('/api/sms/send', {
         method: 'POST',

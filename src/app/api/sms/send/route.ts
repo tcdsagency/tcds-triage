@@ -98,13 +98,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Store the outgoing message in database
+    // Use Twilio number for Twilio sends, agency number env var for AZ sends
+    const fromNumber = method === "twilio"
+      ? twilioClient.getPhoneNumber()
+      : (process.env.AGENCY_SMS_NUMBER || twilioClient.getPhoneNumber());
+
     const [storedMessage] = await db
       .insert(messages)
       .values({
         tenantId,
         type: "sms",
         direction: "outbound",
-        fromNumber: twilioClient.getPhoneNumber(),
+        fromNumber,
         toNumber: body.to,
         body: body.message,
         externalId: sendResult.messageId,

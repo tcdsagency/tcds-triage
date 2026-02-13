@@ -13,6 +13,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/sms/schedule",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/retry-queue/process",
       "schedule": "*/5 * * * *"
     },
