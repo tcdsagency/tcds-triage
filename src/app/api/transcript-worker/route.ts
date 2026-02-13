@@ -1341,6 +1341,7 @@ async function autoCompletePendingWrapups(): Promise<number> {
     agentName: wrapupDrafts.agentName,
     aiExtraction: wrapupDrafts.aiExtraction,
     agencyzoomTicketId: wrapupDrafts.agencyzoomTicketId,
+    createdAt: wrapupDrafts.createdAt,
   })
   .from(wrapupDrafts)
   .where(and(
@@ -1371,6 +1372,10 @@ async function autoCompletePendingWrapups(): Promise<number> {
         continue;
       }
 
+      // Check if this is an old backlog wrapup (> 1 hour) — just clear it, don't create tickets/notes
+      const ageMs = Date.now() - new Date(wrapup.createdAt).getTime();
+      const isOldBacklog = ageMs > 60 * 60 * 1000; // 1 hour
+
       if (shouldDismissWrapup(wrapup)) {
         // Auto-dismiss: hangup, voicemail, internal, PlayFile, etc.
         const reason = getDismissReason(wrapup);
@@ -1383,6 +1388,16 @@ async function autoCompletePendingWrapups(): Promise<number> {
           updatedAt: new Date(),
         }).where(eq(wrapupDrafts.id, wrapup.id));
         console.log(`[TranscriptWorker] Wrapup ${wrapup.id.slice(0, 8)} auto-dismissed: ${reason}`);
+      } else if (isOldBacklog) {
+        // Old backlog — just clear without AZ actions
+        await db.update(wrapupDrafts).set({
+          status: 'completed',
+          completionAction: 'auto_completed',
+          autoVoidReason: 'backlog_cleared',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(wrapupDrafts.id, wrapup.id));
+        console.log(`[TranscriptWorker] Wrapup ${wrapup.id.slice(0, 8)} backlog cleared (${Math.round(ageMs / 3600000)}h old)`);
       } else if (wrapup.direction === 'Inbound' || wrapup.direction === 'inbound') {
         await autoCompleteInboundWrapup(wrapup, tenantId);
       } else {
