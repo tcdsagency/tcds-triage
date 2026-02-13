@@ -870,13 +870,17 @@ function buildVehicleList(baseline: BaselineSnapshot | null, renewal: RenewalSna
   });
 
   // Add baseline vehicles
+  let baselineIdx = 0;
   baseline?.vehicles?.forEach((v) => {
-    const vin = v.vin || `${v.year}-${v.make}-${v.model}-${Math.random()}`;
+    const vin = v.vin || `no-vin-b${baselineIdx++}-${v.year}-${v.make}-${v.model}`;
     if (seenVins.has(vin)) return;
     seenVins.add(vin);
 
     const label = `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim() || vin;
-    const renewalMatch = renewal?.vehicles?.find((rv) => rv.vin === v.vin);
+    const renewalMatch = renewal?.vehicles?.find((rv) =>
+      rv.vin && v.vin ? rv.vin === v.vin
+        : !rv.vin && !v.vin && rv.year === v.year && rv.make === v.make && rv.model === v.model
+    );
 
     // Show VIN suffix if there are multiple vehicles with same label
     const needsVinSuffix = (labelCounts.get(label) || 0) > 1;
@@ -893,8 +897,9 @@ function buildVehicleList(baseline: BaselineSnapshot | null, renewal: RenewalSna
   });
 
   // Add renewal-only vehicles
+  let renewalIdx = 0;
   renewal?.vehicles?.forEach((v) => {
-    const vin = v.vin || `${v.year}-${v.make}-${v.model}-${Math.random()}`;
+    const vin = v.vin || `no-vin-r${renewalIdx++}-${v.year}-${v.make}-${v.model}`;
     if (seenVins.has(vin)) return;
     seenVins.add(vin);
 

@@ -104,6 +104,8 @@ export default function RenewalDetailPanel({
       const data = await res.json();
       if (data.success) {
         await fetchNotes();
+      } else {
+        toast.error(data.error || 'Failed to save note');
       }
     } catch (err) {
       console.error('Error adding note:', err);

@@ -392,60 +392,65 @@ export default function RenewalReviewPage() {
             count={stats.pendingCount}
             active={filters.status === 'waiting_agent_review'}
             color="amber"
-            onClick={() =>
+            onClick={() => {
               setFilters((f) => ({
                 ...f,
                 status: f.status === 'waiting_agent_review' ? '' : 'waiting_agent_review',
-              }))
-            }
+              }));
+              setPagination((p) => ({ ...p, page: 1 }));
+            }}
           />
           <StatBadge
             label="In Review"
             count={stats.inReviewCount}
             active={filters.status === 'requote_requested'}
             color="blue"
-            onClick={() =>
+            onClick={() => {
               setFilters((f) => ({
                 ...f,
                 status: f.status === 'requote_requested' ? '' : 'requote_requested',
-              }))
-            }
+              }));
+              setPagination((p) => ({ ...p, page: 1 }));
+            }}
           />
           <StatBadge
             label="Decided"
             count={stats.decidedCount}
             active={filters.status === 'agent_reviewed'}
             color="indigo"
-            onClick={() =>
+            onClick={() => {
               setFilters((f) => ({
                 ...f,
                 status: f.status === 'agent_reviewed' ? '' : 'agent_reviewed',
-              }))
-            }
+              }));
+              setPagination((p) => ({ ...p, page: 1 }));
+            }}
           />
           <StatBadge
             label="Completed"
             count={stats.completedCount}
             active={filters.status === 'completed'}
             color="green"
-            onClick={() =>
+            onClick={() => {
               setFilters((f) => ({
                 ...f,
                 status: f.status === 'completed' ? '' : 'completed',
-              }))
-            }
+              }));
+              setPagination((p) => ({ ...p, page: 1 }));
+            }}
           />
           <StatBadge
             label="Reshop"
             count={stats.reshopCount}
             active={filters.recommendation === 'reshop'}
             color="orange"
-            onClick={() =>
+            onClick={() => {
               setFilters((f) => ({
                 ...f,
                 recommendation: f.recommendation === 'reshop' ? '' : 'reshop',
-              }))
-            }
+              }));
+              setPagination((p) => ({ ...p, page: 1 }));
+            }}
           />
           {stats.avgPremiumChangePercent != null && (
             <div className="ml-auto text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
@@ -494,7 +499,7 @@ export default function RenewalReviewPage() {
             <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Status</label>
             <select
               value={filters.status}
-              onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+              onChange={(e) => { setFilters((f) => ({ ...f, status: e.target.value })); setPagination((p) => ({ ...p, page: 1 })); }}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
               <option value="">All Statuses</option>
@@ -513,7 +518,7 @@ export default function RenewalReviewPage() {
             <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Recommendation</label>
             <select
               value={filters.recommendation}
-              onChange={(e) => setFilters((f) => ({ ...f, recommendation: e.target.value }))}
+              onChange={(e) => { setFilters((f) => ({ ...f, recommendation: e.target.value })); setPagination((p) => ({ ...p, page: 1 })); }}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
               <option value="">All</option>
@@ -528,7 +533,7 @@ export default function RenewalReviewPage() {
             <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Carrier</label>
             <select
               value={filters.carrier}
-              onChange={(e) => setFilters((f) => ({ ...f, carrier: e.target.value }))}
+              onChange={(e) => { setFilters((f) => ({ ...f, carrier: e.target.value })); setPagination((p) => ({ ...p, page: 1 })); }}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
               <option value="">All Carriers</option>
@@ -543,7 +548,7 @@ export default function RenewalReviewPage() {
             <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Renewal Date</label>
             <select
               value={filters.dateRange}
-              onChange={(e) => setFilters((f) => ({ ...f, dateRange: e.target.value }))}
+              onChange={(e) => { setFilters((f) => ({ ...f, dateRange: e.target.value })); setPagination((p) => ({ ...p, page: 1 })); }}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
               <option value="">Any Date</option>
