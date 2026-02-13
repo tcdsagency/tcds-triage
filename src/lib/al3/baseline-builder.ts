@@ -7,7 +7,7 @@
 
 import { db } from '@/db';
 import { policies, vehicles, drivers, customers, properties, policyNotices } from '@/db/schema';
-import { eq, and, like } from 'drizzle-orm';
+import { eq, and, like, or, sql } from 'drizzle-orm';
 import type {
   BaselineSnapshot,
   CanonicalCoverage,
@@ -22,17 +22,47 @@ import { parseSplitLimit } from './parser';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
 
 // =============================================================================
+// POLICY NUMBER NORMALIZATION
+// =============================================================================
+
+/**
+ * Strip term suffix from policy numbers.
+ * Some carriers (National General, Orion180, etc.) append -1, -2, -3 etc.
+ * to indicate which term a policy is on. The base policy number is the same
+ * across terms, so we strip the suffix for matching purposes.
+ *
+ * Examples:
+ *   "OSIH3AL_01436810-3" → "OSIH3AL_01436810"
+ *   "ABC123-1"           → "ABC123"
+ *   "A7992503360"        → "A7992503360" (no suffix, unchanged)
+ */
+export function stripTermSuffix(policyNumber: string): string {
+  return policyNumber.replace(/-\d{1,2}$/, '');
+}
+
+/**
+ * Check if a policy number has a term suffix (e.g., -1, -2, -3).
+ */
+export function hasTermSuffix(policyNumber: string): boolean {
+  return /-\d{1,2}$/.test(policyNumber);
+}
+
+// =============================================================================
 // LOCAL POLICY LOOKUP
 // =============================================================================
 
 /**
  * Find a policy in the local database by policy number.
+ * If exact match fails and the policy number has a term suffix (e.g., -3),
+ * tries matching by the base policy number (stripping the suffix) using a
+ * LIKE query to find prior terms (e.g., -2, -1, or no suffix).
  */
 export async function findLocalPolicy(
   tenantId: string,
   policyNumber: string
 ): Promise<{ policyId: string; customerId: string } | null> {
-  const [policy] = await db
+  // Try exact match first
+  const [exactMatch] = await db
     .select({
       id: policies.id,
       customerId: policies.customerId,
@@ -46,7 +76,37 @@ export async function findLocalPolicy(
     )
     .limit(1);
 
-  return policy ? { policyId: policy.id, customerId: policy.customerId } : null;
+  if (exactMatch) {
+    return { policyId: exactMatch.id, customerId: exactMatch.customerId };
+  }
+
+  // If the policy number has a term suffix, try matching by base number
+  if (hasTermSuffix(policyNumber)) {
+    const baseNumber = stripTermSuffix(policyNumber);
+    console.log(`[Baseline] Exact match failed for "${policyNumber}", trying base number "${baseNumber}"`);
+
+    const [baseMatch] = await db
+      .select({
+        id: policies.id,
+        customerId: policies.customerId,
+        policyNumber: policies.policyNumber,
+      })
+      .from(policies)
+      .where(
+        and(
+          eq(policies.tenantId, tenantId),
+          like(policies.policyNumber, `${baseNumber}%`)
+        )
+      )
+      .limit(1);
+
+    if (baseMatch) {
+      console.log(`[Baseline] Matched "${policyNumber}" → existing policy "${baseMatch.policyNumber}"`);
+      return { policyId: baseMatch.id, customerId: baseMatch.customerId };
+    }
+  }
+
+  return null;
 }
 
 // =============================================================================
@@ -433,8 +493,14 @@ async function fetchHawkSoftPolicyData(
 
     if (!client?.policies?.length) return null;
 
-    // Find matching policy by number
-    const matchingPolicy = client.policies.find((p) => p.policyNumber === policyNumber);
+    // Find matching policy by number (exact match first, then base number)
+    let matchingPolicy = client.policies.find((p: any) => p.policyNumber === policyNumber);
+    if (!matchingPolicy && hasTermSuffix(policyNumber)) {
+      const baseNumber = stripTermSuffix(policyNumber);
+      matchingPolicy = client.policies.find((p: any) =>
+        p.policyNumber && stripTermSuffix(p.policyNumber) === baseNumber
+      );
+    }
     if (!matchingPolicy) return null;
 
     // Normalize the HawkSoft data
