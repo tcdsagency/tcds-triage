@@ -407,6 +407,7 @@ interface AIAnalysis {
   callType?: string;
   serviceRequestType?: string; // Maps to AgencyZoom service request type
   callQuality?: "voicemail" | "brief_no_service" | "normal"; // Quality assessment for auto-void
+  detectedDirection?: "inbound" | "outbound"; // AI-detected direction from transcript content
 }
 
 async function analyzeTranscript(transcript: string, durationSeconds: number = 0): Promise<AIAnalysis | null> {
@@ -478,6 +479,11 @@ SENTIMENT:
 - neutral: Informational, transactional, routine
 - negative: Frustrated, upset, dissatisfied
 
+DETECTED DIRECTION (important - determine from transcript content):
+- "inbound" - a customer/caller contacted the agency (someone called in asking for help, quotes, service)
+- "outbound" - an agency representative called a customer (agent names: Todd, Lee, Stephanie, Blair, Paulo, Montrice called or left a message FOR someone)
+Look at WHO initiated the conversation. If an agent name is the one calling/leaving a message, it's outbound.
+
 Respond in JSON format:
 {
   "summary": "...",
@@ -496,7 +502,8 @@ Respond in JSON format:
   "isHangup": true|false,
   "callType": "quote request|policy change|billing inquiry|claim|renewal|general inquiry|service request|complaint|other",
   "callQuality": "meaningful_conversation|voicemail|brief_no_service",
-  "serviceRequestType": "billing inquiry|policy change|add vehicle|remove vehicle|add driver|remove driver|claims|renewal|quote request|cancel|certificate|id card|general inquiry"
+  "serviceRequestType": "billing inquiry|policy change|add vehicle|remove vehicle|add driver|remove driver|claims|renewal|quote request|cancel|certificate|id card|general inquiry",
+  "detectedDirection": "inbound|outbound"
 }`,
           },
           {
@@ -728,7 +735,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
     // Normalize field names from Zapier payload
     const rawTimestamp = body.timestamp || body.callStartTime || body.startTime;
     const timestamp = new Date(rawTimestamp || Date.now());
-    const direction = body.direction?.toLowerCase() === "inbound" ? "inbound" : "outbound";
+    let direction = body.direction?.toLowerCase() === "inbound" ? "inbound" : "outbound";
 
     // ==========================================================================
     // IMPORTANT: Agency Main Number is +12058475616
@@ -1121,6 +1128,20 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
           })
           .where(eq(calls.id, call.id));
       }
+    }
+
+    // 3.5a Direction correction: AI can detect outbound calls that the webhook misclassified
+    // VoIPTools sometimes reports outbound calls as inbound (swapped CallerExt/DialedNum)
+    if (analysis?.detectedDirection === "outbound" && direction === "inbound") {
+      console.log(`[Call-Completed] ⚠️ Direction mismatch: webhook says inbound, AI detected outbound — correcting to outbound`);
+      direction = "outbound";
+      await db
+        .update(calls)
+        .set({
+          direction: "outbound",
+          directionFinal: "outbound",
+        })
+        .where(eq(calls.id, call.id));
     }
 
     // 3.5 Detect short calls and hangups (but don't skip wrapup creation)
@@ -1654,8 +1675,8 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         txResult = await db.transaction(async (tx) => {
         // Prefer extension from call record (set during call-started), fall back to webhook body
         const agentExt = call.extension || extension;
-        // Prefer direction from call record
-        const callDirection = call.direction || direction;
+        // Use direction variable — it may have been AI-corrected from the webhook value
+        const callDirection = direction;
         // Check if this is an after-hours call (from disposition set during call creation)
         const isAfterHoursCall = call.disposition === "after_hours";
 

@@ -1283,6 +1283,9 @@ function shouldDismissWrapup(wrapup: {
     'not available',
     'no answer',
     'agent left a message',
+    'left a message for',
+    'left a message regarding',
+    'left a message about',
   ];
   if (vmIndicators.some(v => lower.includes(v))) {
     return true;
@@ -1317,6 +1320,7 @@ function getDismissReason(wrapup: {
   const lower = (wrapup.summary || '').toLowerCase();
   if (lower.includes('voicemail') || lower.includes('voice mail') || lower.includes('mailbox')) return 'voicemail';
   if (lower.includes('not available') || lower.includes('no answer')) return 'no_answer';
+  if (lower.includes('left a message for') || lower.includes('left a message regarding') || lower.includes('left a message about')) return 'voicemail';
 
   const extraction = wrapup.aiExtraction as { isHangup?: boolean } | null;
   if (extraction?.isHangup) return 'hangup';
