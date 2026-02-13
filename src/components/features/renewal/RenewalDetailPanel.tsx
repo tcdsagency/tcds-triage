@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, AlertTriangle, TrendingUp, TrendingDown, Minus, FileDown, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import AZStatusBadge from './AZStatusBadge';
 import ComparisonTable from './ComparisonTable';
 import AgentActionButtons from './AgentActionButtons';
@@ -97,6 +98,7 @@ export default function RenewalDetailPanel({
       });
       if (!res.ok) {
         console.error('Note post error:', res.status);
+        toast.error('Failed to save note');
         return;
       }
       const data = await res.json();
@@ -293,7 +295,7 @@ export default function RenewalDetailPanel({
             </div>
 
             {/* Action Buttons */}
-            {(!current.agentDecision || current.agentDecision === 'needs_more_info' || current.agentDecision === 'contact_customer') && (
+            {(!current.agentDecision || current.agentDecision === 'needs_more_info' || current.agentDecision === 'contact_customer' || current.agentDecision === 'reshop') && (
               <div>
                 <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Actions

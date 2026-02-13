@@ -35,7 +35,7 @@ export async function GET(
         .where(eq(customers.id, renewal.customerId))
         .limit(1);
       if (customer) {
-        customerName = `${customer.firstName} ${customer.lastName}`;
+        customerName = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || 'Unknown Customer';
       }
     }
 
@@ -48,7 +48,7 @@ export async function GET(
         .where(eq(users.id, renewal.agentDecisionBy))
         .limit(1);
       if (user) {
-        agentName = `${user.firstName} ${user.lastName}`;
+        agentName = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'N/A';
       }
     }
 

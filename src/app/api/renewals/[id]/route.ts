@@ -68,7 +68,7 @@ export async function GET(
         .where(eq(users.id, renewal.agentDecisionBy))
         .limit(1);
       if (user) {
-        agentDecisionByName = `${user.firstName} ${user.lastName}`;
+        agentDecisionByName = [user.firstName, user.lastName].filter(Boolean).join(' ') || null;
       }
     }
 
