@@ -134,7 +134,7 @@ export default function RenewalReviewPage() {
     try {
       if (!user?.id) {
         toast.error('User profile not loaded — please refresh the page');
-        return;
+        throw new Error('User not loaded');
       }
       const res = await fetch(`/api/renewals/${renewalId}/decide`, {
         method: 'POST',
@@ -148,7 +148,7 @@ export default function RenewalReviewPage() {
       });
       if (!res.ok && res.status !== 409) {
         toast.error('Failed to record decision');
-        return;
+        throw new Error('Decision API error');
       }
       const data = await res.json();
 
@@ -170,8 +170,10 @@ export default function RenewalReviewPage() {
       } else if (res.status === 409) {
         toast.error('Decision already recorded by another agent');
         await fetchRenewals();
+        throw new Error('Conflict');
       } else {
         toast.error(data.error || 'Failed to record decision');
+        throw new Error(data.error || 'Decision failed');
       }
     } catch (err) {
       console.error('Error recording decision:', err);

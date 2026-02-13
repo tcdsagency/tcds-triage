@@ -30,13 +30,18 @@ export default function DecisionConfirmModal({
 
   if (!isOpen) return null;
 
+  const [error, setError] = useState<string | null>(null);
+
   const handleConfirm = async () => {
     if (notesRequired && !notes.trim()) return;
     setSubmitting(true);
+    setError(null);
     try {
       await onConfirm(notes.trim());
       setNotes('');
       onClose();
+    } catch (err) {
+      setError('Failed to submit — please try again');
     } finally {
       setSubmitting(false);
     }
@@ -76,6 +81,10 @@ export default function DecisionConfirmModal({
           rows={3}
           className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 mb-4"
         />
+
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>
+        )}
 
         <div className="flex gap-3 justify-end">
           <button
