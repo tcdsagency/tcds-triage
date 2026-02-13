@@ -392,7 +392,9 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
           .where(eq(calls.id, job.callId))
           .limit(1);
 
-        const callDirection = direction || callDetails?.direction || "inbound";
+        // Prefer webhook direction (enhanced with AI detection) over MSSQL direction,
+        // since MSSQL's determineDirection() is unreliable (CallerExt field is inconsistent)
+        const callDirection = callDetails?.direction || direction || "inbound";
         const customerPhone = callDirection === "inbound"
           ? (callDetails?.externalNumber || callDetails?.fromNumber || job.callerNumber)
           : (callDetails?.externalNumber || callDetails?.toNumber);
@@ -448,7 +450,7 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
           .set({
             transcription: transcript.transcript, // Store the actual transcript
             transcriptionStatus: "completed",
-            directionFinal: direction as "inbound" | "outbound",
+            directionFinal: callDirection as "inbound" | "outbound",
             aiSummary: aiResult.summary,
             aiActionItems: aiResult.actionItems,
             aiSentiment: { overall: aiResult.sentiment, score: 0, timeline: [] },
@@ -1381,17 +1383,26 @@ async function autoCompletePendingWrapups(): Promise<number> {
       const isOldBacklog = ageMs > 60 * 60 * 1000; // 1 hour
 
       if (shouldDismissWrapup(wrapup)) {
-        // Auto-dismiss: hangup, voicemail, internal, PlayFile, etc.
         const reason = getDismissReason(wrapup);
-        await db.update(wrapupDrafts).set({
-          status: 'completed',
-          isAutoVoided: true,
-          autoVoidReason: reason,
-          completionAction: 'skipped',
-          completedAt: new Date(),
-          updatedAt: new Date(),
-        }).where(eq(wrapupDrafts.id, wrapup.id));
-        console.log(`[TranscriptWorker] Wrapup ${wrapup.id.slice(0, 8)} auto-dismissed: ${reason}`);
+        const isInbound = wrapup.direction === 'Inbound' || wrapup.direction === 'inbound';
+        const isVoicemailDismiss = reason === 'voicemail' || reason === 'no_answer';
+
+        if (isInbound && isVoicemailDismiss) {
+          // Inbound voicemails = customer left a message for the agency → create ticket like any inbound call
+          console.log(`[TranscriptWorker] Wrapup ${wrapup.id.slice(0, 8)} is inbound voicemail — routing to ticket creation`);
+          await autoCompleteInboundWrapup(wrapup, tenantId);
+        } else {
+          // Auto-dismiss: hangup, outbound voicemail, internal, PlayFile, etc.
+          await db.update(wrapupDrafts).set({
+            status: 'completed',
+            isAutoVoided: true,
+            autoVoidReason: reason,
+            completionAction: 'skipped',
+            completedAt: new Date(),
+            updatedAt: new Date(),
+          }).where(eq(wrapupDrafts.id, wrapup.id));
+          console.log(`[TranscriptWorker] Wrapup ${wrapup.id.slice(0, 8)} auto-dismissed: ${reason}`);
+        }
       } else if (isOldBacklog) {
         // Old backlog — just clear without AZ actions
         await db.update(wrapupDrafts).set({
