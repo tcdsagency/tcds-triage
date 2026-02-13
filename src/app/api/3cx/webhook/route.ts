@@ -272,10 +272,11 @@ async function notifyRealtimeServer(event: {
 }
 
 // Start VM Bridge transcription
-async function startTranscription(callId: string, extension: string) {
+async function startTranscription(callId: string, extension: string, threecxCallId?: string) {
   console.log(`[3CX Webhook] ========== TRANSCRIPTION START REQUEST ==========`);
   console.log(`[3CX Webhook] Call ID: ${callId}`);
   console.log(`[3CX Webhook] Extension: ${extension}`);
+  console.log(`[3CX Webhook] 3CX Call ID: ${threecxCallId || "NOT PROVIDED"}`);
 
   if (!extension) {
     console.error("[3CX Webhook] Cannot start transcription: No extension provided!");
@@ -294,10 +295,20 @@ async function startTranscription(callId: string, extension: string) {
     console.log(`[3CX Webhook] VM Bridge client obtained, bridge URL: ${vmBridge.getBridgeUrl()}`);
     console.log(`[3CX Webhook] Starting transcription for call ${callId}, extension ${extension}`);
 
-    const session = await vmBridge.startTranscription(callId, extension);
+    const session = await vmBridge.startTranscription(callId, extension, threecxCallId);
 
     if (session) {
       console.log(`[3CX Webhook] Transcription started successfully:`, JSON.stringify(session, null, 2));
+      // Save VM Bridge session ID and mark transcription as active
+      await db
+        .update(calls)
+        .set({
+          vmSessionId: session.sessionId,
+          transcriptionStatus: "active",
+          updatedAt: new Date(),
+        })
+        .where(eq(calls.id, callId));
+      console.log(`[3CX Webhook] Saved vmSessionId ${session.sessionId} to call ${callId}`);
     } else {
       console.warn(`[3CX Webhook] Transcription start returned null - check VM Bridge logs`);
     }
@@ -625,8 +636,8 @@ export async function POST(request: NextRequest) {
         }
 
         if (agentExtension) {
-          console.log(`[3CX Webhook] Starting transcription for call ${call.id}, extension ${agentExtension}`);
-          await startTranscription(call.id, agentExtension);
+          console.log(`[3CX Webhook] Starting transcription for call ${call.id}, extension ${agentExtension}, 3cx=${callId}`);
+          await startTranscription(call.id, agentExtension, callId);
         } else {
           console.error(`[3CX Webhook] Cannot start transcription: No agent extension available`);
           console.error(`[3CX Webhook] Extension from event: ${extension || "NOT PROVIDED"}`);
