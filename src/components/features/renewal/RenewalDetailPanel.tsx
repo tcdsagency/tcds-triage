@@ -37,6 +37,10 @@ export default function RenewalDetailPanel({
     setLoading(true);
     try {
       const res = await fetch(`/api/renewals/${renewal.id}`);
+      if (!res.ok) {
+        console.error('Detail fetch error:', res.status);
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setDetail(data.renewal);
@@ -52,6 +56,10 @@ export default function RenewalDetailPanel({
   const fetchNotes = useCallback(async () => {
     try {
       const res = await fetch(`/api/renewals/${renewal.id}/notes`);
+      if (!res.ok) {
+        console.error('Notes fetch error:', res.status);
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setNotes(data.notes);
@@ -247,7 +255,7 @@ export default function RenewalDetailPanel({
                   <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-0.5">
                     by {current.agentDecisionByName}
                     {current.agentDecisionAt &&
-                      ` on ${new Date(current.agentDecisionAt).toLocaleDateString('en-US', {
+                      ` on ${new Date(current.agentDecisionAt).toLocaleString('en-US', {
                         month: 'short',
                         day: 'numeric',
                         hour: 'numeric',
@@ -281,7 +289,7 @@ export default function RenewalDetailPanel({
             </div>
 
             {/* Action Buttons */}
-            {(!current.agentDecision || current.agentDecision === 'needs_more_info' || current.agentDecision === 'contact_customer') && (
+            {(!current.agentDecision || current.agentDecision === 'needs_more_info') && (
               <div>
                 <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Actions

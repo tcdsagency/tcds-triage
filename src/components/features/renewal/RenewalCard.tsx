@@ -14,7 +14,7 @@ interface RenewalCardProps {
 export default function RenewalCard({ renewal, isSelected, onClick }: RenewalCardProps) {
   const premiumChange = renewal.premiumChangePercent ?? 0;
   const materialCount = Array.isArray(renewal.materialChanges)
-    ? renewal.materialChanges.filter((c: any) => c.severity === 'material_negative').length
+    ? renewal.materialChanges.filter((c: { severity?: string }) => c.severity === 'material_negative').length
     : 0;
 
   // Premium change color

@@ -98,6 +98,11 @@ export default function RenewalReviewPage() {
       params.set('limit', pagination.limit.toString());
 
       const res = await fetch(`/api/renewals?${params}`);
+      if (!res.ok) {
+        console.error('API error:', res.status);
+        toast.error('Failed to load renewals');
+        return;
+      }
       const data: RenewalsListResponse = await res.json();
 
       if (data.success) {
@@ -124,16 +129,24 @@ export default function RenewalReviewPage() {
   // Handle agent decision
   const handleDecision = async (renewalId: string, decision: string, notes: string) => {
     try {
+      if (!user?.id) {
+        toast.error('User profile not loaded — please refresh the page');
+        return;
+      }
       const res = await fetch(`/api/renewals/${renewalId}/decide`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           decision,
           notes,
-          userId: user?.id,
-          userName: user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : undefined,
+          userId: user.id,
+          userName: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
         }),
       });
+      if (!res.ok && res.status !== 409) {
+        toast.error('Failed to record decision');
+        return;
+      }
       const data = await res.json();
 
       if (data.success) {
