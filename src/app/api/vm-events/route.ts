@@ -235,7 +235,7 @@ export async function POST(request: NextRequest) {
         }
 
         // If no existing call found by vmSessionId/threeCxCallId, also check for
-        // recent calls created by presence detection (which have "Unknown" fromNumber or no externalCallId)
+        // recent active calls for this agent (including ones created by 3CX webhook)
         if (!existingCall && agentId) {
           const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
           const [presenceCall] = await db
@@ -248,13 +248,7 @@ export async function POST(request: NextRequest) {
                   eq(calls.status, "ringing"),
                   eq(calls.status, "in_progress")
                 ),
-                gt(calls.createdAt, fiveMinutesAgo),
-                // Only match calls that don't have an externalCallId (presence-created)
-                // or have "Unknown" as fromNumber
-                or(
-                  sql`${calls.externalCallId} IS NULL`,
-                  eq(calls.fromNumber, "Unknown")
-                )
+                gt(calls.createdAt, fiveMinutesAgo)
               )
             )
             .orderBy(desc(calls.createdAt))
@@ -285,8 +279,7 @@ export async function POST(request: NextRequest) {
               and(
                 eq(calls.extension, extension),
                 or(eq(calls.status, "ringing"), eq(calls.status, "in_progress")),
-                gt(calls.createdAt, fiveMinutesAgo),
-                sql`${calls.externalCallId} IS NULL`
+                gt(calls.createdAt, fiveMinutesAgo)
               )
             )
             .orderBy(desc(calls.createdAt))

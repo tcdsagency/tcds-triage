@@ -185,15 +185,15 @@ export async function GET(request: NextRequest) {
     // Create missing call records for agents on call without DB records
     for (const agent of agentsOnCallPerPresence) {
       const hasActiveCall = todaysCalls.some(c =>
-        !c.endedAt && c.agentId === agent.id
+        !c.endedAt && (c.agentId === agent.id || (agent.extension && c.extension === agent.extension))
       );
 
       if (!hasActiveCall) {
-        // First, check for VM Bridge auto-created calls (from segment webhook) that
-        // have no agentId. These are created when auto-transcription starts before
-        // any other webhook fires. Claim them instead of creating duplicates.
+        // First, check for calls on this extension that we can claim
+        // (e.g., 3CX webhook created a call with extension but different/no agentId,
+        // or VM Bridge auto-created a call with no agentId)
         const vmBridgeCall = todaysCalls.find(c =>
-          !c.endedAt && c.vmSessionId && !c.agentId
+          !c.endedAt && !c.agentId && (c.vmSessionId || (agent.extension && c.extension === agent.extension))
         );
 
         if (vmBridgeCall) {
