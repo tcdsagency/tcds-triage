@@ -75,11 +75,14 @@ export default function RenewalReviewPage() {
   // Fetch distinct carrier names for dropdown
   useEffect(() => {
     fetch('/api/renewals/carriers')
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data) => {
         if (data.success) setCarriers(data.carriers);
       })
-      .catch(() => {});
+      .catch((err) => console.error('Failed to fetch carriers:', err));
   }, []);
 
   // Fetch renewals
@@ -202,6 +205,10 @@ export default function RenewalReviewPage() {
         method: 'POST',
         body: formData,
       });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Upload failed (${res.status}): ${text.substring(0, 100)}`);
+      }
       const data = await res.json();
 
       if (data.success) {

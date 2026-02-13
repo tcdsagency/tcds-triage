@@ -95,6 +95,10 @@ export default function RenewalDetailPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, userId, userName }),
       });
+      if (!res.ok) {
+        console.error('Note post error:', res.status);
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         await fetchNotes();
@@ -289,7 +293,7 @@ export default function RenewalDetailPanel({
             </div>
 
             {/* Action Buttons */}
-            {(!current.agentDecision || current.agentDecision === 'needs_more_info') && (
+            {(!current.agentDecision || current.agentDecision === 'needs_more_info' || current.agentDecision === 'contact_customer') && (
               <div>
                 <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Actions
