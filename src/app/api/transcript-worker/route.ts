@@ -1235,6 +1235,338 @@ async function pollSQLForMissedCalls(): Promise<{ found: number; processed: numb
 }
 
 // =============================================================================
+// Auto-Complete Pending Wrapup Drafts
+// Catches wrapups where auto-completion failed or was skipped
+// =============================================================================
+
+function shouldDismissWrapup(wrapup: {
+  requestType: string | null;
+  summary: string | null;
+  customerPhone: string | null;
+  agentExtension: string | null;
+  aiExtraction: unknown;
+}): boolean {
+  // Hangup or short call
+  if (wrapup.requestType === 'hangup' || wrapup.requestType === 'short_call') {
+    return true;
+  }
+
+  // PlayFile / system test
+  if (
+    wrapup.customerPhone === 'PlayFile' ||
+    wrapup.customerPhone?.toLowerCase().includes('playfile')
+  ) {
+    return true;
+  }
+
+  // Internal call: both sides are short extensions (< 5 digits)
+  const custDigits = (wrapup.customerPhone || '').replace(/\D/g, '');
+  const agentDigits = (wrapup.agentExtension || '').replace(/\D/g, '');
+  if (custDigits.length > 0 && custDigits.length < 5 && agentDigits.length > 0 && agentDigits.length < 5) {
+    return true;
+  }
+
+  // No summary or very short (no real content)
+  if (!wrapup.summary || wrapup.summary.length < 15) {
+    return true;
+  }
+
+  // Voicemail indicators
+  const lower = wrapup.summary.toLowerCase();
+  const vmIndicators = [
+    'left a voicemail',
+    'left a voice mail',
+    'voicemail was left',
+    'went to voicemail',
+    'reached voicemail',
+    'mailbox is full',
+    'not available',
+    'no answer',
+    'agent left a message',
+  ];
+  if (vmIndicators.some(v => lower.includes(v))) {
+    return true;
+  }
+
+  // AI flagged as hangup
+  const extraction = wrapup.aiExtraction as { isHangup?: boolean } | null;
+  if (extraction?.isHangup) {
+    return true;
+  }
+
+  return false;
+}
+
+function getDismissReason(wrapup: {
+  requestType: string | null;
+  summary: string | null;
+  customerPhone: string | null;
+  agentExtension: string | null;
+  aiExtraction: unknown;
+}): string {
+  if (wrapup.requestType === 'hangup') return 'hangup';
+  if (wrapup.requestType === 'short_call') return 'short_call';
+  if (wrapup.customerPhone === 'PlayFile' || wrapup.customerPhone?.toLowerCase().includes('playfile')) return 'playfile';
+
+  const custDigits = (wrapup.customerPhone || '').replace(/\D/g, '');
+  const agentDigits = (wrapup.agentExtension || '').replace(/\D/g, '');
+  if (custDigits.length > 0 && custDigits.length < 5 && agentDigits.length > 0 && agentDigits.length < 5) return 'internal_call';
+
+  if (!wrapup.summary || wrapup.summary.length < 15) return 'no_content';
+
+  const lower = (wrapup.summary || '').toLowerCase();
+  if (lower.includes('voicemail') || lower.includes('voice mail') || lower.includes('mailbox')) return 'voicemail';
+  if (lower.includes('not available') || lower.includes('no answer')) return 'no_answer';
+
+  const extraction = wrapup.aiExtraction as { isHangup?: boolean } | null;
+  if (extraction?.isHangup) return 'hangup';
+
+  return 'auto_dismissed';
+}
+
+async function autoCompletePendingWrapups(): Promise<number> {
+  const tenantId = process.env.DEFAULT_TENANT_ID!;
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+  // Find pending_review wrapups older than 5 min (give webhook time to auto-complete first)
+  const pending = await db.select({
+    id: wrapupDrafts.id,
+    callId: wrapupDrafts.callId,
+    direction: wrapupDrafts.direction,
+    customerPhone: wrapupDrafts.customerPhone,
+    customerName: wrapupDrafts.customerName,
+    summary: wrapupDrafts.summary,
+    requestType: wrapupDrafts.requestType,
+    agentExtension: wrapupDrafts.agentExtension,
+    agentName: wrapupDrafts.agentName,
+    aiExtraction: wrapupDrafts.aiExtraction,
+    agencyzoomTicketId: wrapupDrafts.agencyzoomTicketId,
+  })
+  .from(wrapupDrafts)
+  .where(and(
+    eq(wrapupDrafts.tenantId, tenantId),
+    eq(wrapupDrafts.status, "pending_review"),
+    lte(wrapupDrafts.createdAt, fiveMinutesAgo),
+  ))
+  .orderBy(asc(wrapupDrafts.createdAt))
+  .limit(10); // Process 10 per cycle to stay within Vercel timeout
+
+  if (pending.length === 0) return 0;
+
+  console.log(`[TranscriptWorker] Found ${pending.length} pending wrapup(s) to auto-complete`);
+
+  let completed = 0;
+  for (const wrapup of pending) {
+    try {
+      // Skip if already has a ticket (race condition guard)
+      if (wrapup.agencyzoomTicketId) {
+        await db.update(wrapupDrafts).set({
+          status: 'completed',
+          completionAction: 'auto_completed',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(wrapupDrafts.id, wrapup.id));
+        console.log(`[TranscriptWorker] Wrapup ${wrapup.id.slice(0, 8)} already has ticket, marking completed`);
+        completed++;
+        continue;
+      }
+
+      if (shouldDismissWrapup(wrapup)) {
+        // Auto-dismiss: hangup, voicemail, internal, PlayFile, etc.
+        const reason = getDismissReason(wrapup);
+        await db.update(wrapupDrafts).set({
+          status: 'completed',
+          isAutoVoided: true,
+          autoVoidReason: reason,
+          completionAction: 'skipped',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(wrapupDrafts.id, wrapup.id));
+        console.log(`[TranscriptWorker] Wrapup ${wrapup.id.slice(0, 8)} auto-dismissed: ${reason}`);
+      } else if (wrapup.direction === 'Inbound' || wrapup.direction === 'inbound') {
+        await autoCompleteInboundWrapup(wrapup, tenantId);
+      } else {
+        await autoCompleteOutboundWrapup(wrapup, tenantId);
+      }
+      completed++;
+    } catch (err) {
+      console.error(`[TranscriptWorker] Failed to auto-complete wrapup ${wrapup.id.slice(0, 8)}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  return completed;
+}
+
+async function autoCompleteInboundWrapup(
+  wrapup: {
+    id: string;
+    callId: string;
+    customerPhone: string | null;
+    customerName: string | null;
+    summary: string | null;
+    aiExtraction: unknown;
+  },
+  tenantId: string,
+): Promise<void> {
+  // Get call details for agent info + transcript
+  const [callData] = await db.select({
+    agentId: calls.agentId,
+    durationSeconds: calls.durationSeconds,
+    transcription: calls.transcription,
+  }).from(calls).where(eq(calls.id, wrapup.callId)).limit(1);
+
+  const extraction = wrapup.aiExtraction as AIExtractionResult | null;
+  const aiResult: AIExtractionResult = extraction || {
+    customerName: wrapup.customerName,
+    policyNumbers: [],
+    insuranceType: 'unknown',
+    requestType: 'general_inquiry',
+    summary: wrapup.summary || 'Inbound call - no transcript available',
+    actionItems: [],
+    sentiment: 'neutral',
+    topics: [],
+    isHangup: false,
+  };
+
+  // Reuse createAutoTicketForPollCall which handles customer lookup, ticket creation, dedup
+  await createAutoTicketForPollCall({
+    tenantId,
+    callId: wrapup.callId,
+    agentId: callData?.agentId || null,
+    customerPhone: wrapup.customerPhone,
+    customerName: wrapup.customerName,
+    aiResult,
+    transcript: callData?.transcription || wrapup.summary || '',
+    durationSeconds: callData?.durationSeconds || 0,
+    wrapupId: wrapup.id,
+  });
+
+  // If createAutoTicketForPollCall succeeded, the wrapup is already marked completed.
+  // If it returned early (dedup, feature flag off, etc.), ensure we still complete it.
+  const [current] = await db.select({ status: wrapupDrafts.status })
+    .from(wrapupDrafts).where(eq(wrapupDrafts.id, wrapup.id)).limit(1);
+
+  if (current?.status === 'pending_review') {
+    await db.update(wrapupDrafts).set({
+      status: 'completed',
+      completionAction: 'auto_completed',
+      completedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(wrapupDrafts.id, wrapup.id));
+    console.log(`[TranscriptWorker] Inbound wrapup ${wrapup.id.slice(0, 8)} auto-completed (no ticket created)`);
+  }
+}
+
+async function autoCompleteOutboundWrapup(
+  wrapup: {
+    id: string;
+    callId: string;
+    customerPhone: string | null;
+    customerName: string | null;
+    summary: string | null;
+    agentExtension: string | null;
+    agentName: string | null;
+    aiExtraction: unknown;
+  },
+  tenantId: string,
+): Promise<void> {
+  const customerPhone = wrapup.customerPhone;
+  if (!customerPhone) {
+    await db.update(wrapupDrafts).set({
+      status: 'completed',
+      completionAction: 'auto_completed',
+      completedAt: new Date(),
+      autoVoidReason: 'outbound_unmatched',
+      updatedAt: new Date(),
+    }).where(eq(wrapupDrafts.id, wrapup.id));
+    console.log(`[TranscriptWorker] Outbound wrapup ${wrapup.id.slice(0, 8)} auto-completed (no phone)`);
+    return;
+  }
+
+  const phoneSuffix = customerPhone.replace(/\D/g, '').slice(-10);
+  if (phoneSuffix.length < 7) {
+    await db.update(wrapupDrafts).set({
+      status: 'completed',
+      completionAction: 'auto_completed',
+      completedAt: new Date(),
+      autoVoidReason: 'outbound_unmatched',
+      updatedAt: new Date(),
+    }).where(eq(wrapupDrafts.id, wrapup.id));
+    console.log(`[TranscriptWorker] Outbound wrapup ${wrapup.id.slice(0, 8)} auto-completed (short phone)`);
+    return;
+  }
+
+  // Customer lookup
+  const [foundCustomer] = await db.select({
+    id: customers.id,
+    agencyzoomId: customers.agencyzoomId,
+  }).from(customers).where(
+    and(
+      eq(customers.tenantId, tenantId),
+      or(
+        ilike(customers.phone, `%${phoneSuffix}`),
+        ilike(customers.phoneAlt, `%${phoneSuffix}`)
+      )
+    )
+  ).limit(1);
+
+  if (foundCustomer?.agencyzoomId) {
+    const azCustomerId = parseInt(foundCustomer.agencyzoomId, 10);
+    if (!isNaN(azCustomerId) && azCustomerId > 0) {
+      // Post note to AgencyZoom
+      try {
+        const azClient = getAgencyZoomClient();
+        const now = new Date();
+        const formattedDate = now.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+        const formattedTime = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        const agentLabel = wrapup.agentName || wrapup.agentExtension || 'Agent';
+
+        const extraction = wrapup.aiExtraction as AIExtractionResult | null;
+        const summaryText = extraction?.summary || wrapup.summary || 'Outbound call';
+
+        const noteText = `📞 Outbound Call - ${formattedDate} ${formattedTime}\n\n${summaryText}\n\nAgent: ${agentLabel}`;
+        const noteResult = await azClient.addNote(azCustomerId, noteText);
+
+        await db.update(wrapupDrafts).set({
+          status: 'completed',
+          matchStatus: 'matched',
+          noteAutoPosted: noteResult.success || false,
+          noteAutoPostedAt: noteResult.success ? now : undefined,
+          completionAction: noteResult.success ? 'posted' : 'auto_completed',
+          completedAt: now,
+          agencyzoomNoteId: noteResult.id?.toString() || null,
+          updatedAt: now,
+        }).where(eq(wrapupDrafts.id, wrapup.id));
+
+        // Link customer to call
+        await db.update(calls).set({ customerId: foundCustomer.id }).where(eq(calls.id, wrapup.callId));
+        console.log(`[TranscriptWorker] Outbound wrapup ${wrapup.id.slice(0, 8)} auto-completed: note posted to AZ#${azCustomerId}`);
+      } catch (noteErr) {
+        // Note posting failed - still complete the wrapup
+        await db.update(wrapupDrafts).set({
+          status: 'completed',
+          completionAction: 'auto_completed',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(wrapupDrafts.id, wrapup.id));
+        console.error(`[TranscriptWorker] Outbound note posting failed, wrapup ${wrapup.id.slice(0, 8)} auto-completed anyway:`, noteErr instanceof Error ? noteErr.message : noteErr);
+      }
+      return;
+    }
+  }
+
+  // No customer match or no valid AZ ID - just complete
+  await db.update(wrapupDrafts).set({
+    status: 'completed',
+    completionAction: 'auto_completed',
+    completedAt: new Date(),
+    autoVoidReason: 'outbound_unmatched',
+    updatedAt: new Date(),
+  }).where(eq(wrapupDrafts.id, wrapup.id));
+  console.log(`[TranscriptWorker] Outbound wrapup ${wrapup.id.slice(0, 8)} auto-completed (no match)`);
+}
+
+// =============================================================================
 // GET - Cron job entry point (triggered by Vercel cron)
 // =============================================================================
 
@@ -1264,6 +1596,17 @@ export async function GET(request: NextRequest) {
       console.error(`[TranscriptWorker] Quote-ticket linking error:`, err);
     }
 
+    // Auto-complete pending wrapups that nobody reviewed
+    let wrapupsAutoCompleted = 0;
+    try {
+      wrapupsAutoCompleted = await autoCompletePendingWrapups();
+      if (wrapupsAutoCompleted > 0) {
+        console.log(`[TranscriptWorker] Auto-completed ${wrapupsAutoCompleted} pending wrapup(s)`);
+      }
+    } catch (err) {
+      console.error(`[TranscriptWorker] Wrapup auto-complete error:`, err);
+    }
+
     // Get pending jobs that are ready to process
     const jobs = await db
       .select()
@@ -1284,6 +1627,7 @@ export async function GET(request: NextRequest) {
         processed: 0,
         sqlPoll: pollResult,
         quoteLinksProcessed,
+        wrapupsAutoCompleted,
       });
     }
 
@@ -1308,6 +1652,7 @@ export async function GET(request: NextRequest) {
       results,
       sqlPoll: pollResult,
       quoteLinksProcessed,
+      wrapupsAutoCompleted,
     });
   } catch (error) {
     console.error("[TranscriptWorker] Error:", error);
