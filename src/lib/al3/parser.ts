@@ -722,6 +722,7 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
   // These auto coverages should be excluded from homeowners transactions.
   let inAutoSection = false;
   let hasHomeCoverages = false;
+  let seenHomeRecord = false; // Tracks whether we've encountered a home record in the main loop
   // First pass: check if this transaction has any 6CVH (home) records.
   // Also check for 6CVH sub-records embedded inside 6HRU/5REP lines.
   for (const line of lines) {
@@ -739,11 +740,15 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
     // marks the start of an auto section within a home transaction.
     // 9BIS or 5BPI with HOME LOB resets back to home section.
     if (hasHomeCoverages) {
+      // Track when we've seen a home-specific record (6CVH, 6HRU, 6FRU, 5REP with coverages)
+      if (groupCode === '6CVH' || ((groupCode === '6HRU' || groupCode === '6FRU' || groupCode === '5REP') && line.includes('6CVH'))) {
+        seenHomeRecord = true;
+      }
+
       if (groupCode === '5ISI') {
         // 5ISI can appear at the start (before home coverages) — only mark as auto
-        // when it appears AFTER home coverage records have been seen
-        const covSoFar = coverages.length;
-        if (covSoFar > 0) {
+        // when it appears AFTER home-specific records have been seen
+        if (seenHomeRecord) {
           inAutoSection = true;
         }
       } else if (groupCode === '5PPH' || groupCode === '6PDR' || groupCode === '6PDA') {
@@ -759,7 +764,7 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
     if (hasHomeCoverages && inAutoSection) {
       const gc = getGroupCode(line);
       if (gc === '6CVA' || gc === '5PPH' || gc === '6PDR' || gc === '6PDA' ||
-          gc === '6PVH' || gc === '5DRV' || gc === '5VEH') {
+          gc === '6PVH' || gc === '5DRV' || gc === '5VEH' || gc === '5BPI') {
         continue; // Skip auto records in home transactions
       }
       // Also skip 5AOI/9AOI in auto section (auto lienholder, not home mortgagee)
@@ -1069,8 +1074,8 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
             }
           }
 
-          // LOB from BPI positions 64-68
-          if (!header.lineOfBusiness && line.length > 69) {
+          // LOB from BPI positions 64-68 (more authoritative than 2TRG header)
+          if (line.length > 69) {
             const bpiLob = extractField(line, BPI_FIELDS.LOB_CODE).replace(/\?+/g, '').trim();
             if (bpiLob && LOB_CODES[bpiLob]) {
               header.lineOfBusiness = LOB_CODES[bpiLob];
@@ -1398,9 +1403,13 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
     }
   }
 
-  // Reclassify LOB: if transaction has auto coverages (6CVA codes like BI, PD, COLL, COMP)
-  // but no home coverages, it's an auto transaction regardless of the header LOB
-  if (!hasHomeCoverages && uniqueCoverages.length > 0) {
+  // Reclassify LOB based on actual coverage records (overrides potentially wrong 2TRG LOB)
+  if (hasHomeCoverages) {
+    // Home coverages present — ensure LOB reflects that (fixes misaligned 2TRG LOB codes like "UM")
+    if (!header.lineOfBusiness || header.lineOfBusiness === 'Umbrella' || header.lineOfBusiness === 'Personal Auto') {
+      header.lineOfBusiness = 'Homeowners';
+    }
+  } else if (uniqueCoverages.length > 0) {
     const autoCodes = new Set(['BI', 'PD', 'COLL', 'COMP', 'UM', 'MEDPM', 'RREIM', 'TL', 'EXTCV']);
     const hasAutoCode = uniqueCoverages.some(c =>
       autoCodes.has(c.code.toUpperCase()) || autoCodes.has(c.description?.toUpperCase() || '')
