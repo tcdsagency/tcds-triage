@@ -175,12 +175,10 @@ export function compareSnapshots(
   allChanges.push(...compareVehicleLevelCoverages(renewalVehicleCovs, baselineVehicleCovs));
 
   // Compare vehicles (includes vehicle-level coverage comparison)
-  // When baseline is from HawkSoft, AL3 vehicle lists may be incomplete — skip removal detection
-  const baselineFromAL3 = baseline.fetchSource === 'prior_term_snapshot';
-  allChanges.push(...compareVehicles(renewal.vehicles, baseline.vehicles, thresholds, baselineFromAL3));
+  allChanges.push(...compareVehicles(renewal.vehicles, baseline.vehicles, thresholds));
 
   // Compare drivers
-  allChanges.push(...compareDrivers(renewal.drivers, baseline.drivers, baselineFromAL3));
+  allChanges.push(...compareDrivers(renewal.drivers, baseline.drivers));
 
   // Compare discounts
   allChanges.push(...compareDiscounts(renewal.discounts, baseline.discounts));
@@ -441,8 +439,7 @@ function compareCoverages(
 function compareVehicles(
   renewalVehicles: CanonicalVehicle[],
   baselineVehicles: CanonicalVehicle[],
-  thresholds: ComparisonThresholds = DEFAULT_COMPARISON_THRESHOLDS,
-  detectRemovals: boolean = true
+  thresholds: ComparisonThresholds = DEFAULT_COMPARISON_THRESHOLDS
 ): MaterialChange[] {
   const changes: MaterialChange[] = [];
 
@@ -455,21 +452,18 @@ function compareVehicles(
   );
 
   // Check for removed vehicles
-  // Skip when baseline is from HawkSoft — AL3 vehicle lists may be incomplete
-  if (detectRemovals) {
-    for (const [vin, baseline] of baselineByVin) {
-      if (!renewalByVin.has(vin)) {
-        const desc = `${baseline.year || ''} ${baseline.make || ''} ${baseline.model || ''}`.trim();
-        changes.push({
-          field: `vehicle.${vin}`,
-          category: 'vehicle_removed',
-          classification: 'material_negative',
-          oldValue: desc || vin,
-          newValue: null,
-          severity: 'material_negative',
-          description: `Vehicle removed: ${desc || vin}`,
-        });
-      }
+  for (const [vin, baseline] of baselineByVin) {
+    if (!renewalByVin.has(vin)) {
+      const desc = `${baseline.year || ''} ${baseline.make || ''} ${baseline.model || ''}`.trim();
+      changes.push({
+        field: `vehicle.${vin}`,
+        category: 'vehicle_removed',
+        classification: 'material_negative',
+        oldValue: desc || vin,
+        newValue: null,
+        severity: 'material_negative',
+        description: `Vehicle removed: ${desc || vin}`,
+      });
     }
   }
 
@@ -601,8 +595,7 @@ function normalizeDriverName(name: string): string {
 
 function compareDrivers(
   renewalDrivers: import('@/types/renewal.types').CanonicalDriver[],
-  baselineDrivers: import('@/types/renewal.types').CanonicalDriver[],
-  detectRemovals: boolean = true
+  baselineDrivers: import('@/types/renewal.types').CanonicalDriver[]
 ): MaterialChange[] {
   const changes: MaterialChange[] = [];
 
@@ -614,21 +607,18 @@ function compareDrivers(
     baselineDrivers.filter((d) => d.name).map((d) => [normalizeDriverName(d.name!), d])
   );
 
-  // Skip removal detection when baseline is from HawkSoft — AL3 may not list all drivers
-  if (detectRemovals) {
-    for (const [normalizedName, baseline] of baselineByNormalized) {
-      if (!renewalByNormalized.has(normalizedName)) {
-        const displayName = baseline.name || normalizedName;
-        changes.push({
-          field: `driver.${normalizedName}`,
-          category: 'driver_removed',
-          classification: 'material_negative',
-          oldValue: displayName,
-          newValue: null,
-          severity: 'material_negative',
-          description: `Driver removed: ${displayName}`,
-        });
-      }
+  for (const [normalizedName, baseline] of baselineByNormalized) {
+    if (!renewalByNormalized.has(normalizedName)) {
+      const displayName = baseline.name || normalizedName;
+      changes.push({
+        field: `driver.${normalizedName}`,
+        category: 'driver_removed',
+        classification: 'material_negative',
+        oldValue: displayName,
+        newValue: null,
+        severity: 'material_negative',
+        description: `Driver removed: ${displayName}`,
+      });
     }
   }
 
