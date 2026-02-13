@@ -165,7 +165,7 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
     const deduped = new Map<string, typeof allRenewals[0]>();
     let duplicatesRemoved = 0;
     for (const r of allRenewals) {
-      const key = `${r.header?.carrierCode}|${r.header?.policyNumber}|${r.header?.effectiveDate}`;
+      const key = `${r.header?.carrierName || r.header?.carrierCode}|${r.header?.policyNumber}|${r.header?.effectiveDate}`;
       if (deduped.has(key)) {
         duplicatesRemoved++;
       } else {
@@ -174,24 +174,8 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
     }
     const uniqueAll = Array.from(deduped.values());
 
-    // Filter out renewals whose effective date is today or in the past.
-    // Once a policy has renewed, HawkSoft updates to the new term data,
-    // so prior term data is no longer available for baseline comparison.
-    const today = new Date().toISOString().split('T')[0];
-    const unique: typeof uniqueAll = [];
-    let expiredSkipped = 0;
-    for (const r of uniqueAll) {
-      const effDate = (r.header?.effectiveDate as string | undefined)?.split('T')[0];
-      if (effDate && effDate <= today) {
-        expiredSkipped++;
-        logger.info({
-          policyNumber: r.header?.policyNumber,
-          effectiveDate: effDate,
-        }, 'Skipping renewal with effective date today or past - prior term data unavailable');
-      } else {
-        unique.push(r);
-      }
-    }
+    // Expired renewals are already filtered by the parse API's partition-transactions action.
+    const unique = uniqueAll;
 
     // Archive non-renewal transactions
     let totalArchived = 0;
@@ -230,7 +214,6 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
       totalRenewals: allRenewals.length,
       uniqueRenewals: unique.length,
       duplicatesRemoved,
-      expiredSkipped,
       nonRenewalsArchived: totalArchived,
     }, 'Renewals filtered and non-renewals archived');
 
@@ -423,6 +406,7 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
       });
 
       logger.info({ candidateId, comparisonId: comparison.comparisonId }, 'Created needs_review comparison (no baseline)');
+      await checkBatchCompletion(data.batchId);
       return;
     }
 
@@ -494,6 +478,9 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
       comparisonId: comparison.comparisonId,
       recommendation: comparisonResult.recommendation,
     }, 'Candidate processing complete');
+
+    // Check if all candidates in this batch are done
+    await checkBatchCompletion(data.batchId);
   } catch (error) {
     logger.error({ candidateId, error }, 'Candidate processing failed');
 
@@ -502,6 +489,48 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
       errorMessage: error instanceof Error ? error.message : 'Unknown error',
     });
 
+    // Still check batch completion — failed candidates count as "done"
+    if (data.batchId) {
+      await checkBatchCompletion(data.batchId).catch((e) =>
+        logger.warn({ batchId: data.batchId, error: e }, 'Batch completion check failed')
+      );
+    }
+
     throw error;
+  }
+}
+
+// =============================================================================
+// BATCH COMPLETION CHECK
+// =============================================================================
+
+async function checkBatchCompletion(batchId: string): Promise<void> {
+  try {
+    const res = await internalFetch(`/api/renewals/internal/batches/${batchId}/status`);
+    const data = await res.json() as {
+      success: boolean;
+      totalCandidates: number;
+      completedCandidates: number;
+      failedCandidates: number;
+    };
+
+    if (!data.success) return;
+
+    const doneCount = data.completedCandidates + data.failedCandidates;
+    if (doneCount >= data.totalCandidates && data.totalCandidates > 0) {
+      await patchBatch(batchId, {
+        status: 'completed',
+        candidatesCompleted: data.completedCandidates,
+        candidatesFailed: data.failedCandidates,
+        processingCompletedAt: new Date().toISOString(),
+      });
+      logger.info({
+        batchId,
+        completed: data.completedCandidates,
+        failed: data.failedCandidates,
+      }, 'Batch completed — all candidates processed');
+    }
+  } catch (err) {
+    logger.warn({ batchId, error: err }, 'Failed to check batch completion');
   }
 }

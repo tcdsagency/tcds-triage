@@ -316,14 +316,13 @@ export const DISCOUNT_COVERAGE_TYPES = new Set([
 export const VEHICLE_LEVEL_COVERAGE_TYPES = new Set([
   'comprehensive',
   'collision',
-  'tl',              // Towing/Roadside
-  'rreim',           // Rental Reimbursement
-  'glass',           // Glass Coverage
-  'gap',             // GAP Insurance
-  'loan_lease',      // Loan/Lease Payoff
-  'full_glass',      // Full Glass Coverage
-  'roadside',        // Roadside Assistance (alternate code)
-  'rental',          // Rental (alternate code)
+  'towing',               // Towing/Roadside (canonical)
+  'rental_reimbursement', // Rental Reimbursement (canonical)
+  'glass',                // Glass Coverage
+  'gap_coverage',         // GAP Insurance (canonical)
+  'loan_lease_payoff',    // Loan/Lease Payoff (canonical)
+  'full_glass',           // Full Glass Coverage
+  'roadside_assistance',  // Roadside Assistance (canonical)
 ]);
 
 // =============================================================================

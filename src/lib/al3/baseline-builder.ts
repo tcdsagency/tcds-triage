@@ -197,14 +197,14 @@ function reconstructFromPriorTerm(
   }
   const premium = calculatedPremium ?? (priorTerm.premium ? parseFloat(priorTerm.premium) : undefined);
 
-  // Reconstruct vehicles
+  // Reconstruct vehicles (preserve their coverages from prior term)
   const priorVehicles: CanonicalVehicle[] = (priorTerm.vehicles || []).map((v: any) => ({
     vin: v.vin || undefined,
     year: v.year || undefined,
     make: v.make || undefined,
     model: v.model || undefined,
     usage: v.use || v.usage || undefined,
-    coverages: [],
+    coverages: Array.isArray(v.coverages) ? normalizeHawkSoftCoverages(v.coverages) : [],
   }));
 
   // Reconstruct drivers

@@ -143,16 +143,12 @@ export function buildRenewalSnapshot(
   let totalPremium: number | undefined = transaction.totalPremium;
 
   if (!totalPremium) {
-    // Fallback: sum from coverage-level premiums
-    const policyLevelPremiums = coverages
+    // Fallback: sum from coverage-level premiums.
+    // Vehicle coverages are already flattened into the policy-level coverages array above,
+    // so we only need to sum from coverages (not vehicles) to avoid double-counting.
+    const allCoveragePremiums = coverages
       .filter((c) => c.premium != null)
       .map((c) => c.premium!);
-    const vehicleLevelPremiums = vehicles.flatMap((v) =>
-      v.coverages
-        .filter((c) => c.premium != null && VEHICLE_LEVEL_COVERAGE_TYPES.has(c.type))
-        .map((c) => c.premium!)
-    );
-    const allCoveragePremiums = [...policyLevelPremiums, ...vehicleLevelPremiums];
     if (allCoveragePremiums.length > 0) {
       totalPremium = allCoveragePremiums.reduce((sum, p) => sum + p, 0);
     }

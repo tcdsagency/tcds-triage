@@ -71,6 +71,23 @@ export async function moveRenewalToStage(
     return { success: false, warning: 'Renewal not found' };
   }
 
+  // Validate transition from current status
+  const reverseStatusMap: Record<string, RenewalCanonicalStage> = {
+    pending_ingestion: 'policy_pending_review',
+    waiting_agent_review: 'waiting_agent_review',
+    agent_reviewed: 'contact_customer',
+    requote_requested: 'requote_requested',
+    quote_ready: 'quote_ready_ezl',
+    completed: 'completed',
+  };
+  const currentStage = reverseStatusMap[renewal.status] ?? 'waiting_agent_review';
+  if (!isValidTransition(currentStage, targetStage)) {
+    // Log but don't block — allow the move in case local status is stale
+    console.warn(
+      `[RenewalStateMachine] Non-standard transition: ${currentStage} → ${targetStage} for ${renewalId}`
+    );
+  }
+
   // Resolve target stage ID
   const targetStageId = await resolveRenewalStageId(tenantId, targetStage);
   if (!targetStageId) {

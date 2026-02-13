@@ -40,11 +40,11 @@ export async function PATCH(
     const body = await request.json();
 
     const updateData: Record<string, any> = { updatedAt: new Date() };
-    if (body.status) updateData.status = body.status;
-    if (body.comparisonId) updateData.comparisonId = body.comparisonId;
-    if (body.policyId) updateData.policyId = body.policyId;
-    if (body.customerId) updateData.customerId = body.customerId;
-    if (body.renewalSnapshot) updateData.renewalSnapshot = body.renewalSnapshot;
+    if (body.status !== undefined) updateData.status = body.status;
+    if (body.comparisonId !== undefined) updateData.comparisonId = body.comparisonId;
+    if (body.policyId !== undefined) updateData.policyId = body.policyId;
+    if (body.customerId !== undefined) updateData.customerId = body.customerId;
+    if (body.renewalSnapshot !== undefined) updateData.renewalSnapshot = body.renewalSnapshot;
     if (body.errorMessage !== undefined) updateData.errorMessage = body.errorMessage;
 
     await db.update(renewalCandidates).set(updateData).where(eq(renewalCandidates.id, id));

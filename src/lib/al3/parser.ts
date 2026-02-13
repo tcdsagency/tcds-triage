@@ -90,7 +90,7 @@ export function parseSplitLimit(str: string): number | undefined {
   const cleaned = firstPart.replace(/[^0-9.-]/g, '');
   if (!cleaned) return undefined;
   const num = parseFloat(cleaned);
-  return isNaN(num) ? undefined : (num || undefined);
+  return isNaN(num) ? undefined : num;
 }
 
 // =============================================================================
@@ -416,7 +416,7 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
     // Only process coverage records (6CVH, 6CVA), skip other embedded record types
     if (sub.groupCode !== '6CVH' && sub.groupCode !== '6CVA') continue;
     const code = sub.coverageCode;
-    if (!code || code === 'PIF') continue;
+    if (!code) continue;
 
     // Skip sub-records that contain embedded transaction data (2TRG/2TCG/5BIS headers
     // leaked into coverage segments). These produce garbage coverages like "ACCT" with
@@ -1543,7 +1543,7 @@ function parseTransactionHeader(line: string): AL3TransactionHeader {
  */
 function parseCoverage(line: string): AL3Coverage | null {
   const code = extractField(line, CVG_FIELDS.COVERAGE_CODE);
-  if (!code || code === 'PIF') return null; // PIF = Paid in Full, not a real coverage
+  if (!code) return null;
 
   const limitStr = extractField(line, CVG_FIELDS.LIMIT);
   const deductibleStr = extractField(line, CVG_FIELDS.DEDUCTIBLE);
@@ -1567,7 +1567,7 @@ function parseCoverage(line: string): AL3Coverage | null {
 function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverage | null {
   const fields = type === 'vehicle' ? CVA_FIELDS : CVH_FIELDS;
   const code = extractField(line, fields.COVERAGE_CODE);
-  if (!code || code === 'PIF') return null;
+  if (!code) return null;
 
   if (type === 'vehicle') {
     // 6CVA: premium at 60 (implied 2 decimals + sign), limits at 102+, deductible at 122+
@@ -1626,25 +1626,28 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
     // RREIM/RENT: rental reimbursement is daily/max format
     // AL3 stores as "0000050000" which parses to 50000
     // HawkSoft stores "50/1,500" (daily=$50, max=$1500)
-    // Common patterns: value/1000 = daily, daily*30 = max (30-day coverage)
+    // Known carrier patterns:
+    //   - Value divisible by 1000 with daily rate 20-100: daily*1000 encoding
+    //   - Value < 200: raw daily amount
+    //   - Value >= 200 but not fitting patterns: leave as-is (comparison will flag)
     if ((upperCode === 'RREIM' || upperCode === 'RENT') && limitAmount) {
-      // If value >= 1000 and divisible by 1000, treat as daily*1000 encoding
       if (limitAmount >= 1000 && limitAmount % 1000 === 0) {
         const daily = limitAmount / 1000;
-        const max = daily * 30; // Standard 30-day rental coverage
-        displayLimit = `${daily}/${max}`;
-        finalLimitAmount = daily;
-      } else if (limitAmount >= 100) {
-        // Could be raw daily amount (e.g., 50 → $50/day)
-        // or max amount (e.g., 1500 → $1500 max)
-        // If < 200, assume daily; if >= 200, assume needs interpretation
-        if (limitAmount < 200) {
-          const daily = limitAmount;
+        // Only apply heuristic for reasonable daily rates ($20-$100)
+        if (daily >= 20 && daily <= 100) {
           const max = daily * 30;
           displayLimit = `${daily}/${max}`;
           finalLimitAmount = daily;
         }
+        // Values like 1000 ($1/day?) or 200000 ($200/day?) are left as-is
+      } else if (limitAmount < 200) {
+        // Raw daily amount (e.g., 50 → $50/day)
+        const daily = limitAmount;
+        const max = daily * 30;
+        displayLimit = `${daily}/${max}`;
+        finalLimitAmount = daily;
       }
+      // Values 200-999 or large non-divisible values are left as-is
     }
 
     // Clean non-split limit strings: strip leading zeros for readable display

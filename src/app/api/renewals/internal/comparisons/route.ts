@@ -87,6 +87,23 @@ export async function POST(request: NextRequest) {
       performedBy: 'system',
     });
 
+    // Create AgencyZoom Service Request (non-blocking)
+    if (body.customerId) {
+      try {
+        const { findOrCreateRenewalSR } = await import('@/lib/api/renewal-sr-service');
+        await findOrCreateRenewalSR({
+          tenantId: body.tenantId,
+          renewalComparisonId: comparison.id,
+          customerId: body.customerId,
+          policyNumber: body.policyNumber,
+          carrierName: body.carrierName,
+          lineOfBusiness: body.lineOfBusiness,
+        });
+      } catch (srErr) {
+        console.error('[Comparisons] SR creation failed (non-blocking):', srErr);
+      }
+    }
+
     return NextResponse.json({ success: true, comparisonId: comparison.id });
   } catch (error) {
     console.error('[Internal API] Error creating comparison:', error);

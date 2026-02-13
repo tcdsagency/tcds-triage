@@ -580,7 +580,7 @@ function compareVehicles(
  * Removes middle initials and extra spaces so "Ladonna B Lee" matches "Ladonna Lee".
  */
 function normalizeDriverName(name: string): string {
-  return name
+  const cleaned = name
     .toLowerCase()
     .trim()
     // Remove single-letter middle initials (e.g., "John A Smith" -> "John Smith")
@@ -589,6 +589,8 @@ function normalizeDriverName(name: string): string {
     .replace(/\s+[a-z]$/g, '')
     // Collapse multiple spaces
     .replace(/\s+/g, ' ');
+  // Sort name parts so "Smith John" matches "John Smith"
+  return cleaned.split(' ').sort().join(' ');
 }
 
 function compareDrivers(
@@ -946,6 +948,12 @@ function generateRecommendation(
   // If major coverage removed AND premium stayed same/decreased, that's suspicious
   if (hasMajorCoverageRemoval && premiumIncreasePercent <= 0) {
     return 'needs_review'; // Not reshop, just needs agent attention
+  }
+
+  // Significant premium decrease with ANY coverage removals is suspicious
+  // (e.g., -25% because sewer backup / equipment breakdown were dropped)
+  if (premiumIncreasePercent <= -15 && coverageRemovals.length > 0) {
+    return 'needs_review';
   }
 
   // Premium flat or decreased with no major issues → renew as is
