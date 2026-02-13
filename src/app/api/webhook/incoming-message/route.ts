@@ -77,6 +77,27 @@ export async function POST(request: NextRequest) {
       return new NextResponse("OK", { status: 200 }); // Always return 200 to Twilio
     }
 
+    // Dedup check: Twilio retries webhooks on timeout, so the same MessageSid
+    // can arrive multiple times. Return 200 to stop retries if already stored.
+    if (payload.MessageSid && !payload.MessageSid.startsWith('custom_')) {
+      const existingMessage = await db.query.messages.findFirst({
+        where: (messages, { eq }) => eq(messages.externalId, payload.MessageSid),
+        columns: { id: true },
+      });
+      if (existingMessage) {
+        console.log("[Webhook] Duplicate message detected, skipping:", payload.MessageSid);
+        return new NextResponse(
+          '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+          { status: 200, headers: { "Content-Type": "text/xml" } }
+        );
+      }
+    }
+
+    // Check for opt-out keywords (TCPA compliance)
+    const optOutKeywords = ['stop', 'unsubscribe', 'cancel', 'quit', 'end'];
+    const bodyLower = (payload.Body || '').trim().toLowerCase();
+    const isOptOut = optOutKeywords.includes(bodyLower);
+
     // 1. Look up contact - check local DB first (fast), then AgencyZoom API (slower)
     let contactId: string | null = null;
     let contactName: string | null = null;
@@ -207,15 +228,18 @@ export async function POST(request: NextRequest) {
       .values({
         tenantId,
         type: "message",
-        status: "pending",
-        priority: isAfterHours ? "high" : "medium",
+        status: isOptOut ? "completed" : "pending",
+        priority: isOptOut ? "low" : (isAfterHours ? "high" : "medium"),
         messageId: storedMessage.id,
-        title: `SMS from ${contactName || payload.From}`,
+        title: isOptOut
+          ? `OPT-OUT from ${contactName || payload.From}`
+          : `SMS from ${contactName || payload.From}`,
         description: payload.Body?.substring(0, 500) || "New SMS message",
         aiSummary: JSON.stringify({
           from: payload.From,
           contactType,
           isAfterHours,
+          isOptOut,
           mediaCount: mediaUrls?.length || 0,
         }),
       })
@@ -224,7 +248,8 @@ export async function POST(request: NextRequest) {
     console.log("[Webhook] Triage item created:", triageItem.id);
 
     // 6. Handle after-hours auto-reply - Send via AgencyZoom (shows in AZ message history)
-    if (isAfterHours && afterHoursInfo.enabled && afterHoursInfo.autoReplyMessage) {
+    // Skip auto-reply for opt-out messages (TCPA compliance)
+    if (!isOptOut && isAfterHours && afterHoursInfo.enabled && afterHoursInfo.autoReplyMessage) {
       // Check cooldown - don't spam the same number
       const cooldownPassed = await checkAutoReplyCooldown(
         tenantId,
@@ -273,9 +298,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 7. TODO: Broadcast via WebSocket for real-time notifications
-    // This would notify connected agents of the new message
-    // await broadcastNewMessage(storedMessage);
+    // 7. Broadcast via SSE for real-time notifications
+    try {
+      const { broadcastNewMessage } = await import("@/app/api/messages/stream/route");
+      broadcastNewMessage(storedMessage);
+    } catch (err) {
+      // Non-critical — SSE clients will pick up via polling fallback
+      console.warn("[Webhook] SSE broadcast failed:", err);
+    }
 
     // Always return TwiML response (empty is fine)
     return new NextResponse(

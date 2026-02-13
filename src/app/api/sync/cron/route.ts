@@ -35,6 +35,8 @@ export async function GET(request: NextRequest) {
   try {
     logs.push(`${new Date().toISOString()} - Starting nightly sync`);
 
+    let failedSteps = 0;
+
     // 1. Sync customers from AgencyZoom
     logs.push('Syncing customers from AgencyZoom...');
     try {
@@ -42,11 +44,21 @@ export async function GET(request: NextRequest) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
+      if (!customerRes.ok) {
+        const errText = await customerRes.text().catch(() => customerRes.statusText);
+        throw new Error(`HTTP ${customerRes.status}: ${errText}`);
+      }
       results.customers = await customerRes.json();
-      logs.push(`Customers: ${results.customers.created || 0} created, ${results.customers.updated || 0} updated`);
+      if (results.customers.success === false) {
+        logs.push(`Customer sync returned failure: ${results.customers.error || 'unknown'}`);
+        failedSteps++;
+      } else {
+        logs.push(`Customers: ${results.customers.created || 0} created, ${results.customers.updated || 0} updated`);
+      }
     } catch (e) {
       logs.push(`Customer sync error: ${e}`);
       results.customers = { error: String(e) };
+      failedSteps++;
     }
 
     // 2. Sync policies from HawkSoft (incremental — only changed since last sync)
@@ -56,12 +68,22 @@ export async function GET(request: NextRequest) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
+      if (!hawksoftRes.ok) {
+        const errText = await hawksoftRes.text().catch(() => hawksoftRes.statusText);
+        throw new Error(`HTTP ${hawksoftRes.status}: ${errText}`);
+      }
       const hsResult = await hawksoftRes.json();
       results.hawksoft = hsResult;
-      logs.push(`HawkSoft: ${hsResult.customersUpdated || 0} customers, ${hsResult.policiesSynced || 0} policies (${hsResult.mode || 'unknown'} mode)`);
+      if (hsResult.success === false) {
+        logs.push(`HawkSoft sync returned failure: ${hsResult.error || 'unknown'}`);
+        failedSteps++;
+      } else {
+        logs.push(`HawkSoft: ${hsResult.customersUpdated || 0} customers, ${hsResult.policiesSynced || 0} policies (${hsResult.mode || 'unknown'} mode)`);
+      }
     } catch (e) {
       logs.push(`HawkSoft sync error: ${e}`);
       results.hawksoft = { error: String(e) };
+      failedSteps++;
     }
 
     // 3. Sync leads from AgencyZoom
@@ -71,11 +93,21 @@ export async function GET(request: NextRequest) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
+      if (!leadsRes.ok) {
+        const errText = await leadsRes.text().catch(() => leadsRes.statusText);
+        throw new Error(`HTTP ${leadsRes.status}: ${errText}`);
+      }
       results.leads = await leadsRes.json();
-      logs.push(`Leads: ${results.leads.created || 0} created, ${results.leads.updated || 0} updated`);
+      if (results.leads.success === false) {
+        logs.push(`Lead sync returned failure: ${results.leads.error || 'unknown'}`);
+        failedSteps++;
+      } else {
+        logs.push(`Leads: ${results.leads.created || 0} created, ${results.leads.updated || 0} updated`);
+      }
     } catch (e) {
       logs.push(`Lead sync error: ${e}`);
       results.leads = { error: String(e) };
+      failedSteps++;
     }
 
     // 4. Sync Donna AI data (customer insights)
@@ -92,11 +124,16 @@ export async function GET(request: NextRequest) {
           staleThresholdHours: 24,
         }),
       });
+      if (!donnaRes.ok) {
+        const errText = await donnaRes.text().catch(() => donnaRes.statusText);
+        throw new Error(`HTTP ${donnaRes.status}: ${errText}`);
+      }
       results.donna = await donnaRes.json();
       logs.push(`Donna AI: ${results.donna.synced || 0} synced, ${results.donna.notFound || 0} not found`);
     } catch (e) {
       logs.push(`Donna sync error: ${e}`);
       results.donna = { error: String(e) };
+      failedSteps++;
     }
 
     // 5. Sync DOB data from HawkSoft (for birthday cards feature)
@@ -107,19 +144,30 @@ export async function GET(request: NextRequest) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 500 }), // Process up to 500 new customers per night
       });
+      if (!dobRes.ok) {
+        const errText = await dobRes.text().catch(() => dobRes.statusText);
+        throw new Error(`HTTP ${dobRes.status}: ${errText}`);
+      }
       results.dob = await dobRes.json();
       logs.push(`DOB: ${results.dob.results?.synced || 0} synced from HawkSoft`);
     } catch (e) {
       logs.push(`DOB sync error: ${e}`);
       results.dob = { error: String(e) };
+      failedSteps++;
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    logs.push(`Sync complete in ${duration}s`);
+    if (failedSteps > 0) {
+      logs.push(`Sync complete in ${duration}s with ${failedSteps} failed step(s)`);
+      console.error(`[Cron] Nightly sync finished with ${failedSteps} failure(s):`, logs.filter(l => l.includes('error') || l.includes('failure')));
+    } else {
+      logs.push(`Sync complete in ${duration}s`);
+    }
 
     return NextResponse.json({
-      success: true,
+      success: failedSteps === 0,
       duration: `${duration}s`,
+      failedSteps,
       results,
       logs,
     });

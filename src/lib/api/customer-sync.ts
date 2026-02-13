@@ -1013,42 +1013,46 @@ async function syncHawkSoftPolicies(
         policyId = newPolicy.id;
       }
 
-      // Sync vehicles (delete+insert to stay in sync)
+      // Sync vehicles and drivers in a transaction (delete+insert to stay in sync)
       const hsVehicles = (hsPolicy as any).autos || (hsPolicy as any).vehicles || [];
-      if (hsVehicles.length > 0) {
-        await db.delete(vehicles).where(eq(vehicles.policyId, policyId));
-        for (const v of hsVehicles) {
-          await db.insert(vehicles).values({
-            tenantId,
-            policyId,
-            vin: v.vin || null,
-            year: v.year || null,
-            make: v.make || null,
-            model: v.model || null,
-            use: v.use || v.usage || null,
-            annualMiles: v.annualMiles || null,
-            coverages: v.coverages || null,
-          });
-        }
-      }
-
-      // Sync drivers (delete+insert to stay in sync)
       const hsDrivers = (hsPolicy as any).drivers || [];
-      if (hsDrivers.length > 0) {
-        await db.delete(drivers).where(eq(drivers.policyId, policyId));
-        for (const d of hsDrivers) {
-          await db.insert(drivers).values({
-            tenantId,
-            policyId,
-            firstName: d.firstName || 'Unknown',
-            lastName: d.lastName || '',
-            dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth) : null,
-            licenseNumber: d.licenseNumber || null,
-            licenseState: d.licenseState || null,
-            relationship: d.relationship || null,
-            isExcluded: d.isExcluded ?? false,
-          });
-        }
+
+      if (hsVehicles.length > 0 || hsDrivers.length > 0) {
+        await db.transaction(async (tx) => {
+          if (hsVehicles.length > 0) {
+            await tx.delete(vehicles).where(eq(vehicles.policyId, policyId));
+            for (const v of hsVehicles) {
+              await tx.insert(vehicles).values({
+                tenantId,
+                policyId,
+                vin: v.vin || null,
+                year: v.year || null,
+                make: v.make || null,
+                model: v.model || null,
+                use: v.use || v.usage || null,
+                annualMiles: v.annualMiles || null,
+                coverages: v.coverages || null,
+              });
+            }
+          }
+
+          if (hsDrivers.length > 0) {
+            await tx.delete(drivers).where(eq(drivers.policyId, policyId));
+            for (const d of hsDrivers) {
+              await tx.insert(drivers).values({
+                tenantId,
+                policyId,
+                firstName: d.firstName || 'Unknown',
+                lastName: d.lastName || '',
+                dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth) : null,
+                licenseNumber: d.licenseNumber || null,
+                licenseState: d.licenseState || null,
+                relationship: d.relationship || null,
+                isExcluded: d.isExcluded ?? false,
+              });
+            }
+          }
+        });
       }
     } catch (error) {
       console.error(`[HawkSoft] Error syncing policy ${hsPolicy.policyNumber}:`, error);

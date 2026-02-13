@@ -4,7 +4,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { messages } from "@/db/schema";
-import { desc, eq, and, isNull } from "drizzle-orm";
+import { desc, eq, and, isNull, sql } from "drizzle-orm";
 
 // Store connected clients for broadcasting
 const clients = new Map<string, ReadableStreamDefaultController>();
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
       let lastCheckTime = new Date();
       const pollInterval = setInterval(async () => {
         try {
-          // Check for new messages since last check
+          // Fetch recent inbound messages for the UI
           const newMessages = await db
             .select({
               id: messages.id,
@@ -86,10 +86,20 @@ export async function GET(request: NextRequest) {
               )
             )
             .orderBy(desc(messages.createdAt))
-            .limit(5);
+            .limit(10);
 
-          // Send update with current unread count and messages
-          const unreadCount = newMessages.length;
+          // Get actual unread count (not limited by query limit)
+          const [{ count: unreadCount }] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(messages)
+            .where(
+              and(
+                eq(messages.tenantId, tenantId),
+                eq(messages.isAcknowledged, false),
+                eq(messages.direction, "inbound")
+              )
+            );
+
           controller.enqueue(
             `data: ${JSON.stringify({
               type: "messages_update",

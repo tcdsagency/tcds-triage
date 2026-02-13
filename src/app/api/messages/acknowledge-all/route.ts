@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     if (messageIds && messageIds.length > 0) {
       // Acknowledge specific messages
-      const result = await db
+      const updated = await db
         .update(messages)
         .set({
           isAcknowledged: true,
@@ -43,12 +43,13 @@ export async function POST(request: NextRequest) {
             eq(messages.isAcknowledged, false),
             sql`${messages.id} = ANY(${messageIds})`
           )
-        );
+        )
+        .returning({ id: messages.id });
 
-      updatedCount = messageIds.length;
+      updatedCount = updated.length;
     } else {
       // Acknowledge all unread incoming messages
-      const result = await db
+      const updated = await db
         .update(messages)
         .set({
           isAcknowledged: true,
@@ -60,21 +61,10 @@ export async function POST(request: NextRequest) {
             eq(messages.isAcknowledged, false),
             eq(messages.direction, "inbound")
           )
-        );
+        )
+        .returning({ id: messages.id });
 
-      // Get count of affected rows (drizzle doesn't return this directly)
-      const [{ count }] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(messages)
-        .where(
-          and(
-            eq(messages.tenantId, tenantId),
-            eq(messages.isAcknowledged, true),
-            eq(messages.direction, "inbound")
-          )
-        );
-
-      updatedCount = count;
+      updatedCount = updated.length;
     }
 
     return NextResponse.json({
