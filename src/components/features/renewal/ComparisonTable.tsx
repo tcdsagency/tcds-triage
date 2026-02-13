@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, AlertTriangle, Car, Home } from 'lucide-react';
-import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle, CanonicalDriver, CanonicalDiscount, CanonicalClaim, PropertyContext, ComparisonSummary } from '@/types/renewal.types';
+import { ChevronDown, ChevronRight, AlertTriangle, CheckCircle2, Car, Home } from 'lucide-react';
+import type { RenewalSnapshot, BaselineSnapshot, MaterialChange, CanonicalCoverage, CanonicalVehicle, CanonicalDriver, CanonicalDiscount, CanonicalClaim, CanonicalEndorsement, PropertyContext, ComparisonSummary } from '@/types/renewal.types';
 
 // Human-readable labels for coverage types
 const COVERAGE_TYPE_LABELS: Record<string, string> = {
@@ -123,6 +123,35 @@ const COVERAGE_ORDER = [
   'roadside_assistance',
   'rental_reimbursement',
   'gap_coverage',
+];
+
+// Category labels for the change summary
+const CATEGORY_LABELS: Record<string, string> = {
+  premium: 'Premium',
+  coverage_limit: 'Coverage Limits',
+  coverage_removed: 'Coverages Removed',
+  coverage_added: 'Coverages Added',
+  deductible: 'Deductibles',
+  vehicle_removed: 'Vehicles Removed',
+  vehicle_added: 'Vehicles Added',
+  driver_removed: 'Drivers Removed',
+  driver_added: 'Drivers Added',
+  endorsement: 'Endorsements',
+  endorsement_removed: 'Endorsements Removed',
+  endorsement_added: 'Endorsements Added',
+  discount: 'Discounts',
+  discount_removed: 'Discounts Removed',
+  discount_added: 'Discounts Added',
+  claim: 'Claims',
+  property: 'Property',
+  other: 'Other',
+};
+
+const CATEGORY_ORDER = [
+  'premium', 'coverage_limit', 'coverage_removed', 'coverage_added',
+  'deductible', 'vehicle_removed', 'vehicle_added', 'driver_removed',
+  'driver_added', 'endorsement', 'endorsement_removed', 'endorsement_added',
+  'discount_removed', 'discount_added', 'claim', 'property', 'other',
 ];
 
 interface ComparisonTableProps {
@@ -260,6 +289,9 @@ export default function ComparisonTable({
         )}
       </div>
 
+      {/* Changes Summary */}
+      <ChangeSummarySection materialChanges={materialChanges} />
+
       {/* Property Context for Home Policies */}
       {isHomePolicy(lineOfBusiness) && baselineSnapshot?.propertyContext && (
         <PropertyContextCard propertyContext={baselineSnapshot.propertyContext} />
@@ -307,6 +339,22 @@ export default function ComparisonTable({
             />
           )}
         </div>
+      ) : null}
+
+      {/* Endorsements Section */}
+      {(baselineSnapshot?.endorsements?.length || renewalSnapshot?.endorsements?.length) ? (
+        <EndorsementsSection
+          baseline={baselineSnapshot?.endorsements}
+          renewal={renewalSnapshot?.endorsements}
+        />
+      ) : null}
+
+      {/* Claims Section */}
+      {(baselineSnapshot?.claims?.length || renewalSnapshot?.claims?.length) ? (
+        <ClaimsSection
+          baseline={baselineSnapshot?.claims}
+          renewal={renewalSnapshot?.claims}
+        />
       ) : null}
     </div>
   );
@@ -856,8 +904,307 @@ function DiscountsTable({
 }
 
 // =============================================================================
+// CHANGE SUMMARY SECTION
+// =============================================================================
+
+function ChangeSummarySection({ materialChanges }: { materialChanges: MaterialChange[] }) {
+  const [expanded, setExpanded] = useState(true);
+
+  if (materialChanges.length === 0) {
+    return (
+      <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-5 w-5 text-green-500" />
+          <span className="text-sm font-medium text-green-700 dark:text-green-300">No changes detected</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Group by category
+  const grouped = new Map<string, MaterialChange[]>();
+  for (const change of materialChanges) {
+    const cat = change.category || 'other';
+    if (!grouped.has(cat)) grouped.set(cat, []);
+    grouped.get(cat)!.push(change);
+  }
+
+  // Sort categories by defined order
+  const sortedCategories = CATEGORY_ORDER.filter(cat => grouped.has(cat));
+  for (const cat of grouped.keys()) {
+    if (!sortedCategories.includes(cat)) sortedCategories.push(cat);
+  }
+
+  const negCount = materialChanges.filter(c => c.severity === 'material_negative').length;
+
+  return (
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-gray-700 dark:text-gray-300">
+            Changes Detected ({materialChanges.length})
+          </span>
+          {negCount > 0 && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+              {negCount} concern{negCount > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+      </button>
+      {expanded && (
+        <div className="px-4 py-3 space-y-3">
+          {sortedCategories.map(cat => (
+            <div key={cat}>
+              <h5 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">
+                {CATEGORY_LABELS[cat] || cat}
+              </h5>
+              <div className="space-y-1">
+                {grouped.get(cat)!.map((change, idx) => (
+                  <div
+                    key={`${change.field}-${idx}`}
+                    className={cn(
+                      'flex items-center justify-between px-3 py-1.5 rounded text-sm',
+                      change.severity === 'material_negative' ? 'bg-red-50 dark:bg-red-900/20' :
+                      change.severity === 'material_positive' ? 'bg-green-50 dark:bg-green-900/20' :
+                      'bg-gray-50 dark:bg-gray-800/50'
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={cn(
+                        'h-2 w-2 rounded-full shrink-0',
+                        change.severity === 'material_negative' ? 'bg-red-500' :
+                        change.severity === 'material_positive' ? 'bg-green-500' :
+                        'bg-gray-400'
+                      )} />
+                      <span className={cn(
+                        'truncate',
+                        change.severity === 'material_negative' ? 'text-red-700 dark:text-red-300' :
+                        change.severity === 'material_positive' ? 'text-green-700 dark:text-green-300' :
+                        'text-gray-700 dark:text-gray-300'
+                      )}>
+                        {change.description || change.field}
+                      </span>
+                    </div>
+                    {(change.oldValue != null || change.newValue != null) && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 shrink-0 ml-3 whitespace-nowrap">
+                        <span>{formatChangeValue(change.oldValue)}</span>
+                        <span className="mx-1">→</span>
+                        <span className={cn(
+                          'font-medium',
+                          change.severity === 'material_negative' ? 'text-red-600 dark:text-red-400' :
+                          change.severity === 'material_positive' ? 'text-green-600 dark:text-green-400' :
+                          'text-gray-700 dark:text-gray-300'
+                        )}>
+                          {formatChangeValue(change.newValue)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// ENDORSEMENTS SECTION
+// =============================================================================
+
+function EndorsementsSection({
+  baseline,
+  renewal,
+}: {
+  baseline?: CanonicalEndorsement[];
+  renewal?: CanonicalEndorsement[];
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  const allCodes = new Set<string>();
+  baseline?.forEach(e => allCodes.add(e.code.toLowerCase()));
+  renewal?.forEach(e => allCodes.add(e.code.toLowerCase()));
+
+  const baselineByCode = new Map(baseline?.map(e => [e.code.toLowerCase(), e]) || []);
+  const renewalByCode = new Map(renewal?.map(e => [e.code.toLowerCase(), e]) || []);
+
+  return (
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+      >
+        <span className="font-medium text-gray-700 dark:text-gray-300">Endorsements</span>
+        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+      </button>
+      {expanded && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-100 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400">
+              <th className="text-left px-4 py-2 font-medium">Endorsement</th>
+              <th className="text-center px-3 py-2 font-medium w-24">Current</th>
+              <th className="text-center px-3 py-2 font-medium w-24">Renewal</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            {Array.from(allCodes).map(code => {
+              const b = baselineByCode.get(code);
+              const r = renewalByCode.get(code);
+              const isRemoved = b && !r;
+              const isAdded = !b && r;
+              const label = b?.description || r?.description || code.toUpperCase();
+
+              return (
+                <tr key={code} className={cn(
+                  isRemoved ? 'bg-red-50/50 dark:bg-red-900/10' :
+                  isAdded ? 'bg-green-50/50 dark:bg-green-900/10' : ''
+                )}>
+                  <td className="px-4 py-2">
+                    <span className={cn(
+                      isRemoved ? 'text-red-600 dark:text-red-400 line-through' :
+                      isAdded ? 'text-green-600 dark:text-green-400' :
+                      'text-gray-700 dark:text-gray-300'
+                    )}>
+                      {label}
+                    </span>
+                    {isRemoved && <span className="ml-2 text-xs text-red-500 font-medium">REMOVED</span>}
+                    {isAdded && <span className="ml-2 text-xs text-green-500 font-medium">NEW</span>}
+                  </td>
+                  <td className="text-center px-3 py-2 text-gray-600 dark:text-gray-400">
+                    {b ? (b.premium != null ? formatCurrency(b.premium) : '✓') : '-'}
+                  </td>
+                  <td className={cn(
+                    'text-center px-3 py-2 font-medium',
+                    isRemoved ? 'text-red-600 dark:text-red-400' :
+                    isAdded ? 'text-green-600 dark:text-green-400' :
+                    'text-gray-700 dark:text-gray-300'
+                  )}>
+                    {r ? (r.premium != null ? formatCurrency(r.premium) : '✓') : 'REMOVED'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// CLAIMS SECTION
+// =============================================================================
+
+function ClaimsSection({
+  baseline,
+  renewal,
+}: {
+  baseline?: CanonicalClaim[];
+  renewal?: CanonicalClaim[];
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  // Build unified list — match by claimNumber if available, otherwise date+type
+  const allClaims: Array<{ baseline?: CanonicalClaim; renewal?: CanonicalClaim; isNew: boolean }> = [];
+  const matchedRenewalIdxs = new Set<number>();
+
+  baseline?.forEach(bc => {
+    const matchIdx = renewal?.findIndex((rc, idx) => {
+      if (matchedRenewalIdxs.has(idx)) return false;
+      if (bc.claimNumber && rc.claimNumber) return bc.claimNumber === rc.claimNumber;
+      return bc.claimDate === rc.claimDate && bc.claimType === rc.claimType;
+    });
+    const match = matchIdx != null && matchIdx >= 0 ? renewal![matchIdx] : undefined;
+    if (match && matchIdx != null && matchIdx >= 0) matchedRenewalIdxs.add(matchIdx);
+    allClaims.push({ baseline: bc, renewal: match, isNew: false });
+  });
+
+  // Add renewal-only claims
+  renewal?.forEach((rc, idx) => {
+    if (!matchedRenewalIdxs.has(idx)) {
+      allClaims.push({ baseline: undefined, renewal: rc, isNew: true });
+    }
+  });
+
+  return (
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+      >
+        <span className="font-medium text-gray-700 dark:text-gray-300">Claims History</span>
+        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+      </button>
+      {expanded && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-100 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400">
+              <th className="text-left px-4 py-2 font-medium">Claim #</th>
+              <th className="text-center px-3 py-2 font-medium">Date</th>
+              <th className="text-left px-3 py-2 font-medium">Type</th>
+              <th className="text-right px-3 py-2 font-medium">Amount</th>
+              <th className="text-center px-3 py-2 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            {allClaims.map((row, idx) => {
+              const claim = row.renewal || row.baseline!;
+              return (
+                <tr key={claim.claimNumber || idx} className={cn(
+                  row.isNew ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''
+                )}>
+                  <td className="px-4 py-2 text-gray-700 dark:text-gray-300">
+                    {claim.claimNumber || '-'}
+                    {row.isNew && <span className="ml-2 text-xs text-yellow-600 dark:text-yellow-400 font-medium">NEW</span>}
+                  </td>
+                  <td className="text-center px-3 py-2 text-gray-600 dark:text-gray-400">
+                    {claim.claimDate ? formatDate(claim.claimDate) : '-'}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
+                    {claim.claimType || '-'}
+                  </td>
+                  <td className="text-right px-3 py-2 text-gray-600 dark:text-gray-400">
+                    {claim.amount != null ? formatCurrency(claim.amount) : '-'}
+                  </td>
+                  <td className="text-center px-3 py-2">
+                    {claim.status ? (
+                      <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+                        {claim.status}
+                      </span>
+                    ) : '-'}
+                  </td>
+                </tr>
+              );
+            })}
+            {allClaims.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-3 text-center text-gray-500 dark:text-gray-400 italic">
+                  No claims data available
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
+
+function formatChangeValue(val: string | number | null | undefined): string {
+  if (val == null) return '-';
+  if (typeof val === 'number') return formatCurrency(val);
+  return String(val);
+}
 
 function formatCurrency(val: number | undefined | null): string {
   if (val == null) return '-';

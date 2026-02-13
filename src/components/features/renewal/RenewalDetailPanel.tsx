@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, AlertTriangle, TrendingUp, TrendingDown, Minus, FileDown, Loader2, Phone, Mail } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, Minus, FileDown, Loader2, Phone, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import AZStatusBadge from './AZStatusBadge';
@@ -124,9 +124,6 @@ export default function RenewalDetailPanel({
 
   const premiumChange = current.premiumChangePercent ?? 0;
   const materialChanges = current.materialChanges || [];
-  const materialNegCount = Array.isArray(materialChanges)
-    ? materialChanges.filter((c) => c.severity === 'material_negative').length
-    : 0;
 
   const premiumColor =
     premiumChange < 0
@@ -242,33 +239,6 @@ export default function RenewalDetailPanel({
             </div>
           ) : (
             <div className="p-5 space-y-5">
-
-            {/* Material Changes Alert */}
-            {materialNegCount > 0 && (
-              <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-red-700 dark:text-red-300">
-                    {materialNegCount} Material Concern{materialNegCount > 1 ? 's' : ''} Detected
-                  </p>
-                  <ul className="mt-1 space-y-0.5">
-                    {materialChanges
-                      .filter((c) => c.severity === 'material_negative')
-                      .slice(0, 5)
-                      .map((c, i) => (
-                        <li key={i} className="text-xs text-red-600 dark:text-red-400">
-                          {c.description || `${c.category}: ${c.field}`}
-                        </li>
-                      ))}
-                    {materialNegCount > 5 && (
-                      <li className="text-xs text-red-500 italic">
-                        +{materialNegCount - 5} more
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              </div>
-            )}
 
             {/* Agent Decision (if already decided) */}
             {current.agentDecision && (
