@@ -80,6 +80,7 @@ export async function GET(request: NextRequest) {
       sort === 'premiumChange' ? renewalComparisons.premiumChangePercent :
       sort === 'carrier' ? renewalComparisons.carrierName :
       sort === 'status' ? renewalComparisons.status :
+      sort === 'createdAt' ? renewalComparisons.createdAt :
       renewalComparisons.renewalEffectiveDate;
     const sortDirection = order === 'desc' ? desc(sortColumn) : asc(sortColumn);
 

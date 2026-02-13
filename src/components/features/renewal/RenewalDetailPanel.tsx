@@ -61,7 +61,10 @@ export default function RenewalDetailPanel({
     }
   }, [renewal.id]);
 
+  // Clear stale data immediately when switching renewals, then fetch fresh
   useEffect(() => {
+    setDetail(null);
+    setNotes([]);
     fetchDetail();
     fetchNotes();
   }, [fetchDetail, fetchNotes]);
@@ -100,9 +103,13 @@ export default function RenewalDetailPanel({
     window.open(`/api/renewals/${renewal.id}/report`, '_blank');
   };
 
-  const premiumChange = renewal.premiumChangePercent ?? 0;
-  const materialNegCount = Array.isArray(renewal.materialChanges)
-    ? renewal.materialChanges.filter((c) => c.severity === 'material_negative').length
+  // Use detail (fetched) as source of truth once loaded, fall back to list-level prop
+  const current = detail ?? renewal;
+
+  const premiumChange = current.premiumChangePercent ?? 0;
+  const materialChanges = current.materialChanges || [];
+  const materialNegCount = Array.isArray(materialChanges)
+    ? materialChanges.filter((c) => c.severity === 'material_negative').length
     : 0;
 
   const premiumColor =
@@ -146,8 +153,8 @@ export default function RenewalDetailPanel({
         {/* AZ Status */}
         <div className="mt-3">
           <AZStatusBadge
-            status={renewal.status}
-            agencyzoomSrId={renewal.agencyzoomSrId}
+            status={current.status}
+            agencyzoomSrId={current.agencyzoomSrId}
           />
         </div>
       </div>
@@ -179,21 +186,21 @@ export default function RenewalDetailPanel({
                     {premiumChange.toFixed(1)}%
                   </span>
                 </div>
-                {renewal.premiumChangeAmount != null && (
+                {current.premiumChangeAmount != null && (
                   <span className="text-sm text-gray-500 dark:text-gray-400">
                     ({premiumChange > 0 ? '+' : ''}$
-                    {Math.abs(renewal.premiumChangeAmount).toFixed(0)})
+                    {Math.abs(current.premiumChangeAmount).toFixed(0)})
                   </span>
                 )}
                 <div className="ml-auto text-right text-sm">
                   <div className="text-gray-500 dark:text-gray-400">
-                    {renewal.currentPremium != null
-                      ? `$${renewal.currentPremium.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                    {current.currentPremium != null
+                      ? `$${current.currentPremium.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
                       : '-'}
                   </div>
                   <div className={cn('font-medium', premiumColor)}>
-                    {renewal.renewalPremium != null
-                      ? `$${renewal.renewalPremium.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                    {current.renewalPremium != null
+                      ? `$${current.renewalPremium.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
                       : '-'}
                   </div>
                 </div>
@@ -209,7 +216,7 @@ export default function RenewalDetailPanel({
                     {materialNegCount} Material Concern{materialNegCount > 1 ? 's' : ''} Detected
                   </p>
                   <ul className="mt-1 space-y-0.5">
-                    {renewal.materialChanges
+                    {materialChanges
                       .filter((c) => c.severity === 'material_negative')
                       .slice(0, 5)
                       .map((c, i) => (
@@ -228,19 +235,19 @@ export default function RenewalDetailPanel({
             )}
 
             {/* Agent Decision (if already decided) */}
-            {renewal.agentDecision && (
+            {current.agentDecision && (
               <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
                 <h4 className="text-xs font-medium text-indigo-500 dark:text-indigo-400 uppercase mb-1">
                   Agent Decision
                 </h4>
                 <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
-                  {renewal.agentDecision.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                  {current.agentDecision.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
                 </p>
-                {renewal.agentDecisionByName && (
+                {current.agentDecisionByName && (
                   <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-0.5">
-                    by {renewal.agentDecisionByName}
-                    {renewal.agentDecisionAt &&
-                      ` on ${new Date(renewal.agentDecisionAt).toLocaleDateString('en-US', {
+                    by {current.agentDecisionByName}
+                    {current.agentDecisionAt &&
+                      ` on ${new Date(current.agentDecisionAt).toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric',
                         hour: 'numeric',
@@ -248,9 +255,9 @@ export default function RenewalDetailPanel({
                       })}`}
                   </p>
                 )}
-                {renewal.agentNotes && (
+                {current.agentNotes && (
                   <p className="text-sm text-indigo-600 dark:text-indigo-300 mt-2 italic">
-                    &ldquo;{renewal.agentNotes}&rdquo;
+                    &ldquo;{current.agentNotes}&rdquo;
                   </p>
                 )}
               </div>
@@ -264,25 +271,25 @@ export default function RenewalDetailPanel({
               <ComparisonTable
                 renewalSnapshot={detail?.renewalSnapshot ?? null}
                 baselineSnapshot={detail?.baselineSnapshot ?? null}
-                materialChanges={renewal.materialChanges || []}
-                renewalEffectiveDate={renewal.renewalEffectiveDate}
-                carrierName={renewal.carrierName}
-                policyNumber={renewal.policyNumber}
-                lineOfBusiness={renewal.lineOfBusiness}
-                comparisonSummary={renewal.comparisonSummary}
+                materialChanges={materialChanges}
+                renewalEffectiveDate={current.renewalEffectiveDate}
+                carrierName={current.carrierName}
+                policyNumber={current.policyNumber}
+                lineOfBusiness={current.lineOfBusiness}
+                comparisonSummary={current.comparisonSummary}
               />
             </div>
 
             {/* Action Buttons */}
-            {(!renewal.agentDecision || renewal.agentDecision === 'needs_more_info' || renewal.agentDecision === 'contact_customer') && (
+            {(!current.agentDecision || current.agentDecision === 'needs_more_info' || current.agentDecision === 'contact_customer') && (
               <div>
                 <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Actions
                 </h4>
                 <AgentActionButtons
                   renewalId={renewal.id}
-                  currentDecision={renewal.agentDecision}
-                  status={renewal.status}
+                  currentDecision={current.agentDecision}
+                  status={current.status}
                   onDecision={handleDecision}
                 />
               </div>

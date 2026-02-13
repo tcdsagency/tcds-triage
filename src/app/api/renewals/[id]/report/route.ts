@@ -26,8 +26,8 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
-    // Get customer name
-    let customerName = 'Unknown Customer';
+    // Get customer name (with insuredName fallback)
+    let customerName = (renewal.renewalSnapshot as Record<string, any> | null)?.insuredName || 'Unknown Customer';
     if (renewal.customerId) {
       const [customer] = await db
         .select({ firstName: customers.firstName, lastName: customers.lastName })
@@ -64,10 +64,33 @@ export async function GET(
       agentName
     );
 
-    // Return the doc definition as JSON - client can use pdfmake to generate
-    return NextResponse.json({
-      success: true,
-      docDefinition,
+    // Generate actual PDF binary using pdfmake
+    const PdfPrinter = (await import('pdfmake')).default;
+    const printer = new PdfPrinter({
+      Roboto: {
+        normal: 'Helvetica',
+        bold: 'Helvetica-Bold',
+        italics: 'Helvetica-Oblique',
+        bolditalics: 'Helvetica-BoldOblique',
+      },
+    });
+    const pdfDoc = printer.createPdfKitDocument(docDefinition as any);
+
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve, reject) => {
+      pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      pdfDoc.on('end', () => resolve());
+      pdfDoc.on('error', reject);
+      pdfDoc.end();
+    });
+    const pdfBuffer = Buffer.concat(chunks);
+
+    const fileName = `renewal-report-${renewal.policyNumber || id}.pdf`;
+    return new NextResponse(pdfBuffer, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+      },
     });
   } catch (error) {
     console.error('[API] Error generating report:', error);

@@ -103,7 +103,12 @@ export default function RenewalReviewPage() {
       if (data.success) {
         setRenewals(data.renewals);
         setStats(data.stats);
-        setPagination(data.pagination);
+        // Only update total/totalPages from server — keep page/limit local to avoid re-fetch loop
+        setPagination((prev) => ({
+          ...prev,
+          total: data.pagination.total,
+          totalPages: data.pagination.totalPages,
+        }));
       }
     } catch (err) {
       console.error('Error fetching renewals:', err);
@@ -413,12 +418,12 @@ export default function RenewalReviewPage() {
           <StatBadge
             label="Reshop"
             count={stats.reshopCount}
-            active={filters.status === 'requote_requested'}
+            active={filters.recommendation === 'reshop'}
             color="orange"
             onClick={() =>
               setFilters((f) => ({
                 ...f,
-                status: f.status === 'requote_requested' ? '' : 'requote_requested',
+                recommendation: f.recommendation === 'reshop' ? '' : 'reshop',
               }))
             }
           />
@@ -540,7 +545,6 @@ export default function RenewalReviewPage() {
             >
               <option value="renewalDate">Renewal Date</option>
               <option value="premiumChange">Premium Change</option>
-              <option value="priority">Priority</option>
               <option value="createdAt">Date Added</option>
             </select>
           </div>

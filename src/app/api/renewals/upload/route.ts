@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { renewalBatches } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { queueRenewalBatchProcessing } from '@/lib/queues/client';
 
 const TENANT_ID = process.env.DEFAULT_TENANT_ID || '';
@@ -70,13 +71,12 @@ export async function POST(request: NextRequest) {
           errorMessage: 'Failed to queue for processing',
           updatedAt: new Date(),
         })
-        .where(require('drizzle-orm').eq(renewalBatches.id, batch.id));
+        .where(eq(renewalBatches.id, batch.id));
 
       return NextResponse.json({
-        success: true,
-        batchId: batch.id,
-        warning: 'Batch created but processing queue unavailable. Will be picked up on next retry.',
-      });
+        success: false,
+        error: 'File uploaded but processing failed to start. Please try again or contact support.',
+      }, { status: 500 });
     }
 
     return NextResponse.json({
