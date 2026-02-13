@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, AlertTriangle, TrendingUp, TrendingDown, Minus, FileDown, Loader2 } from 'lucide-react';
+import { X, AlertTriangle, TrendingUp, TrendingDown, Minus, FileDown, Loader2, Phone, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import AZStatusBadge from './AZStatusBadge';
@@ -137,91 +137,111 @@ export default function RenewalDetailPanel({
           ? 'text-orange-600 dark:text-orange-400'
           : 'text-red-600 dark:text-red-400';
 
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  const fmtPremium = (val: number | null | undefined) =>
+    val != null ? `$${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '-';
+
   return (
-    <div className="w-[480px] bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 flex flex-col h-full">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate pr-2">
-            {renewal.customerName || 'Unknown Customer'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <span>{renewal.policyNumber}</span>
-          <span>-</span>
-          <span>{renewal.carrierName}</span>
-          {renewal.lineOfBusiness && (
-            <>
-              <span>-</span>
-              <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-xs">
-                {renewal.lineOfBusiness}
-              </span>
-            </>
-          )}
-        </div>
+    <div className="fixed inset-0 z-50 flex items-start justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40 dark:bg-black/60"
+        onClick={onClose}
+      />
 
-        {/* AZ Status */}
-        <div className="mt-3">
-          <AZStatusBadge
-            status={current.status}
-            agencyzoomSrId={current.agencyzoomSrId}
-          />
-        </div>
-      </div>
-
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex items-center justify-center h-48">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-          </div>
-        ) : (
-          <div className="p-4 space-y-5">
-            {/* Premium Summary */}
-            <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-              <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">
-                Premium Change
-              </h4>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  {premiumChange > 0 ? (
-                    <TrendingUp className={cn('h-5 w-5', premiumColor)} />
-                  ) : premiumChange < 0 ? (
-                    <TrendingDown className={cn('h-5 w-5', premiumColor)} />
-                  ) : (
-                    <Minus className="h-5 w-5 text-gray-400" />
-                  )}
-                  <span className={cn('text-xl font-bold', premiumColor)}>
-                    {premiumChange > 0 ? '+' : ''}
-                    {premiumChange.toFixed(1)}%
-                  </span>
-                </div>
-                {current.premiumChangeAmount != null && (
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    ({premiumChange > 0 ? '+' : ''}$
-                    {Math.abs(current.premiumChangeAmount).toFixed(0)})
-                  </span>
+      {/* Panel */}
+      <div className="relative w-full max-w-5xl mx-4 mt-8 mb-8 max-h-[calc(100vh-4rem)] bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="p-5 border-b border-gray-200 dark:border-gray-700 shrink-0">
+          <div className="flex items-start justify-between mb-1">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                {renewal.customerName || 'Unknown Customer'}
+              </h2>
+              <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 dark:text-gray-400">
+                <span>{renewal.policyNumber}</span>
+                <span className="text-gray-300 dark:text-gray-600">|</span>
+                <span>{renewal.carrierName || 'Unknown Carrier'}</span>
+                {renewal.lineOfBusiness && (
+                  <>
+                    <span className="text-gray-300 dark:text-gray-600">|</span>
+                    <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-xs">
+                      {renewal.lineOfBusiness}
+                    </span>
+                  </>
                 )}
-                <div className="ml-auto text-right text-sm">
-                  <div className="text-gray-500 dark:text-gray-400">
-                    {current.currentPremium != null
-                      ? `$${current.currentPremium.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                      : '-'}
-                  </div>
-                  <div className={cn('font-medium', premiumColor)}>
-                    {current.renewalPremium != null
-                      ? `$${current.renewalPremium.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                      : '-'}
-                  </div>
-                </div>
               </div>
+              {/* Customer Contact */}
+              {(renewal.customerPhone || renewal.customerEmail) && (
+                <div className="flex items-center gap-4 mt-2 text-sm">
+                  {renewal.customerPhone && (
+                    <a
+                      href={`tel:${renewal.customerPhone}`}
+                      className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      {renewal.customerPhone}
+                    </a>
+                  )}
+                  {renewal.customerEmail && (
+                    <a
+                      href={`mailto:${renewal.customerEmail}`}
+                      className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      <Mail className="h-3.5 w-3.5" />
+                      {renewal.customerEmail}
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0 p-1"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* AZ Status + Premium Summary — side by side */}
+          <div className="flex items-center justify-between mt-3">
+            <AZStatusBadge
+              status={current.status}
+              agencyzoomSrId={current.agencyzoomSrId}
+            />
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                {fmtPremium(current.currentPremium)}
+              </span>
+              <span className="text-gray-400">→</span>
+              <span className={cn('text-lg font-bold', premiumColor)}>
+                {fmtPremium(current.renewalPremium)}
+              </span>
+              {current.premiumChangeAmount != null && (
+                <span className={cn('text-sm font-semibold', premiumColor)}>
+                  ({premiumChange > 0 ? '+' : ''}${Math.abs(current.premiumChangeAmount).toFixed(0)}, {premiumChange > 0 ? '+' : ''}{premiumChange.toFixed(1)}%)
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center h-48">
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            </div>
+          ) : (
+            <div className="p-5 space-y-5">
 
             {/* Material Changes Alert */}
             {materialNegCount > 0 && (
@@ -332,6 +352,7 @@ export default function RenewalDetailPanel({
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

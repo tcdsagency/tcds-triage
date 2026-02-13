@@ -478,7 +478,7 @@ export default function RenewalReviewPage() {
       {/* Body */}
       <div className="flex h-[calc(100vh-240px)]">
         {/* Sidebar Filters */}
-        <div className="w-56 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 shrink-0">
+        <div className="w-56 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 shrink-0 overflow-y-auto">
           <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-sm mb-4">Filters</h2>
 
           {/* Search */}
@@ -703,18 +703,19 @@ export default function RenewalReviewPage() {
           )}
         </div>
 
-        {/* Detail Panel */}
-        {selectedRenewal && (
-          <RenewalDetailPanel
-            renewal={selectedRenewal}
-            onClose={() => setSelectedRenewal(null)}
-            onDecision={handleDecision}
-            onRefresh={fetchRenewals}
-            userId={user?.id}
-            userName={user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : undefined}
-          />
-        )}
       </div>
+
+      {/* Detail Overlay */}
+      {selectedRenewal && (
+        <RenewalDetailPanel
+          renewal={selectedRenewal}
+          onClose={() => setSelectedRenewal(null)}
+          onDecision={handleDecision}
+          onRefresh={fetchRenewals}
+          userId={user?.id}
+          userName={user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : undefined}
+        />
+      )}
     </div>
   );
 }

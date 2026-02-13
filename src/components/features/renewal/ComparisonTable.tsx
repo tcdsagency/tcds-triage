@@ -260,6 +260,11 @@ export default function ComparisonTable({
         )}
       </div>
 
+      {/* Property Context for Home Policies */}
+      {isHomePolicy(lineOfBusiness) && baselineSnapshot?.propertyContext && (
+        <PropertyContextCard propertyContext={baselineSnapshot.propertyContext} />
+      )}
+
       {/* Vehicles with Coverages */}
       <div className="space-y-3">
         {allVehicles.map((vehicle) => (
@@ -303,6 +308,34 @@ export default function ComparisonTable({
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// =============================================================================
+// PROPERTY CONTEXT CARD
+// =============================================================================
+
+function PropertyContextCard({ propertyContext }: { propertyContext: PropertyContext }) {
+  const items: { label: string; value: string | number }[] = [];
+  if (propertyContext.yearBuilt) items.push({ label: 'Year Built', value: propertyContext.yearBuilt });
+  if (propertyContext.roofAge != null) items.push({ label: 'Roof Age', value: `${propertyContext.roofAge} yrs` });
+  if (propertyContext.roofType) items.push({ label: 'Roof Type', value: propertyContext.roofType });
+  if (propertyContext.constructionType) items.push({ label: 'Construction', value: propertyContext.constructionType });
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+      <h4 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-3">Property Details</h4>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {items.map((item) => (
+          <div key={item.label}>
+            <div className="text-xs text-blue-500 dark:text-blue-400">{item.label}</div>
+            <div className="text-sm font-medium text-blue-900 dark:text-blue-100">{item.value}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -414,10 +447,12 @@ function VehicleCard({
             <thead>
               <tr className="bg-gray-100 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400">
                 <th className="text-left px-4 py-2 font-medium">Coverage</th>
-                {!isAdded && <th className="text-right px-3 py-2 font-medium w-20">Current</th>}
-                {!isRemoved && <th className="text-right px-3 py-2 font-medium w-20">Renewal</th>}
-                <th className="text-center px-3 py-2 font-medium w-24">Limit</th>
-                <th className="text-center px-3 py-2 font-medium w-20">Deductible</th>
+                {!isAdded && <th className="text-right px-3 py-2 font-medium w-20">Current $</th>}
+                {!isRemoved && <th className="text-right px-3 py-2 font-medium w-20">Renewal $</th>}
+                {!isAdded && <th className="text-center px-3 py-2 font-medium w-24">Current Limit</th>}
+                {!isRemoved && <th className="text-center px-3 py-2 font-medium w-24">Renewal Limit</th>}
+                {!isAdded && <th className="text-center px-3 py-2 font-medium w-20">Current Ded</th>}
+                {!isRemoved && <th className="text-center px-3 py-2 font-medium w-20">Renewal Ded</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -432,7 +467,7 @@ function VehicleCard({
               ))}
               {coverageRows.length === 0 && (
                 <tr>
-                  <td colSpan={isRemoved || isAdded ? 4 : 5} className="px-4 py-3 text-center text-gray-500 dark:text-gray-400 italic">
+                  <td colSpan={isRemoved || isAdded ? 5 : 7} className="px-4 py-3 text-center text-gray-500 dark:text-gray-400 italic">
                     No coverage data available
                   </td>
                 </tr>
@@ -475,27 +510,35 @@ function CoverageRowSimple({
   const baselinePrem = baseline?.premium;
   const renewalPrem = renewal?.premium;
 
-  // Get limit - prefer renewal, fall back to baseline
-  const displayLimit = formatLimit(renewal) || formatLimit(baseline) || '-';
+  // Limits
+  const baselineLimit = formatLimit(baseline);
+  const renewalLimit = formatLimit(renewal);
+  const baselineLimitNum = baseline?.limitAmount;
+  const renewalLimitNum = renewal?.limitAmount;
+  const limitChanged = baselineLimitNum != null && renewalLimitNum != null && baselineLimitNum !== renewalLimitNum;
 
-  // Get deductible
+  // Deductibles
   const baselineDed = baseline?.deductibleAmount;
   const renewalDed = renewal?.deductibleAmount;
-  const dedChanged = !vehicleRemoved && !vehicleAdded && baselineDed != null && renewalDed != null && baselineDed !== renewalDed;
+  const dedChanged = baselineDed != null && renewalDed != null && baselineDed !== renewalDed;
 
   // For removed/added vehicles, don't highlight individual coverages
   const showCoverageChange = !vehicleRemoved && !vehicleAdded;
 
+  // Material change row highlight
+  const isMaterialNeg = showCoverageChange && mc?.severity === 'material_negative';
+
   return (
     <tr className={cn(
+      isMaterialNeg ? 'bg-red-50 dark:bg-red-900/20 border-l-2 border-l-red-500' :
       showCoverageChange && isRemoved ? 'bg-red-50/50 dark:bg-red-900/10' :
       showCoverageChange && isAdded ? 'bg-green-50/50 dark:bg-green-900/10' :
       ''
     )}>
       <td className="px-4 py-2">
         <div className="flex items-center gap-2">
-          {showCoverageChange && mc?.severity === 'material_negative' && (
-            <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
+          {isMaterialNeg && (
+            <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
           )}
           <span className={cn(
             showCoverageChange && isRemoved ? 'text-red-600 dark:text-red-400 line-through' :
@@ -508,11 +551,13 @@ function CoverageRowSimple({
           {showCoverageChange && isAdded && <span className="text-xs text-green-500 font-medium">NEW</span>}
         </div>
       </td>
+      {/* Current Premium */}
       {!vehicleAdded && (
         <td className="text-right px-3 py-2 text-gray-600 dark:text-gray-400">
           {baselinePrem != null ? formatCurrency(baselinePrem) : '-'}
         </td>
       )}
+      {/* Renewal Premium */}
       {!vehicleRemoved && (
         <td className={cn(
           'text-right px-3 py-2 font-medium',
@@ -523,18 +568,40 @@ function CoverageRowSimple({
           {renewalPrem != null ? formatCurrency(renewalPrem) : '-'}
         </td>
       )}
-      <td className="text-center px-3 py-2 text-gray-700 dark:text-gray-300">
-        {displayLimit}
-      </td>
-      <td className={cn(
-        'text-center px-3 py-2',
-        dedChanged ? (renewalDed! > baselineDed! ? 'text-red-600 dark:text-red-400 font-medium' : 'text-green-600 dark:text-green-400 font-medium') :
-        'text-gray-700 dark:text-gray-300'
-      )}>
-        {vehicleRemoved && baselineDed != null ? `$${baselineDed.toLocaleString()}` :
-         renewalDed != null ? `$${renewalDed.toLocaleString()}` :
-         baselineDed != null ? `$${baselineDed.toLocaleString()}` : '-'}
-      </td>
+      {/* Current Limit */}
+      {!vehicleAdded && (
+        <td className="text-center px-3 py-2 text-gray-600 dark:text-gray-400">
+          {baselineLimit || '-'}
+        </td>
+      )}
+      {/* Renewal Limit */}
+      {!vehicleRemoved && (
+        <td className={cn(
+          'text-center px-3 py-2 font-medium',
+          showCoverageChange && limitChanged
+            ? (renewalLimitNum! > baselineLimitNum! ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')
+            : 'text-gray-700 dark:text-gray-300'
+        )}>
+          {renewalLimit || '-'}
+        </td>
+      )}
+      {/* Current Deductible */}
+      {!vehicleAdded && (
+        <td className="text-center px-3 py-2 text-gray-600 dark:text-gray-400">
+          {baselineDed != null ? `$${baselineDed.toLocaleString()}` : '-'}
+        </td>
+      )}
+      {/* Renewal Deductible */}
+      {!vehicleRemoved && (
+        <td className={cn(
+          'text-center px-3 py-2 font-medium',
+          showCoverageChange && dedChanged
+            ? (renewalDed! > baselineDed! ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400')
+            : 'text-gray-700 dark:text-gray-300'
+        )}>
+          {renewalDed != null ? `$${renewalDed.toLocaleString()}` : '-'}
+        </td>
+      )}
     </tr>
   );
 }
