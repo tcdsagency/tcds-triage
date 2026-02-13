@@ -116,8 +116,16 @@ export async function POST(request: NextRequest) {
         console.log(`[PolicyNotices Sync] Fetched ${normalizedNotices.length} notices from API`);
       } catch (apiError) {
         console.error("[PolicyNotices Sync] Adapt API error:", apiError);
-        // Fall back to mock data if API fails
-        console.log("[PolicyNotices Sync] Falling back to mock data");
+        // In production, fail the sync rather than inserting mock data
+        if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
+          return NextResponse.json({
+            success: false,
+            error: 'Adapt API failed',
+            details: apiError instanceof Error ? apiError.message : 'Unknown error',
+          }, { status: 502 });
+        }
+        // Only use mock data in development/preview
+        console.log("[PolicyNotices Sync] Falling back to mock data (non-production)");
         const mockResponse = getMockNotices();
         normalizedNotices = client.normalizeAllNotices(mockResponse);
       }

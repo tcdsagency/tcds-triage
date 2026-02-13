@@ -6,12 +6,17 @@
 
 import { db } from '@/db';
 import { customers, users } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or, ilike } from 'drizzle-orm';
 import { getAgencyZoomClient, type AgencyZoomCustomer } from '@/lib/api/agencyzoom';
 
 // Agent lookup caches for producer/CSR resolution
 let syncAgentMap: Map<string, string> | null = null;
 let syncAgentNameMap: Map<string, string> | null = null;
+
+function clearSyncAgentCache() {
+  syncAgentMap = null;
+  syncAgentNameMap = null;
+}
 
 async function ensureSyncAgentCache(tenantId: string) {
   if (syncAgentMap) return;
@@ -46,6 +51,9 @@ export async function syncAgencyZoomCustomers(
 ): Promise<SyncResult> {
   const client = getAgencyZoomClient();
   const result: SyncResult = { created: 0, updated: 0, errors: 0, total: 0 };
+
+  // Clear stale agent cache at start of each sync
+  clearSyncAgentCache();
 
   let page = 1;
   const limit = 100;
@@ -182,19 +190,21 @@ export async function findAndSyncByPhone(
     return null;
   }
 
-  // Search for customer with matching phone (last 10 digits)
-  const phonePattern = `%${normalizedPhone.slice(-10)}`;
-  const allCustomers = await db.query.customers.findMany({
-    where: eq(customers.tenantId, tenantId),
-  });
-
-  // Find customer with matching phone
-  const existing = allCustomers.find(c => {
-    const custPhone = (c.phone || '').replace(/\D/g, '');
-    const custPhoneAlt = (c.phoneAlt || '').replace(/\D/g, '');
-    return custPhone.endsWith(normalizedPhone.slice(-10)) ||
-           custPhoneAlt.endsWith(normalizedPhone.slice(-10));
-  });
+  // Search for customer with matching phone (last 10 digits) using SQL query
+  const last10 = normalizedPhone.slice(-10);
+  const [existing] = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(
+      and(
+        eq(customers.tenantId, tenantId),
+        or(
+          ilike(customers.phone, `%${last10}%`),
+          ilike(customers.phoneAlt, `%${last10}%`)
+        )
+      )
+    )
+    .limit(1);
 
   if (existing) {
     return existing.id;

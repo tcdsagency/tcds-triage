@@ -811,23 +811,7 @@ async function upsertFromHawkSoft(
     ),
   });
 
-  // If not found by HS ID, check if there's an AZ record waiting to be linked
-  // (AZ record would have externalId = this clientNumber)
-  let existingByAzExternalId = null;
-  if (!existingByHsId) {
-    existingByAzExternalId = await db.query.customers.findFirst({
-      where: and(
-        eq(customers.tenantId, tenantId),
-        isNull(customers.hawksoftClientCode),
-        // The AZ sync would have set hawksoftClientCode from externalId
-        // But if it didn't run yet, we can't link by externalId directly
-        // We'd need to search AZ records - skip for now, rely on AZ sync first
-      ),
-    });
-  }
-
   const existing = existingByHsId;
-  const isLinking = !existingByHsId && existingByAzExternalId;
 
   const customerData = {
     tenantId,
@@ -854,7 +838,6 @@ async function upsertFromHawkSoft(
   };
 
   if (dryRun) {
-    if (isLinking) return 'linked';
     return existing ? 'updated' : 'created';
   }
 
@@ -863,28 +846,13 @@ async function upsertFromHawkSoft(
       .update(customers)
       .set(customerData)
       .where(eq(customers.id, existing.id));
-    
+
     // Also sync policies if available
     if (hsClient.policies && hsClient.policies.length > 0) {
       await syncHawkSoftPolicies(tenantId, existing.id, hsClient.policies);
     }
-    
+
     return 'updated';
-  } else if (isLinking && existingByAzExternalId) {
-    // Link the existing AZ record to HawkSoft
-    await db
-      .update(customers)
-      .set({
-        ...customerData,
-        agencyzoomId: existingByAzExternalId.agencyzoomId, // Keep existing AZ ID
-      })
-      .where(eq(customers.id, existingByAzExternalId.id));
-    
-    if (hsClient.policies && hsClient.policies.length > 0) {
-      await syncHawkSoftPolicies(tenantId, existingByAzExternalId.id, hsClient.policies);
-    }
-    
-    return 'linked';
   } else {
     // Create new record (HawkSoft-only customer - rare, but possible)
     const [newCustomer] = await db.insert(customers).values({
@@ -1437,12 +1405,14 @@ export async function getLastSyncTimestamp(
   tenantId: string,
   source: 'agencyzoom' | 'hawksoft'
 ): Promise<string | null> {
+  // Include "partial" syncs (syncs with some errors) so the cursor still advances.
+  // Otherwise, if every sync has at least one error, the cursor never moves forward.
   const lastLog = await db.query.syncLogs.findFirst({
     where: and(
       eq(syncLogs.tenantId, tenantId),
       eq(syncLogs.integration, source),
       eq(syncLogs.entityType, 'customer'),
-      eq(syncLogs.status, 'success')
+      sql`${syncLogs.status} IN ('success', 'partial')`
     ),
     orderBy: (logs, { desc }) => [desc(logs.createdAt)],
   });
