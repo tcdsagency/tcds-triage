@@ -15,6 +15,8 @@ interface RenewalDetailPanelProps {
   onClose: () => void;
   onDecision: (renewalId: string, decision: string, notes: string) => Promise<void>;
   onRefresh: () => void;
+  userId?: string;
+  userName?: string;
 }
 
 export default function RenewalDetailPanel({
@@ -22,6 +24,8 @@ export default function RenewalDetailPanel({
   onClose,
   onDecision,
   onRefresh,
+  userId,
+  userName,
 }: RenewalDetailPanelProps) {
   const [detail, setDetail] = useState<RenewalComparisonDetail | null>(null);
   const [notes, setNotes] = useState<RenewalNote[]>([]);
@@ -78,7 +82,7 @@ export default function RenewalDetailPanel({
       const res = await fetch(`/api/renewals/${renewal.id}/notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, userId, userName }),
       });
       const data = await res.json();
       if (data.success) {
@@ -270,7 +274,7 @@ export default function RenewalDetailPanel({
             </div>
 
             {/* Action Buttons */}
-            {!renewal.agentDecision && (
+            {(!renewal.agentDecision || renewal.agentDecision === 'needs_more_info' || renewal.agentDecision === 'contact_customer') && (
               <div>
                 <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Actions

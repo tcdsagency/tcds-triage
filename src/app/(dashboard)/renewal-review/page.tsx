@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, Search, Car, Home, Building2, Layers, Upload, FileArchive, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useUser } from '@/hooks/useUser';
 import RenewalCard from '@/components/features/renewal/RenewalCard';
 import RenewalDetailPanel from '@/components/features/renewal/RenewalDetailPanel';
 import type { RenewalComparison, RenewalsListResponse, RenewalStats } from '@/components/features/renewal/types';
@@ -13,6 +14,12 @@ import type { RenewalComparison, RenewalsListResponse, RenewalStats } from '@/co
 // =============================================================================
 
 export default function RenewalReviewPage() {
+  // Current user
+  const { user } = useUser();
+
+  // Carrier dropdown options
+  const [carriers, setCarriers] = useState<string[]>([]);
+
   // State
   const [renewals, setRenewals] = useState<RenewalComparison[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +72,16 @@ export default function RenewalReviewPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  // Fetch distinct carrier names for dropdown
+  useEffect(() => {
+    fetch('/api/renewals/carriers')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) setCarriers(data.carriers);
+      })
+      .catch(() => {});
+  }, []);
+
   // Fetch renewals
   const fetchRenewals = useCallback(async () => {
     setLoading(true);
@@ -105,7 +122,12 @@ export default function RenewalReviewPage() {
       const res = await fetch(`/api/renewals/${renewalId}/decide`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, notes }),
+        body: JSON.stringify({
+          decision,
+          notes,
+          userId: user?.id,
+          userName: user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : undefined,
+        }),
       });
       const data = await res.json();
 
@@ -156,6 +178,7 @@ export default function RenewalReviewPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      if (user?.id) formData.append('uploadedById', user.id);
 
       const res = await fetch('/api/renewals/upload', {
         method: 'POST',
@@ -478,13 +501,16 @@ export default function RenewalReviewPage() {
           {/* Carrier Filter */}
           <div className="mb-4">
             <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Carrier</label>
-            <input
-              type="text"
-              placeholder="Carrier name..."
+            <select
               value={filters.carrier}
               onChange={(e) => setFilters((f) => ({ ...f, carrier: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
-            />
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+            >
+              <option value="">All Carriers</option>
+              {carriers.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </div>
 
           {/* Date Range Filter */}
@@ -653,6 +679,8 @@ export default function RenewalReviewPage() {
             onClose={() => setSelectedRenewal(null)}
             onDecision={handleDecision}
             onRefresh={fetchRenewals}
+            userId={user?.id}
+            userName={user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : undefined}
           />
         )}
       </div>

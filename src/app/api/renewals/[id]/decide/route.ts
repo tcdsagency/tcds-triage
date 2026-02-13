@@ -75,9 +75,17 @@ export async function POST(
       userName
     );
 
+    // Fetch updated status for optimistic UI update
+    const [updated] = await db
+      .select({ status: renewalComparisons.status })
+      .from(renewalComparisons)
+      .where(eq(renewalComparisons.id, id))
+      .limit(1);
+
     return NextResponse.json({
       success: result.success,
       warning: result.warning,
+      newStatus: updated?.status ?? null,
     });
   } catch (error) {
     console.error('[API] Error processing decision:', error);

@@ -120,6 +120,7 @@ export async function GET(request: NextRequest) {
       agencyzoomSrId: renewalComparisons.agencyzoomSrId,
       materialChanges: renewalComparisons.materialChanges,
       comparisonSummary: renewalComparisons.comparisonSummary,
+      renewalSnapshot: renewalComparisons.renewalSnapshot,
       createdAt: renewalComparisons.createdAt,
       updatedAt: renewalComparisons.updatedAt,
       customerFirstName: customers.firstName,
@@ -171,16 +172,20 @@ export async function GET(request: NextRequest) {
     };
 
     // Format response
-    const renewals = results.map((r) => ({
-      ...r,
-      currentPremium: r.currentPremium ? parseFloat(r.currentPremium) : null,
-      renewalPremium: r.renewalPremium ? parseFloat(r.renewalPremium) : null,
-      premiumChangeAmount: r.premiumChangeAmount ? parseFloat(r.premiumChangeAmount) : null,
-      premiumChangePercent: r.premiumChangePercent ? parseFloat(r.premiumChangePercent) : null,
-      customerName: r.customerFirstName && r.customerLastName
-        ? `${r.customerFirstName} ${r.customerLastName}`
-        : null,
-    }));
+    const renewals = results.map(({ renewalSnapshot, ...r }) => {
+      // Fallback to insuredName from snapshot when customer not linked
+      const snapshotName = (renewalSnapshot as Record<string, any> | null)?.insuredName || null;
+      return {
+        ...r,
+        currentPremium: r.currentPremium ? parseFloat(r.currentPremium) : null,
+        renewalPremium: r.renewalPremium ? parseFloat(r.renewalPremium) : null,
+        premiumChangeAmount: r.premiumChangeAmount ? parseFloat(r.premiumChangeAmount) : null,
+        premiumChangePercent: r.premiumChangePercent ? parseFloat(r.premiumChangePercent) : null,
+        customerName: r.customerFirstName && r.customerLastName
+          ? `${r.customerFirstName} ${r.customerLastName}`
+          : snapshotName,
+      };
+    });
 
     return NextResponse.json({
       success: true,

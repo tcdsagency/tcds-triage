@@ -96,7 +96,7 @@ export async function GET(
         premiumChangePercent: renewal.premiumChangePercent ? parseFloat(renewal.premiumChangePercent) : null,
         customerName: renewal.customerFirstName && renewal.customerLastName
           ? `${renewal.customerFirstName} ${renewal.customerLastName}`
-          : null,
+          : (renewal.renewalSnapshot as Record<string, any> | null)?.insuredName || null,
         agentDecisionByName,
       },
       auditHistory,
