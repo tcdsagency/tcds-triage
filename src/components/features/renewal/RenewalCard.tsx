@@ -1,7 +1,9 @@
 'use client';
 
+import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { AlertTriangle, Calendar } from 'lucide-react';
+import { analyzeReasons, buildReasonSuffix, REASON_COLORS } from '@/lib/renewal-reasons';
 import AZStatusBadge from './AZStatusBadge';
 import type { RenewalComparison } from './types';
 
@@ -15,6 +17,12 @@ export default function RenewalCard({ renewal, onClick }: RenewalCardProps) {
   const materialCount = Array.isArray(renewal.materialChanges)
     ? renewal.materialChanges.filter((c: { severity?: string }) => c.severity === 'material_negative').length
     : 0;
+
+  const reasons = useMemo(
+    () => analyzeReasons(renewal.materialChanges || [], [], null, null, renewal.premiumChangePercent ?? null, renewal.lineOfBusiness ?? null),
+    [renewal.materialChanges, renewal.premiumChangePercent, renewal.lineOfBusiness],
+  );
+  const reasonSuffix = useMemo(() => buildReasonSuffix(reasons), [reasons]);
 
   // Premium change color
   const premiumColor =
@@ -108,6 +116,28 @@ export default function RenewalCard({ renewal, onClick }: RenewalCardProps) {
           </span>
         )}
       </div>
+
+      {/* Reason pills (compact) */}
+      {reasonSuffix && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            due to {reasonSuffix}
+          </span>
+          <div className="flex gap-1 ml-auto">
+            {reasons.slice(0, 2).map((reason, i) => (
+              <span
+                key={`${reason.tag}-${i}`}
+                className={cn(
+                  'text-[10px] font-medium px-1.5 py-0.5 rounded-full',
+                  REASON_COLORS[reason.color],
+                )}
+              >
+                {reason.tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Premium change — dollar amount primary */}
       <div className="flex items-center justify-between">

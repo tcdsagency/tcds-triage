@@ -22,6 +22,7 @@ import type {
 } from '@/types/renewal.types';
 import { DEFAULT_COMPARISON_THRESHOLDS } from '@/types/renewal.types';
 import { VEHICLE_LEVEL_COVERAGE_TYPES } from './constants';
+import { analyzeReasons } from '@/lib/renewal-reasons';
 
 // =============================================================================
 // HELPERS
@@ -949,13 +950,40 @@ function buildSummary(
   const materialNegativeCount = materialChanges.filter((c) => c.severity === 'material_negative').length;
   const materialPositiveCount = materialChanges.filter((c) => c.severity === 'material_positive').length;
 
+  // Build descriptive headline using reason analysis
+  const reasons = analyzeReasons(materialChanges, [], null, null, premiumChange?.changePercent ?? null, null);
+  const topReasonTags = reasons
+    .filter(r => r.tag !== 'Rate Increase' && r.tag !== 'Rate Decrease' && r.tag !== 'Rate Adjustment')
+    .slice(0, 2)
+    .map(r => r.tag);
+
+  const amtStr = premiumChange?.changeAmount != null
+    ? `$${Math.abs(premiumChange.changeAmount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+    : null;
+  const pctStr = premiumChange?.changePercent != null
+    ? `${premiumChange.changePercent > 0 ? '+' : ''}${premiumChange.changePercent.toFixed(1)}%`
+    : null;
+  const premiumLabel = amtStr && pctStr
+    ? `Premium ${premiumDirection === 'increase' ? '+' : premiumDirection === 'decrease' ? '-' : ''}${amtStr} (${pctStr})`
+    : null;
+
   let headline: string;
   if (materialNegativeCount === 0 && premiumDirection !== 'increase') {
-    headline = 'Renewal looks favorable - no material negative changes';
+    headline = premiumDirection === 'decrease' && premiumLabel
+      ? `${premiumLabel} — no concerns`
+      : 'Renewal looks favorable — no material changes';
+  } else if (materialNegativeCount > 0 && topReasonTags.length > 0) {
+    headline = premiumLabel
+      ? `${premiumLabel} — ${topReasonTags.join(', ')}`
+      : `${materialNegativeCount} concern${materialNegativeCount > 1 ? 's' : ''}: ${topReasonTags.join(', ')}`;
   } else if (materialNegativeCount > 0) {
-    headline = `${materialNegativeCount} material concern${materialNegativeCount > 1 ? 's' : ''} detected`;
+    headline = premiumLabel
+      ? `${premiumLabel} — ${materialNegativeCount} concern${materialNegativeCount > 1 ? 's' : ''} detected`
+      : `${materialNegativeCount} material concern${materialNegativeCount > 1 ? 's' : ''} detected`;
   } else {
-    headline = 'Renewal review needed';
+    headline = premiumLabel
+      ? `${premiumLabel} — review needed`
+      : 'Renewal review needed';
   }
 
   return {

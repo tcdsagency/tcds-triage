@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, FileDown, Loader2, Phone, Mail, Sparkles } from 'lucide-react';
+import { ArrowLeft, FileDown, Loader2, Phone, Mail, Sparkles, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useUser } from '@/hooks/useUser';
@@ -524,6 +524,24 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
             renewalId={renewalId}
             lineOfBusiness={current.lineOfBusiness ?? null}
           />
+
+          {/* Baseline status banners */}
+          {!detail.baselineSnapshot && (
+            <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 flex items-start gap-2.5">
+              <Info className="h-4 w-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                No baseline policy found — comparison data unavailable. Premium change shown is renewal-only.
+              </p>
+            </div>
+          )}
+          {comparisonSummary?.baselineStatus === 'current_term' && (
+            <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 flex items-start gap-2.5">
+              <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                Baseline was captured from current term — changes may not reflect prior term differences.
+              </p>
+            </div>
+          )}
 
           {/* 0. Premium Change Summary */}
           <PremiumChangeSummary
