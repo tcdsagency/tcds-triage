@@ -116,8 +116,9 @@ function computeChange(
   const pct = bVal !== 0 ? ((diff / bVal) * 100).toFixed(1) : '0';
   const sign = diff > 0 ? '+' : '';
   const color = diff > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400';
+  const dollarStr = `${sign}$${Math.abs(diff).toLocaleString()}`;
 
-  return { text: `${sign}${pct}%`, color };
+  return { text: `${dollarStr} (${sign}${pct}%)`, color };
 }
 
 const COVERAGE_ORDER = [
@@ -279,7 +280,7 @@ function CoverageTable({ rows }: { rows: CoverageRow[] }) {
             <th className="text-left px-4 py-2 font-medium">Coverage</th>
             <th className="text-right px-3 py-2 font-medium w-28">Current</th>
             <th className="text-right px-3 py-2 font-medium w-28">Renewal</th>
-            <th className="text-center px-3 py-2 font-medium w-24">Change</th>
+            <th className="text-center px-3 py-2 font-medium w-36">Change</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -327,6 +328,18 @@ function CoverageTable({ rows }: { rows: CoverageRow[] }) {
 // ============================================================================
 // Vehicle Card (collapsible per-vehicle section)
 // ============================================================================
+
+function vehicleHasChanges(
+  vehicle: VehicleData,
+  policyCovBaseline: CanonicalCoverage[],
+  policyCovRenewal: CanonicalCoverage[],
+): boolean {
+  if (vehicle.isRemoved || vehicle.isAdded) return true;
+  const baselineCovs = mergeCoverages(policyCovBaseline, vehicle.baseline?.coverages || []);
+  const renewalCovs = mergeCoverages(policyCovRenewal, vehicle.renewal?.coverages || []);
+  const rows = buildRows(baselineCovs, renewalCovs);
+  return rows.some(r => r.changeText !== 'No change' && r.changeText !== '-');
+}
 
 function VehicleSection({
   vehicle,
@@ -477,13 +490,13 @@ export default function CoverageComparisonTable({
         {/* Per-vehicle coverages */}
         {hasVehicles && (
           <div className="p-3 space-y-2">
-            {vehicles.map((vehicle, i) => (
+            {vehicles.map((vehicle) => (
               <VehicleSection
                 key={vehicle.key}
                 vehicle={vehicle}
                 policyCovBaseline={policyBaselineCovs}
                 policyCovRenewal={policyRenewalCovs}
-                defaultExpanded={i === 0}
+                defaultExpanded={vehicleHasChanges(vehicle, policyBaselineCovs, policyRenewalCovs)}
               />
             ))}
           </div>

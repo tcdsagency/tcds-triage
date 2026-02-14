@@ -189,6 +189,7 @@ export default function RenewalDetailPanel({
 
   // Collect discounts for pills
   const renewalDiscounts = detail?.renewalSnapshot?.discounts || [];
+  const baselineDiscounts = detail?.baselineSnapshot?.discounts || [];
 
   // Property context for left column
   const propertyContext = detail?.baselineSnapshot?.propertyContext;
@@ -504,9 +505,7 @@ export default function RenewalDetailPanel({
                 />
 
                 {/* 5. Discounts */}
-                {renewalDiscounts.length > 0 && (
-                  <DiscountPills discounts={renewalDiscounts} />
-                )}
+                <DiscountPills discounts={renewalDiscounts} baselineDiscounts={baselineDiscounts} />
 
                 {/* 6. Review Action Bar */}
                 <ReviewActionBar

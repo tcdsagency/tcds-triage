@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Check, RefreshCw, Flag, Lock, ShieldCheck, FileText } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import DecisionConfirmModal from './DecisionConfirmModal';
 
 interface ReviewActionBarProps {
@@ -109,20 +110,34 @@ export default function ReviewActionBar({
             </div>
 
             {/* Reshop via Quotation */}
-            <button
-              onClick={() =>
-                openModal(
-                  'reshop',
-                  'Reshop via Quotation',
-                  'Send this renewal for re-quoting. The SR will move to "Requote Requested" stage.',
-                  true,
-                )
-              }
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm font-medium"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Reshop
-            </button>
+            <div className="flex-1 relative group">
+              <button
+                onClick={() =>
+                  openModal(
+                    'reshop',
+                    'Reshop via Quotation',
+                    reviewIncomplete
+                      ? 'You have not reviewed all items yet. Are you sure you want to reshop? Notes are required.'
+                      : 'Send this renewal for re-quoting. The SR will move to "Requote Requested" stage.',
+                    true,
+                  )
+                }
+                className={cn(
+                  'w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium',
+                  reviewIncomplete
+                    ? 'bg-amber-400 text-white hover:bg-amber-500'
+                    : 'bg-amber-500 text-white hover:bg-amber-600',
+                )}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Reshop
+              </button>
+              {reviewIncomplete && (
+                <div className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 -top-9 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap z-10">
+                  Review incomplete — notes required
+                </div>
+              )}
+            </div>
 
             {/* Flag for Review */}
             <button

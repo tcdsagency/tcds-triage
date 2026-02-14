@@ -15,6 +15,8 @@ interface DeductibleRow {
   renewalValue: string;
   changed: boolean;
   increased: boolean;
+  isNew: boolean;
+  isRemoved: boolean;
 }
 
 interface DeductibleGroup {
@@ -65,6 +67,8 @@ function buildRows(
     const bVal = b?.deductibleAmount ?? null;
     const rVal = r?.deductibleAmount ?? null;
     const changed = bVal != null && rVal != null && bVal !== rVal;
+    const isNew = bVal == null && rVal != null;
+    const isRemoved = bVal != null && rVal == null;
 
     rows.push({
       label: DEDUCTIBLE_LABELS[type] || b?.description || r?.description || type,
@@ -72,6 +76,8 @@ function buildRows(
       renewalValue: rVal != null ? `$${rVal.toLocaleString()}` : '-',
       changed,
       increased: changed && rVal! > bVal!,
+      isNew,
+      isRemoved,
     });
   }
 
@@ -149,7 +155,7 @@ export default function DeductiblesSection({
   const totalRows = groups.reduce((sum, g) => sum + g.rows.length, 0);
   if (totalRows === 0) return null;
 
-  const hasChanges = groups.some(g => g.rows.some(r => r.changed));
+  const hasChanges = groups.some(g => g.rows.some(r => r.changed || r.isNew || r.isRemoved));
 
   return (
     <CollapsibleSection
@@ -181,14 +187,36 @@ export default function DeductiblesSection({
                   <tr
                     key={`${gi}-${row.label}`}
                     className={cn(
-                      row.changed ? 'bg-amber-50/50 dark:bg-amber-900/10' : '',
+                      row.changed ? 'bg-amber-50/50 dark:bg-amber-900/10' :
+                      row.isRemoved ? 'bg-red-50/50 dark:bg-red-900/10' :
+                      row.isNew ? 'bg-green-50/50 dark:bg-green-900/10' :
+                      '',
                       'hover:bg-gray-50 dark:hover:bg-gray-800/50',
                     )}
                   >
-                    <td className={cn('py-2.5 text-gray-700 dark:text-gray-300', group.heading ? 'px-6' : 'px-4')}>
+                    <td className={cn(
+                      'py-2.5',
+                      group.heading ? 'px-6' : 'px-4',
+                      row.isRemoved ? 'text-red-600 dark:text-red-400 line-through' :
+                      row.isNew ? 'text-green-600 dark:text-green-400' :
+                      'text-gray-700 dark:text-gray-300',
+                    )}>
                       {row.label}
+                      {row.isNew && (
+                        <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 no-underline">
+                          NEW
+                        </span>
+                      )}
+                      {row.isRemoved && (
+                        <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 no-underline">
+                          REMOVED
+                        </span>
+                      )}
                     </td>
-                    <td className="text-right px-3 py-2.5 text-gray-600 dark:text-gray-400">
+                    <td className={cn(
+                      'text-right px-3 py-2.5',
+                      row.isRemoved ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400',
+                    )}>
                       {row.currentValue}
                     </td>
                     <td className={cn(
@@ -197,9 +225,11 @@ export default function DeductiblesSection({
                         ? row.increased
                           ? 'text-red-600 dark:text-red-400'
                           : 'text-green-600 dark:text-green-400'
+                        : row.isNew ? 'text-green-600 dark:text-green-400'
+                        : row.isRemoved ? 'text-red-600 dark:text-red-400'
                         : 'text-gray-700 dark:text-gray-300',
                     )}>
-                      {row.renewalValue}
+                      {row.isRemoved ? '-' : row.renewalValue}
                       {row.changed && (
                         <span className="ml-1 text-xs">
                           {row.increased ? '(up)' : '(down)'}

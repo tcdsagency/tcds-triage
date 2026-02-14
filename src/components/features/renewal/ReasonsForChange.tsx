@@ -69,9 +69,21 @@ export default function ReasonsForChange({
             <p className="text-sm font-medium text-rose-700 dark:text-rose-300">
               Pipeline halted — blocking issues detected
             </p>
-            <p className="text-xs text-rose-600 dark:text-rose-400 mt-0.5">
-              Rules: {checkSummary.blockerRuleIds.join(', ')}
-            </p>
+            {checkSummary.blockerRuleIds.length > 0 && (
+              <ul className="mt-1 space-y-0.5">
+                {checkSummary.blockerRuleIds.map(ruleId => {
+                  const blockerResult = checkResults.find(r => r.ruleId === ruleId);
+                  return (
+                    <li key={ruleId} className="text-xs text-rose-600 dark:text-rose-400">
+                      <span className="font-medium">{ruleId}</span>
+                      {blockerResult
+                        ? `: ${blockerResult.message}`
+                        : ''}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         </div>
       )}

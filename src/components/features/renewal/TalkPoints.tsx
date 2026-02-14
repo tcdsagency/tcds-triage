@@ -32,7 +32,8 @@ function buildTalkPoints(results: CheckResult[]): TalkPoint[] {
   const premiumResults = results.filter(r => r.category === 'Premium' && r.severity !== 'unchanged');
   for (const r of premiumResults) {
     if (r.change && r.change !== 'No change') {
-      points.push({ text: `Premium ${r.change}. ${r.agentAction}`, severity: r.severity });
+      const action = r.agentAction ? ` ${r.agentAction}` : '';
+      points.push({ text: `Premium ${r.change}.${action}`, severity: r.severity });
     }
   }
 
@@ -41,7 +42,9 @@ function buildTalkPoints(results: CheckResult[]): TalkPoint[] {
     r => r.category === 'Coverages' && (r.severity === 'warning' || r.severity === 'critical')
   );
   for (const r of coverageChanges) {
-    points.push({ text: `${r.field}: ${r.change}. ${r.agentAction}`, severity: r.severity });
+    const change = r.change && r.change !== 'No change' ? r.change : r.message || 'changed';
+    const action = r.agentAction ? ` ${r.agentAction}` : '';
+    points.push({ text: `${r.field}: ${change}.${action}`, severity: r.severity });
   }
 
   // Deductible changes
@@ -49,7 +52,8 @@ function buildTalkPoints(results: CheckResult[]): TalkPoint[] {
     r => r.category === 'Deductibles' && r.severity !== 'unchanged'
   );
   for (const r of deductibleChanges) {
-    points.push({ text: `${r.field}: ${r.change}.`, severity: r.severity });
+    const change = r.change && r.change !== 'No change' ? r.change : r.message || 'changed';
+    points.push({ text: `${r.field}: ${change}.`, severity: r.severity });
   }
 
   // Removed items
@@ -101,7 +105,8 @@ function buildTalkPoints(results: CheckResult[]): TalkPoint[] {
     r => r.category === 'Property' && r.severity !== 'unchanged'
   );
   for (const r of propertyChanges) {
-    points.push({ text: `${r.field}: ${r.change}.`, severity: r.severity });
+    const change = r.change && r.change !== 'No change' ? r.change : r.message || 'flagged';
+    points.push({ text: `${r.field}: ${change}.`, severity: r.severity });
   }
 
   return points;

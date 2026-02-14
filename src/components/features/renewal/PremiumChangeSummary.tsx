@@ -91,11 +91,16 @@ function analyzeReasons(
   const driversRemoved = materialChanges.filter(m => m.category === 'driver_removed');
   if (driversAdded.length > 0) {
     const hasYoung = driversAdded.some(m => {
-      // Try to find driver DOB in renewal snapshot
-      const addedName = m.description?.toLowerCase() || '';
-      const driver = renewalSnapshot?.drivers?.find(d =>
-        d.name?.toLowerCase().includes(addedName.split(' ')[0] || '') && d.dateOfBirth
-      );
+      // Try to find driver DOB in renewal snapshot — match by any name token overlap
+      const addedTokens = (m.description?.toLowerCase() || '').split(/\s+/).filter(t => t.length > 1);
+      if (addedTokens.length === 0) return false;
+      const driver = renewalSnapshot?.drivers?.find(d => {
+        if (!d.dateOfBirth || !d.name) return false;
+        const driverTokens = d.name.toLowerCase().split(/\s+/);
+        // Match if at least 2 tokens overlap, or if single-token name matches exactly
+        const overlap = addedTokens.filter(t => driverTokens.includes(t));
+        return overlap.length >= Math.min(2, addedTokens.length);
+      });
       if (driver?.dateOfBirth) {
         const age = Math.floor((Date.now() - new Date(driver.dateOfBirth).getTime()) / (365.25 * 86400000));
         return age < 26;
@@ -353,7 +358,7 @@ export default function PremiumChangeSummary({
           >
             {reason.tag}
             {reason.detail && (
-              <span className="opacity-70 max-w-[160px] truncate">
+              <span className="opacity-70">
                 — {reason.detail}
               </span>
             )}
