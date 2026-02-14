@@ -7,11 +7,10 @@ import type { RenewalComparison } from './types';
 
 interface RenewalCardProps {
   renewal: RenewalComparison;
-  isSelected: boolean;
   onClick: () => void;
 }
 
-export default function RenewalCard({ renewal, isSelected, onClick }: RenewalCardProps) {
+export default function RenewalCard({ renewal, onClick }: RenewalCardProps) {
   const premiumChange = renewal.premiumChangePercent ?? 0;
   const materialCount = Array.isArray(renewal.materialChanges)
     ? renewal.materialChanges.filter((c: { severity?: string }) => c.severity === 'material_negative').length
@@ -52,9 +51,7 @@ export default function RenewalCard({ renewal, isSelected, onClick }: RenewalCar
       onClick={onClick}
       className={cn(
         'p-4 rounded-lg border border-l-4 cursor-pointer transition-all',
-        isSelected
-          ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10 ring-1 ring-emerald-500'
-          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 bg-white dark:bg-gray-800',
+        'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 bg-white dark:bg-gray-800',
         rec?.border || 'border-l-gray-300 dark:border-l-gray-600'
       )}
     >

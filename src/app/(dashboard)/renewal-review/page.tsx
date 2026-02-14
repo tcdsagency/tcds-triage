@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { RefreshCw, Search, Car, Home, Building2, Layers, Upload, FileArchive, X, User, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useUser } from '@/hooks/useUser';
 import RenewalCard from '@/components/features/renewal/RenewalCard';
-import RenewalDetailPanel from '@/components/features/renewal/RenewalDetailPanel';
 import type { RenewalComparison, RenewalsListResponse, RenewalStats } from '@/components/features/renewal/types';
 
 // =============================================================================
@@ -14,6 +14,8 @@ import type { RenewalComparison, RenewalsListResponse, RenewalStats } from '@/co
 // =============================================================================
 
 export default function RenewalReviewPage() {
+  const router = useRouter();
+
   // Current user
   const { user } = useUser();
 
@@ -35,7 +37,6 @@ export default function RenewalReviewPage() {
   // State
   const [renewals, setRenewals] = useState<RenewalComparison[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedRenewal, setSelectedRenewal] = useState<RenewalComparison | null>(null);
   const [stats, setStats] = useState<RenewalStats>({
     pendingCount: 0,
     inReviewCount: 0,
@@ -141,58 +142,6 @@ export default function RenewalReviewPage() {
   useEffect(() => {
     fetchRenewals();
   }, [fetchRenewals]);
-
-  // Handle agent decision
-  const handleDecision = async (renewalId: string, decision: string, notes: string) => {
-    try {
-      if (!user?.id) {
-        toast.error('User profile not loaded — please refresh the page');
-        throw new Error('User not loaded');
-      }
-      const res = await fetch(`/api/renewals/${renewalId}/decide`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          decision,
-          notes,
-          userId: user.id,
-          userName: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
-        }),
-      });
-      if (!res.ok && res.status !== 409) {
-        toast.error('Failed to record decision');
-        throw new Error('Decision API error');
-      }
-      const data = await res.json();
-
-      if (data.success) {
-        toast.success(`Decision recorded: ${decision.replace(/_/g, ' ')}`);
-        // Optimistic update
-        setRenewals((prev) =>
-          prev.map((r) =>
-            r.id === renewalId
-              ? { ...r, agentDecision: decision, agentNotes: notes, status: data.newStatus || r.status }
-              : r
-          )
-        );
-        if (selectedRenewal?.id === renewalId) {
-          setSelectedRenewal((prev) =>
-            prev ? { ...prev, agentDecision: decision, agentNotes: notes, status: data.newStatus || prev.status } : null
-          );
-        }
-      } else if (res.status === 409) {
-        toast.error('Decision already recorded by another agent');
-        await fetchRenewals();
-        throw new Error('Conflict');
-      } else {
-        toast.error(data.error || 'Failed to record decision');
-        throw new Error(data.error || 'Decision failed');
-      }
-    } catch (err) {
-      console.error('Error recording decision:', err);
-      toast.error('Failed to record decision');
-    }
-  };
 
   // Clear all filters
   const clearFilters = () => {
@@ -712,8 +661,7 @@ export default function RenewalReviewPage() {
                 <RenewalCard
                   key={renewal.id}
                   renewal={renewal}
-                  isSelected={selectedRenewal?.id === renewal.id}
-                  onClick={() => setSelectedRenewal(renewal)}
+                  onClick={() => router.push(`/renewal-review/${renewal.id}`)}
                 />
               ))}
             </div>
@@ -745,17 +693,6 @@ export default function RenewalReviewPage() {
 
       </div>
 
-      {/* Detail Overlay */}
-      {selectedRenewal && (
-        <RenewalDetailPanel
-          renewal={selectedRenewal}
-          onClose={() => setSelectedRenewal(null)}
-          onDecision={handleDecision}
-          onRefresh={fetchRenewals}
-          userId={user?.id}
-          userName={user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : undefined}
-        />
-      )}
     </div>
   );
 }
