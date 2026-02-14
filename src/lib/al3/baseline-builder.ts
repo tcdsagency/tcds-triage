@@ -6,7 +6,7 @@
  */
 
 import { db } from '@/db';
-import { policies, vehicles, drivers, customers, properties, policyNotices } from '@/db/schema';
+import { policies, vehicles, drivers, customers, properties, policyNotices, mortgagees as mortgageesTable } from '@/db/schema';
 import { eq, and, like, or, sql } from 'drizzle-orm';
 import type {
   BaselineSnapshot,
@@ -15,6 +15,7 @@ import type {
   CanonicalDriver,
   CanonicalDiscount,
   CanonicalClaim,
+  CanonicalMortgagee,
   PropertyContext,
 } from '@/types/renewal.types';
 import { COVERAGE_CODE_MAP, DISCOUNT_COVERAGE_TYPES } from './constants';
@@ -175,6 +176,7 @@ export function normalizeHawkSoftVehicles(
     usage?: string | null;
     coverages?: any;
     annualMileage?: number | null;
+    annualMiles?: number | null;
     costNew?: number | null;
     estimatedValue?: number | null;
     primaryDriver?: string | null;
@@ -188,7 +190,7 @@ export function normalizeHawkSoftVehicles(
     model: v.model || undefined,
     usage: v.usage || v.use || undefined,
     coverages: normalizeHawkSoftCoverages(v.coverages),
-    annualMileage: v.annualMileage ?? undefined,
+    annualMileage: v.annualMileage ?? v.annualMiles ?? undefined,
     costNew: v.costNew ?? undefined,
     estimatedValue: v.estimatedValue ?? undefined,
     primaryDriver: v.primaryDriver ?? undefined,
@@ -298,6 +300,7 @@ function reconstructFromPriorTerm(
     endorsements: [],
     discounts: discountCoverages,
     claims: claims || [],
+    mortgagees: [],
     propertyContext,
     policyEffectiveDate: priorTerm.effectiveDate,
     policyExpirationDate: priorTerm.expirationDate,
@@ -343,6 +346,7 @@ export async function buildBaselineSnapshot(
       roofType: properties.roofType,
       yearBuilt: properties.yearBuilt,
       constructionType: properties.constructionType,
+      squareFeet: properties.squareFeet,
     })
     .from(properties)
     .where(eq(properties.customerId, localPolicy.customerId))
@@ -354,6 +358,7 @@ export async function buildBaselineSnapshot(
       roofType: prop.roofType ?? undefined,
       yearBuilt: prop.yearBuilt ?? undefined,
       constructionType: prop.constructionType ?? undefined,
+      squareFeet: prop.squareFeet ?? undefined,
     };
   }
 
@@ -378,6 +383,35 @@ export async function buildBaselineSnapshot(
     claimDate: n.claimDate ?? undefined,
     claimType: n.description ?? undefined,
     status: n.claimStatus ?? undefined,
+  }));
+
+  // Fetch mortgagees (used by all paths)
+  const mortgageeRows = await db
+    .select({
+      name: mortgageesTable.name,
+      type: mortgageesTable.type,
+      loanNumber: mortgageesTable.loanNumber,
+      addressLine1: mortgageesTable.addressLine1,
+      city: mortgageesTable.city,
+      state: mortgageesTable.state,
+      zipCode: mortgageesTable.zipCode,
+    })
+    .from(mortgageesTable)
+    .where(
+      and(
+        eq(mortgageesTable.policyId, policy.id),
+        eq(mortgageesTable.isActive, true)
+      )
+    );
+
+  const baselineMortgagees: CanonicalMortgagee[] = mortgageeRows.map((m) => ({
+    name: m.name,
+    type: (m.type as CanonicalMortgagee['type']) ?? undefined,
+    loanNumber: m.loanNumber ?? undefined,
+    address: m.addressLine1 ?? undefined,
+    city: m.city ?? undefined,
+    state: m.state ?? undefined,
+    zip: m.zipCode ?? undefined,
   }));
 
   // Check if local data is stale (already updated to renewal term)
@@ -464,6 +498,7 @@ export async function buildBaselineSnapshot(
     endorsements: [],
     discounts: discountCoverages,
     claims,
+    mortgagees: baselineMortgagees,
     propertyContext,
     // Capture policy term dates for stale baseline detection
     policyEffectiveDate: policy.effectiveDate?.toISOString().split('T')[0],

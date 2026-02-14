@@ -194,6 +194,19 @@ export interface CanonicalEndorsement {
 }
 
 /**
+ * Normalized mortgagee / additional interest.
+ */
+export interface CanonicalMortgagee {
+  name: string;
+  type?: 'mortgagee' | 'lienholder' | 'loss_payee' | 'additional_interest';
+  loanNumber?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+}
+
+/**
  * Property context for homeowners risk evaluation.
  */
 export interface PropertyContext {
@@ -201,6 +214,7 @@ export interface PropertyContext {
   roofType?: string;
   yearBuilt?: number;
   constructionType?: string;
+  squareFeet?: number;
 }
 
 /**
@@ -221,6 +235,7 @@ export interface RenewalSnapshot {
   endorsements: CanonicalEndorsement[];
   discounts: CanonicalDiscount[];
   claims: CanonicalClaim[];
+  mortgagees: CanonicalMortgagee[];
   parseConfidence: number; // 0-1
   parsedAt: string; // ISO timestamp
   sourceFileName?: string;
@@ -237,6 +252,7 @@ export interface BaselineSnapshot {
   endorsements: CanonicalEndorsement[];
   discounts: CanonicalDiscount[];
   claims: CanonicalClaim[];
+  mortgagees: CanonicalMortgagee[];
   propertyContext?: PropertyContext;
   // Policy term dates - used to detect stale baseline
   policyEffectiveDate?: string; // ISO date
@@ -268,6 +284,8 @@ export type ChangeCategory =
   | 'discount_removed'
   | 'discount_added'
   | 'claim'
+  | 'mortgagee_added'
+  | 'mortgagee_removed'
   | 'property'
   | 'other';
 

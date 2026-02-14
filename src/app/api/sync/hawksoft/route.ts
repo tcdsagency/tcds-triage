@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { customers, policies, vehicles, drivers, mortgagees, syncMetadata, users } from '@/db/schema';
+import { customers, policies, vehicles, drivers, mortgagees, properties, syncMetadata, users } from '@/db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
 
@@ -320,6 +320,10 @@ export async function POST(request: Request) {
                       use: v.use || v.usage || null,
                       annualMiles: v.annualMiles || null,
                       coverages: v.coverages || null,
+                      costNew: v.costNew || null,
+                      estimatedValue: v.estimatedValue || null,
+                      primaryDriver: v.primaryDriver || null,
+                      lienholder: v.lienholder || null,
                     });
                   }
                 }
@@ -405,6 +409,54 @@ export async function POST(request: Request) {
                     mortgageesSynced++;
                   } catch (mortgageeErr) {
                     // Continue on mortgagee errors
+                  }
+                }
+                // Sync locations → properties table
+                const hsLocations = policy.locations || [];
+                for (const loc of hsLocations) {
+                  try {
+                    const street = loc.address || '';
+                    const city = loc.city || '';
+                    const state = loc.state || '';
+                    const zip = loc.zip || '';
+
+                    if (!street && !city) continue;
+
+                    // Check for existing property by customerId + policyId
+                    const [existingProp] = await db
+                      .select({ id: properties.id })
+                      .from(properties)
+                      .where(
+                        and(
+                          eq(properties.customerId, customerId),
+                          eq(properties.policyId, savedPolicyId)
+                        )
+                      )
+                      .limit(1);
+
+                    const propData: Record<string, any> = {
+                      address: { street, city, state, zip },
+                      updatedAt: new Date(),
+                    };
+
+                    // Only set construction fields when HawkSoft provides them
+                    if (loc.yearBuilt) propData.yearBuilt = loc.yearBuilt;
+                    if (loc.squareFeet) propData.squareFeet = loc.squareFeet;
+                    if (loc.constructionType) propData.constructionType = loc.constructionType;
+                    if (loc.roofType) propData.roofType = loc.roofType;
+
+                    if (existingProp) {
+                      await db.update(properties).set(propData).where(eq(properties.id, existingProp.id));
+                    } else {
+                      await db.insert(properties).values({
+                        tenantId,
+                        customerId,
+                        policyId: savedPolicyId,
+                        ...propData,
+                      } as any);
+                    }
+                  } catch {
+                    // Continue on location sync errors
                   }
                 }
               } catch (policyErr) {

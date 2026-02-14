@@ -229,6 +229,7 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
 
   // Discounts
   const renewalDiscounts = detail.renewalSnapshot?.discounts || [];
+  const baselineDiscounts = detail.baselineSnapshot?.discounts || [];
 
   // Property context
   const propertyContext = detail.baselineSnapshot?.propertyContext;
@@ -409,9 +410,40 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
               </h4>
               <div className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
                 {propertyContext.yearBuilt && <p>Built: {propertyContext.yearBuilt}</p>}
+                {propertyContext.squareFeet && <p>Sq Ft: {propertyContext.squareFeet.toLocaleString()}</p>}
                 {propertyContext.constructionType && <p>Construction: {propertyContext.constructionType}</p>}
                 {propertyContext.roofType && <p>Roof: {propertyContext.roofType}</p>}
                 {propertyContext.roofAge != null && <p>Roof Age: {propertyContext.roofAge} years</p>}
+              </div>
+            </div>
+          )}
+
+          {/* Mortgagees */}
+          {((detail.renewalSnapshot?.mortgagees || []).length > 0 || (detail.baselineSnapshot?.mortgagees || []).length > 0) && (
+            <div>
+              <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                Mortgagees
+              </h4>
+              <div className="space-y-2">
+                {[...(detail.renewalSnapshot?.mortgagees || []), ...(detail.baselineSnapshot?.mortgagees || [])]
+                  .filter((m, i, arr) => arr.findIndex(x => x.name === m.name) === i)
+                  .map((m) => (
+                    <div key={m.name} className="text-sm text-gray-700 dark:text-gray-300">
+                      <div className="flex items-center gap-1.5">
+                        {m.type && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                            {m.type.replace('_', ' ')}
+                          </span>
+                        )}
+                        <span className="font-medium">{m.name}</span>
+                      </div>
+                      {m.loanNumber && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Loan: {m.loanNumber}
+                        </p>
+                      )}
+                    </div>
+                  ))}
               </div>
             </div>
           )}
@@ -524,9 +556,7 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
           />
 
           {/* 5. Discounts */}
-          {renewalDiscounts.length > 0 && (
-            <DiscountPills discounts={renewalDiscounts} />
-          )}
+          <DiscountPills discounts={renewalDiscounts} baselineDiscounts={baselineDiscounts} />
 
           {/* 6. Review Action Bar */}
           <ReviewActionBar

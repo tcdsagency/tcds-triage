@@ -17,6 +17,7 @@ import type {
   CanonicalDiscount,
   CanonicalEndorsement,
   CanonicalClaim,
+  CanonicalMortgagee,
   ChangeSeverity,
 } from '@/types/renewal.types';
 import { DEFAULT_COMPARISON_THRESHOLDS } from '@/types/renewal.types';
@@ -188,6 +189,9 @@ export function compareSnapshots(
 
   // Compare claims
   allChanges.push(...compareClaims(renewal.claims, baseline.claims));
+
+  // Compare mortgagees
+  allChanges.push(...compareMortgagees(renewal.mortgagees || [], baseline.mortgagees || []));
 
   // Flag property concerns (homeowners)
   allChanges.push(...flagPropertyConcerns(renewal, baseline));
@@ -766,6 +770,60 @@ function compareClaims(
       severity: 'material_negative',
       description: `New claim: ${typePart}${datePart}${amountPart}`,
     });
+  }
+
+  return changes;
+}
+
+// =============================================================================
+// MORTGAGEE COMPARISON
+// =============================================================================
+
+function normalizeMortgageeName(name: string): string {
+  return name.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+function compareMortgagees(
+  renewalMortgagees: CanonicalMortgagee[],
+  baselineMortgagees: CanonicalMortgagee[]
+): MaterialChange[] {
+  const changes: MaterialChange[] = [];
+
+  const renewalByName = new Map(
+    renewalMortgagees.map((m) => [normalizeMortgageeName(m.name), m])
+  );
+  const baselineByName = new Map(
+    baselineMortgagees.map((m) => [normalizeMortgageeName(m.name), m])
+  );
+
+  // Removed mortgagees
+  for (const [normalizedName, baseline] of baselineByName) {
+    if (!renewalByName.has(normalizedName)) {
+      changes.push({
+        field: `mortgagee.${normalizedName}`,
+        category: 'mortgagee_removed',
+        classification: 'material_negative',
+        oldValue: baseline.name,
+        newValue: null,
+        severity: 'material_negative',
+        description: `Mortgagee removed: ${baseline.name}`,
+      });
+    }
+  }
+
+  // Added mortgagees
+  for (const [normalizedName, renewal] of renewalByName) {
+    if (!baselineByName.has(normalizedName)) {
+      changes.push({
+        field: `mortgagee.${normalizedName}`,
+        category: 'mortgagee_added',
+        classification: 'non_material',
+        oldValue: null,
+        newValue: renewal.name,
+        severity: 'non_material',
+        description: `Mortgagee added: ${renewal.name}`,
+      });
+    }
   }
 
   return changes;

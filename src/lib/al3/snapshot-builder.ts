@@ -13,6 +13,7 @@ import type {
   CanonicalDiscount,
   CanonicalEndorsement,
   CanonicalClaim,
+  CanonicalMortgagee,
 } from '@/types/renewal.types';
 import { COVERAGE_CODE_MAP, DISCOUNT_COVERAGE_TYPES, VEHICLE_LEVEL_COVERAGE_TYPES } from './constants';
 import { parseSplitLimit } from './parser';
@@ -38,6 +39,19 @@ export function normalizeCoverageType(
 
   // Return as-is (snake_case normalized)
   return upperCode.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+}
+
+/**
+ * Map AL3 interest type code to canonical mortgagee type.
+ */
+function mapAL3InterestType(code?: string): CanonicalMortgagee['type'] {
+  if (!code) return undefined;
+  const upper = code.toUpperCase().trim();
+  if (upper === 'LH') return 'lienholder';
+  if (upper === 'MG' || upper === 'MS') return 'mortgagee';
+  if (upper === 'LP') return 'loss_payee';
+  if (upper === 'AI' || upper === 'CN') return 'additional_interest';
+  return undefined;
 }
 
 /**
@@ -202,6 +216,19 @@ export function buildRenewalSnapshot(
     status: c.status,
   }));
 
+  // Map mortgagees / additional interests
+  const mortgagees: CanonicalMortgagee[] = (transaction.mortgagees || [])
+    .filter((m) => m.name && m.name.trim() !== '')
+    .map((m) => ({
+      name: m.name!.trim(),
+      type: mapAL3InterestType(m.interestType),
+      loanNumber: m.loanNumber || undefined,
+      address: m.address || undefined,
+      city: m.city || undefined,
+      state: m.state || undefined,
+      zip: m.zip || undefined,
+    }));
+
   return {
     insuredName: transaction.header.insuredName,
     insuredAddress: transaction.insuredAddress?.address,
@@ -217,6 +244,7 @@ export function buildRenewalSnapshot(
     endorsements,
     discounts,
     claims,
+    mortgagees,
     parseConfidence: transaction.parseConfidence,
     parsedAt: new Date().toISOString(),
     sourceFileName: undefined,

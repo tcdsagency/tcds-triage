@@ -195,17 +195,17 @@ export const homeEndorsementRules: CheckRuleDefinition[] = [
     lob: 'home',
     evaluate: (ctx) => {
       // Check if renewal has mortgagee info (from parsed AL3 data)
-      const renSnap = ctx.renewal as any;
-      const hasMortgagee = renSnap.mortgagees?.length > 0;
+      const mortgagees = ctx.renewal.mortgagees || [];
+      const hasMortgagee = mortgagees.length > 0;
 
       return makeCheck('H-056', {
         field: 'Mortgagee',
         previousValue: null,
-        renewalValue: hasMortgagee ? `${renSnap.mortgagees.length} mortgagee(s)` : 'None',
+        renewalValue: hasMortgagee ? `${mortgagees.length} mortgagee(s)` : 'None',
         change: hasMortgagee ? 'Present' : 'None detected',
         severity: 'info',
         message: hasMortgagee
-          ? `${renSnap.mortgagees.length} mortgagee(s) on file`
+          ? `${mortgagees.length} mortgagee(s) on file`
           : 'No mortgagee detected — verify if property has a mortgage',
         agentAction: hasMortgagee
           ? 'Verify mortgagee info matches current lender'
@@ -246,6 +246,66 @@ export const homeEndorsementRules: CheckRuleDefinition[] = [
         category: 'Endorsements',
         isBlocking: false,
       });
+    },
+  },
+  {
+    ruleId: 'H-058',
+    name: 'Mortgagee Change',
+    description: 'Detect mortgagees added or removed between baseline and renewal',
+    checkType: 'existence',
+    category: 'Endorsements',
+    phase: 7,
+    isBlocking: false,
+    lob: 'home',
+    evaluate: (ctx) => {
+      const baselineMortgagees = ctx.baseline.mortgagees || [];
+      const renewalMortgagees = ctx.renewal.mortgagees || [];
+
+      if (baselineMortgagees.length === 0 && renewalMortgagees.length === 0) return null;
+
+      const normalize = (name: string) => name.toLowerCase().trim().replace(/\s+/g, ' ');
+      const baselineNames = new Set(baselineMortgagees.map(m => normalize(m.name)));
+      const renewalNames = new Set(renewalMortgagees.map(m => normalize(m.name)));
+
+      const results: CheckResult[] = [];
+
+      // Removed mortgagees
+      for (const m of baselineMortgagees) {
+        if (!renewalNames.has(normalize(m.name))) {
+          results.push(makeCheck('H-058', {
+            field: `Mortgagee: ${m.name}`,
+            previousValue: m.name,
+            renewalValue: null,
+            change: `Removed: ${m.name}`,
+            severity: 'warning',
+            message: `Mortgagee removed: ${m.name}`,
+            agentAction: 'Verify mortgagee removal is intentional — confirm with customer',
+            checkType: 'existence',
+            category: 'Endorsements',
+            isBlocking: false,
+          }));
+        }
+      }
+
+      // Added mortgagees
+      for (const m of renewalMortgagees) {
+        if (!baselineNames.has(normalize(m.name))) {
+          results.push(makeCheck('H-058', {
+            field: `Mortgagee: ${m.name}`,
+            previousValue: null,
+            renewalValue: m.name,
+            change: `Added: ${m.name}`,
+            severity: 'info',
+            message: `Mortgagee added: ${m.name}`,
+            agentAction: 'Verify new mortgagee info is correct',
+            checkType: 'existence',
+            category: 'Endorsements',
+            isBlocking: false,
+          }));
+        }
+      }
+
+      return results.length > 0 ? results : null;
     },
   },
 ];

@@ -606,7 +606,11 @@ export const vehicles = pgTable('vehicles', {
   // Usage
   use: varchar('use', { length: 50 }), // pleasure, commute, business
   annualMiles: integer('annual_miles'),
-  
+  costNew: integer('cost_new'),
+  estimatedValue: integer('estimated_value'),
+  primaryDriver: varchar('primary_driver', { length: 100 }),
+  lienholder: varchar('lienholder', { length: 200 }),
+
   // Coverages specific to this vehicle
   coverages: jsonb('coverages'),
   

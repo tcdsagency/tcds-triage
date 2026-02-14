@@ -143,6 +143,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   discount_removed: 'Discounts Removed',
   discount_added: 'Discounts Added',
   claim: 'Claims',
+  mortgagee_added: 'Mortgagees Added',
+  mortgagee_removed: 'Mortgagees Removed',
   property: 'Property',
   other: 'Other',
 };
@@ -151,7 +153,7 @@ const CATEGORY_ORDER = [
   'premium', 'coverage_limit', 'coverage_removed', 'coverage_added',
   'deductible', 'vehicle_removed', 'vehicle_added', 'driver_removed',
   'driver_added', 'endorsement', 'endorsement_removed', 'endorsement_added',
-  'discount_removed', 'discount_added', 'claim', 'property', 'other',
+  'discount_removed', 'discount_added', 'claim', 'mortgagee_added', 'mortgagee_removed', 'property', 'other',
 ];
 
 interface ComparisonTableProps {
@@ -370,6 +372,7 @@ function PropertyContextCard({ propertyContext, baselineCoverages }: {
 }) {
   const items: { label: string; value: string | number }[] = [];
   if (propertyContext.yearBuilt) items.push({ label: 'Year Built', value: propertyContext.yearBuilt });
+  if (propertyContext.squareFeet) items.push({ label: 'Sq Ft', value: propertyContext.squareFeet.toLocaleString() });
   if (propertyContext.roofAge != null) items.push({ label: 'Roof Age', value: `${propertyContext.roofAge} yrs` });
   if (propertyContext.roofType) items.push({ label: 'Roof Type', value: propertyContext.roofType });
   if (propertyContext.constructionType) items.push({ label: 'Construction', value: propertyContext.constructionType });
