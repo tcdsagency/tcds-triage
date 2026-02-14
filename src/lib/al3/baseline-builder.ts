@@ -156,6 +156,8 @@ export function normalizeHawkSoftCoverages(
         deductible: dedStr || undefined,
         deductibleAmount: parseSplitLimit(dedStr),
         premium: isNaN(premiumVal as number) ? undefined : premiumVal,
+        inflationGuardPercent: cov.inflationGuardPercent ?? undefined,
+        valuationTypeCode: cov.valuationTypeCode ?? undefined,
       };
     });
 }
@@ -166,20 +168,31 @@ export function normalizeHawkSoftCoverages(
 export function normalizeHawkSoftVehicles(
   hsVehicles: Array<{
     vin?: string | null;
-    year?: number | null;
+    year?: number | string | null;
     make?: string | null;
     model?: string | null;
     use?: string | null;
+    usage?: string | null;
     coverages?: any;
+    annualMileage?: number | null;
+    costNew?: number | null;
+    estimatedValue?: number | null;
+    primaryDriver?: string | null;
+    lienholder?: string | null;
   }>
 ): CanonicalVehicle[] {
   return hsVehicles.map((v) => ({
     vin: v.vin || undefined,
-    year: v.year || undefined,
+    year: v.year ? (typeof v.year === 'string' ? parseInt(v.year, 10) || undefined : v.year) : undefined,
     make: v.make || undefined,
     model: v.model || undefined,
-    usage: v.use || undefined,
+    usage: v.usage || v.use || undefined,
     coverages: normalizeHawkSoftCoverages(v.coverages),
+    annualMileage: v.annualMileage ?? undefined,
+    costNew: v.costNew ?? undefined,
+    estimatedValue: v.estimatedValue ?? undefined,
+    primaryDriver: v.primaryDriver ?? undefined,
+    lienholder: v.lienholder ?? undefined,
   }));
 }
 
@@ -489,7 +502,7 @@ async function fetchHawkSoftPolicyData(
 
     // Call HawkSoft API with policy expansions
     const api = getHawkSoftClient();
-    const client = await api.getClient(clientId, ['policies'], ['policies.drivers', 'policies.autos', 'policies.coverages']);
+    const client = await api.getClient(clientId, ['policies', 'people'], ['policies.drivers', 'policies.autos', 'policies.coverages']);
 
     if (!client?.policies?.length) return null;
 
@@ -505,17 +518,35 @@ async function fetchHawkSoftPolicyData(
 
     // Normalize the HawkSoft data
     const hsVehicles = matchingPolicy.vehicles || matchingPolicy.autos || [];
-    const hsDrivers = matchingPolicy.drivers || [];
+    // HawkSoft sometimes returns drivers under policy, sometimes under client.people
+    let hsDrivers: any[] = matchingPolicy.drivers || [];
+    if (hsDrivers.length === 0 && client.people?.length) {
+      // Fall back to people array — map people fields to driver shape
+      hsDrivers = client.people
+        .filter((p: any) => p.firstName || p.lastName)
+        .map((p: any) => ({
+          firstName: p.firstName || '',
+          lastName: p.lastName || '',
+          dateOfBirth: p.dateOfBirth || undefined,
+          licenseNumber: p.licenseNumber || undefined,
+          licenseState: p.licenseState || undefined,
+        }));
+    }
     const hsCoverages = matchingPolicy.coverages || [];
 
     return {
       vehicles: hsVehicles.map((v: any) => ({
         vin: v.vin || undefined,
-        year: v.year || undefined,
+        year: v.year ? (typeof v.year === 'string' ? parseInt(v.year, 10) || undefined : v.year) : undefined,
         make: v.make || undefined,
         model: v.model || undefined,
         usage: v.usage || v.use || undefined,
         coverages: normalizeHawkSoftCoverages(v.coverages),
+        annualMileage: v.annualMileage ?? undefined,
+        costNew: v.costNew ?? undefined,
+        estimatedValue: v.estimatedValue ?? undefined,
+        primaryDriver: v.primaryDriver ?? undefined,
+        lienholder: v.lienholder ?? undefined,
       })),
       drivers: hsDrivers.map((d: any) => ({
         name: `${d.firstName} ${d.lastName}`.trim(),

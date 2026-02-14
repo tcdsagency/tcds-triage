@@ -118,16 +118,27 @@ export interface HawkSoftCoverage {
   limits?: string | null;
   deductibles?: string | null;
   premium?: string | null;
+  parentType?: string | null;
+  parentId?: string | null;
+  inflationGuardPercent?: number | null;
+  coInsurancePercent?: number | null;
+  valuationTypeCode?: string | null;
 }
 
 export interface HawkSoftVehicle {
   vehicleId: string;
-  year: number;
+  year: number | string;
   make: string;
   model: string;
   vin: string;
   usage?: string;
+  use?: string;
   coverages?: HawkSoftCoverage[];
+  annualMileage?: number;
+  costNew?: number;
+  estimatedValue?: number;
+  primaryDriver?: string;
+  lienholder?: string;
 }
 
 export interface HawkSoftDriver {

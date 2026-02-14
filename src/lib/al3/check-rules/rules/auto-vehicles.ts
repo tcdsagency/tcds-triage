@@ -227,4 +227,41 @@ export const autoVehicleRules: CheckRuleDefinition[] = [
       return results.length > 0 ? results : null;
     },
   },
+  {
+    ruleId: 'A-015',
+    name: 'Lienholder Coverage Gap',
+    description: 'Flag vehicles with lienholder missing required coverages',
+    checkType: 'cross_field',
+    category: 'Vehicles',
+    phase: 6,
+    isBlocking: false,
+    lob: 'auto',
+    evaluate: (ctx) => {
+      const results: CheckResult[] = [];
+      for (const v of ctx.renewal.vehicles) {
+        const lien = v.lienholder;
+        if (!lien) continue;
+        // Check vehicle-level coverages + policy-level coverages
+        const allCovs = [...(v.coverages || []), ...ctx.renewal.coverages];
+        const hasComp = allCovs.some(c => c.type === 'comprehensive');
+        const hasColl = allCovs.some(c => c.type === 'collision');
+        if (!hasComp || !hasColl) {
+          const missing = [!hasComp && 'Comprehensive', !hasColl && 'Collision'].filter(Boolean).join(', ');
+          results.push(makeCheck('A-015', {
+            field: `Lienholder: ${vehicleLabel(v)}`,
+            previousValue: 'Required',
+            renewalValue: 'Missing',
+            change: `Missing ${missing}`,
+            severity: 'warning',
+            message: `${vehicleLabel(v)} has lienholder (${lien}) but missing ${missing}`,
+            agentAction: 'Lienholder requires Comp/Collision — verify with insured',
+            checkType: 'cross_field',
+            category: 'Vehicles',
+            isBlocking: false,
+          }));
+        }
+      }
+      return results.length > 0 ? results : null;
+    },
+  },
 ];

@@ -129,6 +129,8 @@ export interface CanonicalCoverage {
   deductible?: string;
   deductibleAmount?: number;
   premium?: number;
+  inflationGuardPercent?: number;
+  valuationTypeCode?: string; // "RCV" | "ACV" | etc.
 }
 
 /**
@@ -141,6 +143,11 @@ export interface CanonicalVehicle {
   model?: string;
   usage?: string;
   coverages: CanonicalCoverage[];
+  annualMileage?: number;
+  costNew?: number;
+  estimatedValue?: number;
+  primaryDriver?: string;
+  lienholder?: string;
 }
 
 /**

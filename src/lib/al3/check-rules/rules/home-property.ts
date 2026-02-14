@@ -177,15 +177,34 @@ export const homePropertyRules: CheckRuleDefinition[] = [
     isBlocking: false,
     lob: 'home',
     evaluate: (ctx) => {
-      const basDwell = ctx.baseline.coverages.find(c => c.type === 'dwelling')?.limitAmount;
+      const basDwellCov = ctx.baseline.coverages.find(c => c.type === 'dwelling');
+      const basDwell = basDwellCov?.limitAmount;
       const renDwell = ctx.renewal.coverages.find(c => c.type === 'dwelling')?.limitAmount;
 
       if (!basDwell || !renDwell) return null;
       if (renDwell <= basDwell) return null; // Only flag if it increased
 
       const pct = pctChange(basDwell, renDwell);
-      // Typical inflation guard is 2-6% per year
-      const likelyInflationGuard = pct > 0 && pct <= 8;
+      const explicitPct = basDwellCov?.inflationGuardPercent;
+
+      let message: string;
+      let agentAction: string;
+
+      if (explicitPct) {
+        message = `Dwelling increased ${pct.toFixed(1)}% — policy inflation guard is ${explicitPct}%`;
+        agentAction = pct <= explicitPct * 1.2
+          ? `Inflation guard (${explicitPct}%) applied — standard annual increase`
+          : `Dwelling increase exceeds inflation guard (${explicitPct}%) — verify reason`;
+      } else {
+        // Typical inflation guard is 2-6% per year
+        const likelyInflationGuard = pct > 0 && pct <= 8;
+        message = likelyInflationGuard
+          ? `Dwelling increased ${pct.toFixed(1)}% — likely inflation guard`
+          : `Dwelling increased ${pct.toFixed(1)}% — exceeds typical inflation guard range`;
+        agentAction = likelyInflationGuard
+          ? 'Inflation guard applied — standard annual increase'
+          : 'Dwelling increase larger than typical inflation guard — verify reason';
+      }
 
       return makeCheck('H-046', {
         field: 'Inflation Guard',
@@ -193,12 +212,8 @@ export const homePropertyRules: CheckRuleDefinition[] = [
         renewalValue: fmtDollars(renDwell),
         change: `+${pct.toFixed(1)}%`,
         severity: 'info',
-        message: likelyInflationGuard
-          ? `Dwelling increased ${pct.toFixed(1)}% — likely inflation guard`
-          : `Dwelling increased ${pct.toFixed(1)}% — exceeds typical inflation guard range`,
-        agentAction: likelyInflationGuard
-          ? 'Inflation guard applied — standard annual increase'
-          : 'Dwelling increase larger than typical inflation guard — verify reason',
+        message,
+        agentAction,
         checkType: 'cross_field',
         category: 'Property',
         isBlocking: false,
@@ -217,6 +232,40 @@ export const homePropertyRules: CheckRuleDefinition[] = [
     evaluate: () => {
       // Protection class not typically on snapshots — placeholder
       return null;
+    },
+  },
+  {
+    ruleId: 'H-048',
+    name: 'Valuation Type',
+    description: 'Flag valuation method changes (RCV → ACV)',
+    checkType: 'value_change',
+    category: 'Property',
+    phase: 6,
+    isBlocking: false,
+    lob: 'home',
+    evaluate: (ctx) => {
+      const basDwell = ctx.baseline.coverages.find(c => c.type === 'dwelling');
+      const renDwell = ctx.renewal.coverages.find(c => c.type === 'dwelling');
+      const basVal = basDwell?.valuationTypeCode?.toUpperCase();
+      const renVal = renDwell?.valuationTypeCode?.toUpperCase();
+      if (!basVal || !renVal || basVal === renVal) return null;
+      const isDowngrade = basVal === 'RCV' && renVal === 'ACV';
+      return makeCheck('H-048', {
+        field: 'Valuation Type',
+        previousValue: basVal,
+        renewalValue: renVal,
+        change: `${basVal} → ${renVal}`,
+        severity: isDowngrade ? 'critical' : 'info',
+        message: isDowngrade
+          ? 'Valuation downgraded from Replacement Cost to Actual Cash Value'
+          : `Valuation type changed: ${basVal} → ${renVal}`,
+        agentAction: isDowngrade
+          ? 'RCV → ACV downgrade — confirm with insured, may indicate roof/age restriction'
+          : 'Valuation type changed — verify with carrier',
+        checkType: 'value_change',
+        category: 'Property',
+        isBlocking: false,
+      });
     },
   },
 ];

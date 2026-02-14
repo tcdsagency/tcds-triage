@@ -294,7 +294,7 @@ export default function ComparisonTable({
 
       {/* Property Context for Home Policies */}
       {isHomePolicy(lineOfBusiness) && baselineSnapshot?.propertyContext && (
-        <PropertyContextCard propertyContext={baselineSnapshot.propertyContext} />
+        <PropertyContextCard propertyContext={baselineSnapshot.propertyContext} baselineCoverages={baselineSnapshot.coverages} />
       )}
 
       {/* Vehicles with Coverages */}
@@ -364,12 +364,26 @@ export default function ComparisonTable({
 // PROPERTY CONTEXT CARD
 // =============================================================================
 
-function PropertyContextCard({ propertyContext }: { propertyContext: PropertyContext }) {
+function PropertyContextCard({ propertyContext, baselineCoverages }: {
+  propertyContext: PropertyContext;
+  baselineCoverages?: CanonicalCoverage[];
+}) {
   const items: { label: string; value: string | number }[] = [];
   if (propertyContext.yearBuilt) items.push({ label: 'Year Built', value: propertyContext.yearBuilt });
   if (propertyContext.roofAge != null) items.push({ label: 'Roof Age', value: `${propertyContext.roofAge} yrs` });
   if (propertyContext.roofType) items.push({ label: 'Roof Type', value: propertyContext.roofType });
   if (propertyContext.constructionType) items.push({ label: 'Construction', value: propertyContext.constructionType });
+
+  const dwellingCov = baselineCoverages?.find(c => c.type === 'dwelling');
+  if (dwellingCov?.valuationTypeCode) {
+    const label = dwellingCov.valuationTypeCode.toUpperCase() === 'RCV' ? 'Replacement Cost'
+      : dwellingCov.valuationTypeCode.toUpperCase() === 'ACV' ? 'Actual Cash Value'
+      : dwellingCov.valuationTypeCode;
+    items.push({ label: 'Valuation', value: label });
+  }
+  if (dwellingCov?.inflationGuardPercent) {
+    items.push({ label: 'Inflation Guard', value: `${dwellingCov.inflationGuardPercent}%` });
+  }
 
   if (items.length === 0) return null;
 
@@ -463,6 +477,16 @@ function VehicleCard({
             )}>
               {label}
               {vinSuffix && <span className="ml-2 text-xs text-gray-400 font-normal">(...{vinSuffix})</span>}
+              {vehicle.baseline?.annualMileage && (
+                <span className="text-xs text-gray-400 font-normal ml-2">
+                  {vehicle.baseline.annualMileage.toLocaleString()} mi/yr
+                </span>
+              )}
+              {vehicle.baseline?.lienholder && (
+                <span className="text-xs text-amber-500 font-normal ml-2">
+                  Lien: {vehicle.baseline.lienholder}
+                </span>
+              )}
             </div>
             {(isRemoved || isAdded) && (
               <div className={cn(

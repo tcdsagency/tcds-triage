@@ -840,6 +840,7 @@ function flagPropertyConcerns(
   }
 
   // Check for valuation method change (Replacement Cost → ACV)
+  // Prefer explicit valuationTypeCode, fall back to description parsing
   const baselineDesc = baselineDwelling?.description?.toLowerCase() || '';
   const renewalDesc = renewalDwelling?.description?.toLowerCase() || '';
   const baselineIsRC =
@@ -847,7 +848,12 @@ function flagPropertyConcerns(
   const renewalIsACV =
     renewalDesc.includes('actual cash value') || renewalDesc.includes('acv');
 
-  if (baselineIsRC && renewalIsACV) {
+  const baselineValuation = baselineDwelling?.valuationTypeCode?.toUpperCase()
+    || (baselineIsRC ? 'RCV' : baselineDesc.includes('acv') ? 'ACV' : null);
+  const renewalValuation = renewalDwelling?.valuationTypeCode?.toUpperCase()
+    || (renewalIsACV ? 'ACV' : renewalDesc.includes('replacement') ? 'RCV' : null);
+
+  if (baselineValuation === 'RCV' && renewalValuation === 'ACV') {
     changes.push({
       field: 'property.roofCoverageType',
       category: 'property',
