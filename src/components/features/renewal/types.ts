@@ -8,6 +8,7 @@ import type {
   RenewalSnapshot,
   BaselineSnapshot,
 } from '@/types/renewal.types';
+import type { CheckResult, CheckSummary } from '@/types/check-rules.types';
 
 export interface RenewalComparison {
   id: string;
@@ -33,6 +34,8 @@ export interface RenewalComparison {
   agencyzoomSrId: number | null;
   materialChanges: MaterialChange[];
   comparisonSummary: ComparisonSummary | null;
+  checkResults?: CheckResult[];
+  checkSummary?: CheckSummary | null;
   createdAt: string;
   updatedAt: string;
 
@@ -46,6 +49,8 @@ export interface RenewalComparison {
 export interface RenewalComparisonDetail extends RenewalComparison {
   renewalSnapshot: RenewalSnapshot | null;
   baselineSnapshot: BaselineSnapshot | null;
+  checkResults?: CheckResult[];
+  checkSummary?: CheckSummary | null;
   auditHistory: RenewalAuditEntry[];
 }
 

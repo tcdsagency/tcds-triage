@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, RefreshCw, HelpCircle, Phone, ShieldCheck, FileText } from 'lucide-react';
+import { Check, RefreshCw, HelpCircle, Phone, ShieldCheck, FileText, Lock } from 'lucide-react';
 import DecisionConfirmModal from './DecisionConfirmModal';
 
 interface AgentActionButtonsProps {
@@ -9,6 +9,7 @@ interface AgentActionButtonsProps {
   currentDecision: string | null;
   status: string;
   onDecision: (decision: string, notes: string) => Promise<void>;
+  reviewProgress?: number;
 }
 
 export default function AgentActionButtons({
@@ -16,6 +17,7 @@ export default function AgentActionButtons({
   currentDecision,
   status,
   onDecision,
+  reviewProgress = 100,
 }: AgentActionButtonsProps) {
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
@@ -27,6 +29,7 @@ export default function AgentActionButtons({
 
   const isCompleted = status === 'completed' || status === 'cancelled';
   const isReshopPhase = currentDecision === 'reshop' || status === 'requote_requested' || status === 'quote_ready';
+  const reviewIncomplete = reviewProgress < 100;
 
   const openModal = (decision: string, title: string, description: string, notesRequired: boolean) => {
     setModalState({ isOpen: true, decision, title, description, notesRequired });
@@ -46,20 +49,36 @@ export default function AgentActionButtons({
         {!isReshopPhase ? (
           // Initial decision buttons
           <>
-            <button
-              onClick={() =>
-                openModal(
-                  'renew_as_is',
-                  'Renew As-Is',
-                  'Approve the renewal with no changes. The SR will be moved to completed.',
-                  false
-                )
-              }
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
-            >
-              <Check className="h-4 w-4" />
-              Renew As-Is
-            </button>
+            <div className="relative group">
+              <button
+                onClick={() =>
+                  openModal(
+                    'renew_as_is',
+                    'Renew As-Is',
+                    'Approve the renewal with no changes. The SR will be moved to completed.',
+                    false
+                  )
+                }
+                disabled={reviewIncomplete}
+                className={
+                  reviewIncomplete
+                    ? 'w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 rounded-lg cursor-not-allowed text-sm font-medium'
+                    : 'w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium'
+                }
+              >
+                {reviewIncomplete ? (
+                  <Lock className="h-4 w-4" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
+                Renew As-Is
+              </button>
+              {reviewIncomplete && (
+                <div className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 -top-9 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap z-10">
+                  Review all items first
+                </div>
+              )}
+            </div>
 
             <button
               onClick={() =>

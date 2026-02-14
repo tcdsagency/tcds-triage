@@ -1,15 +1,19 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, TrendingUp, TrendingDown, Minus, FileDown, Loader2, Phone, Mail } from 'lucide-react';
+import { X, FileDown, Loader2, Phone, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import AZStatusBadge from './AZStatusBadge';
 import ComparisonTable from './ComparisonTable';
 import AgentActionButtons from './AgentActionButtons';
 import NotesPanel from './NotesPanel';
+import CheckResultsPanel from './CheckResultsPanel';
+import ReviewProgress from './ReviewProgress';
+import TalkPoints from './TalkPoints';
+import ClaimsAgingTracker from './ClaimsAgingTracker';
 import type { RenewalComparison, RenewalComparisonDetail, RenewalNote } from './types';
-import type { RenewalSnapshot, BaselineSnapshot, MaterialChange } from '@/types/renewal.types';
+import type { CheckResult } from '@/types/check-rules.types';
 
 interface RenewalDetailPanelProps {
   renewal: RenewalComparison;
@@ -32,6 +36,7 @@ export default function RenewalDetailPanel({
   const [notes, setNotes] = useState<RenewalNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [notesLoading, setNotesLoading] = useState(false);
+  const [checkResults, setCheckResults] = useState<CheckResult[]>([]);
 
   // Fetch full detail
   const fetchDetail = useCallback(async () => {
@@ -45,6 +50,7 @@ export default function RenewalDetailPanel({
       const data = await res.json();
       if (data.success) {
         setDetail(data.renewal);
+        setCheckResults(data.renewal.checkResults || []);
       }
     } catch (err) {
       console.error('Error fetching renewal detail:', err);
@@ -74,6 +80,7 @@ export default function RenewalDetailPanel({
   useEffect(() => {
     setDetail(null);
     setNotes([]);
+    setCheckResults([]);
     fetchDetail();
     fetchNotes();
   }, [fetchDetail, fetchNotes]);
@@ -81,7 +88,6 @@ export default function RenewalDetailPanel({
   // Handle agent decision
   const handleDecision = async (decision: string, decisionNotes: string) => {
     await onDecision(renewal.id, decision, decisionNotes);
-    // Refresh detail and notes after decision
     await fetchDetail();
     await fetchNotes();
     onRefresh();
@@ -114,6 +120,47 @@ export default function RenewalDetailPanel({
     }
   };
 
+  // Handle check review toggle (optimistic update + PATCH)
+  const handleCheckReview = async (ruleId: string, field: string, reviewed: boolean) => {
+    // Optimistic update
+    setCheckResults(prev =>
+      prev.map(r =>
+        r.ruleId === ruleId && r.field === field
+          ? { ...r, reviewed, reviewedBy: reviewed ? (userName || userId || null) : null, reviewedAt: reviewed ? new Date().toISOString() : null }
+          : r
+      )
+    );
+
+    try {
+      const res = await fetch(`/api/renewals/${renewal.id}/check-review`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ruleId, reviewed, reviewedBy: userName || userId }),
+      });
+      if (!res.ok) {
+        // Revert on failure
+        setCheckResults(prev =>
+          prev.map(r =>
+            r.ruleId === ruleId && r.field === field
+              ? { ...r, reviewed: !reviewed, reviewedBy: null, reviewedAt: null }
+              : r
+          )
+        );
+        toast.error('Failed to update review status');
+      }
+    } catch {
+      // Revert on error
+      setCheckResults(prev =>
+        prev.map(r =>
+          r.ruleId === ruleId && r.field === field
+            ? { ...r, reviewed: !reviewed, reviewedBy: null, reviewedAt: null }
+            : r
+        )
+      );
+      toast.error('Failed to update review status');
+    }
+  };
+
   // Download PDF report
   const handleDownloadReport = () => {
     window.open(`/api/renewals/${renewal.id}/report`, '_blank');
@@ -124,6 +171,23 @@ export default function RenewalDetailPanel({
 
   const premiumChange = current.premiumChangePercent ?? 0;
   const materialChanges = current.materialChanges || [];
+  const checkSummary = detail?.checkSummary ?? current.checkSummary ?? null;
+
+  // Compute review progress from live checkResults state
+  const reviewable = checkResults.filter(r => r.severity !== 'unchanged');
+  const reviewedCount = reviewable.filter(r => r.reviewed).length;
+  const reviewProgress = reviewable.length > 0
+    ? Math.round((reviewedCount / reviewable.length) * 100)
+    : 100;
+
+  // Collect claims from snapshots for aging tracker
+  const claims = detail?.renewalSnapshot?.claims || detail?.baselineSnapshot?.claims || [];
+
+  // Collect discounts for left column
+  const renewalDiscounts = detail?.renewalSnapshot?.discounts || [];
+
+  // Property context for left column
+  const propertyContext = detail?.baselineSnapshot?.propertyContext;
 
   const premiumColor =
     premiumChange < 0
@@ -154,8 +218,8 @@ export default function RenewalDetailPanel({
         onClick={onClose}
       />
 
-      {/* Panel */}
-      <div className="relative w-full max-w-5xl mx-4 mt-8 mb-8 max-h-[calc(100vh-4rem)] bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+      {/* Panel — widened to max-w-7xl */}
+      <div className="relative w-full max-w-7xl mx-4 mt-8 mb-8 max-h-[calc(100vh-4rem)] bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="p-5 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <div className="flex items-start justify-between mb-1">
@@ -218,7 +282,7 @@ export default function RenewalDetailPanel({
               <span className="text-sm text-gray-500 dark:text-gray-400">
                 {fmtPremium(current.currentPremium)}
               </span>
-              <span className="text-gray-400">→</span>
+              <span className="text-gray-400">&rarr;</span>
               <span className={cn('text-lg font-bold', premiumColor)}>
                 {fmtPremium(current.renewalPremium)}
               </span>
@@ -231,97 +295,199 @@ export default function RenewalDetailPanel({
           </div>
         </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Body — 3-column on lg, single column below */}
+        <div className="flex-1 overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center h-48">
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
             </div>
           ) : (
-            <div className="p-5 space-y-5">
+            <div className="h-full flex flex-col lg:flex-row">
+              {/* ============ LEFT COLUMN (280px, sticky, scrolls independently) ============ */}
+              <div className="lg:w-[280px] lg:shrink-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
+                {/* Customer Info */}
+                <div>
+                  <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                    Customer Info
+                  </h4>
+                  <div className="space-y-1 text-xs text-gray-700 dark:text-gray-300">
+                    {detail?.renewalSnapshot?.insuredName && (
+                      <p className="font-medium">{detail.renewalSnapshot.insuredName}</p>
+                    )}
+                    {detail?.renewalSnapshot?.insuredAddress && (
+                      <p>{detail.renewalSnapshot.insuredAddress}</p>
+                    )}
+                    {(detail?.renewalSnapshot?.insuredCity || detail?.renewalSnapshot?.insuredState) && (
+                      <p>
+                        {[detail.renewalSnapshot.insuredCity, detail.renewalSnapshot.insuredState, detail.renewalSnapshot.insuredZip]
+                          .filter(Boolean)
+                          .join(', ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
 
-            {/* Agent Decision (if already decided) */}
-            {current.agentDecision && (
-              <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
-                <h4 className="text-xs font-medium text-indigo-500 dark:text-indigo-400 uppercase mb-1">
-                  Agent Decision
-                </h4>
-                <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
-                  {current.agentDecision.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-                </p>
-                {current.agentDecisionByName && (
-                  <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-0.5">
-                    by {current.agentDecisionByName}
-                    {current.agentDecisionAt &&
-                      ` on ${new Date(current.agentDecisionAt).toLocaleString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}`}
-                  </p>
+                {/* Property Details (homeowners only) */}
+                {propertyContext && (
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                      Property
+                    </h4>
+                    <div className="space-y-1 text-xs text-gray-700 dark:text-gray-300">
+                      {propertyContext.yearBuilt && <p>Built: {propertyContext.yearBuilt}</p>}
+                      {propertyContext.constructionType && <p>Construction: {propertyContext.constructionType}</p>}
+                      {propertyContext.roofType && <p>Roof: {propertyContext.roofType}</p>}
+                      {propertyContext.roofAge != null && <p>Roof Age: {propertyContext.roofAge} years</p>}
+                    </div>
+                  </div>
                 )}
-                {current.agentNotes && (
-                  <p className="text-sm text-indigo-600 dark:text-indigo-300 mt-2 italic">
-                    &ldquo;{current.agentNotes}&rdquo;
-                  </p>
+
+                {/* AZ Status (compact) */}
+                <div>
+                  <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                    AZ Status
+                  </h4>
+                  <AZStatusBadge
+                    status={current.status}
+                    agencyzoomSrId={current.agencyzoomSrId}
+                    compact
+                  />
+                </div>
+
+                {/* Agent Decision (if already decided) */}
+                {current.agentDecision && (
+                  <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
+                    <h4 className="text-xs font-medium text-indigo-500 dark:text-indigo-400 uppercase mb-1">
+                      Agent Decision
+                    </h4>
+                    <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                      {current.agentDecision.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                    </p>
+                    {current.agentDecisionByName && (
+                      <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-0.5">
+                        by {current.agentDecisionByName}
+                        {current.agentDecisionAt &&
+                          ` on ${new Date(current.agentDecisionAt).toLocaleString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}`}
+                      </p>
+                    )}
+                    {current.agentNotes && (
+                      <p className="text-xs text-indigo-600 dark:text-indigo-300 mt-2 italic">
+                        &ldquo;{current.agentNotes}&rdquo;
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Discounts */}
+                {renewalDiscounts.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                      Discounts ({renewalDiscounts.length})
+                    </h4>
+                    <div className="space-y-1">
+                      {renewalDiscounts.map((d, i) => (
+                        <div key={i} className="text-xs text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0" />
+                          {d.description || d.code}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
-            )}
 
-            {/* Comparison Table */}
-            <div>
-              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Policy Comparison
-              </h4>
-              <ComparisonTable
-                renewalSnapshot={detail?.renewalSnapshot ?? null}
-                baselineSnapshot={detail?.baselineSnapshot ?? null}
-                materialChanges={materialChanges}
-                renewalEffectiveDate={current.renewalEffectiveDate}
-                carrierName={current.carrierName}
-                policyNumber={current.policyNumber}
-                lineOfBusiness={current.lineOfBusiness}
-                comparisonSummary={current.comparisonSummary}
-              />
-            </div>
+              {/* ============ CENTER COLUMN (flex-1, scrolls) ============ */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                {/* Check Results Panel */}
+                {checkResults.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Check Results
+                    </h4>
+                    <CheckResultsPanel
+                      checkResults={checkResults}
+                      checkSummary={checkSummary}
+                      renewalId={renewal.id}
+                      onReviewToggle={handleCheckReview}
+                    />
+                  </div>
+                )}
 
-            {/* Action Buttons */}
-            {(!current.agentDecision || current.agentDecision === 'needs_more_info' || current.agentDecision === 'contact_customer' || current.agentDecision === 'reshop') && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Actions
-                </h4>
-                <AgentActionButtons
-                  renewalId={renewal.id}
-                  currentDecision={current.agentDecision}
-                  status={current.status}
-                  onDecision={handleDecision}
+                {/* Comparison Table */}
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Policy Comparison
+                  </h4>
+                  <ComparisonTable
+                    renewalSnapshot={detail?.renewalSnapshot ?? null}
+                    baselineSnapshot={detail?.baselineSnapshot ?? null}
+                    materialChanges={materialChanges}
+                    renewalEffectiveDate={current.renewalEffectiveDate}
+                    carrierName={current.carrierName}
+                    policyNumber={current.policyNumber}
+                    lineOfBusiness={current.lineOfBusiness}
+                    comparisonSummary={current.comparisonSummary}
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                {(!current.agentDecision || current.agentDecision === 'needs_more_info' || current.agentDecision === 'contact_customer' || current.agentDecision === 'reshop') && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Actions
+                    </h4>
+                    <AgentActionButtons
+                      renewalId={renewal.id}
+                      currentDecision={current.agentDecision}
+                      status={current.status}
+                      onDecision={handleDecision}
+                      reviewProgress={reviewProgress}
+                    />
+                  </div>
+                )}
+
+                {/* Notes Panel */}
+                <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                  <NotesPanel
+                    notes={notes}
+                    onAddNote={handleAddNote}
+                    loading={notesLoading}
+                  />
+                </div>
+              </div>
+
+              {/* ============ RIGHT COLUMN (300px, sticky, scrolls independently) ============ */}
+              <div className="lg:w-[300px] lg:shrink-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
+                {/* Review Progress */}
+                <ReviewProgress
+                  checkSummary={checkSummary}
+                  checkResults={checkResults}
                 />
+
+                {/* Talk Points */}
+                <TalkPoints checkResults={checkResults} />
+
+                {/* Claims Aging Tracker */}
+                {claims.length > 0 && (
+                  <ClaimsAgingTracker claims={claims} />
+                )}
+
+                {/* Download Report */}
+                <button
+                  onClick={handleDownloadReport}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+                >
+                  <FileDown className="h-4 w-4" />
+                  Download Report
+                </button>
               </div>
-            )}
-
-            {/* Notes Panel */}
-            <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-              <NotesPanel
-                notes={notes}
-                onAddNote={handleAddNote}
-                loading={notesLoading}
-              />
             </div>
-
-            {/* Download Report */}
-            <div className="pt-2">
-              <button
-                onClick={handleDownloadReport}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
-              >
-                <FileDown className="h-4 w-4" />
-                Download Report
-              </button>
-            </div>
-          </div>
-        )}
+          )}
         </div>
       </div>
     </div>
