@@ -27,10 +27,9 @@ export default function DecisionConfirmModal({
 }: DecisionConfirmModalProps) {
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
-
-  const [error, setError] = useState<string | null>(null);
 
   const handleConfirm = async () => {
     if (notesRequired && !notes.trim()) return;
