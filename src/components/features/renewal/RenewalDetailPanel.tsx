@@ -5,13 +5,15 @@ import { X, FileDown, Loader2, Phone, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import AZStatusBadge from './AZStatusBadge';
-import ComparisonTable from './ComparisonTable';
-import AgentActionButtons from './AgentActionButtons';
 import NotesPanel from './NotesPanel';
-import CheckResultsPanel from './CheckResultsPanel';
 import ReviewProgress from './ReviewProgress';
 import TalkPoints from './TalkPoints';
-import ClaimsAgingTracker from './ClaimsAgingTracker';
+import ReasonsForChange from './ReasonsForChange';
+import CoverageComparisonTable from './CoverageComparisonTable';
+import ClaimsAgingSection from './ClaimsAgingSection';
+import DeductiblesSection from './DeductiblesSection';
+import DiscountPills from './DiscountPills';
+import ReviewActionBar from './ReviewActionBar';
 import type { RenewalComparison, RenewalComparisonDetail, RenewalNote } from './types';
 import type { CheckResult } from '@/types/check-rules.types';
 
@@ -170,7 +172,6 @@ export default function RenewalDetailPanel({
   const current = detail ?? renewal;
 
   const premiumChange = current.premiumChangePercent ?? 0;
-  const materialChanges = current.materialChanges || [];
   const checkSummary = detail?.checkSummary ?? current.checkSummary ?? null;
 
   // Compute review progress from live checkResults state
@@ -183,7 +184,7 @@ export default function RenewalDetailPanel({
   // Collect claims from snapshots for aging tracker
   const claims = detail?.renewalSnapshot?.claims || detail?.baselineSnapshot?.claims || [];
 
-  // Collect discounts for left column
+  // Collect discounts for pills
   const renewalDiscounts = detail?.renewalSnapshot?.discounts || [];
 
   // Property context for left column
@@ -218,9 +219,9 @@ export default function RenewalDetailPanel({
         onClick={onClose}
       />
 
-      {/* Panel — widened to max-w-7xl */}
+      {/* Panel — max-w-7xl */}
       <div className="relative w-full max-w-7xl mx-4 mt-8 mb-8 max-h-[calc(100vh-4rem)] bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col overflow-hidden">
-        {/* Header */}
+        {/* ==================== HEADER ==================== */}
         <div className="p-5 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <div className="flex items-start justify-between mb-1">
             <div>
@@ -272,30 +273,41 @@ export default function RenewalDetailPanel({
             </button>
           </div>
 
-          {/* AZ Status + Premium Summary — side by side */}
+          {/* Premium flow — prominent */}
           <div className="flex items-center justify-between mt-3">
             <AZStatusBadge
               status={current.status}
               agencyzoomSrId={current.agencyzoomSrId}
             />
             <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                {fmtPremium(current.currentPremium)}
-              </span>
-              <span className="text-gray-400">&rarr;</span>
-              <span className={cn('text-lg font-bold', premiumColor)}>
-                {fmtPremium(current.renewalPremium)}
-              </span>
+              <div className="text-right">
+                <span className="text-[10px] uppercase text-gray-400 block">Current</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {fmtPremium(current.currentPremium)}
+                </span>
+              </div>
+              <span className="text-gray-400 text-lg">&rarr;</span>
+              <div className="text-right">
+                <span className="text-[10px] uppercase text-gray-400 block">Renewal</span>
+                <span className={cn('text-lg font-bold', premiumColor)}>
+                  {fmtPremium(current.renewalPremium)}
+                </span>
+              </div>
               {current.premiumChangeAmount != null && (
-                <span className={cn('text-sm font-semibold', premiumColor)}>
-                  ({premiumChange > 0 ? '+' : ''}${Math.abs(current.premiumChangeAmount).toFixed(0)}, {premiumChange > 0 ? '+' : ''}{premiumChange.toFixed(1)}%)
+                <span className={cn('text-sm font-semibold px-2 py-1 rounded-md', premiumColor,
+                  premiumChange < 0 ? 'bg-green-50 dark:bg-green-900/20' :
+                  premiumChange <= 5 ? 'bg-yellow-50 dark:bg-yellow-900/20' :
+                  premiumChange <= 15 ? 'bg-orange-50 dark:bg-orange-900/20' :
+                  'bg-red-50 dark:bg-red-900/20'
+                )}>
+                  {premiumChange > 0 ? '+' : ''}{premiumChange.toFixed(1)}% ({premiumChange > 0 ? '+' : ''}${Math.abs(current.premiumChangeAmount).toFixed(0)})
                 </span>
               )}
             </div>
           </div>
         </div>
 
-        {/* Body — 3-column on lg, single column below */}
+        {/* ==================== BODY — 3-column ==================== */}
         <div className="flex-1 overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center h-48">
@@ -303,12 +315,51 @@ export default function RenewalDetailPanel({
             </div>
           ) : (
             <div className="h-full flex flex-col lg:flex-row">
-              {/* ============ LEFT COLUMN (280px, sticky, scrolls independently) ============ */}
-              <div className="lg:w-[280px] lg:shrink-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
+              {/* ============ LEFT COLUMN (240px) ============ */}
+              <div className="lg:w-[240px] lg:shrink-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
+                {/* Policy Details */}
+                <div>
+                  <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                    Policy Details
+                  </h4>
+                  <div className="space-y-1.5 text-xs text-gray-700 dark:text-gray-300">
+                    {current.carrierName && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Carrier</span>
+                        <span className="font-medium">{current.carrierName}</span>
+                      </div>
+                    )}
+                    {current.lineOfBusiness && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">LOB</span>
+                        <span className="font-medium">{current.lineOfBusiness}</span>
+                      </div>
+                    )}
+                    {current.policyNumber && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Policy #</span>
+                        <span className="font-medium">{current.policyNumber}</span>
+                      </div>
+                    )}
+                    {current.renewalEffectiveDate && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Effective</span>
+                        <span className="font-medium">
+                          {new Date(current.renewalEffectiveDate).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* Customer Info */}
                 <div>
                   <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                    Customer Info
+                    Customer
                   </h4>
                   <div className="space-y-1 text-xs text-gray-700 dark:text-gray-300">
                     {detail?.renewalSnapshot?.insuredName && (
@@ -382,76 +433,53 @@ export default function RenewalDetailPanel({
                     )}
                   </div>
                 )}
-
-                {/* Discounts */}
-                {renewalDiscounts.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                      Discounts ({renewalDiscounts.length})
-                    </h4>
-                    <div className="space-y-1">
-                      {renewalDiscounts.map((d, i) => (
-                        <div key={i} className="text-xs text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
-                          <span className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0" />
-                          {d.description || d.code}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* ============ CENTER COLUMN (flex-1, scrolls) ============ */}
               <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                {/* Check Results Panel */}
+                {/* 1. Reasons for Premium Change */}
                 {checkResults.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Check Results
-                    </h4>
-                    <CheckResultsPanel
-                      checkResults={checkResults}
-                      checkSummary={checkSummary}
-                      renewalId={renewal.id}
-                      onReviewToggle={handleCheckReview}
-                    />
-                  </div>
-                )}
-
-                {/* Comparison Table */}
-                <div>
-                  <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Policy Comparison
-                  </h4>
-                  <ComparisonTable
-                    renewalSnapshot={detail?.renewalSnapshot ?? null}
-                    baselineSnapshot={detail?.baselineSnapshot ?? null}
-                    materialChanges={materialChanges}
-                    renewalEffectiveDate={current.renewalEffectiveDate}
-                    carrierName={current.carrierName}
-                    policyNumber={current.policyNumber}
-                    lineOfBusiness={current.lineOfBusiness}
-                    comparisonSummary={current.comparisonSummary}
+                  <ReasonsForChange
+                    checkResults={checkResults}
+                    checkSummary={checkSummary}
+                    onReviewToggle={handleCheckReview}
                   />
-                </div>
-
-                {/* Action Buttons */}
-                {(!current.agentDecision || current.agentDecision === 'needs_more_info' || current.agentDecision === 'contact_customer' || current.agentDecision === 'reshop') && (
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Actions
-                    </h4>
-                    <AgentActionButtons
-                      renewalId={renewal.id}
-                      currentDecision={current.agentDecision}
-                      status={current.status}
-                      onDecision={handleDecision}
-                      reviewProgress={reviewProgress}
-                    />
-                  </div>
                 )}
 
-                {/* Notes Panel */}
+                {/* 2. Coverage Comparison Table */}
+                <CoverageComparisonTable
+                  renewalSnapshot={detail?.renewalSnapshot ?? null}
+                  baselineSnapshot={detail?.baselineSnapshot ?? null}
+                />
+
+                {/* 3. Claims & Violations Aging */}
+                {claims.length > 0 && (
+                  <ClaimsAgingSection claims={claims} />
+                )}
+
+                {/* 4. Deductibles */}
+                <DeductiblesSection
+                  renewalSnapshot={detail?.renewalSnapshot ?? null}
+                  baselineSnapshot={detail?.baselineSnapshot ?? null}
+                />
+
+                {/* 5. Discounts */}
+                {renewalDiscounts.length > 0 && (
+                  <DiscountPills discounts={renewalDiscounts} />
+                )}
+
+                {/* 6. Review Action Bar */}
+                <ReviewActionBar
+                  renewalId={renewal.id}
+                  currentDecision={current.agentDecision}
+                  status={current.status}
+                  onDecision={handleDecision}
+                  reviewProgress={reviewProgress}
+                  reviewedCount={reviewedCount}
+                  totalReviewable={reviewable.length}
+                />
+
+                {/* 7. Notes Panel */}
                 <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                   <NotesPanel
                     notes={notes}
@@ -461,21 +489,16 @@ export default function RenewalDetailPanel({
                 </div>
               </div>
 
-              {/* ============ RIGHT COLUMN (300px, sticky, scrolls independently) ============ */}
-              <div className="lg:w-[300px] lg:shrink-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
+              {/* ============ RIGHT COLUMN (280px) ============ */}
+              <div className="lg:w-[280px] lg:shrink-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
                 {/* Review Progress */}
                 <ReviewProgress
                   checkSummary={checkSummary}
                   checkResults={checkResults}
                 />
 
-                {/* Talk Points */}
+                {/* Talk Points for Customer */}
                 <TalkPoints checkResults={checkResults} />
-
-                {/* Claims Aging Tracker */}
-                {claims.length > 0 && (
-                  <ClaimsAgingTracker claims={claims} />
-                )}
 
                 {/* Download Report */}
                 <button
