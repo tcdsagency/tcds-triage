@@ -41,6 +41,7 @@ import {
   RefreshCw,
   FilePlus2,
   DollarSign,
+  CloudLightning,
 } from 'lucide-react';
 
 // Map routes to feature permission keys (must match keys in feature-permissions.ts)
@@ -72,6 +73,7 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   // Advanced
   '/competitive-intel': 'competitiveIntel',
   '/risk-monitor': 'riskMonitor',
+  '/weather-alerts': 'weatherAlerts',
   '/phone-lookup': 'phoneLookup',
   '/renewal-review': 'renewalReview',
   '/properties': 'properties',
@@ -135,6 +137,7 @@ const toolsNav = [
   { name: 'Invoice', href: '/invoice', icon: Receipt },
   { name: 'Reviews', href: '/reviews', icon: Star },
   { name: 'Risk Monitor', href: '/risk-monitor', icon: ShieldAlert },
+  { name: 'Weather Alerts', href: '/weather-alerts', icon: CloudLightning },
   { name: 'Mortgagee Payments', href: '/mortgagee-payments', icon: CreditCard },
   { name: 'Carriers & Brokers', href: '/carriers-brokers', icon: Building2 },
   { name: 'Commission Tracker', href: '/commissions', icon: DollarSign },

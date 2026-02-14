@@ -225,6 +225,14 @@ export const FEATURES: FeatureConfig[] = [
     route: '/risk-monitor',
   },
   {
+    key: 'weatherAlerts',
+    label: 'Weather Alerts',
+    description: 'NWS severe weather monitoring and SMS notifications',
+    category: 'advanced',
+    defaultEnabled: true,
+    route: '/weather-alerts',
+  },
+  {
     key: 'properties',
     label: 'Properties',
     description: 'View and manage property data',

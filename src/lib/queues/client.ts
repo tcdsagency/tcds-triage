@@ -97,6 +97,15 @@ export interface NotificationJobData {
   data?: Record<string, unknown>;
 }
 
+/**
+ * Weather alert job data
+ */
+export interface WeatherAlertJobData {
+  type: 'poll' | 'single-zone' | 'test';
+  zoneIds?: string[];
+  subscriptionIds?: string[];
+}
+
 // =============================================================================
 // QUEUE INSTANCES (LAZY LOADED)
 // =============================================================================
@@ -112,6 +121,8 @@ let riskMonitorQueue: Queue<any> | null = null;
 let embeddingsQueue: Queue<any> | null = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let notificationsQueue: Queue<any> | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let weatherAlertsQueue: Queue<any> | null = null;
 
 function getTranscriptQueue() {
   if (!transcriptQueue) {
@@ -156,6 +167,15 @@ function getNotificationsQueue() {
     });
   }
   return notificationsQueue;
+}
+
+function getWeatherAlertsQueue() {
+  if (!weatherAlertsQueue) {
+    weatherAlertsQueue = new Queue('weather-alerts', {
+      connection: getRedisConnection(),
+    });
+  }
+  return weatherAlertsQueue;
 }
 
 // =============================================================================
@@ -289,6 +309,27 @@ export async function queueNotification(data: NotificationJobData) {
   return job;
 }
 
+/**
+ * Queue a weather alert check
+ */
+export async function queueWeatherAlertCheck(data: WeatherAlertJobData) {
+  const queue = getWeatherAlertsQueue();
+
+  const job = await queue.add('weather-check', data, {
+    jobId: data.type === 'single-zone' && data.zoneIds?.[0]
+      ? `weather-${data.zoneIds[0]}-${Date.now()}`
+      : `weather-${data.type}-${Date.now()}`,
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 5000,
+    },
+  });
+
+  console.log(`[Queue] Weather alert job queued: ${job.id}`);
+  return job;
+}
+
 // =============================================================================
 // RENEWAL PROCESSING
 // =============================================================================
@@ -374,6 +415,7 @@ export async function getQueueStats() {
     { name: 'embeddings', queue: getEmbeddingsQueue() },
     { name: 'notifications', queue: getNotificationsQueue() },
     { name: 'renewal-processing', queue: getRenewalQueue() },
+    { name: 'weather-alerts', queue: getWeatherAlertsQueue() },
   ];
 
   const stats = await Promise.all(
@@ -416,6 +458,9 @@ export async function getJob(queueName: string, jobId: string) {
       break;
     case 'renewal-processing':
       queue = getRenewalQueue();
+      break;
+    case 'weather-alerts':
+      queue = getWeatherAlertsQueue();
       break;
     default:
       throw new Error(`Unknown queue: ${queueName}`);

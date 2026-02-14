@@ -5810,3 +5810,163 @@ export const commissionHelpContentRelations = relations(commissionHelpContent, (
   tenant: one(tenants, { fields: [commissionHelpContent.tenantId], references: [tenants.id] }),
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// WEATHER ALERTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const weatherAlertSeverityEnum = pgEnum('weather_alert_severity', [
+  'Extreme',
+  'Severe',
+  'Moderate',
+  'Minor',
+  'Unknown',
+]);
+
+// Per-tenant weather alert settings
+export const weatherAlertSettings = pgTable('weather_alert_settings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id).unique(),
+
+  // Master toggle
+  isEnabled: boolean('is_enabled').default(false).notNull(),
+
+  // Polling
+  pollIntervalMinutes: integer('poll_interval_minutes').default(15).notNull(),
+  lastPollAt: timestamp('last_poll_at'),
+  lastPollStatus: varchar('last_poll_status', { length: 20 }), // 'success', 'error'
+  lastPollError: text('last_poll_error'),
+
+  // Filtering
+  enabledAlertTypes: jsonb('enabled_alert_types'), // string[] of event types
+  minimumSeverity: varchar('minimum_severity', { length: 20 }).default('Moderate').notNull(),
+  pdsOnly: boolean('pds_only').default(false).notNull(),
+  radiusMiles: integer('radius_miles').default(25).notNull(),
+
+  // SMS notifications
+  smsEnabled: boolean('sms_enabled').default(false).notNull(),
+  smsTemplate: text('sms_template').default('WEATHER ALERT: {{event}} for {{location}}. {{headline}}. Stay safe!'),
+  staffPhoneNumbers: jsonb('staff_phone_numbers'), // string[]
+  maxSmsPerDay: integer('max_sms_per_day').default(50).notNull(),
+  smsSentToday: integer('sms_sent_today').default(0).notNull(),
+  lastSmsBudgetResetAt: timestamp('last_sms_budget_reset_at'),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Monitored locations (subscriptions)
+export const weatherAlertSubscriptions = pgTable('weather_alert_subscriptions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // Location
+  label: varchar('label', { length: 255 }),
+  address: text('address'),
+  zip: varchar('zip', { length: 10 }),
+  lat: real('lat'),
+  lon: real('lon'),
+  nwsZone: varchar('nws_zone', { length: 20 }),
+
+  // Customer link (optional)
+  customerId: uuid('customer_id').references(() => customers.id),
+
+  // Notification preferences
+  notifyPhone: varchar('notify_phone', { length: 20 }),
+  notifyCustomer: boolean('notify_customer').default(false).notNull(),
+  notifyStaff: boolean('notify_staff').default(true).notNull(),
+
+  // Status
+  isActive: boolean('is_active').default(true).notNull(),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('weather_sub_tenant_idx').on(table.tenantId),
+  index('weather_sub_zip_idx').on(table.zip),
+  index('weather_sub_zone_idx').on(table.nwsZone),
+]);
+
+// Poll run history
+export const weatherAlertLog = pgTable('weather_alert_log', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // Run info
+  runId: uuid('run_id').notNull(),
+  runType: varchar('run_type', { length: 20 }).notNull(), // 'scheduled', 'manual', 'test'
+
+  // Timing
+  startedAt: timestamp('started_at').notNull(),
+  completedAt: timestamp('completed_at'),
+
+  // Results
+  locationsChecked: integer('locations_checked').default(0).notNull(),
+  alertsFound: integer('alerts_found').default(0).notNull(),
+  notificationsSent: integer('notifications_sent').default(0).notNull(),
+
+  // Status
+  status: varchar('status', { length: 20 }).default('running').notNull(), // 'running', 'completed', 'error'
+  errorMessage: text('error_message'),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('weather_log_tenant_idx').on(table.tenantId),
+  index('weather_log_run_idx').on(table.runId),
+]);
+
+// Detected alerts + notification records
+export const sentWeatherAlerts = pgTable('sent_weather_alerts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+
+  // NWS alert data
+  nwsAlertId: text('nws_alert_id').notNull(),
+  event: varchar('event', { length: 100 }).notNull(),
+  severity: varchar('severity', { length: 20 }).notNull(),
+  headline: text('headline'),
+  areaDesc: text('area_desc'),
+  isPds: boolean('is_pds').default(false).notNull(),
+  onset: timestamp('onset'),
+  expires: timestamp('expires'),
+
+  // Subscription link
+  subscriptionId: uuid('subscription_id').references(() => weatherAlertSubscriptions.id),
+
+  // SMS notification tracking
+  smsSentAt: timestamp('sms_sent_at'),
+  smsStatus: varchar('sms_status', { length: 20 }), // 'sent', 'failed', 'skipped'
+  smsRecipient: varchar('sms_recipient', { length: 20 }),
+
+  // Raw alert data for reference
+  rawAlert: jsonb('raw_alert'),
+
+  // Metadata
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('sent_weather_tenant_idx').on(table.tenantId),
+  uniqueIndex('sent_weather_dedup_idx').on(table.nwsAlertId, table.subscriptionId),
+]);
+
+// Relations
+export const weatherAlertSettingsRelations = relations(weatherAlertSettings, ({ one }) => ({
+  tenant: one(tenants, { fields: [weatherAlertSettings.tenantId], references: [tenants.id] }),
+}));
+
+export const weatherAlertSubscriptionsRelations = relations(weatherAlertSubscriptions, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [weatherAlertSubscriptions.tenantId], references: [tenants.id] }),
+  customer: one(customers, { fields: [weatherAlertSubscriptions.customerId], references: [customers.id] }),
+  sentAlerts: many(sentWeatherAlerts),
+}));
+
+export const weatherAlertLogRelations = relations(weatherAlertLog, ({ one }) => ({
+  tenant: one(tenants, { fields: [weatherAlertLog.tenantId], references: [tenants.id] }),
+}));
+
+export const sentWeatherAlertsRelations = relations(sentWeatherAlerts, ({ one }) => ({
+  tenant: one(tenants, { fields: [sentWeatherAlerts.tenantId], references: [tenants.id] }),
+  subscription: one(weatherAlertSubscriptions, { fields: [sentWeatherAlerts.subscriptionId], references: [weatherAlertSubscriptions.id] }),
+}));
+
