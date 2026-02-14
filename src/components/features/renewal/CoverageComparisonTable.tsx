@@ -341,8 +341,42 @@ function VehicleSection({
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
-  const baselineCovs = vehicle.isAdded ? [] : mergeCoverages(policyCovBaseline, vehicle.baseline?.coverages || []);
-  const renewalCovs = vehicle.isRemoved ? [] : mergeCoverages(policyCovRenewal, vehicle.renewal?.coverages || []);
+  // For removed/added vehicles, just show a simple non-expandable row
+  if (vehicle.isRemoved || vehicle.isAdded) {
+    return (
+      <div className={cn(
+        'rounded-lg border overflow-hidden',
+        vehicle.isRemoved ? 'border-red-300 dark:border-red-800' : 'border-green-300 dark:border-green-800',
+      )}>
+        <div className={cn(
+          'flex items-center gap-2.5 px-4 py-2.5',
+          vehicle.isRemoved ? 'bg-red-50 dark:bg-red-900/20' : 'bg-green-50 dark:bg-green-900/20',
+        )}>
+          <Car className={cn('h-4 w-4', vehicle.isRemoved ? 'text-red-500' : 'text-green-500')} />
+          <span className={cn(
+            'text-sm font-medium',
+            vehicle.isRemoved ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400',
+          )}>
+            {vehicle.label}
+          </span>
+          {vehicle.vinSuffix && (
+            <span className="text-xs text-gray-400 font-normal">(...{vehicle.vinSuffix})</span>
+          )}
+          <span className={cn(
+            'text-xs font-medium px-1.5 py-0.5 rounded',
+            vehicle.isRemoved
+              ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400'
+              : 'bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400',
+          )}>
+            {vehicle.isRemoved ? 'REMOVED' : 'ADDED'}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  const baselineCovs = mergeCoverages(policyCovBaseline, vehicle.baseline?.coverages || []);
+  const renewalCovs = mergeCoverages(policyCovRenewal, vehicle.renewal?.coverages || []);
   const rows = buildRows(baselineCovs, renewalCovs);
 
   const baselinePremium = calculateTotalPremium(baselineCovs);
@@ -356,46 +390,22 @@ function VehicleSection({
       : 'text-gray-700 dark:text-gray-300';
 
   return (
-    <div className={cn(
-      'rounded-lg border overflow-hidden',
-      vehicle.isRemoved ? 'border-red-300 dark:border-red-800' :
-      vehicle.isAdded ? 'border-green-300 dark:border-green-800' :
-      'border-gray-200 dark:border-gray-700',
-    )}>
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className={cn(
-          'w-full flex items-center justify-between px-4 py-2.5 transition-colors',
-          vehicle.isRemoved ? 'bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30' :
-          vehicle.isAdded ? 'bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30' :
-          'bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800',
-        )}
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
       >
         <div className="flex items-center gap-2.5">
-          <Car className={cn(
-            'h-4 w-4',
-            vehicle.isRemoved ? 'text-red-500' : vehicle.isAdded ? 'text-green-500' : 'text-gray-400',
-          )} />
-          <div className="text-left">
-            <span className={cn(
-              'text-sm font-medium',
-              vehicle.isRemoved ? 'text-red-700 dark:text-red-400' :
-              vehicle.isAdded ? 'text-green-700 dark:text-green-400' :
-              'text-gray-900 dark:text-gray-100',
-            )}>
-              {vehicle.label}
-            </span>
-            {vehicle.vinSuffix && (
-              <span className="ml-1.5 text-xs text-gray-400 font-normal">
-                (...{vehicle.vinSuffix})
-              </span>
-            )}
-            {vehicle.isRemoved && <span className="ml-2 text-xs text-red-500 font-medium">REMOVED</span>}
-            {vehicle.isAdded && <span className="ml-2 text-xs text-green-500 font-medium">ADDED</span>}
-          </div>
+          <Car className="h-4 w-4 text-gray-400" />
+          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            {vehicle.label}
+          </span>
+          {vehicle.vinSuffix && (
+            <span className="text-xs text-gray-400 font-normal">(...{vehicle.vinSuffix})</span>
+          )}
         </div>
         <div className="flex items-center gap-3">
-          {!vehicle.isRemoved && !vehicle.isAdded && baselinePremium > 0 && renewalPremium > 0 && (
+          {baselinePremium > 0 && renewalPremium > 0 && (
             <div className="text-xs text-right">
               <span className="text-gray-500">${baselinePremium.toLocaleString()}</span>
               <span className="mx-1.5 text-gray-400">&rarr;</span>
@@ -404,7 +414,7 @@ function VehicleSection({
               </span>
             </div>
           )}
-          {hasChange && !vehicle.isRemoved && !vehicle.isAdded && (
+          {hasChange && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
               CHANGED
             </span>
