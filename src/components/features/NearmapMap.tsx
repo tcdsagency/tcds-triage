@@ -64,7 +64,7 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays }: Nearma
   // Build tile URL with optional date parameter
   const getTileUrl = (date?: string) => {
     if (!nearmapKey) return '';
-    let url = `https://api.nearmap.com/tiles/v3/Vert/{z}/{x}/{y}.jpg?apikey=${nearmapKey}`;
+    let url = `https://api.nearmap.com/tiles/v3/Vert/{z}/{x}/{y}.img?apikey=${nearmapKey}`;
     if (date) {
       const formattedDate = date.replace(/-/g, '');
       url += `&until=${formattedDate}`;

@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { propertyLookups } from "@/db/schema";
 import { eq, and, gte } from "drizzle-orm";
-import { nearmapClient, getMockNearmapData } from "@/lib/nearmap";
+import { nearmapClient } from "@/lib/nearmap";
 import { rprClient } from "@/lib/rpr";
 import { mmiClient } from "@/lib/mmi";
 
@@ -62,12 +62,6 @@ export async function POST(request: NextRequest) {
       fetchMMIData(formattedAddress || address),
     ]);
 
-    // Get oblique views and historical surveys
-    const [obliqueViews, historicalSurveys] = await Promise.all([
-      nearmapClient.getObliqueViews(lat, lng),
-      nearmapClient.getHistoricalSurveys(lat, lng),
-    ]);
-
     // Create lookup record
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 day cache
@@ -83,8 +77,8 @@ export async function POST(request: NextRequest) {
         nearmapData,
         rprData,
         mmiData,
-        obliqueViews,
-        historicalSurveys: historicalSurveys || [],
+        obliqueViews: null,
+        historicalSurveys: [],
         expiresAt,
       })
       .returning();
@@ -136,30 +130,15 @@ async function checkCache(tenantId: string, address: string) {
   if (cached) {
     const lat = parseFloat(cached.latitude);
     const lng = parseFloat(cached.longitude);
-    const staticImageUrl = nearmapClient.getStaticImageUrl(lat, lng, 800, 600);
 
-    // Add staticImageUrl to nearmapData if missing (for cached data before this field existed)
-    // Also create minimal nearmapData if it's null
-    let nearmapData = cached.nearmapData;
-    if (!nearmapData) {
-      // Create minimal nearmapData with just the image URL for old cached records
-      nearmapData = {
-        surveyDate: new Date().toISOString().split('T')[0],
-        building: { footprintArea: 0, count: 0, polygons: [] },
-        roof: { material: 'Unknown', condition: 'unknown', conditionScore: 0, area: 0, issues: [] },
-        pool: { present: false },
-        solar: { present: false },
-        vegetation: { treeCount: 0, coveragePercent: 0, proximityToStructure: 'none' as const },
-        hazards: { trampoline: false, debris: false, construction: false },
-        tileUrl: '',
-        staticImageUrl,
-      };
-    } else if (!nearmapData.staticImageUrl) {
-      nearmapData = {
-        ...nearmapData,
-        staticImageUrl,
-      };
-    }
+    const nearmapData = cached.nearmapData || {
+      surveyDate: new Date().toISOString().split('T')[0],
+      building: { footprintArea: 0, count: 0, polygons: [] },
+      roof: { material: 'Unknown', condition: 'unknown', conditionScore: 0, area: 0, issues: [] },
+      solar: { present: false },
+      vegetation: { treeCount: 0, coveragePercent: 0, proximityToStructure: 'none' as const },
+      tileUrl: '',
+    };
 
     return {
       id: cached.id,

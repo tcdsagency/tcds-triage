@@ -17,6 +17,7 @@ import DeductiblesSection from './DeductiblesSection';
 import DiscountPills from './DiscountPills';
 import ReviewActionBar from './ReviewActionBar';
 import PremiumChangeSummary from './PremiumChangeSummary';
+import PropertyInspectionCard from './PropertyInspectionCard';
 import type { RenewalComparisonDetail, RenewalNote } from './types';
 import type { CheckResult } from '@/types/check-rules.types';
 
@@ -517,6 +518,12 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
               </div>
             </div>
           )}
+
+          {/* Property Inspection (home policies only) */}
+          <PropertyInspectionCard
+            renewalId={renewalId}
+            lineOfBusiness={current.lineOfBusiness ?? null}
+          />
 
           {/* 0. Premium Change Summary */}
           <PremiumChangeSummary

@@ -762,7 +762,7 @@ export const propertyLookups = pgTable('property_lookups', {
       age?: number;
       issues?: string[];
     };
-    pool: {
+    pool?: {
       present: boolean;
       type?: 'in-ground' | 'above-ground';
       fenced?: boolean;
@@ -776,14 +776,16 @@ export const propertyLookups = pgTable('property_lookups', {
       treeCount: number;
       coveragePercent: number;
       proximityToStructure: 'none' | 'minor' | 'moderate' | 'significant';
+      treeOverhangArea?: number;
     };
-    hazards: {
+    hazards?: {
       trampoline: boolean;
       debris: boolean;
       construction: boolean;
     };
     tileUrl: string;
     staticImageUrl?: string;
+    insuranceMetrics?: Record<string, number | string>;
   }>(),
 
   // RPR Data (cached)

@@ -322,14 +322,19 @@ async function testNearmap(creds: Record<string, string>): Promise<{ success: bo
     return { success: false, message: "API key not configured" };
   }
 
-  // Nearmap coverage check (simple test)
+  // Test using packs endpoint (verified working)
   try {
     const response = await fetchWithTimeout(
-      `https://api.nearmap.com/coverage/v2/point/-97.7431,30.2672?apikey=${creds.apiKey}`
+      `https://api.nearmap.com/ai/features/v4/packs.json?apikey=${creds.apiKey}`
     );
 
     if (response.ok) {
-      return { success: true, message: "Connection successful" };
+      const data = await response.json();
+      return {
+        success: true,
+        message: "Connection successful",
+        details: { packsAvailable: Array.isArray(data) ? data.length : 0 },
+      };
     } else {
       return { success: false, message: `API error: ${response.status}` };
     }
