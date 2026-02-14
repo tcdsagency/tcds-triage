@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, FileDown, Loader2, Phone, Mail } from 'lucide-react';
+import { X, FileDown, Loader2, Phone, Mail, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import AZStatusBadge from './AZStatusBadge';
@@ -14,6 +14,7 @@ import ClaimsAgingSection from './ClaimsAgingSection';
 import DeductiblesSection from './DeductiblesSection';
 import DiscountPills from './DiscountPills';
 import ReviewActionBar from './ReviewActionBar';
+import PremiumChangeSummary from './PremiumChangeSummary';
 import type { RenewalComparison, RenewalComparisonDetail, RenewalNote } from './types';
 import type { CheckResult } from '@/types/check-rules.types';
 
@@ -173,6 +174,8 @@ export default function RenewalDetailPanel({
 
   const premiumChange = current.premiumChangePercent ?? 0;
   const checkSummary = detail?.checkSummary ?? current.checkSummary ?? null;
+  const comparisonSummary = current.comparisonSummary ?? null;
+  const materialChanges = current.materialChanges || [];
 
   // Compute review progress from live checkResults state
   const reviewable = checkResults.filter(r => r.severity !== 'unchanged');
@@ -225,17 +228,17 @@ export default function RenewalDetailPanel({
         <div className="p-5 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <div className="flex items-start justify-between mb-1">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+              <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
                 {renewal.customerName || 'Unknown Customer'}
               </h2>
-              <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 dark:text-gray-400">
+              <div className="flex items-center gap-2 mt-1 text-base text-gray-500 dark:text-gray-400">
                 <span>{renewal.policyNumber}</span>
                 <span className="text-gray-300 dark:text-gray-600">|</span>
                 <span>{renewal.carrierName || 'Unknown Carrier'}</span>
                 {renewal.lineOfBusiness && (
                   <>
                     <span className="text-gray-300 dark:text-gray-600">|</span>
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-xs">
+                    <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-sm">
                       {renewal.lineOfBusiness}
                     </span>
                   </>
@@ -249,7 +252,7 @@ export default function RenewalDetailPanel({
                       href={`tel:${renewal.customerPhone}`}
                       className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:underline"
                     >
-                      <Phone className="h-3.5 w-3.5" />
+                      <Phone className="h-4 w-4" />
                       {renewal.customerPhone}
                     </a>
                   )}
@@ -258,7 +261,7 @@ export default function RenewalDetailPanel({
                       href={`mailto:${renewal.customerEmail}`}
                       className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:underline"
                     >
-                      <Mail className="h-3.5 w-3.5" />
+                      <Mail className="h-4 w-4" />
                       {renewal.customerEmail}
                     </a>
                   )}
@@ -281,20 +284,20 @@ export default function RenewalDetailPanel({
             />
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <span className="text-[10px] uppercase text-gray-400 block">Current</span>
-                <span className="text-sm text-gray-500 dark:text-gray-400">
+                <span className="text-xs uppercase text-gray-400 block">Current</span>
+                <span className="text-base text-gray-500 dark:text-gray-400">
                   {fmtPremium(current.currentPremium)}
                 </span>
               </div>
               <span className="text-gray-400 text-lg">&rarr;</span>
               <div className="text-right">
-                <span className="text-[10px] uppercase text-gray-400 block">Renewal</span>
-                <span className={cn('text-lg font-bold', premiumColor)}>
+                <span className="text-xs uppercase text-gray-400 block">Renewal</span>
+                <span className={cn('text-xl font-bold', premiumColor)}>
                   {fmtPremium(current.renewalPremium)}
                 </span>
               </div>
               {current.premiumChangeAmount != null && (
-                <span className={cn('text-sm font-semibold px-2 py-1 rounded-md', premiumColor,
+                <span className={cn('text-base font-semibold px-2 py-1 rounded-md', premiumColor,
                   premiumChange < 0 ? 'bg-green-50 dark:bg-green-900/20' :
                   premiumChange <= 5 ? 'bg-yellow-50 dark:bg-yellow-900/20' :
                   premiumChange <= 15 ? 'bg-orange-50 dark:bg-orange-900/20' :
@@ -315,14 +318,14 @@ export default function RenewalDetailPanel({
             </div>
           ) : (
             <div className="h-full flex flex-col lg:flex-row">
-              {/* ============ LEFT COLUMN (240px) ============ */}
-              <div className="lg:w-[240px] lg:shrink-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
+              {/* ============ LEFT COLUMN (260px) ============ */}
+              <div className="lg:w-[260px] lg:shrink-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
                 {/* Policy Details */}
                 <div>
-                  <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                  <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
                     Policy Details
                   </h4>
-                  <div className="space-y-1.5 text-xs text-gray-700 dark:text-gray-300">
+                  <div className="space-y-1.5 text-sm text-gray-700 dark:text-gray-300">
                     {current.carrierName && (
                       <div className="flex justify-between">
                         <span className="text-gray-500">Carrier</span>
@@ -358,10 +361,10 @@ export default function RenewalDetailPanel({
 
                 {/* Customer Info */}
                 <div>
-                  <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                  <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
                     Customer
                   </h4>
-                  <div className="space-y-1 text-xs text-gray-700 dark:text-gray-300">
+                  <div className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
                     {detail?.renewalSnapshot?.insuredName && (
                       <p className="font-medium">{detail.renewalSnapshot.insuredName}</p>
                     )}
@@ -381,10 +384,10 @@ export default function RenewalDetailPanel({
                 {/* Property Details (homeowners only) */}
                 {propertyContext && (
                   <div>
-                    <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                    <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
                       Property
                     </h4>
-                    <div className="space-y-1 text-xs text-gray-700 dark:text-gray-300">
+                    <div className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
                       {propertyContext.yearBuilt && <p>Built: {propertyContext.yearBuilt}</p>}
                       {propertyContext.constructionType && <p>Construction: {propertyContext.constructionType}</p>}
                       {propertyContext.roofType && <p>Roof: {propertyContext.roofType}</p>}
@@ -395,7 +398,7 @@ export default function RenewalDetailPanel({
 
                 {/* AZ Status (compact) */}
                 <div>
-                  <h4 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                  <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
                     AZ Status
                   </h4>
                   <AZStatusBadge
@@ -411,11 +414,11 @@ export default function RenewalDetailPanel({
                     <h4 className="text-xs font-medium text-indigo-500 dark:text-indigo-400 uppercase mb-1">
                       Agent Decision
                     </h4>
-                    <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                    <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
                       {current.agentDecision.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
                     </p>
                     {current.agentDecisionByName && (
-                      <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-0.5">
+                      <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-0.5">
                         by {current.agentDecisionByName}
                         {current.agentDecisionAt &&
                           ` on ${new Date(current.agentDecisionAt).toLocaleString('en-US', {
@@ -427,7 +430,7 @@ export default function RenewalDetailPanel({
                       </p>
                     )}
                     {current.agentNotes && (
-                      <p className="text-xs text-indigo-600 dark:text-indigo-300 mt-2 italic">
+                      <p className="text-sm text-indigo-600 dark:text-indigo-300 mt-2 italic">
                         &ldquo;{current.agentNotes}&rdquo;
                       </p>
                     )}
@@ -437,6 +440,43 @@ export default function RenewalDetailPanel({
 
               {/* ============ CENTER COLUMN (flex-1, scrolls) ============ */}
               <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                {/* AI Summary Banner */}
+                {comparisonSummary?.headline && (
+                  <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 p-4 flex items-start gap-3">
+                    <Sparkles className="h-5 w-5 text-indigo-500 dark:text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="text-base font-semibold text-indigo-800 dark:text-indigo-200">
+                        AI Summary
+                      </h3>
+                      <p className="text-sm text-indigo-700 dark:text-indigo-300 mt-1">
+                        {comparisonSummary.headline}
+                      </p>
+                      <div className="flex gap-4 mt-2 text-sm text-indigo-600 dark:text-indigo-400">
+                        {comparisonSummary.materialNegativeCount > 0 && (
+                          <span>{comparisonSummary.materialNegativeCount} concern{comparisonSummary.materialNegativeCount !== 1 ? 's' : ''}</span>
+                        )}
+                        {comparisonSummary.materialPositiveCount > 0 && (
+                          <span>{comparisonSummary.materialPositiveCount} improvement{comparisonSummary.materialPositiveCount !== 1 ? 's' : ''}</span>
+                        )}
+                        {comparisonSummary.nonMaterialCount > 0 && (
+                          <span>{comparisonSummary.nonMaterialCount} minor</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 0. Premium Change Summary */}
+                <PremiumChangeSummary
+                  checkResults={checkResults}
+                  materialChanges={materialChanges}
+                  renewalSnapshot={detail?.renewalSnapshot ?? null}
+                  baselineSnapshot={detail?.baselineSnapshot ?? null}
+                  premiumChangePercent={current.premiumChangePercent ?? null}
+                  premiumChangeAmount={current.premiumChangeAmount ?? null}
+                  lineOfBusiness={current.lineOfBusiness ?? null}
+                />
+
                 {/* 1. Reasons for Premium Change */}
                 {checkResults.length > 0 && (
                   <ReasonsForChange
@@ -489,8 +529,8 @@ export default function RenewalDetailPanel({
                 </div>
               </div>
 
-              {/* ============ RIGHT COLUMN (280px) ============ */}
-              <div className="lg:w-[280px] lg:shrink-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
+              {/* ============ RIGHT COLUMN (300px) ============ */}
+              <div className="lg:w-[300px] lg:shrink-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4">
                 {/* Review Progress */}
                 <ReviewProgress
                   checkSummary={checkSummary}
@@ -498,12 +538,16 @@ export default function RenewalDetailPanel({
                 />
 
                 {/* Talk Points for Customer */}
-                <TalkPoints checkResults={checkResults} />
+                <TalkPoints
+                  checkResults={checkResults}
+                  materialChanges={materialChanges}
+                  comparisonSummary={comparisonSummary}
+                />
 
                 {/* Download Report */}
                 <button
                   onClick={handleDownloadReport}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-base"
                 >
                   <FileDown className="h-4 w-4" />
                   Download Report

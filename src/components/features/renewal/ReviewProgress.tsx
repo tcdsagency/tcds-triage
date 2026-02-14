@@ -38,7 +38,7 @@ export default function ReviewProgress({ checkSummary, checkResults }: ReviewPro
 
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-      <h3 className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-3">
+      <h3 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-3">
         Review Progress
       </h3>
 
@@ -66,7 +66,7 @@ export default function ReviewProgress({ checkSummary, checkResults }: ReviewPro
       {blockerCount > 0 && (
         <div className="mt-3 flex items-center gap-2 rounded-md bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 px-3 py-2">
           <AlertTriangle className="h-4 w-4 text-rose-500 shrink-0" />
-          <span className="text-xs font-medium text-rose-700 dark:text-rose-300">
+          <span className="text-sm font-medium text-rose-700 dark:text-rose-300">
             {blockerCount} blocking issue{blockerCount !== 1 ? 's' : ''} detected
           </span>
         </div>
@@ -74,7 +74,7 @@ export default function ReviewProgress({ checkSummary, checkResults }: ReviewPro
 
       {/* Completion message */}
       {progress >= 100 && totalReviewable > 0 && (
-        <p className="mt-2 text-xs text-green-600 dark:text-green-400 font-medium">
+        <p className="mt-2 text-sm text-green-600 dark:text-green-400 font-medium">
           All items reviewed — ready for decision
         </p>
       )}

@@ -52,10 +52,10 @@ export default function ReasonsForChange({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
             Reasons for Premium Change
           </h3>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+          <span className="text-sm px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
             {changedResults.length} change{changedResults.length !== 1 ? 's' : ''}
           </span>
         </div>
@@ -109,7 +109,7 @@ export default function ReasonsForChange({
                   </span>
                 </div>
                 {result.agentAction && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 italic">
                     {result.agentAction}
                   </p>
                 )}
