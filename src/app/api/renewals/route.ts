@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('dateFrom');
     const dateTo = searchParams.get('dateTo');
     const dateRange = searchParams.get('dateRange');
+    const agentId = searchParams.get('agentId');
     const offset = (page - 1) * limit;
 
     // Build conditions
@@ -54,6 +55,9 @@ export async function GET(request: NextRequest) {
     }
     if (recommendation) {
       conditions.push(eq(renewalComparisons.recommendation, recommendation as any));
+    }
+    if (agentId) {
+      conditions.push(eq(renewalComparisons.assignedAgentId, agentId));
     }
     if (dateFrom) {
       conditions.push(gte(renewalComparisons.renewalEffectiveDate, new Date(dateFrom)));
@@ -147,7 +151,11 @@ export async function GET(request: NextRequest) {
       .leftJoin(customers, eq(renewalComparisons.customerId, customers.id))
       .where(and(...conditions));
 
-    // Get stats
+    // Get stats (respect agent filter if set)
+    const statsConditions = [eq(renewalComparisons.tenantId, TENANT_ID)];
+    if (agentId) {
+      statsConditions.push(eq(renewalComparisons.assignedAgentId, agentId));
+    }
     const allForStats = await db
       .select({
         status: renewalComparisons.status,
@@ -155,7 +163,7 @@ export async function GET(request: NextRequest) {
         premiumChangePercent: renewalComparisons.premiumChangePercent,
       })
       .from(renewalComparisons)
-      .where(eq(renewalComparisons.tenantId, TENANT_ID));
+      .where(and(...statsConditions));
 
     const stats = {
       pendingCount: allForStats.filter((r) => r.status === 'waiting_agent_review' || r.status === 'comparison_ready').length,

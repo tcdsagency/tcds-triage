@@ -569,6 +569,12 @@ export const policies = pgTable('policies', {
   // so baseline builder can use prior-term data if HawkSoft already has new-term data
   priorTermSnapshot: jsonb('prior_term_snapshot'),
 
+  // Policy-level agent assignment (from HawkSoft Agent1/Agent2/Agent3 fields)
+  agent1: varchar('agent1', { length: 50 }),  // Primary writing agent
+  agent2: varchar('agent2', { length: 50 }),  // Secondary agent
+  agent3: varchar('agent3', { length: 50 }),  // Tertiary agent
+  producerId: uuid('producer_id').references(() => users.id, { onDelete: 'set null' }), // Resolved from agent1 → users.agentCode
+
   // Sync
   lastSyncedAt: timestamp('last_synced_at'),
   rawData: jsonb('raw_data'), // Full HawkSoft response for reference
@@ -579,6 +585,7 @@ export const policies = pgTable('policies', {
   index('policies_tenant_idx').on(table.tenantId),
   index('policies_customer_idx').on(table.customerId),
   index('policies_number_idx').on(table.tenantId, table.policyNumber),
+  index('policies_producer_idx').on(table.tenantId, table.producerId),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4864,6 +4871,9 @@ export const renewalComparisons = pgTable('renewal_comparisons', {
   lineOfBusiness: varchar('line_of_business', { length: 50 }),
   policyNumber: varchar('policy_number', { length: 50 }),
 
+  // Agent assignment (denormalized from customer.producerId for fast filtering)
+  assignedAgentId: uuid('assigned_agent_id').references(() => users.id, { onDelete: 'set null' }),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
@@ -4874,6 +4884,7 @@ export const renewalComparisons = pgTable('renewal_comparisons', {
   index('renewal_comparisons_date_idx').on(table.tenantId, table.renewalEffectiveDate),
   index('renewal_comparisons_carrier_idx').on(table.tenantId, table.carrierName),
   index('renewal_comparisons_lob_idx').on(table.tenantId, table.lineOfBusiness),
+  index('renewal_comparisons_assigned_agent_idx').on(table.tenantId, table.assignedAgentId),
   uniqueIndex('renewal_comparisons_dedup_unique').on(table.tenantId, table.policyNumber, table.carrierName, table.renewalEffectiveDate),
 ]);
 

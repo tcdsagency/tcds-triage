@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { renewalComparisons } from '@/db/schema';
+import { renewalComparisons, customers, policies } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { logRenewalEvent } from '@/lib/api/renewal-audit';
 
@@ -19,6 +19,25 @@ export async function POST(request: NextRequest) {
     const premiumChangePercent = premiumChange != null && body.currentPremium && body.currentPremium !== 0
       ? (premiumChange / body.currentPremium) * 100
       : null;
+
+    // Resolve assigned agent: prefer policy-level agent, fallback to customer producer
+    let assignedAgentId: string | null = null;
+    if (body.policyId) {
+      const [policy] = await db
+        .select({ producerId: policies.producerId })
+        .from(policies)
+        .where(eq(policies.id, body.policyId))
+        .limit(1);
+      assignedAgentId = policy?.producerId || null;
+    }
+    if (!assignedAgentId && body.customerId) {
+      const [customer] = await db
+        .select({ producerId: customers.producerId })
+        .from(customers)
+        .where(eq(customers.id, body.customerId))
+        .limit(1);
+      assignedAgentId = customer?.producerId || null;
+    }
 
     const [comparison] = await db
       .insert(renewalComparisons)
@@ -43,6 +62,7 @@ export async function POST(request: NextRequest) {
         comparisonSummary: body.comparisonSummary,
         checkResults: body.checkResults || null,
         checkSummary: body.checkSummary || null,
+        assignedAgentId,
       })
       .onConflictDoNothing()
       .returning();

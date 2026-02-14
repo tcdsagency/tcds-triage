@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { RefreshCw, Search, Car, Home, Building2, Layers, Upload, FileArchive, X } from 'lucide-react';
+import { RefreshCw, Search, Car, Home, Building2, Layers, Upload, FileArchive, X, User, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useUser } from '@/hooks/useUser';
@@ -16,6 +16,18 @@ import type { RenewalComparison, RenewalsListResponse, RenewalStats } from '@/co
 export default function RenewalReviewPage() {
   // Current user
   const { user } = useUser();
+
+  // Agent scope: agents see their own renewals by default; supervisors/admins see all
+  const isManagerRole = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'supervisor';
+  const [agentScope, setAgentScope] = useState<'my' | 'all'>('my');
+
+  // Once user loads, set default scope based on role
+  useEffect(() => {
+    if (user) {
+      setAgentScope(isManagerRole ? 'all' : 'my');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // Carrier dropdown options
   const [carriers, setCarriers] = useState<string[]>([]);
@@ -96,6 +108,7 @@ export default function RenewalReviewPage() {
       if (filters.recommendation) params.set('recommendation', filters.recommendation);
       if (filters.search) params.set('search', filters.search);
       if (filters.dateRange) params.set('dateRange', filters.dateRange);
+      if (agentScope === 'my' && user?.id) params.set('agentId', user.id);
       params.set('sort', sortBy);
       params.set('page', pagination.page.toString());
       params.set('limit', pagination.limit.toString());
@@ -123,7 +136,7 @@ export default function RenewalReviewPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeCategory, filters.status, filters.carrier, filters.recommendation, filters.search, filters.dateRange, sortBy, pagination.page, pagination.limit]);
+  }, [activeCategory, filters.status, filters.carrier, filters.recommendation, filters.search, filters.dateRange, agentScope, user?.id, sortBy, pagination.page, pagination.limit]);
 
   useEffect(() => {
     fetchRenewals();
@@ -273,6 +286,33 @@ export default function RenewalReviewPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* My / All Renewals Toggle */}
+            <div className="flex items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
+              <button
+                onClick={() => { setAgentScope('my'); setPagination((p) => ({ ...p, page: 1 })); }}
+                className={cn(
+                  'px-3 py-2 text-sm font-medium flex items-center gap-1.5 transition-colors',
+                  agentScope === 'my'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                )}
+              >
+                <User className="h-3.5 w-3.5" />
+                My
+              </button>
+              <button
+                onClick={() => { setAgentScope('all'); setPagination((p) => ({ ...p, page: 1 })); }}
+                className={cn(
+                  'px-3 py-2 text-sm font-medium flex items-center gap-1.5 transition-colors',
+                  agentScope === 'all'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                )}
+              >
+                <Users className="h-3.5 w-3.5" />
+                All
+              </button>
+            </div>
             <button
               onClick={() => setShowUploadZone((v) => !v)}
               className={cn(

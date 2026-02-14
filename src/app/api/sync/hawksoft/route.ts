@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { customers, policies, vehicles, drivers, mortgagees, syncMetadata } from '@/db/schema';
+import { customers, policies, vehicles, drivers, mortgagees, syncMetadata, users } from '@/db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
 
@@ -82,6 +82,18 @@ export async function POST(request: Request) {
         hsCodeToCustomerId.set(hsId, c.id);
       }
     }
+
+    // Build agent code → user ID lookup for resolving policy-level agents
+    const agentRows = await db.select({ id: users.id, agentCode: users.agentCode })
+      .from(users)
+      .where(eq(users.tenantId, tenantId));
+    const agentCodeToUserId = new Map<string, string>();
+    for (const row of agentRows) {
+      if (row.agentCode) {
+        agentCodeToUserId.set(row.agentCode.toUpperCase(), row.id);
+      }
+    }
+    log(`Loaded ${agentCodeToUserId.size} agent code mappings`);
 
     const totalWithHs = customersWithHs.length;
     let hsClientNumbers: number[];
@@ -225,6 +237,17 @@ export async function POST(request: Request) {
                   premium: typeof c.premium === 'string' ? parseFloat(c.premium) : (c.premium ?? undefined),
                 }));
 
+                // Extract policy-level agent fields (HawkSoft returns lowercase: agent1/agent2/agent3)
+                const agent1 = (policy as any).agent1 || policy.Agent1 || null;
+                const agent2 = (policy as any).agent2 || policy.Agent2 || null;
+                const agent3 = (policy as any).agent3 || policy.Agent3 || null;
+
+                // Resolve Agent1 → users.id via agentCode lookup
+                let policyProducerId: string | null = null;
+                if (agent1) {
+                  policyProducerId = agentCodeToUserId.get(agent1.toUpperCase()) || null;
+                }
+
                 const policyData: Record<string, any> = {
                   tenantId,
                   customerId,
@@ -237,6 +260,10 @@ export async function POST(request: Request) {
                   premium: policy.premium ? policy.premium.toString() : null,
                   status: mapPolicyStatus(policy.status),
                   coverages: normalizedCoverages.length > 0 ? normalizedCoverages : undefined,
+                  agent1,
+                  agent2,
+                  agent3,
+                  producerId: policyProducerId,
                 };
 
                 let savedPolicyId: string;

@@ -97,6 +97,11 @@ export interface HawkSoftPolicy {
   expirationDate: string;
   status: string;
   premium?: number;
+  // Policy-level agent fields (from HawkSoft)
+  Agent1?: string;
+  Agent2?: string;
+  Agent3?: string;
+  AgentCode?: string;
   // Auto-specific (API returns 'autos' which we normalize to 'vehicles')
   vehicles?: HawkSoftVehicle[];
   autos?: HawkSoftVehicle[]; // Raw API field name
