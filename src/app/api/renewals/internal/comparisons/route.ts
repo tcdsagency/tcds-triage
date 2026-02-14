@@ -41,6 +41,8 @@ export async function POST(request: NextRequest) {
         baselineSnapshot: body.baselineSnapshot,
         materialChanges: body.materialChanges || [],
         comparisonSummary: body.comparisonSummary,
+        checkResults: body.checkResults || null,
+        checkSummary: body.checkSummary || null,
       })
       .onConflictDoNothing()
       .returning();

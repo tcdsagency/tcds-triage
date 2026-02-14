@@ -43,6 +43,8 @@ export async function GET(
         baselineSnapshot: renewalComparisons.baselineSnapshot,
         materialChanges: renewalComparisons.materialChanges,
         comparisonSummary: renewalComparisons.comparisonSummary,
+        checkResults: renewalComparisons.checkResults,
+        checkSummary: renewalComparisons.checkSummary,
         createdAt: renewalComparisons.createdAt,
         updatedAt: renewalComparisons.updatedAt,
         customerFirstName: customers.firstName,

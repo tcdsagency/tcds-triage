@@ -2,12 +2,13 @@
  * POST /api/renewals/internal/compare
  * Run comparison engine on renewal vs baseline snapshots (called by worker).
  *
- * Accepts: { renewalSnapshot, baselineSnapshot, thresholds? }
- * Returns: { success, result: ComparisonResult }
+ * Accepts: { renewalSnapshot, baselineSnapshot, thresholds?, lineOfBusiness?, carrierName? }
+ * Returns: { success, result: ComparisonResult, checkEngineResult?: CheckEngineResult }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { compareSnapshots } from '@/lib/al3/comparison-engine';
+import { runCheckEngine, buildCheckSummary } from '@/lib/al3/check-rules/check-engine';
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,7 +28,23 @@ export async function POST(request: NextRequest) {
       body.renewalEffectiveDate
     );
 
-    return NextResponse.json({ success: true, result });
+    // Run check engine as post-processing layer
+    let checkEngineResult = null;
+    let checkSummary = null;
+    try {
+      checkEngineResult = runCheckEngine(
+        body.renewalSnapshot,
+        body.baselineSnapshot,
+        result,
+        body.lineOfBusiness || '',
+        body.carrierName || ''
+      );
+      checkSummary = buildCheckSummary(checkEngineResult);
+    } catch (checkErr) {
+      console.error('[Internal API] Check engine error (non-blocking):', checkErr);
+    }
+
+    return NextResponse.json({ success: true, result, checkEngineResult, checkSummary });
   } catch (error) {
     console.error('[Internal API] Compare error:', error);
     return NextResponse.json(

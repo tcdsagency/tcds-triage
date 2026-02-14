@@ -417,6 +417,8 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
         renewalSnapshot,
         baselineSnapshot: baselineData.snapshot,
         renewalEffectiveDate: candidate.effectiveDate,
+        lineOfBusiness: candidate.lineOfBusiness,
+        carrierName: candidate.carrierName,
       }),
     });
     const compareData = await compareRes.json() as {
@@ -428,6 +430,8 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
         baselineStatus?: 'prior_term' | 'current_term' | 'unknown';
         baselineStatusReason?: string;
       };
+      checkEngineResult?: { checkResults: any[]; } | null;
+      checkSummary?: any;
     };
     if (!compareData.success) {
       await patchCandidate(candidateId, { status: 'failed', errorMessage: 'Comparison engine failed' });
@@ -460,6 +464,8 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
           baselineStatus: comparisonResult.baselineStatus,
           baselineStatusReason: comparisonResult.baselineStatusReason,
         },
+        checkResults: compareData.checkEngineResult?.checkResults || null,
+        checkSummary: compareData.checkSummary || null,
       }),
     });
 
