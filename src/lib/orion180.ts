@@ -61,25 +61,25 @@ function transformResponse(items: Array<{ fieldName: string; value: string }>): 
   }
 
   return {
-    hurricaneGrade: mapFieldValue(fields, 'HurricaneGrade') ?? mapFieldValue(fields, 'hurricaneGrade'),
-    floodGrade: mapFieldValue(fields, 'FloodGrade') ?? mapFieldValue(fields, 'floodGrade'),
-    tornadoGrade: mapFieldValue(fields, 'TornadoGrade') ?? mapFieldValue(fields, 'tornadoGrade'),
-    wildfireGrade: mapFieldValue(fields, 'WildfireGrade') ?? mapFieldValue(fields, 'wildfireGrade'),
-    convectionStormGrade: mapFieldValue(fields, 'ConvectiveStormGrade') ?? mapFieldValue(fields, 'convectiveStormGrade'),
-    lightningGrade: mapFieldValue(fields, 'LightningGrade') ?? mapFieldValue(fields, 'lightningGrade'),
+    hurricaneGrade: mapFieldValue(fields, 'EnhancedHurricane') ?? mapFieldValue(fields, 'Hurricane'),
+    floodGrade: mapFieldValue(fields, 'HazardhubFlood') ?? mapFieldValue(fields, 'Flood'),
+    tornadoGrade: mapFieldValue(fields, 'EnhancedTornado') ?? mapFieldValue(fields, 'Tornado'),
+    wildfireGrade: mapFieldValue(fields, 'EnhancedWildFire') ?? mapFieldValue(fields, 'WildFire'),
+    convectionStormGrade: mapFieldValue(fields, 'ConvectionStorm'),
+    lightningGrade: mapFieldValue(fields, 'EnhancedLightning') ?? mapFieldValue(fields, 'Lightning'),
 
-    yearBuilt: mapFieldNumber(fields, 'YearBuilt') ?? mapFieldNumber(fields, 'yearBuilt'),
-    sqft: mapFieldNumber(fields, 'SquareFootage') ?? mapFieldNumber(fields, 'squareFootage') ?? mapFieldNumber(fields, 'LivingArea'),
-    construction: mapFieldValue(fields, 'ConstructionType') ?? mapFieldValue(fields, 'constructionType'),
-    roofMaterial: mapFieldValue(fields, 'RoofCovering') ?? mapFieldValue(fields, 'roofCovering') ?? mapFieldValue(fields, 'RoofMaterial'),
-    roofShape: mapFieldValue(fields, 'RoofShape') ?? mapFieldValue(fields, 'roofShape'),
-    numFloors: mapFieldNumber(fields, 'NumberOfFloors') ?? mapFieldNumber(fields, 'Stories') ?? mapFieldNumber(fields, 'stories'),
+    yearBuilt: mapFieldNumber(fields, 'YearBuilt'),
+    sqft: mapFieldNumber(fields, 'SquareFootage'),
+    construction: mapFieldValue(fields, 'Construction'),
+    roofMaterial: mapFieldValue(fields, 'RoofMaterial'),
+    roofShape: mapFieldValue(fields, 'RoofShape'),
+    numFloors: mapFieldNumber(fields, 'NumFloors'),
 
-    distanceToCoast: mapFieldNumber(fields, 'DistanceToCoast') ?? mapFieldNumber(fields, 'distanceToCoast'),
-    protectionClass: mapFieldValue(fields, 'ProtectionClass') ?? mapFieldValue(fields, 'protectionClass'),
-    femaFloodZone: mapFieldValue(fields, 'FEMAFloodZone') ?? mapFieldValue(fields, 'femaFloodZone') ?? mapFieldValue(fields, 'FloodZone'),
-    lat: mapFieldNumber(fields, 'Latitude') ?? mapFieldNumber(fields, 'latitude'),
-    lng: mapFieldNumber(fields, 'Longitude') ?? mapFieldNumber(fields, 'longitude'),
+    distanceToCoast: mapFieldNumber(fields, 'DistanceToCoast'),
+    protectionClass: mapFieldValue(fields, 'ProtectionClass'),
+    femaFloodZone: mapFieldValue(fields, 'fema_fld_zone'),
+    lat: mapFieldNumber(fields, 'lat'),
+    lng: mapFieldNumber(fields, 'lng'),
 
     raw: items,
   };
@@ -117,14 +117,17 @@ class Orion180Client {
       return null;
     }
 
-    // Capture session cookie from set-cookie header
-    const setCookie = response.headers.get('set-cookie') || response.headers.getSetCookie?.()?.join('; ');
-    if (!setCookie) {
+    // Capture session cookies — getSetCookie() returns all Set-Cookie headers
+    const setCookies = response.headers.getSetCookie?.() || [];
+    const cookieHeader = setCookies.map(c => c.split(';')[0]).join('; ')
+      || response.headers.get('set-cookie')?.split(';')[0]
+      || '';
+    if (!cookieHeader) {
       console.error('[Orion180] No set-cookie header in auth response');
       return null;
     }
 
-    this.sessionCookie = setCookie;
+    this.sessionCookie = cookieHeader;
     this.sessionExpiresAt = Date.now() + 55 * 60 * 1000; // 55 min
     console.log('[Orion180] Authenticated successfully');
     return this.sessionCookie;
