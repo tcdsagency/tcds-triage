@@ -20,6 +20,7 @@ import {
   Calendar,
   DollarSign,
   ChevronRight,
+  RotateCcw,
 } from 'lucide-react';
 
 interface Stats {
@@ -114,7 +115,7 @@ const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle; color: string; b
 };
 
 export default function MortgageePaymentsPage() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'policies' | 'activity' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'policies' | 'remarket' | 'activity' | 'settings'>('dashboard');
   const [stats, setStats] = useState<Stats | null>(null);
   const [mortgagees, setMortgagees] = useState<MortgageeRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -208,6 +209,7 @@ export default function MortgageePaymentsPage() {
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: TrendingUp },
     { id: 'policies', label: 'Tracked Policies', icon: Building2, count: stats?.totalMortgagees },
+    { id: 'remarket', label: 'Remarket', icon: RotateCcw },
     { id: 'activity', label: 'Activity', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },
   ] as const;
@@ -293,6 +295,8 @@ export default function MortgageePaymentsPage() {
             onCheckPayment={handleCheckPayment}
             counts={stats?.byStatus || {}}
           />
+        ) : activeTab === 'remarket' ? (
+          <RemarketTab />
         ) : activeTab === 'activity' ? (
           <ActivityTab />
         ) : (
@@ -537,6 +541,241 @@ function PoliciesTab({
         {mortgagees.length === 0 && (
           <div className="text-center py-12 text-gray-500">
             No mortgagees found
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface RemarketRow {
+  mortgagee: {
+    id: string;
+    name: string;
+    loanNumber?: string;
+    currentPaymentStatus: string;
+    lastPaymentCheckAt?: string;
+  };
+  policy: {
+    id: string;
+    policyNumber: string;
+    carrier?: string;
+    lineOfBusiness?: string;
+    expirationDate?: string;
+    status?: string;
+  };
+  customer: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+    email?: string;
+  };
+}
+
+function RemarketTab() {
+  const [rows, setRows] = useState<RemarketRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [total, setTotal] = useState(0);
+  const [checking, setChecking] = useState<string | null>(null);
+  const [checkResults, setCheckResults] = useState<Record<string, { success: boolean; message?: string; skipped?: boolean }>>({});
+
+  const fetchData = useCallback(async () => {
+    try {
+      let url = '/api/mortgagee-payments/remarket?limit=100';
+      if (statusFilter) url += `&status=${statusFilter}`;
+      if (search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        setRows(data.data || []);
+        setCounts(data.counts || {});
+        setTotal(data.total || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching remarket data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, search]);
+
+  useEffect(() => {
+    setLoading(true);
+    const timeout = setTimeout(() => fetchData(), search ? 300 : 0);
+    return () => clearTimeout(timeout);
+  }, [fetchData, search]);
+
+  const handleCheckMci = async (mortgageeId: string) => {
+    setChecking(mortgageeId);
+    try {
+      const res = await fetch('/api/mortgagee-payments/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mortgageeId, allowInactive: true }),
+      });
+      const data = await res.json();
+      setCheckResults((prev) => ({
+        ...prev,
+        [mortgageeId]: {
+          success: data.success && !data.skipped,
+          message: data.skipped ? data.message : data.result?.payment_status || 'Check complete',
+          skipped: data.skipped,
+        },
+      }));
+      // Refresh row data
+      await fetchData();
+    } catch (error) {
+      setCheckResults((prev) => ({
+        ...prev,
+        [mortgageeId]: { success: false, message: 'Check failed' },
+      }));
+    } finally {
+      setChecking(null);
+    }
+  };
+
+  const statusFilters = [
+    { id: null, label: 'All', count: total },
+    { id: 'cancelled', label: 'Cancelled', count: counts.cancelled },
+    { id: 'expired', label: 'Expired', count: counts.expired },
+    { id: 'non_renewed', label: 'Non-Renewed', count: counts.non_renewed },
+  ];
+
+  const policyStatusBadge = (status?: string) => {
+    const config: Record<string, { bg: string; text: string; label: string }> = {
+      cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: 'Cancelled' },
+      expired: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Expired' },
+      non_renewed: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Non-Renewed' },
+    };
+    const c = config[status || ''] || { bg: 'bg-gray-100', text: 'text-gray-600', label: status || 'Unknown' };
+    return (
+      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>
+        {c.label}
+      </span>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="animate-pulse space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-16 bg-gray-100 rounded"></div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Search + Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search customer or mortgagee..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-emerald-500 focus:border-emerald-500"
+          />
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {statusFilters.map((filter) => (
+            <button
+              key={filter.id || 'all'}
+              onClick={() => setStatusFilter(filter.id)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors ${
+                statusFilter === filter.id
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {filter.label}
+              {filter.count !== undefined && (
+                <span className="ml-1 text-xs">({filter.count})</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Policy / Carrier</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mortgagee</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Loan #</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Date</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {rows.map((row) => {
+              const isChecking = checking === row.mortgagee.id;
+              const result = checkResults[row.mortgagee.id];
+
+              return (
+                <tr key={row.mortgagee.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <div className="text-sm font-medium text-gray-900">
+                      {row.customer.firstName} {row.customer.lastName}
+                    </div>
+                    {row.customer.phone && (
+                      <div className="text-xs text-gray-500">{row.customer.phone}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm font-medium text-gray-900">{row.policy.policyNumber}</div>
+                    <div className="text-xs text-gray-500">{row.policy.carrier} &middot; {row.policy.lineOfBusiness}</div>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-900">{row.mortgagee.name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{row.mortgagee.loanNumber || '—'}</td>
+                  <td className="px-4 py-3">{policyStatusBadge(row.policy.status)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">
+                    {row.policy.expirationDate
+                      ? new Date(row.policy.expirationDate).toLocaleDateString()
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      {result && (
+                        <span className={`text-xs ${result.success ? 'text-green-600' : result.skipped ? 'text-yellow-600' : 'text-red-600'}`}>
+                          {result.message}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => handleCheckMci(row.mortgagee.id)}
+                        disabled={isChecking}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors disabled:opacity-50"
+                      >
+                        {isChecking ? (
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Search className="h-3 w-3" />
+                        )}
+                        Check MCI
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        {rows.length === 0 && (
+          <div className="text-center py-12 text-gray-500">
+            <RotateCcw className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+            <p>No cancelled/expired policies with mortgagees found</p>
           </div>
         )}
       </div>

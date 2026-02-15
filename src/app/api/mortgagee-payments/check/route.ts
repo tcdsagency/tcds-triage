@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { mortgageeId } = await request.json();
+    const { mortgageeId, allowInactive } = await request.json();
 
     if (!mortgageeId) {
       return NextResponse.json(
@@ -66,8 +66,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Skip inactive policies
-    if (policy.status !== "active") {
+    // Skip inactive policies (unless allowInactive for remarket checks)
+    if (policy.status !== "active" && !allowInactive) {
       return NextResponse.json({
         success: true,
         skipped: true,

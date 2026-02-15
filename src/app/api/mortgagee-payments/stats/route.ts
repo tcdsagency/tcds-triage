@@ -4,6 +4,7 @@ import {
   mortgagees,
   mortgageePaymentChecks,
   mortgageePaymentActivityLog,
+  mortgageePaymentSettings,
 } from "@/db/schema";
 import { eq, and, or, sql, desc, gte, lt, isNull } from "drizzle-orm";
 
@@ -84,16 +85,25 @@ export async function GET(request: NextRequest) {
         ? ((successStats.successful / successStats.total) * 100).toFixed(1)
         : "N/A";
 
-    // Last scheduler run
-    const [lastRun] = await db
+    // Last scheduler run + recent activity
+    const recentActivity = await db
       .select()
       .from(mortgageePaymentActivityLog)
       .where(eq(mortgageePaymentActivityLog.tenantId, tenantId))
       .orderBy(desc(mortgageePaymentActivityLog.startedAt))
+      .limit(20);
+
+    const lastRun = recentActivity[0] || null;
+
+    // Read recheckDays from tenant settings
+    const [settings] = await db
+      .select({ recheckDays: mortgageePaymentSettings.recheckDays })
+      .from(mortgageePaymentSettings)
+      .where(eq(mortgageePaymentSettings.tenantId, tenantId))
       .limit(1);
 
     // Mortgagees needing check (not checked in recheckDays)
-    const recheckDays = 7;
+    const recheckDays = settings?.recheckDays ?? 7;
     const recheckCutoff = new Date(
       Date.now() - recheckDays * 24 * 60 * 60 * 1000
     );
@@ -134,6 +144,17 @@ export async function GET(request: NextRequest) {
               errorsEncountered: lastRun.errorsEncountered,
             }
           : null,
+        recentActivity: recentActivity.map((run) => ({
+          id: run.id,
+          runType: run.runType,
+          status: run.status,
+          startedAt: run.startedAt,
+          completedAt: run.completedAt,
+          policiesChecked: run.policiesChecked,
+          latePaymentsFound: run.latePaymentsFound,
+          lapsedFound: run.lapsedFound,
+          errorsEncountered: run.errorsEncountered,
+        })),
       },
     });
   } catch (error: any) {
