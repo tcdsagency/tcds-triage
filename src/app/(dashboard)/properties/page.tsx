@@ -27,6 +27,17 @@ const NearmapMap = dynamic(
 // TYPES
 // =============================================================================
 
+interface PropertyAPIData {
+  parcel?: { fips?: string; apn?: string; county?: string; legalDescription?: string };
+  location?: { lat?: number; lng?: number };
+  building?: { sqft?: number; bedrooms?: number; bathrooms?: number; yearBuilt?: number; lotSizeAcres?: number; stories?: number };
+  owner?: { name?: string; type?: string; ownerOccupied?: boolean; mailingAddress?: string };
+  valuation?: { marketValue?: number; assessedTotal?: number };
+  saleHistory?: { lastSaleDate?: string; lastSalePrice?: number };
+  tax?: { annualTax?: number; taxYear?: number };
+  propertyType?: string;
+}
+
 interface PropertyLookup {
   id: string;
   address: string;
@@ -36,6 +47,7 @@ interface PropertyLookup {
   nearmapData: NearmapData | null;
   rprData: RPRData | null;
   mmiData: MMIData | null;
+  propertyApiData: PropertyAPIData | null;
   aiAnalysis: AIAnalysis | null;
   obliqueViews: ObliqueViews | null;
   historicalSurveys: Array<{ date: string; imageUrl: string }>;
@@ -55,10 +67,10 @@ interface NearmapData {
   surveyDate: string;
   building: { footprintArea: number; count: number };
   roof: { material: string; condition: string; conditionScore: number; area: number; age?: number; issues?: string[] };
-  pool: { present: boolean; type?: string; fenced?: boolean; area?: number };
+  pool?: { present: boolean; type?: string; fenced?: boolean; area?: number };
   solar: { present: boolean; panelCount?: number; area?: number };
   vegetation: { treeCount: number; coveragePercent: number; proximityToStructure: string; treeOverhangArea?: number };
-  hazards: { trampoline: boolean; debris: boolean; construction: boolean };
+  hazards?: { trampoline: boolean; debris: boolean; construction: boolean };
   tileUrl: string;
   staticImageUrl?: string;
   overlays?: {
@@ -309,7 +321,7 @@ export default function PropertyIntelligencePage() {
         // Step 5: AI Analysis
         if (!data.lookup.aiAnalysis) {
           updateStep('analysis', 'active');
-          await runAIAnalysis(data.lookup.id, data.lookup.nearmapData?.staticImageUrl);
+          await runAIAnalysis(data.lookup.id, data.lookup.nearmapData?.tileUrl);
           updateStep('analysis', 'complete');
         } else {
           updateStep('analysis', 'complete');
@@ -616,9 +628,9 @@ export default function PropertyIntelligencePage() {
                       <SourceBadge source="Nearmap" />
                     </h3>
                     <div className="aspect-video bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden relative">
-                      {lookup.nearmapData?.staticImageUrl ? (
+                      {lookup.nearmapData?.tileUrl ? (
                         <img
-                          src={lookup.nearmapData.staticImageUrl}
+                          src={`/api/property/nearmap-tile?url=${encodeURIComponent(lookup.nearmapData.tileUrl)}`}
                           alt="Aerial view"
                           className="w-full h-full object-cover"
                         />
@@ -652,8 +664,8 @@ export default function PropertyIntelligencePage() {
                       <div className="space-y-3">
                         <FeatureRow
                           label="Pool Detected"
-                          detected={lookup.nearmapData.pool.present}
-                          detail={lookup.nearmapData.pool.present ? (lookup.nearmapData.pool.fenced ? 'Fenced' : 'Unfenced ⚠️') : undefined}
+                          detected={lookup.nearmapData.pool?.present || false}
+                          detail={lookup.nearmapData.pool?.present ? (lookup.nearmapData.pool?.fenced ? 'Fenced' : 'Unfenced ⚠️') : undefined}
                           confidence={98}
                         />
                         <FeatureRow
@@ -663,7 +675,7 @@ export default function PropertyIntelligencePage() {
                         />
                         <FeatureRow
                           label="Trampoline"
-                          detected={lookup.nearmapData.hazards.trampoline}
+                          detected={lookup.nearmapData.hazards?.trampoline || false}
                         />
                         <FeatureRow
                           label="Tree Overhang"
@@ -673,7 +685,7 @@ export default function PropertyIntelligencePage() {
                         />
                         <FeatureRow
                           label="Debris/Clutter"
-                          detected={lookup.nearmapData.hazards.debris}
+                          detected={lookup.nearmapData.hazards?.debris || false}
                           confidence={lookup.aiAnalysis?.hazardScan.debris.confidence}
                         />
                       </div>
@@ -747,6 +759,75 @@ export default function PropertyIntelligencePage() {
                         <p className="font-medium text-gray-900 dark:text-gray-100">
                           {lookup.rprData.lastSaleDate ? `${Math.floor((Date.now() - new Date(lookup.rprData.lastSaleDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} years` : 'Unknown'}
                         </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PropertyAPI Enrichment */}
+                {lookup.propertyApiData && (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                    <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-blue-600" />
+                      Parcel &amp; Tax Records
+                      <SourceBadge source="PropertyAPI" />
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
+                      {/* Parcel Info */}
+                      <div className="space-y-2">
+                        <h4 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700 pb-1">Parcel</h4>
+                        {lookup.propertyApiData.parcel?.apn && (
+                          <InfoRow label="APN" value={lookup.propertyApiData.parcel.apn} icon="📋" />
+                        )}
+                        {lookup.propertyApiData.parcel?.county && (
+                          <InfoRow label="County" value={lookup.propertyApiData.parcel.county} icon="📍" />
+                        )}
+                        {lookup.propertyApiData.propertyType && (
+                          <InfoRow label="Type" value={lookup.propertyApiData.propertyType} icon="🏠" />
+                        )}
+                        {lookup.propertyApiData.building?.lotSizeAcres != null && (
+                          <InfoRow label="Lot Size" value={`${lookup.propertyApiData.building.lotSizeAcres.toFixed(2)} acres`} icon="📐" />
+                        )}
+                        {lookup.propertyApiData.parcel?.legalDescription && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic truncate" title={lookup.propertyApiData.parcel.legalDescription}>
+                            {lookup.propertyApiData.parcel.legalDescription}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Valuation & Sale */}
+                      <div className="space-y-2">
+                        <h4 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700 pb-1">Valuation</h4>
+                        {lookup.propertyApiData.valuation?.marketValue != null && (
+                          <InfoRow label="Market Value" value={formatCurrency(lookup.propertyApiData.valuation.marketValue)} highlight icon="💰" />
+                        )}
+                        {lookup.propertyApiData.valuation?.assessedTotal != null && (
+                          <InfoRow label="Assessed" value={formatCurrency(lookup.propertyApiData.valuation.assessedTotal)} icon="📋" />
+                        )}
+                        {lookup.propertyApiData.saleHistory?.lastSalePrice != null && (
+                          <InfoRow
+                            label="Last Sale"
+                            value={`${formatCurrency(lookup.propertyApiData.saleHistory.lastSalePrice)}${lookup.propertyApiData.saleHistory.lastSaleDate ? ` (${lookup.propertyApiData.saleHistory.lastSaleDate})` : ''}`}
+                            icon="🏷️"
+                          />
+                        )}
+                      </div>
+
+                      {/* Tax & Owner */}
+                      <div className="space-y-2">
+                        <h4 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700 pb-1">Tax &amp; Owner</h4>
+                        {lookup.propertyApiData.tax?.annualTax != null && (
+                          <InfoRow label="Annual Tax" value={`${formatCurrency(lookup.propertyApiData.tax.annualTax)}${lookup.propertyApiData.tax.taxYear ? ` (${lookup.propertyApiData.tax.taxYear})` : ''}`} icon="💵" />
+                        )}
+                        {lookup.propertyApiData.owner?.name && (
+                          <InfoRow label="Owner" value={lookup.propertyApiData.owner.name} icon="👤" />
+                        )}
+                        {lookup.propertyApiData.owner?.ownerOccupied != null && (
+                          <InfoRow label="Occupancy" value={lookup.propertyApiData.owner.ownerOccupied ? 'Owner-Occupied' : 'Non-Owner'} icon="🏡" />
+                        )}
+                        {lookup.propertyApiData.building?.sqft != null && (
+                          <InfoRow label="Building Sqft" value={lookup.propertyApiData.building.sqft.toLocaleString()} icon="📏" />
+                        )}
                       </div>
                     </div>
                   </div>
@@ -950,9 +1031,9 @@ export default function PropertyIntelligencePage() {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <HazardCard
                           label="Pool"
-                          detected={lookup.nearmapData?.pool.present || false}
+                          detected={lookup.nearmapData?.pool?.present || false}
                           confidence={98}
-                          detail={lookup.nearmapData?.pool.present ? (lookup.nearmapData.pool.fenced ? 'Fenced' : 'Unfenced ⚠️') : undefined}
+                          detail={lookup.nearmapData?.pool?.present ? (lookup.nearmapData.pool?.fenced ? 'Fenced' : 'Unfenced ⚠️') : undefined}
                         />
                         <HazardCard
                           label="Trampoline"
@@ -965,12 +1046,12 @@ export default function PropertyIntelligencePage() {
                         />
                         <HazardCard
                           label="Fencing"
-                          detected={lookup.nearmapData?.pool.fenced || false}
+                          detected={lookup.nearmapData?.pool?.fenced || false}
                           confidence={65}
-                          detail={lookup.nearmapData?.pool.fenced ? 'Complete' : 'Partial/None'}
+                          detail={lookup.nearmapData?.pool?.fenced ? 'Complete' : 'Partial/None'}
                         />
                       </div>
-                      {(lookup.nearmapData?.pool.present && !lookup.nearmapData.pool.fenced) && (
+                      {(lookup.nearmapData?.pool?.present && !lookup.nearmapData.pool?.fenced) && (
                         <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
                           <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">Liability Notes:</h4>
                           <ul className="text-sm text-amber-700 dark:text-amber-300 space-y-1">
@@ -1087,8 +1168,8 @@ export default function PropertyIntelligencePage() {
                         <div>
                           <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Action Items</h4>
                           <ul className="space-y-1 text-sm text-amber-700 dark:text-amber-300">
-                            {lookup.nearmapData?.pool.present && <li>⚠ Add pool liability endorsement</li>}
-                            {lookup.nearmapData?.pool.present && !lookup.nearmapData.pool.fenced && <li>⚠ Verify pool fencing on inspect</li>}
+                            {lookup.nearmapData?.pool?.present && <li>⚠ Add pool liability endorsement</li>}
+                            {lookup.nearmapData?.pool?.present && !lookup.nearmapData.pool?.fenced && <li>⚠ Verify pool fencing on inspect</li>}
                             {(lookup.nearmapData?.vegetation.treeOverhangArea || 0) > 100 && <li>⚠ Recommend tree trimming</li>}
                           </ul>
                         </div>
@@ -1701,7 +1782,7 @@ function DecisionBanner({
             <strong>Key Findings:</strong>{' '}
             {[
               nearmapData?.roof.age ? `Roof ~${nearmapData.roof.age} years old` : null,
-              nearmapData?.pool.present ? 'Pool detected' : null,
+              nearmapData?.pool?.present ? 'Pool detected' : null,
               (nearmapData?.vegetation.treeOverhangArea || 0) > 50 ? `Tree overhang ${Math.round(nearmapData?.vegetation.treeOverhangArea || 0)} sqft` : null,
             ].filter(Boolean).join(' | ') || 'Analysis in progress...'}
           </div>
@@ -1824,7 +1905,7 @@ function HazardCard({ label, detected, confidence, detail }: { label: string; de
   );
 }
 
-function SourceBadge({ source }: { source: 'RPR' | 'Nearmap' | 'Nearmap AI' | 'Claude AI' | 'MMI' | 'Google' }) {
+function SourceBadge({ source }: { source: 'RPR' | 'Nearmap' | 'Nearmap AI' | 'Claude AI' | 'MMI' | 'Google' | 'PropertyAPI' }) {
   const colors = {
     'RPR': 'bg-purple-50 text-purple-600 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800',
     'Nearmap': 'bg-sky-50 text-sky-600 border-sky-200 dark:bg-sky-900/30 dark:text-sky-400 dark:border-sky-800',
@@ -1832,6 +1913,7 @@ function SourceBadge({ source }: { source: 'RPR' | 'Nearmap' | 'Nearmap AI' | 'C
     'Claude AI': 'bg-orange-50 text-orange-600 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800',
     'MMI': 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800',
     'Google': 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800',
+    'PropertyAPI': 'bg-teal-50 text-teal-600 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800',
   };
   return (
     <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-medium', colors[source])}>

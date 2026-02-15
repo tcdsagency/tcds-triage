@@ -93,6 +93,8 @@ async function testIntegration(
       return testGoogle(creds);
     case "canopy":
       return testCanopy(creds);
+    case "propertyapi":
+      return testPropertyAPI(creds);
     default:
       return { success: false, message: "Test not implemented for this integration" };
   }
@@ -138,6 +140,9 @@ function getEnvCredentials(integrationId: string): Record<string, string> {
       if (process.env.CANOPY_CLIENT_ID) creds.clientId = process.env.CANOPY_CLIENT_ID;
       if (process.env.CANOPY_CLIENT_SECRET) creds.clientSecret = process.env.CANOPY_CLIENT_SECRET;
       if (process.env.CANOPY_ENVIRONMENT) creds.environment = process.env.CANOPY_ENVIRONMENT;
+      break;
+    case "propertyapi":
+      if (process.env.PROPERTY_API_KEY) creds.apiKey = process.env.PROPERTY_API_KEY;
       break;
   }
 
@@ -362,6 +367,32 @@ async function testGoogle(creds: Record<string, string>): Promise<{ success: boo
         return { success: false, message: "API key invalid or restricted" };
       }
       return { success: false, message: `API status: ${data.status}` };
+    } else {
+      return { success: false, message: `API error: ${response.status}` };
+    }
+  } catch (error: any) {
+    return { success: false, message: error.message || "Connection failed" };
+  }
+}
+
+async function testPropertyAPI(creds: Record<string, string>): Promise<{ success: boolean; message: string; details?: any }> {
+  if (!creds.apiKey) {
+    return { success: false, message: "API key not configured" };
+  }
+
+  try {
+    const response = await fetchWithTimeout(
+      `https://propertyapi.co/api/v1/parcels/search-by-address?address=${encodeURIComponent("1600 Pennsylvania Ave, Washington, DC 20500")}&api_key=${creds.apiKey}`
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      const parcels = Array.isArray(data) ? data : data?.parcels || data?.data || [];
+      return {
+        success: true,
+        message: "Connection successful",
+        details: { parcelsReturned: parcels.length },
+      };
     } else {
       return { success: false, message: `API error: ${response.status}` };
     }

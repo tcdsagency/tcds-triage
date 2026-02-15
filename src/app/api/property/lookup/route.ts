@@ -8,6 +8,7 @@ import { eq, and, gte } from "drizzle-orm";
 import { nearmapClient } from "@/lib/nearmap";
 import { rprClient } from "@/lib/rpr";
 import { mmiClient } from "@/lib/mmi";
+import { propertyApiClient } from "@/lib/propertyapi";
 
 // =============================================================================
 // TYPES
@@ -56,10 +57,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch data from all sources in parallel
-    const [nearmapData, rprData, mmiData] = await Promise.all([
+    const [nearmapData, rprData, mmiData, propertyApiData] = await Promise.all([
       fetchNearmapData(lat, lng),
       fetchRPRData(formattedAddress || address),
       fetchMMIData(formattedAddress || address),
+      fetchPropertyAPIData(formattedAddress || address),
     ]);
 
     // Create lookup record
@@ -77,6 +79,7 @@ export async function POST(request: NextRequest) {
         nearmapData,
         rprData,
         mmiData,
+        propertyApiData,
         obliqueViews: null,
         historicalSurveys: [],
         expiresAt,
@@ -95,6 +98,7 @@ export async function POST(request: NextRequest) {
         nearmapData: lookup.nearmapData,
         rprData: lookup.rprData,
         mmiData: lookup.mmiData,
+        propertyApiData: lookup.propertyApiData,
         obliqueViews: lookup.obliqueViews,
         historicalSurveys: lookup.historicalSurveys,
         aiAnalysis: lookup.aiAnalysis,
@@ -149,6 +153,7 @@ async function checkCache(tenantId: string, address: string) {
       nearmapData,
       rprData: cached.rprData,
       mmiData: cached.mmiData,
+      propertyApiData: cached.propertyApiData,
       obliqueViews: cached.obliqueViews,
       historicalSurveys: cached.historicalSurveys,
       aiAnalysis: cached.aiAnalysis,
@@ -205,6 +210,24 @@ async function fetchRPRData(address: string) {
     return data;
   } catch (error) {
     console.error("RPR fetch error:", error);
+    return null;
+  }
+}
+
+async function fetchPropertyAPIData(address: string) {
+  try {
+    if (!propertyApiClient.isConfigured()) {
+      console.log("PropertyAPI not configured - no API key found");
+      return null;
+    }
+    const data = await withTimeout(
+      propertyApiClient.lookupByAddress(address),
+      15000,
+      "PropertyAPI"
+    );
+    return data;
+  } catch (error) {
+    console.error("PropertyAPI fetch error:", error);
     return null;
   }
 }

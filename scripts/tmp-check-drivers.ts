@@ -3,52 +3,40 @@ import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '../.env.production.local') });
 
 async function run() {
-  const { getHawkSoftClient, FULL_CLIENT_INCLUDES, FULL_CLIENT_EXPANDS } = await import('../src/lib/api/hawksoft');
+  const { db } = await import('../src/db');
+  const { renewalComparisons } = await import('../src/db/schema');
+  const { eq } = await import('drizzle-orm');
 
-  // Test with a known client number that has auto policies
-  const clientNumber = process.argv[2] || '39577'; // Default test client
+  const comps = await db.select().from(renewalComparisons)
+    .where(eq(renewalComparisons.policyNumber, '955847785'));
 
-  console.log(`Fetching HawkSoft client ${clientNumber}...`);
-
-  const api = getHawkSoftClient();
-  const client = await api.getClient(
-    parseInt(clientNumber),
-    FULL_CLIENT_INCLUDES,
-    FULL_CLIENT_EXPANDS
-  );
-
-  console.log('\n=== PEOPLE (household) ===');
-  if (client.people?.length) {
-    for (const person of client.people) {
-      console.log(`  ${person.firstName} ${person.lastName}`);
-      console.log(`    DOB: ${person.dateOfBirth}`);
-      console.log(`    License #: ${person.licenseNumber || 'N/A'}`);
-      console.log(`    License State: ${person.licenseState || 'N/A'}`);
-      console.log(`    Gender: ${person.gender || 'N/A'}`);
-      console.log(`    Marital: ${person.maritalStatus || 'N/A'}`);
-    }
-  } else {
-    console.log('  No people data');
+  if (comps.length === 0) {
+    console.log('Not found');
+    process.exit(0);
   }
 
-  console.log('\n=== POLICIES ===');
-  for (const policy of client.policies || []) {
-    if (policy.drivers?.length) {
-      console.log(`\nPolicy ${policy.policyNumber} (${policy.loBs?.[0]?.code || policy.lineOfBusiness})`);
-      console.log('  Drivers:');
-      for (const drv of policy.drivers) {
-        console.log(`    ${drv.firstName} ${drv.lastName}`);
-        console.log(`      DOB: ${drv.dateOfBirth || 'N/A'}`);
-        console.log(`      License #: ${drv.licenseNumber || 'N/A'}`);
-        console.log(`      License State: ${drv.licenseState || 'N/A'}`);
-        console.log(`      Gender: ${drv.gender || 'N/A'}`);
-        console.log(`      Marital: ${drv.maritalStatus || 'N/A'}`);
-        console.log(`      Raw keys: ${Object.keys(drv).join(', ')}`);
-      }
+  const c = comps[0];
+  const baseline = c.baselineSnapshot as any;
+  const renewal = c.renewalSnapshot as any;
+  const changes = c.materialChanges as any[];
+
+  console.log('Baseline drivers:');
+  for (const d of baseline?.drivers || []) {
+    console.log(' ', JSON.stringify(d));
+  }
+
+  console.log('\nRenewal drivers:');
+  for (const d of renewal?.drivers || []) {
+    console.log(' ', JSON.stringify(d));
+  }
+
+  console.log('\nDriver-related changes:');
+  for (const ch of changes || []) {
+    if (ch.category?.includes('driver')) {
+      console.log(' ', ch.category, ':', ch.description);
     }
   }
 
   process.exit(0);
 }
-
 run().catch(e => { console.error(e); process.exit(1); });
