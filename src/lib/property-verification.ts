@@ -51,7 +51,7 @@ export interface PropertyVerificationResult {
   verifiedAt: string;
   address: string;
   streetViewUrl: string | null;
-  sources: { rpr: boolean; propertyApi: boolean; nearmap: boolean };
+  sources: { rpr: boolean; propertyApi: boolean; nearmap: boolean; orion180: boolean };
   propertyLookupId: string | null;
   publicData: {
     yearBuilt?: number;
@@ -66,6 +66,17 @@ export interface PropertyVerificationResult {
     lastSaleDate?: string;
     lastSalePrice?: number;
   };
+  riskData?: {
+    convectionStorm: string | null;
+    flood: string | null;
+    tornado: string | null;
+    lightning: string | null;
+    wildfire: string | null;
+    hurricane: string | null;
+    protectionClass: string | null;
+    femaFloodZone: string | null;
+    distanceToCoast: number | null;
+  } | null;
   checkResults: CheckResult[];
 }
 

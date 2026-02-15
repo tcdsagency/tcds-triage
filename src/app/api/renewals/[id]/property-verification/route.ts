@@ -11,6 +11,7 @@ import { renewalComparisons, propertyLookups } from '@/db/schema';
 import { eq, and, gt } from 'drizzle-orm';
 import { rprClient } from '@/lib/rpr';
 import { propertyApiClient } from '@/lib/propertyapi';
+import { orion180Client, type Orion180PropertyData } from '@/lib/orion180';
 import {
   runPropertyVerification,
   type PropertyVerificationResult,
@@ -87,16 +88,26 @@ export async function GET(
     let rprData = (cachedLookup?.rprData as any) || null;
     let propertyApiData = (cachedLookup?.propertyApiData as any) || null;
     let nearmapData: NearmapLookupData | null = (cachedLookup?.nearmapData as NearmapLookupData) || null;
+    let orion180Data: Orion180PropertyData | null = (cachedLookup?.orion180Data as Orion180PropertyData) || null;
     let propertyLookupId: string | null = cachedLookup?.id || null;
 
-    // 5. Cache miss — fetch RPR + PropertyAPI in parallel
+    // 5. Cache miss — fetch RPR + PropertyAPI + Orion180 in parallel
     if (!cachedLookup) {
-      const [rprResult, papiResult] = await Promise.all([
+      const addr = snapshot.insuredAddress || '';
+      const city = snapshot.insuredCity || '';
+      const state = snapshot.insuredState || '';
+      const zip = snapshot.insuredZip || '';
+
+      const [rprResult, papiResult, orion180Result] = await Promise.all([
         rprClient.lookupProperty(fullAddress).catch(() => null),
         propertyApiClient.lookupByAddress(fullAddress).catch(() => null),
+        orion180Client.isConfigured()
+          ? orion180Client.lookupProperty(addr, city, state, zip).catch(() => null)
+          : Promise.resolve(null),
       ]);
       rprData = rprResult;
       propertyApiData = papiResult;
+      orion180Data = orion180Result;
       // nearmapData stays null — we use whatever is on the lookup row already
     }
 
@@ -128,14 +139,14 @@ export async function GET(
       nearmapData,
     });
 
-    // 9. Build public data summary
+    // 9. Build public data summary (RPR > PropertyAPI > Orion180 fallback)
     const publicData: PropertyVerificationResult['publicData'] = {};
-    if (rprData || propertyApiData) {
-      publicData.yearBuilt = rprData?.yearBuilt ?? propertyApiData?.building?.yearBuilt;
-      publicData.sqft = rprData?.sqft ?? propertyApiData?.building?.sqft;
-      publicData.stories = rprData?.stories ?? propertyApiData?.building?.stories;
-      publicData.roofType = rprData?.roofType;
-      publicData.constructionType = rprData?.exteriorWalls ?? rprData?.constructionType;
+    if (rprData || propertyApiData || orion180Data) {
+      publicData.yearBuilt = rprData?.yearBuilt ?? propertyApiData?.building?.yearBuilt ?? orion180Data?.yearBuilt ?? undefined;
+      publicData.sqft = rprData?.sqft ?? propertyApiData?.building?.sqft ?? orion180Data?.sqft ?? undefined;
+      publicData.stories = rprData?.stories ?? propertyApiData?.building?.stories ?? orion180Data?.numFloors ?? undefined;
+      publicData.roofType = rprData?.roofType ?? orion180Data?.roofMaterial ?? undefined;
+      publicData.constructionType = rprData?.exteriorWalls ?? rprData?.constructionType ?? orion180Data?.construction ?? undefined;
       publicData.ownerName = rprData?.ownerName ?? propertyApiData?.owner?.name;
       publicData.ownerOccupied = rprData?.ownerOccupied ?? propertyApiData?.owner?.ownerOccupied;
       publicData.estimatedValue = rprData?.estimatedValue ?? propertyApiData?.valuation?.marketValue;
@@ -143,6 +154,19 @@ export async function GET(
       publicData.lastSaleDate = rprData?.lastSaleDate ?? propertyApiData?.saleHistory?.lastSaleDate;
       publicData.lastSalePrice = rprData?.lastSalePrice ?? propertyApiData?.saleHistory?.lastSalePrice;
     }
+
+    // 9b. Build risk data from Orion180
+    const riskData: PropertyVerificationResult['riskData'] = orion180Data ? {
+      hurricane: orion180Data.hurricaneGrade,
+      flood: orion180Data.floodGrade,
+      tornado: orion180Data.tornadoGrade,
+      wildfire: orion180Data.wildfireGrade,
+      convectionStorm: orion180Data.convectionStormGrade,
+      lightning: orion180Data.lightningGrade,
+      protectionClass: orion180Data.protectionClass,
+      femaFloodZone: orion180Data.femaFloodZone,
+      distanceToCoast: orion180Data.distanceToCoast,
+    } : null;
 
     // 10. Build verification result
     const verificationResult: PropertyVerificationResult = {
@@ -154,9 +178,11 @@ export async function GET(
         rpr: !!rprData,
         propertyApi: !!propertyApiData,
         nearmap: !!nearmapData,
+        orion180: !!orion180Data,
       },
       propertyLookupId,
       publicData,
+      riskData,
       checkResults: pvResults,
     };
 

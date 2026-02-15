@@ -906,6 +906,9 @@ export const propertyLookups = pgTable('property_lookups', {
     propertyType?: string;
   }>(),
 
+  // Orion180 HazardHub Data (risk grades, property details)
+  orion180Data: jsonb('orion180_data'),
+
   // Lookup Metadata
   lookupSource: varchar('lookup_source', { length: 20 }).default('manual'), // 'manual', 'quote', 'policy'
   linkedQuoteId: uuid('linked_quote_id').references(() => quotes.id, { onDelete: 'set null' }),

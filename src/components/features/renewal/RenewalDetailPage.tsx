@@ -43,7 +43,8 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
   const [mciPaymentData, setMciPaymentData] = useState<any>(null);
   const [customerPolicies, setCustomerPolicies] = useState<any[]>([]);
   const [publicData, setPublicData] = useState<Record<string, any> | null>(null);
-  const [verificationSources, setVerificationSources] = useState<{ rpr: boolean; propertyApi: boolean; nearmap: boolean } | null>(null);
+  const [riskData, setRiskData] = useState<Record<string, any> | null>(null);
+  const [verificationSources, setVerificationSources] = useState<{ rpr: boolean; propertyApi: boolean; nearmap: boolean; orion180: boolean } | null>(null);
 
   // Fetch full detail
   const fetchDetail = useCallback(async () => {
@@ -127,6 +128,9 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
           }
           if (data.verification?.sources) {
             setVerificationSources(data.verification.sources);
+          }
+          if (data.verification?.riskData) {
+            setRiskData(data.verification.riskData);
           }
         }
       })
@@ -685,6 +689,7 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
             {/* Public Records Card (home policies only) */}
             <PublicRecordsCard
               publicData={publicData}
+              riskData={riskData}
               sources={verificationSources}
               lineOfBusiness={current.lineOfBusiness ?? null}
             />
@@ -897,11 +902,13 @@ function CustomerPoliciesSection({ policies, currentPolicyId }: { policies: any[
 // Public Records card for center column
 function PublicRecordsCard({
   publicData,
+  riskData,
   sources,
   lineOfBusiness,
 }: {
   publicData: Record<string, any> | null;
-  sources: { rpr: boolean; propertyApi: boolean; nearmap: boolean } | null;
+  riskData?: Record<string, any> | null;
+  sources: { rpr: boolean; propertyApi: boolean; nearmap: boolean; orion180: boolean } | null;
   lineOfBusiness: string | null;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -1021,11 +1028,65 @@ function PublicRecordsCard({
             </div>
           )}
 
+          {/* Risk Profile (Orion180 HazardHub) */}
+          {riskData && (
+            <div>
+              <h4 className="text-[10px] font-semibold uppercase text-gray-400 dark:text-gray-500 mb-1">Risk Profile</h4>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {([
+                  ['Hurricane', riskData.hurricane],
+                  ['Flood', riskData.flood],
+                  ['Tornado', riskData.tornado],
+                  ['Wildfire', riskData.wildfire],
+                  ['Storm', riskData.convectionStorm],
+                  ['Lightning', riskData.lightning],
+                ] as [string, string | null][]).map(([label, grade]) => {
+                  if (!grade) return null;
+                  const g = grade.toUpperCase();
+                  const color = g === 'A' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                    : g === 'B' ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400'
+                    : g === 'C' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-500'
+                    : g === 'D' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
+                    : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+                  return (
+                    <span key={label} className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', color)}>
+                      {label}: {g}
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                {riskData.femaFloodZone && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">FEMA Flood Zone</span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">{riskData.femaFloodZone}</span>
+                  </div>
+                )}
+                {riskData.protectionClass && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Protection Class</span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">{riskData.protectionClass}</span>
+                  </div>
+                )}
+                {riskData.distanceToCoast != null && (
+                  <div className="flex justify-between col-span-2">
+                    <span className="text-gray-500">Distance to Coast</span>
+                    <span className="font-medium text-gray-700 dark:text-gray-300">
+                      {Number(riskData.distanceToCoast) < 1
+                        ? `${(Number(riskData.distanceToCoast) * 5280).toFixed(0)} ft`
+                        : `${Number(riskData.distanceToCoast).toFixed(1)} mi`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Source badges */}
           {sources && (
             <div className="flex items-center gap-1.5 pt-1">
               <span className="text-[10px] text-gray-400">Sources:</span>
-              {(['rpr', 'propertyApi', 'nearmap'] as const).map(src => (
+              {(['rpr', 'propertyApi', 'nearmap', 'orion180'] as const).map(src => (
                 <span
                   key={src}
                   className={cn(
@@ -1035,7 +1096,7 @@ function PublicRecordsCard({
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
                   )}
                 >
-                  {src === 'propertyApi' ? 'PropertyAPI' : src === 'rpr' ? 'RPR' : 'Nearmap'}
+                  {src === 'propertyApi' ? 'PropertyAPI' : src === 'rpr' ? 'RPR' : src === 'orion180' ? 'Orion180' : 'Nearmap'}
                   {sources[src] ? ' ✓' : ' ✗'}
                 </span>
               ))}
