@@ -517,6 +517,80 @@ export const DISCOUNT_COVERAGE_TYPES = new Set([
 ]);
 
 /**
+ * Rating factor types — carrier-specific pricing components that have premium
+ * values but are NOT real insurance coverages. These should be excluded from
+ * the coverage comparison table. They're typically credits/surcharges that
+ * make up the premium calculation (e.g., "Age of Dwelling +$428.92").
+ */
+export const RATING_FACTOR_TYPES = new Set([
+  // American Strategic rating factors
+  'hlfc',                          // Home Liability Fire Coverage (factor)
+  'wndsd',                         // Wind/Hail Deductible (factor)
+  'replacement_deductible',        // Replacement Deductible (factor)
+  'rdecc',                         // Replacement Deductible (short code)
+  'rpded',                         // Replacement Deductible (alt)
+  'roof_material',                 // Roof Material (factor)
+  'household_factor',              // Household Factor
+  'home_factor',                   // Home Factor
+  'hofac',                         // Home Factor (short code)
+  'pdif',                          // Property Damage Increase Factor
+  'property_damage_increase_factor',
+  'fixed_base_premium',            // Fixed Base Premium
+  'fxbs',                          // Fixed Base Premium (short code)
+  'base_premium',                  // Base Premium
+  'fbasp',                         // Base Premium (AS full code)
+  'fire_protection',               // Fire Protection (factor)
+  'frpr',                          // Fire Protection (short code)
+  'age_dwelling',                  // Age of Dwelling (factor)
+  'agedw',                         // Age of Dwelling (AS full code)
+  'claims_surcharge',              // Claims Surcharge
+  'clsur',                         // Claims Surcharge (AS full code)
+  'clms',                          // Claims Surcharge (short code)
+  'homeshield_package',            // HomeShield Package
+  'hsp',                           // HomeShield Package (short code)
+  'water_leak',                    // Water Leak (factor)
+  'wleak',                         // Water Leak (short code)
+  'named_storm_deductible',        // Named Storm Deductible (factor)
+  'numst',                         // Named Storm Deductible (short code)
+  'construction_factor',           // Construction Factor
+  'cfact',                         // Construction Factor (AS full code)
+  'hurricane_surcharge',           // Hurricane Surcharge
+  'hurrs',                         // Hurricane Surcharge (AS full code)
+  'building_outline',              // Building Outline
+  'butln',                         // Building Outline (AS full code)
+  'month_occupied',                // Month Occupied
+  'moocc',                         // Month Occupied (AS full code)
+  'dwelling_update',               // Dwelling Update
+  'dwupd',                         // Dwelling Update (AS full code)
+  'additional_factors',            // Additional Factors
+  'afacc',                         // Additional Factors (AS full code)
+  'aodw',                          // All Other Dwelling Perils (factor)
+  'nrnh',                          // Non-Renewed/Non-Homestead
+  'hmup',                          // Home Update (factor)
+  'tpds',                          // Third Party Designation
+  // Generic rating components
+  'territory_rating',
+  'terr',
+  'tier_rating',
+  'tier',
+  'group_rating',
+  'basic_risk',
+  'brisk',
+  'building_value_maintenance',
+  'bvmm',
+  'credit_card_surcharge',
+  'ccsc',
+  'credit_card_monthly',
+  'ccmo',
+  'violation_surcharge',
+  'inspection_fee',
+  'inspf',
+  'filing_fee',
+  'policy_fee',
+  'polfe',
+]);
+
+/**
  * Coverage types that are vehicle-specific and should NOT be flattened to policy level.
  * These coverages can have different limits/deductibles per vehicle.
  */

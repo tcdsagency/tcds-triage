@@ -672,7 +672,7 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
                 ) : (
                   <p className="text-xs text-gray-400 mb-2">No MCI data available</p>
                 )}
-                <MortgageePaymentStatus policyId={detail.policyId} />
+                <MortgageePaymentStatus policyId={detail.policyId} onCheckComplete={fetchDetail} />
               </div>
             );
           })()}

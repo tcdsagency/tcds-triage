@@ -1383,6 +1383,11 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
           // embed the first coverage sub-records (DWELL, OS, PP) inside this line.
           const cvhList = parseEDIFACTHomeCoverages(line);
           coverages.push(...cvhList);
+        } else if (gc === '9AOI' && isEDIFACTFormat(line) && line.includes('6CVH')) {
+          // 9AOI: Additional Interest continuation — some carriers (American Strategic)
+          // embed 5REP and 6CVH coverage sub-records (e.g. DWELL) inside this line.
+          const cvhList = parseEDIFACTHomeCoverages(line);
+          coverages.push(...cvhList);
         }
         break;
       }

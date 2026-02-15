@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Car, Home, ChevronDown, ChevronRight, Filter } from 'lucide-react';
 import CollapsibleSection from './CollapsibleSection';
 import { resolveCoverageDisplayName } from '@/lib/coverage-display-names';
+import { RATING_FACTOR_TYPES } from '@/lib/al3/constants';
 import type { RenewalSnapshot, BaselineSnapshot, CanonicalCoverage, CanonicalVehicle } from '@/types/renewal.types';
 
 interface CoverageComparisonTableProps {
@@ -46,7 +47,7 @@ function formatLimit(cov: CanonicalCoverage | undefined): string {
     if (!isNaN(num) && num > 0) return `$${num.toLocaleString()}`;
     return cov.limit;
   }
-  if (cov.premium != null) return `$${cov.premium.toLocaleString()}`;
+  // Don't show premium as limit — it's confusing for rating factors
   return '-';
 }
 
@@ -124,8 +125,11 @@ function buildRows(
   renewalCovs: CanonicalCoverage[],
   carrier?: string,
 ): CoverageRow[] {
-  const baselineByType = new Map(baselineCovs.map(c => [c.type, c]));
-  const renewalByType = new Map(renewalCovs.map(c => [c.type, c]));
+  // Filter out rating factors (pricing components that aren't real coverages)
+  const filteredBaseline = baselineCovs.filter(c => !RATING_FACTOR_TYPES.has(c.type));
+  const filteredRenewal = renewalCovs.filter(c => !RATING_FACTOR_TYPES.has(c.type));
+  const baselineByType = new Map(filteredBaseline.map(c => [c.type, c]));
+  const renewalByType = new Map(filteredRenewal.map(c => [c.type, c]));
   const seenTypes = new Set<string>();
   const rows: CoverageRow[] = [];
 

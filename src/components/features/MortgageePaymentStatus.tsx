@@ -32,6 +32,7 @@ interface MortgageePaymentStatusProps {
   policyId: string;
   mortgagees?: Mortgagee[];
   compact?: boolean;
+  onCheckComplete?: () => void;
 }
 
 const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle; color: string; bgColor: string; label: string }> = {
@@ -85,7 +86,7 @@ const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle; color: string; b
   },
 };
 
-export function MortgageePaymentStatus({ policyId, mortgagees: initialMortgagees, compact = false }: MortgageePaymentStatusProps) {
+export function MortgageePaymentStatus({ policyId, mortgagees: initialMortgagees, compact = false, onCheckComplete }: MortgageePaymentStatusProps) {
   const [mortgagees, setMortgagees] = useState<Mortgagee[]>(initialMortgagees || []);
   const [checking, setChecking] = useState<string | null>(null);
   const [loading, setLoading] = useState(!initialMortgagees);
@@ -163,6 +164,8 @@ export function MortgageePaymentStatus({ policyId, mortgagees: initialMortgagees
         toast.success(`Payment status: ${status.replace(/_/g, ' ')}`);
         // Re-fetch to get latest DB data
         await fetchMortgagees();
+        // Notify parent to refresh MCI payment data in the detail view
+        onCheckComplete?.();
       } else {
         toast.error(data.error || data.message || 'MCI check returned no results');
       }
