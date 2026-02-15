@@ -12,6 +12,7 @@ import {
   DollarSign,
   ExternalLink,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Mortgagee {
   id: string;
@@ -122,42 +123,52 @@ export function MortgageePaymentStatus({ policyId, mortgagees: initialMortgagees
         body: JSON.stringify({ mortgageeId }),
       });
       const data = await res.json();
-      if (data.success) {
-        if (data.skipped) {
-          // Company doesn't use MCI
-          setMortgagees(prev =>
-            prev.map(m =>
-              m.id === mortgageeId
-                ? {
-                    ...m,
-                    currentPaymentStatus: 'not_in_mci',
-                    lastPaymentCheckAt: new Date().toISOString(),
-                  }
-                : m
-            )
-          );
-          setError(data.message);
-          setTimeout(() => setError(null), 5000);
-        } else {
-          // Update local state with new status
-          setMortgagees(prev =>
-            prev.map(m =>
-              m.id === mortgageeId
-                ? {
-                    ...m,
-                    currentPaymentStatus: data.result.payment_status || 'unknown',
-                    lastPaymentCheckAt: new Date().toISOString(),
-                    paidThroughDate: data.result.paid_through_date,
-                    nextDueDate: data.result.next_due_date,
-                    amountDue: data.result.amount_due,
-                  }
-                : m
-            )
-          );
-        }
+
+      if (!res.ok) {
+        toast.error(data.error || 'MCI check failed');
+        return;
+      }
+
+      if (data.skipped) {
+        // Company doesn't use MCI or policy is inactive
+        setMortgagees(prev =>
+          prev.map(m =>
+            m.id === mortgageeId
+              ? {
+                  ...m,
+                  currentPaymentStatus: data.paymentStatus || 'not_in_mci',
+                  lastPaymentCheckAt: new Date().toISOString(),
+                }
+              : m
+          )
+        );
+        toast.info(data.message || 'Company not in MCI');
+      } else if (data.success) {
+        // Update local state with new status, then re-fetch for latest DB data
+        const status = data.result?.payment_status || 'unknown';
+        setMortgagees(prev =>
+          prev.map(m =>
+            m.id === mortgageeId
+              ? {
+                  ...m,
+                  currentPaymentStatus: status,
+                  lastPaymentCheckAt: new Date().toISOString(),
+                  paidThroughDate: data.result?.paid_through_date,
+                  nextDueDate: data.result?.next_due_date,
+                  amountDue: data.result?.amount_due,
+                }
+              : m
+          )
+        );
+        toast.success(`Payment status: ${status.replace(/_/g, ' ')}`);
+        // Re-fetch to get latest DB data
+        await fetchMortgagees();
+      } else {
+        toast.error(data.error || data.message || 'MCI check returned no results');
       }
     } catch (err) {
       console.error('Error checking payment:', err);
+      toast.error('Failed to check payment status');
     } finally {
       setChecking(null);
     }

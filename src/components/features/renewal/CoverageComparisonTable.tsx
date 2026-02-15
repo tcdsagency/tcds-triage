@@ -245,7 +245,7 @@ function calculateTotalPremium(coverages: CanonicalCoverage[]): number {
 
 function isHomePolicy(snapshot: RenewalSnapshot | BaselineSnapshot | null): boolean {
   if (!snapshot) return false;
-  const covTypes = snapshot.coverages.map(c => c.type);
+  const covTypes = (snapshot.coverages || []).map(c => c.type);
   return covTypes.some(t => t === 'dwelling' || t === 'personal_property' || t === 'other_structures');
 }
 

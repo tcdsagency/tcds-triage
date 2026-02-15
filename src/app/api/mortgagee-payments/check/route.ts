@@ -69,9 +69,10 @@ export async function POST(request: NextRequest) {
     // Skip inactive policies
     if (policy.status !== "active") {
       return NextResponse.json({
-        success: false,
+        success: true,
         skipped: true,
         message: `Policy is ${policy.status} — MCI check not needed.`,
+        paymentStatus: "unknown",
       });
     }
 

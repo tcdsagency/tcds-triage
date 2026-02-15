@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { policies } from '@/db/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, gte, sql } from 'drizzle-orm';
 
 export async function GET(
   _request: NextRequest,
@@ -17,6 +17,11 @@ export async function GET(
     if (!tenantId) {
       return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });
     }
+
+    // Only return policies that are active/pending AND not expired
+    // (expirationDate is null or >= 30 days ago to catch recently-expired)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     const results = await db
       .select({
@@ -35,6 +40,7 @@ export async function GET(
           eq(policies.tenantId, tenantId),
           eq(policies.customerId, id),
           inArray(policies.status, ['active', 'pending']),
+          sql`(${policies.expirationDate} IS NULL OR ${policies.expirationDate} >= ${thirtyDaysAgo.toISOString()})`,
         )
       );
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, FileDown, Loader2, Phone, Mail, Info, Eye, Map, ChevronDown, ChevronRight, Home, Car, Umbrella, Droplets, Heart, Shield, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,7 +27,63 @@ interface RenewalDetailPageProps {
   renewalId: string;
 }
 
+// Error boundary to catch rendering crashes and show a helpful message instead of a blank page
+class RenewalErrorBoundary extends React.Component<
+  { children: React.ReactNode; renewalId: string },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode; renewalId: string }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[RenewalDetailPage] Render error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-96 text-gray-500">
+          <p className="text-lg font-medium">Something went wrong loading this renewal</p>
+          <p className="text-sm text-gray-400 mt-1">
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </p>
+          <div className="flex gap-3 mt-4">
+            <button
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="text-emerald-600 hover:text-emerald-700 text-sm"
+            >
+              Try Again
+            </button>
+            <a
+              href="/renewal-review"
+              className="text-emerald-600 hover:text-emerald-700 text-sm flex items-center gap-1"
+            >
+              Back to Renewals
+            </a>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps) {
+  return (
+    <RenewalErrorBoundary renewalId={renewalId}>
+      <RenewalDetailPageInner renewalId={renewalId} />
+    </RenewalErrorBoundary>
+  );
+}
+
+function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
   const router = useRouter();
   const { user } = useUser();
   const userId = user?.id;
@@ -283,8 +339,15 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
     ? Math.round((reviewedCount / reviewable.length) * 100)
     : materialChanges.length > 0 ? 0 : 0; // Don't show 100% when there's nothing to review
 
-  // Claims from snapshots
+  // Claims from snapshots (defensive: ensure arrays)
   const claims = detail.renewalSnapshot?.claims || detail.baselineSnapshot?.claims || [];
+  // Ensure snapshot coverages are arrays (prevents crash if snapshot data is malformed)
+  if (detail.renewalSnapshot && !Array.isArray(detail.renewalSnapshot.coverages)) {
+    detail.renewalSnapshot.coverages = [];
+  }
+  if (detail.baselineSnapshot && !Array.isArray(detail.baselineSnapshot.coverages)) {
+    detail.baselineSnapshot.coverages = [];
+  }
 
   // Discounts
   const renewalDiscounts = detail.renewalSnapshot?.discounts || [];
@@ -1110,7 +1173,7 @@ function PublicRecordsCard({
 
 // Compact Street View card for left sidebar
 function StreetViewSidebar({ address }: { address: { street?: string; city?: string; state?: string; zip?: string } }) {
-  const [iframeError, setIframeError] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const [viewMode, setViewMode] = useState<'streetview' | 'map'>('streetview');
 
   const fullAddress = [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ');
@@ -1119,9 +1182,8 @@ function StreetViewSidebar({ address }: { address: { street?: string; city?: str
   const encodedAddress = encodeURIComponent(fullAddress);
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-  // Use space-separated address (no commas) for street view — Google's embed API geocodes this more reliably
-  const svAddress = [address.street, address.city, address.state, address.zip].filter(Boolean).join(' ');
-  const streetViewEmbedUrl = `https://www.google.com/maps/embed/v1/streetview?key=${apiKey}&location=${encodeURIComponent(svAddress)}&heading=0&pitch=0&fov=90`;
+  // Static Street View Image API accepts address strings directly (unlike Embed API which needs lat/lng)
+  const streetViewImgUrl = `https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${encodedAddress}&key=${apiKey}`;
   const mapEmbedUrl = `https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodedAddress}&zoom=18&maptype=satellite`;
 
   return (
@@ -1155,14 +1217,21 @@ function StreetViewSidebar({ address }: { address: { street?: string; city?: str
         </div>
       </div>
       <div className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
-        {apiKey && !iframeError ? (
+        {apiKey && viewMode === 'streetview' && !imgError ? (
+          <img
+            src={streetViewImgUrl}
+            alt={`Street view of ${fullAddress}`}
+            className="w-full h-48 object-cover"
+            loading="lazy"
+            onError={() => setImgError(true)}
+          />
+        ) : apiKey && viewMode === 'map' ? (
           <iframe
-            src={viewMode === 'streetview' ? streetViewEmbedUrl : mapEmbedUrl}
+            src={mapEmbedUrl}
             className="w-full h-48 border-0"
             allowFullScreen
             loading="lazy"
             referrerPolicy="no-referrer-when-downgrade"
-            onError={() => { if (viewMode === 'streetview') setViewMode('map'); else setIframeError(true); }}
           />
         ) : (
           <div className="w-full h-48 flex items-center justify-center text-gray-400 dark:text-gray-500">
