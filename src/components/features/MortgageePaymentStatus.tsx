@@ -76,6 +76,12 @@ const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle; color: string; b
     bgColor: 'bg-orange-50',
     label: 'Error',
   },
+  not_in_mci: {
+    icon: Building2,
+    color: 'text-gray-600',
+    bgColor: 'bg-gray-100',
+    label: 'Not in MCI',
+  },
 };
 
 export function MortgageePaymentStatus({ policyId, mortgagees: initialMortgagees, compact = false }: MortgageePaymentStatusProps) {
@@ -117,21 +123,38 @@ export function MortgageePaymentStatus({ policyId, mortgagees: initialMortgagees
       });
       const data = await res.json();
       if (data.success) {
-        // Update local state with new status
-        setMortgagees(prev =>
-          prev.map(m =>
-            m.id === mortgageeId
-              ? {
-                  ...m,
-                  currentPaymentStatus: data.result.payment_status || 'unknown',
-                  lastPaymentCheckAt: new Date().toISOString(),
-                  paidThroughDate: data.result.paid_through_date,
-                  nextDueDate: data.result.next_due_date,
-                  amountDue: data.result.amount_due,
-                }
-              : m
-          )
-        );
+        if (data.skipped) {
+          // Company doesn't use MCI
+          setMortgagees(prev =>
+            prev.map(m =>
+              m.id === mortgageeId
+                ? {
+                    ...m,
+                    currentPaymentStatus: 'not_in_mci',
+                    lastPaymentCheckAt: new Date().toISOString(),
+                  }
+                : m
+            )
+          );
+          setError(data.message);
+          setTimeout(() => setError(null), 5000);
+        } else {
+          // Update local state with new status
+          setMortgagees(prev =>
+            prev.map(m =>
+              m.id === mortgageeId
+                ? {
+                    ...m,
+                    currentPaymentStatus: data.result.payment_status || 'unknown',
+                    lastPaymentCheckAt: new Date().toISOString(),
+                    paidThroughDate: data.result.paid_through_date,
+                    nextDueDate: data.result.next_due_date,
+                    amountDue: data.result.amount_due,
+                  }
+                : m
+            )
+          );
+        }
       }
     } catch (err) {
       console.error('Error checking payment:', err);
@@ -223,6 +246,13 @@ export function MortgageePaymentStatus({ policyId, mortgagees: initialMortgagees
                 {status.label}
               </div>
             </div>
+
+            {/* Not in MCI message */}
+            {mortgagee.currentPaymentStatus === 'not_in_mci' && (
+              <div className="text-sm text-gray-600 bg-gray-50 rounded-md px-3 py-2">
+                This mortgage company does not use MCI. Contact the mortgage company directly for payment information.
+              </div>
+            )}
 
             {/* Payment Details */}
             <div className="grid grid-cols-2 gap-4 text-sm">

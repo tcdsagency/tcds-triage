@@ -169,6 +169,7 @@ export const mortgageePaymentStatusEnum = pgEnum('mortgagee_payment_status', [
   'unknown',        // Could not determine status
   'pending_check',  // Check in progress
   'error',          // Check failed
+  'not_in_mci',     // Mortgage company does not use MCI
 ]);
 
 export const mortgageeCheckStatusEnum = pgEnum('mortgagee_check_status', [

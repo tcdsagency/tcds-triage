@@ -11,6 +11,7 @@ import {
   customers,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+import { shouldSkipMci } from "@/lib/mortgageePayments/scheduler";
 
 /**
  * POST /api/mortgagee-payments/check
@@ -97,6 +98,27 @@ export async function POST(request: NextRequest) {
         { error: "No ZIP code available for this property/customer" },
         { status: 400 }
       );
+    }
+
+    // Skip companies that don't use MCI
+    if (shouldSkipMci(mortgagee.name || "")) {
+      // Update mortgagee with skip status
+      await db
+        .update(mortgagees)
+        .set({
+          currentPaymentStatus: "not_in_mci",
+          lastPaymentCheckAt: new Date(),
+          mciLastFound: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(mortgagees.id, mortgageeId));
+
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        message: `${mortgagee.name} does not use MCI. Contact the mortgage company directly for payment information.`,
+        paymentStatus: "not_in_mci",
+      });
     }
 
     // Get microservice settings

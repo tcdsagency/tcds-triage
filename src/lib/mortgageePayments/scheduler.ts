@@ -17,6 +17,30 @@ import {
 } from "@/db/schema";
 import { eq, and, lte, sql, isNull, or, desc } from "drizzle-orm";
 
+/**
+ * Mortgage companies confirmed to NOT use MCI.
+ * These will be skipped during checks to avoid unnecessary API calls.
+ * Patterns are matched case-insensitively against the mortgagee name.
+ */
+export const MCI_SKIP_PATTERNS = [
+  "freedom mortgage",
+  "servisolutions",
+  "servi solutions",
+  "al housing",
+  "alabama housing",
+  "hometown bank",
+  "southern energy",
+];
+
+/**
+ * Check if a mortgagee company should skip MCI lookup.
+ * Returns true if the company is known to not use MCI.
+ */
+export function shouldSkipMci(mortgageeName: string): boolean {
+  const lower = (mortgageeName || "").toLowerCase();
+  return MCI_SKIP_PATTERNS.some((pattern) => lower.includes(pattern));
+}
+
 interface SchedulerSettings {
   enabled: boolean;
   recheckDays: number;
@@ -380,6 +404,30 @@ export class MortgageePaymentScheduler {
         .where(eq(customers.id, mortgagee.customerId))
         .limit(1);
       lastName = customer?.lastName || "";
+    }
+
+    // Skip companies that don't use MCI
+    if (shouldSkipMci(mortgagee.name || "")) {
+      console.log(
+        `[MortgageeScheduler] Skipping ${mortgagee.name} - not in MCI`
+      );
+      // Update mortgagee with skip status
+      await db
+        .update(mortgagees)
+        .set({
+          currentPaymentStatus: "not_in_mci",
+          lastPaymentCheckAt: new Date(),
+          mciLastFound: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(mortgagees.id, mortgagee.id));
+
+      return {
+        mortgageeId: mortgagee.id,
+        policyNumber: policy?.policyNumber || "",
+        success: true,
+        paymentStatus: "not_in_mci",
+      };
     }
 
     // Create check record
