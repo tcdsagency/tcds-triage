@@ -1,3 +1,5 @@
+export const maxDuration = 300;
+
 /**
  * API Route: /api/mortgagee-payments/sync
  * Sync mortgagees from HawkSoft policies into the mortgagees table
