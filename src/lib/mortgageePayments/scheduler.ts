@@ -407,8 +407,8 @@ export class MortgageePaymentScheduler {
             "X-API-Key": this.settings!.microserviceApiKey,
           },
           body: JSON.stringify({
-            loan_number: loanNumber,
-            zip_code: zipCode,
+            loan_number: loanNumber.replace(/-/g, ""),
+            zip_code: zipCode.replace(/-.*$/, ""),
             last_name: lastName || null,
           }),
         }

@@ -1,3 +1,5 @@
+export const maxDuration = 300;
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import {
@@ -133,8 +135,8 @@ export async function POST(request: NextRequest) {
           "X-API-Key": settings.microserviceApiKey || "",
         },
         body: JSON.stringify({
-          loan_number: mortgagee.loanNumber || policy.policyNumber,
-          zip_code: zipCode,
+          loan_number: (mortgagee.loanNumber || policy.policyNumber).replace(/-/g, ""),
+          zip_code: zipCode.replace(/-.*$/, ""),
           last_name: lastName || null,
         }),
       });
