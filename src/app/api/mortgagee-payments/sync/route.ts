@@ -278,14 +278,14 @@ export async function GET() {
 
 /**
  * HawkSoft additional interest type codes:
- * MS = Mortgagee, A1 = Additional Interest, LP = Loss Payee,
+ * MS/MG = Mortgagee, A1 = Additional Interest, LP = Loss Payee,
  * LH = Lienholder, AI = Additional Insured
  */
 function normalizeAdditionalInterestType(type?: string): string {
   if (!type) return "mortgagee";
 
   const upper = type.toUpperCase();
-  if (upper === "MS") return "mortgagee";
+  if (upper === "MS" || upper === "MG") return "mortgagee";
   if (upper === "LP") return "loss_payee";
   if (upper === "LH") return "lienholder";
   if (upper === "A1" || upper === "AI") return "additional_interest";
