@@ -523,13 +523,21 @@ export const COVERAGE_DISPLAY_NAMES: Record<string, string> = {
 
   // --- Orion180 raw codes ---
   ALEXP: 'Additional Living Expense',
+  alexp: 'Additional Living Expense',
   PC: 'Personal Computer',
+  pc: 'Personal Computer',
   UNJEW: 'Unscheduled Jewelry',
+  unjew: 'Unscheduled Jewelry',
   CCSV: 'Credit Card / Securities',
+  ccsv: 'Credit Card / Securities',
   RCD: 'Roof Covering Damage',
+  rcd: 'Roof Covering Damage',
   Rvpp: 'Replacement Value — Personal Property',
+  rvpp: 'Replacement Value — Personal Property',
   FortifiedRoofUpgrade: 'Fortified Roof Upgrade',
+  frfu: 'Fortified Roof Upgrade',
   TIV: 'Total Insured Value',
+  tiv: 'Total Insured Value',
   LAC: 'Additional Liability',
   BOLAW: 'By Operation of Law',
   SEWER: 'Sewer/Water Backup',
@@ -638,8 +646,10 @@ export function resolveCoverageDisplayName(code: string, carrier?: string): stri
     }
   }
 
-  // 2. base map (exact)
+  // 2. base map (exact, then case-insensitive)
   if (COVERAGE_DISPLAY_NAMES[code]) return COVERAGE_DISPLAY_NAMES[code];
+  if (COVERAGE_DISPLAY_NAMES[code.toLowerCase()]) return COVERAGE_DISPLAY_NAMES[code.toLowerCase()];
+  if (COVERAGE_DISPLAY_NAMES[code.toUpperCase()]) return COVERAGE_DISPLAY_NAMES[code.toUpperCase()];
 
   // 3. title-case fallback: "wind_hail" → "Wind Hail", "DWELL" → "Dwell"
   return code
