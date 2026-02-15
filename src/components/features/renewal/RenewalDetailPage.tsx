@@ -114,7 +114,7 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
       const data = await res.json();
       if (data.success) {
         setDetail(data.renewal);
-        setCheckResults(data.renewal.checkResults || []);
+        setCheckResults(Array.isArray(data.renewal.checkResults) ? data.renewal.checkResults : []);
         if (data.mciPaymentData) setMciPaymentData(data.mciPaymentData);
       }
     } catch (err) {
@@ -330,7 +330,7 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
   const premiumChange = current.premiumChangePercent ?? 0;
   const checkSummary = current.checkSummary ?? null;
   const comparisonSummary = current.comparisonSummary ?? null;
-  const materialChanges = current.materialChanges || [];
+  const materialChanges = Array.isArray(current.materialChanges) ? current.materialChanges : [];
 
   // Review progress
   const reviewable = checkResults.filter(r => r.severity !== 'unchanged');
