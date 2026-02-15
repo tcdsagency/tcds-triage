@@ -71,6 +71,16 @@ export const COVERAGE_DISPLAY_NAMES: Record<string, string> = {
   gap_coverage: 'GAP Coverage',
   loan_lease_payoff: 'Loan/Lease Payoff',
 
+  // --- Orion180 / generic home ---
+  additional_living_expense: 'Additional Living Expense',
+  personal_computer: 'Personal Computer',
+  unscheduled_jewelry: 'Unscheduled Jewelry',
+  credit_card_securities: 'Credit Card / Securities',
+  roof_covering_damage: 'Roof Covering Damage',
+  replacement_value_personal_property: 'Replacement Value — Personal Property',
+  fortified_roof_upgrade: 'Fortified Roof Upgrade',
+  total_insured_value: 'Total Insured Value',
+
   // --- Allstate canonical ---
   DWELL: 'Dwelling',
   ADDLIV: 'Additional Living Expenses',
@@ -85,6 +95,19 @@ export const COVERAGE_DISPLAY_NAMES: Record<string, string> = {
   PL: 'Personal Liability',
   MEDPM: 'Medical Payments to Others',
   EDC: 'Extended Dwelling Coverage',
+
+  // --- Orion180 raw codes ---
+  ALEXP: 'Additional Living Expense',
+  PC: 'Personal Computer',
+  UNJEW: 'Unscheduled Jewelry',
+  CCSV: 'Credit Card / Securities',
+  RCD: 'Roof Covering Damage',
+  Rvpp: 'Replacement Value — Personal Property',
+  FortifiedRoofUpgrade: 'Fortified Roof Upgrade',
+  TIV: 'Total Insured Value',
+  LAC: 'Additional Liability',
+  BOLAW: 'By Operation of Law',
+  SEWER: 'Sewer/Water Backup',
 
   // --- Progressive canonical ---
   BI: 'Bodily Injury',
@@ -126,6 +149,24 @@ const CARRIER_OVERRIDES: Record<string, Record<string, string>> = {
     clmf: 'Claims Free',
     tpds: 'Third Party Designation',
     pifd: 'Paid In Full Discount',
+  },
+  orion: {
+    ALEXP: 'Additional Living Expense',
+    PC: 'Personal Computer',
+    UNJEW: 'Unscheduled Jewelry',
+    CCSV: 'Credit Card / Securities',
+    RCD: 'Roof Covering Damage',
+    Rvpp: 'Replacement Value — Personal Property',
+    FortifiedRoofUpgrade: 'Fortified Roof Upgrade',
+    TIV: 'Total Insured Value',
+    LAC: 'Additional Liability',
+    BOLAW: 'By Operation of Law',
+    SEWER: 'Sewer/Water Backup',
+    OS: 'Other Structures',
+    PP: 'Personal Property',
+    PL: 'Personal Liability',
+    MEDPM: 'Medical Payments to Others',
+    DWELL: 'Dwelling',
   },
   safeco: {
     DWELL: 'Dwelling',

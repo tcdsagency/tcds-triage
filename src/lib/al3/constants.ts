@@ -233,6 +233,16 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'SDC': 'safe_driver_course_discount',
   'FTBYR': 'first_year_buyer_discount',
 
+  // Orion180-specific coverage codes
+  'ALEXP': 'additional_living_expense',
+  'PC': 'personal_computer',
+  'UNJEW': 'unscheduled_jewelry',
+  'CCSV': 'credit_card_securities',
+  'RCD': 'roof_covering_damage',
+  'RVPP': 'replacement_value_personal_property',
+  'FORTIFIEDROOFUPGRADE': 'fortified_roof_upgrade',
+  'TIV': 'total_insured_value',
+
   // Openly-specific coverage codes
   'MIN01': 'mine_subsidence',
   'SINK': 'sinkhole',

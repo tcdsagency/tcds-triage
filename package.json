@@ -37,6 +37,7 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.1",
     "framer-motion": "^12.27.0",
+    "geist": "^1.7.0",
     "ioredis": "^5.9.2",
     "isomorphic-dompurify": "^2.35.0",
     "leaflet": "^1.9.4",

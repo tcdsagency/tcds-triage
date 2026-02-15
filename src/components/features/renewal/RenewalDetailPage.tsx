@@ -16,6 +16,7 @@ import ClaimsAgingSection from './ClaimsAgingSection';
 import DeductiblesSection from './DeductiblesSection';
 import DiscountPills from './DiscountPills';
 import ReviewActionBar from './ReviewActionBar';
+import CrossSellSection from './CrossSellSection';
 import PremiumChangeSummary from './PremiumChangeSummary';
 import PropertyInspectionCard from './PropertyInspectionCard';
 import type { RenewalComparisonDetail, RenewalNote } from './types';
@@ -512,99 +513,106 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
           )}
         </div>
 
-        {/* ============ CENTER COLUMN (flex-1, scrolls) ============ */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-gray-50 dark:bg-gray-900">
-          {/* Talk Points — moved here from right column for prominence */}
-          <TalkPoints
-            checkResults={checkResults}
-            materialChanges={materialChanges}
-            comparisonSummary={comparisonSummary}
-          />
-
-          {/* Property Inspection (home policies only) */}
-          <PropertyInspectionCard
-            renewalId={renewalId}
-            lineOfBusiness={current.lineOfBusiness ?? null}
-          />
-
-          {/* Baseline status banners */}
-          {!detail.baselineSnapshot && (
-            <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 flex items-start gap-2.5">
-              <Info className="h-4 w-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-700 dark:text-amber-300">
-                No baseline policy found — comparison data unavailable. Premium change shown is renewal-only.
-              </p>
-            </div>
-          )}
-          {comparisonSummary?.baselineStatus === 'current_term' && (
-            <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 flex items-start gap-2.5">
-              <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 shrink-0 mt-0.5" />
-              <p className="text-sm text-blue-700 dark:text-blue-300">
-                Baseline was captured from current term — changes may not reflect prior term differences.
-              </p>
-            </div>
-          )}
-
-          {/* 0. Premium Change Summary */}
-          <PremiumChangeSummary
-            checkResults={checkResults}
-            materialChanges={materialChanges}
-            renewalSnapshot={detail.renewalSnapshot ?? null}
-            baselineSnapshot={detail.baselineSnapshot ?? null}
-            premiumChangePercent={current.premiumChangePercent ?? null}
-            premiumChangeAmount={current.premiumChangeAmount ?? null}
-            lineOfBusiness={current.lineOfBusiness ?? null}
-          />
-
-          {/* 1. Reasons for Premium Change */}
-          {checkResults.length > 0 && (
-            <ReasonsForChange
+        {/* ============ CENTER COLUMN (flex-1, flex layout) ============ */}
+        <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900">
+          {/* Scrollable content area */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            {/* Talk Points — moved here from right column for prominence */}
+            <TalkPoints
               checkResults={checkResults}
-              checkSummary={checkSummary}
-              onReviewToggle={handleCheckReview}
+              materialChanges={materialChanges}
+              comparisonSummary={comparisonSummary}
             />
-          )}
 
-          {/* 2. Coverage Comparison Table */}
-          <CoverageComparisonTable
-            renewalSnapshot={detail.renewalSnapshot ?? null}
-            baselineSnapshot={detail.baselineSnapshot ?? null}
-          />
-
-          {/* 3. Claims & Violations Aging */}
-          {claims.length > 0 && (
-            <ClaimsAgingSection claims={claims} />
-          )}
-
-          {/* 4. Deductibles */}
-          <DeductiblesSection
-            renewalSnapshot={detail.renewalSnapshot ?? null}
-            baselineSnapshot={detail.baselineSnapshot ?? null}
-          />
-
-          {/* 5. Discounts */}
-          <DiscountPills discounts={renewalDiscounts} baselineDiscounts={baselineDiscounts} />
-
-          {/* 6. Review Action Bar */}
-          <ReviewActionBar
-            renewalId={renewalId}
-            currentDecision={current.agentDecision}
-            status={current.status}
-            onDecision={handleDecision}
-            reviewProgress={reviewProgress}
-            reviewedCount={reviewedCount}
-            totalReviewable={reviewable.length}
-            materialChangesCount={materialChanges.length}
-            quotamationUrl={quotamationUrl}
-          />
-
-          {/* 7. Notes Panel */}
-          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-            <NotesPanel
-              notes={notes}
-              onAddNote={handleAddNote}
-              loading={notesLoading}
+            {/* Property Inspection (home policies only) */}
+            <PropertyInspectionCard
+              renewalId={renewalId}
+              lineOfBusiness={current.lineOfBusiness ?? null}
             />
+
+            {/* Baseline status banners */}
+            {!detail.baselineSnapshot && (
+              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 flex items-start gap-2.5">
+                <Info className="h-4 w-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  No baseline policy found — comparison data unavailable. Premium change shown is renewal-only.
+                </p>
+              </div>
+            )}
+            {comparisonSummary?.baselineStatus === 'current_term' && (
+              <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 flex items-start gap-2.5">
+                <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  Baseline was captured from current term — changes may not reflect prior term differences.
+                </p>
+              </div>
+            )}
+
+            {/* 0. Premium Change Summary */}
+            <PremiumChangeSummary
+              checkResults={checkResults}
+              materialChanges={materialChanges}
+              renewalSnapshot={detail.renewalSnapshot ?? null}
+              baselineSnapshot={detail.baselineSnapshot ?? null}
+              premiumChangePercent={current.premiumChangePercent ?? null}
+              premiumChangeAmount={current.premiumChangeAmount ?? null}
+              lineOfBusiness={current.lineOfBusiness ?? null}
+            />
+
+            {/* 1. Reasons for Premium Change */}
+            {checkResults.length > 0 && (
+              <ReasonsForChange
+                checkResults={checkResults}
+                checkSummary={checkSummary}
+                onReviewToggle={handleCheckReview}
+              />
+            )}
+
+            {/* 2. Coverage Comparison Table */}
+            <CoverageComparisonTable
+              renewalSnapshot={detail.renewalSnapshot ?? null}
+              baselineSnapshot={detail.baselineSnapshot ?? null}
+            />
+
+            {/* 3. Claims & Violations Aging */}
+            {claims.length > 0 && (
+              <ClaimsAgingSection claims={claims} />
+            )}
+
+            {/* 4. Deductibles */}
+            <DeductiblesSection
+              renewalSnapshot={detail.renewalSnapshot ?? null}
+              baselineSnapshot={detail.baselineSnapshot ?? null}
+            />
+
+            {/* 5. Discounts */}
+            <DiscountPills discounts={renewalDiscounts} baselineDiscounts={baselineDiscounts} />
+
+            {/* 6. Cross-Sell Opportunities */}
+            <CrossSellSection customerId={current.customerId} />
+          </div>
+
+          {/* Sticky bottom: Action Bar + Notes */}
+          <div className="shrink-0 p-5 pt-0 space-y-3">
+            <ReviewActionBar
+              renewalId={renewalId}
+              currentDecision={current.agentDecision}
+              status={current.status}
+              onDecision={handleDecision}
+              reviewProgress={reviewProgress}
+              reviewedCount={reviewedCount}
+              totalReviewable={reviewable.length}
+              materialChangesCount={materialChanges.length}
+              quotamationUrl={quotamationUrl}
+            />
+
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+              <NotesPanel
+                notes={notes}
+                onAddNote={handleAddNote}
+                loading={notesLoading}
+              />
+            </div>
           </div>
         </div>
 

@@ -11,6 +11,7 @@ interface DeductiblesSectionProps {
 }
 
 interface DeductibleRow {
+  type: string;
   label: string;
   currentValue: string;
   renewalValue: string;
@@ -30,6 +31,18 @@ const DEDUCTIBLE_LABELS: Record<string, string> = {
   dwelling: 'Dwelling (All Perils)',
   hurricane_deductible: 'Hurricane',
   named_storm_deductible: 'Named Storm',
+};
+
+// Educational tips for deductible types
+const DEDUCTIBLE_TIPS: Record<string, string> = {
+  dwelling: 'Applies to all perils including fire, theft, vandalism. Usually the main deductible on the policy.',
+  wind_hail: 'Separate deductible for wind/hail claims. Often a percentage of Coverage A (dwelling).',
+  hurricane_deductible: 'Applies to hurricane claims. Typically 2-5% of dwelling value.',
+  named_storm_deductible: 'Applies to named storm damage. Similar to hurricane deductible but may cover broader storm types.',
+  comprehensive: "Applies to non-collision claims (theft, vandalism, weather, animal). Also called 'other than collision'.",
+  collision: 'Applies to collision claims (hitting another vehicle, object, or rollover).',
+  sewer_water_backup: 'Covers damage from backed-up sewers/drains. Often an endorsement with a separate deductible.',
+  equipment_breakdown: 'Covers mechanical/electrical breakdown of home systems (HVAC, appliances).',
 };
 
 function extractDeductibles(coverages: CanonicalCoverage[]): Map<string, CanonicalCoverage> {
@@ -64,6 +77,7 @@ function buildRows(
     const isRemoved = bVal != null && rVal == null;
 
     rows.push({
+      type,
       label: DEDUCTIBLE_LABELS[type] || b?.description || r?.description || resolveCoverageDisplayName(type),
       currentValue: bVal != null ? `$${bVal.toLocaleString()}` : '-',
       renewalValue: rVal != null ? `$${rVal.toLocaleString()}` : '-',
@@ -194,17 +208,31 @@ export default function DeductiblesSection({
                       row.isNew ? 'text-green-600 dark:text-green-400' :
                       'text-gray-700 dark:text-gray-300',
                     )}>
-                      {row.label}
-                      {row.isNew && (
-                        <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 no-underline">
-                          NEW
-                        </span>
-                      )}
-                      {row.isRemoved && (
-                        <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 no-underline">
-                          REMOVED
-                        </span>
-                      )}
+                      <div className="relative group/tip inline-flex items-center gap-1">
+                        {row.label}
+                        {row.isNew && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 no-underline">
+                            NEW
+                          </span>
+                        )}
+                        {row.isRemoved && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 no-underline">
+                            REMOVED
+                          </span>
+                        )}
+                        {(DEDUCTIBLE_TIPS[row.type] || row.changed) && (
+                          <div className="hidden group-hover/tip:block absolute left-0 -top-10 z-10 px-2.5 py-1.5 bg-gray-900 text-white text-xs rounded shadow-lg max-w-xs whitespace-normal">
+                            {DEDUCTIBLE_TIPS[row.type] || ''}
+                            {row.changed && (
+                              <span className="block mt-0.5 text-gray-300">
+                                {row.increased
+                                  ? '(Higher deductible = lower premium, more out-of-pocket risk)'
+                                  : '(Lower deductible = higher premium, less out-of-pocket risk)'}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className={cn(
                       'text-right px-3 py-2.5',

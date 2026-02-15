@@ -73,6 +73,28 @@ function computeChange(
   return { text: `${dollarStr} (${sign}${pct}%)`, color };
 }
 
+/**
+ * Pick the best human-readable label for a coverage row.
+ * Prefer resolveCoverageDisplayName (which checks base + carrier maps)
+ * over the raw description, since description often echoes the raw code.
+ */
+function resolveLabel(
+  type: string,
+  b: CanonicalCoverage | undefined,
+  r: CanonicalCoverage | undefined,
+  carrier?: string,
+): string {
+  const resolved = resolveCoverageDisplayName(type, carrier);
+  // If the display name lookup returned something other than a title-cased version
+  // of the type itself, prefer it (means we have a real mapping)
+  const titleCasedType = type.replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  if (resolved !== titleCasedType) return resolved;
+  // If description is a long readable string (not just the raw code), use it
+  const desc = b?.description || r?.description;
+  if (desc && desc.length > 3 && desc.toLowerCase() !== type.toLowerCase()) return desc;
+  return resolved;
+}
+
 const COVERAGE_ORDER = [
   'dwelling', 'other_structures', 'personal_property', 'loss_of_use',
   'personal_liability', 'medical_payments_to_others',
@@ -102,7 +124,7 @@ function buildRows(
     const change = computeChange(b, r);
     rows.push({
       type,
-      label: b?.description || r?.description || resolveCoverageDisplayName(type, carrier),
+      label: resolveLabel(type, b, r, carrier),
       currentLimit: formatLimit(b),
       renewalLimit: formatLimit(r),
       changeText: change.text,
@@ -121,7 +143,7 @@ function buildRows(
     const change = computeChange(b, r);
     rows.push({
       type,
-      label: b?.description || r?.description || resolveCoverageDisplayName(type, carrier),
+      label: resolveLabel(type, b, r, carrier),
       currentLimit: formatLimit(b),
       renewalLimit: formatLimit(r),
       changeText: change.text,

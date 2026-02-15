@@ -62,7 +62,7 @@ export default function ReviewActionBar({
 
   return (
     <>
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4 space-y-3">
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 border-t border-gray-200 dark:border-gray-700 shadow-[0_-2px_8px_rgba(0,0,0,0.06)] bg-gray-50 dark:bg-gray-900/50 px-5 py-3 space-y-3">
         {/* Review counter */}
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
