@@ -25,12 +25,22 @@ export async function GET(request: NextRequest) {
 
     const validStatuses = ["cancelled", "expired", "non_renewed"] as const;
 
+    // Exclude customers who already have an active home policy (rewritten with another carrier)
+    const hasActiveHomePolicy = sql`NOT EXISTS (
+      SELECT 1 FROM policies active_p
+      WHERE active_p.customer_id = ${policies.customerId}
+        AND active_p.status = 'active'
+        AND active_p.id != ${policies.id}
+        AND LOWER(active_p.line_of_business) SIMILAR TO '%(home|ho-|ho3|ho5|ho6|dp-|dp3|dwelling|condo|tenant|renter|houseowner|homeowner)%'
+    )`;
+
     // Build where conditions — query mortgagees regardless of isActive for remarket
     let whereConditions = and(
       eq(mortgagees.tenantId, tenantId),
       status && validStatuses.includes(status as any)
         ? eq(policies.status, status as any)
-        : inArray(policies.status, [...validStatuses])
+        : inArray(policies.status, [...validStatuses]),
+      hasActiveHomePolicy
     );
 
     if (search && search.trim()) {
@@ -78,7 +88,13 @@ export async function GET(request: NextRequest) {
       .limit(limit)
       .offset(offset);
 
-    // Get counts by status
+    // Get counts by status (same exclusion filter applied)
+    const baseFilter = and(
+      eq(mortgagees.tenantId, tenantId),
+      inArray(policies.status, [...validStatuses]),
+      hasActiveHomePolicy
+    );
+
     const statusCounts = await db
       .select({
         status: policies.status,
@@ -86,24 +102,14 @@ export async function GET(request: NextRequest) {
       })
       .from(mortgagees)
       .innerJoin(policies, eq(mortgagees.policyId, policies.id))
-      .where(
-        and(
-          eq(mortgagees.tenantId, tenantId),
-          inArray(policies.status, [...validStatuses])
-        )
-      )
+      .where(baseFilter)
       .groupBy(policies.status);
 
     const [totalResult] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(mortgagees)
       .innerJoin(policies, eq(mortgagees.policyId, policies.id))
-      .where(
-        and(
-          eq(mortgagees.tenantId, tenantId),
-          inArray(policies.status, [...validStatuses])
-        )
-      );
+      .where(baseFilter);
 
     return NextResponse.json({
       success: true,
