@@ -144,7 +144,9 @@ export function normalizeHawkSoftCoverages(
     .map((cov) => {
       // Accept both DB format (type/limit/deductible) and HawkSoft format (code/limits/deductibles)
       const code = (cov.code || cov.type || '').toUpperCase().trim();
-      const canonicalType = COVERAGE_CODE_MAP[code] || code.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+      // Normalize spaces/hyphens to underscores for map lookup (e.g., "COV A" → "COV_A")
+      const normalizedCode = code.replace(/[^A-Z0-9]+/g, '_');
+      const canonicalType = COVERAGE_CODE_MAP[code] || COVERAGE_CODE_MAP[normalizedCode] || code.toLowerCase().replace(/[^a-z0-9]+/g, '_');
       const limitStr = cov.limits || cov.limit || '';
       const dedStr = cov.deductibles || cov.deductible || '';
       const premiumVal = typeof cov.premium === 'string' ? parseFloat(cov.premium) : (cov.premium ?? undefined);

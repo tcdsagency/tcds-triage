@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, FileDown, Loader2, Phone, Mail, Sparkles, Info } from 'lucide-react';
+import { ArrowLeft, FileDown, Loader2, Phone, Mail, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useUser } from '@/hooks/useUser';
@@ -493,31 +493,12 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
 
         {/* ============ CENTER COLUMN (flex-1, scrolls) ============ */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-gray-50 dark:bg-gray-900">
-          {/* AI Summary Banner */}
-          {comparisonSummary?.headline && (
-            <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 p-4 flex items-start gap-3">
-              <Sparkles className="h-5 w-5 text-indigo-500 dark:text-indigo-400 shrink-0 mt-0.5" />
-              <div>
-                <h3 className="text-base font-semibold text-indigo-800 dark:text-indigo-200">
-                  AI Summary
-                </h3>
-                <p className="text-sm text-indigo-700 dark:text-indigo-300 mt-1">
-                  {comparisonSummary.headline}
-                </p>
-                <div className="flex gap-4 mt-2 text-sm text-indigo-600 dark:text-indigo-400">
-                  {comparisonSummary.materialNegativeCount > 0 && (
-                    <span>{comparisonSummary.materialNegativeCount} concern{comparisonSummary.materialNegativeCount !== 1 ? 's' : ''}</span>
-                  )}
-                  {comparisonSummary.materialPositiveCount > 0 && (
-                    <span>{comparisonSummary.materialPositiveCount} improvement{comparisonSummary.materialPositiveCount !== 1 ? 's' : ''}</span>
-                  )}
-                  {comparisonSummary.nonMaterialCount > 0 && (
-                    <span>{comparisonSummary.nonMaterialCount} minor</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Talk Points — moved here from right column for prominence */}
+          <TalkPoints
+            checkResults={checkResults}
+            materialChanges={materialChanges}
+            comparisonSummary={comparisonSummary}
+          />
 
           {/* Property Inspection (home policies only) */}
           <PropertyInspectionCard
@@ -610,13 +591,6 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
           <ReviewProgress
             checkSummary={checkSummary}
             checkResults={checkResults}
-          />
-
-          {/* Talk Points for Customer */}
-          <TalkPoints
-            checkResults={checkResults}
-            materialChanges={materialChanges}
-            comparisonSummary={comparisonSummary}
           />
 
           {/* Download Report */}

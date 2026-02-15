@@ -26,15 +26,23 @@ export function normalizeCoverageType(
   carrierOverrides?: Record<string, string>
 ): string {
   const upperCode = code.toUpperCase().trim();
+  // Also normalize spaces/hyphens to underscores for map lookup
+  const normalizedCode = upperCode.replace(/[^A-Z0-9]+/g, '_');
 
   // Check carrier-specific overrides first
   if (carrierOverrides?.[upperCode]) {
     return carrierOverrides[upperCode];
   }
+  if (carrierOverrides?.[normalizedCode]) {
+    return carrierOverrides[normalizedCode];
+  }
 
-  // Check standard map
+  // Check standard map (try raw first, then normalized)
   if (COVERAGE_CODE_MAP[upperCode]) {
     return COVERAGE_CODE_MAP[upperCode];
+  }
+  if (COVERAGE_CODE_MAP[normalizedCode]) {
+    return COVERAGE_CODE_MAP[normalizedCode];
   }
 
   // Return as-is (snake_case normalized)

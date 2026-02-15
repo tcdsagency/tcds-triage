@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, ExternalLink, Loader2, AlertTriangle, Home, Eye } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { ChevronDown, ChevronUp, ExternalLink, Loader2, AlertTriangle, Home, Eye, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import type { PropertyData } from '@/lib/nearmap';
 
 interface PropertyInspectionCardProps {
@@ -14,6 +14,16 @@ export default function PropertyInspectionCard({ renewalId, lineOfBusiness }: Pr
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+
+  // Pan/zoom state
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const MIN_SCALE = 0.5;
+  const MAX_SCALE = 4;
 
   // Only fetch for home policies
   const isHome = lineOfBusiness?.toLowerCase().includes('home') ||
@@ -48,6 +58,42 @@ export default function PropertyInspectionCard({ renewalId, lineOfBusiness }: Pr
 
     return () => { cancelled = true; };
   }, [renewalId, isHome]);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.15 : 0.15;
+    setScale(prev => Math.min(MAX_SCALE, Math.max(MIN_SCALE, prev + delta)));
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setDragging(true);
+    dragStart.current = { x: e.clientX, y: e.clientY, tx: translate.x, ty: translate.y };
+  }, [translate]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragging) return;
+    const dx = e.clientX - dragStart.current.x;
+    const dy = e.clientY - dragStart.current.y;
+    setTranslate({ x: dragStart.current.tx + dx, y: dragStart.current.ty + dy });
+  }, [dragging]);
+
+  const handleMouseUp = useCallback(() => {
+    setDragging(false);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    setScale(prev => Math.min(MAX_SCALE, prev + 0.3));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setScale(prev => Math.max(MIN_SCALE, prev - 0.3));
+  }, []);
 
   if (!isHome) return null;
 
@@ -112,18 +158,65 @@ export default function PropertyInspectionCard({ renewalId, lineOfBusiness }: Pr
 
       {!collapsed && (
         <div className="px-4 pb-4 space-y-3">
-          {/* Aerial Image */}
+          {/* Aerial Image with Pan/Zoom */}
           {data.tileUrl && (
             <div className="relative rounded-md overflow-hidden bg-gray-100 dark:bg-gray-900">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={data.tileUrl}
-                alt="Aerial view of property"
-                className="w-full h-48 object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
+              <div
+                ref={containerRef}
+                className="relative h-64 overflow-hidden select-none"
+                style={{ cursor: dragging ? 'grabbing' : 'grab' }}
+                onWheel={handleWheel}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={data.tileUrl}
+                  alt="Aerial view of property"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  style={{
+                    transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+                    transformOrigin: 'center center',
+                    transition: dragging ? 'none' : 'transform 0.15s ease-out',
+                  }}
+                  draggable={false}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              </div>
+              {/* Zoom controls */}
+              <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-white/90 dark:bg-gray-800/90 rounded-md shadow-sm border border-gray-200 dark:border-gray-600 p-0.5">
+                <button
+                  onClick={handleZoomIn}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                  title="Zoom in"
+                >
+                  <ZoomIn className="h-3.5 w-3.5 text-gray-600 dark:text-gray-300" />
+                </button>
+                <button
+                  onClick={handleZoomOut}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                  title="Zoom out"
+                >
+                  <ZoomOut className="h-3.5 w-3.5 text-gray-600 dark:text-gray-300" />
+                </button>
+                <button
+                  onClick={handleReset}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                  title="Reset view"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 text-gray-600 dark:text-gray-300" />
+                </button>
+              </div>
+              {/* Zoom level indicator */}
+              {scale !== 1 && (
+                <div className="absolute top-2 left-2 text-[10px] font-medium px-1.5 py-0.5 rounded bg-black/50 text-white">
+                  {(scale * 100).toFixed(0)}%
+                </div>
+              )}
             </div>
           )}
 

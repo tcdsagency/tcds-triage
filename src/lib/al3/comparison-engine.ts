@@ -333,11 +333,34 @@ function compareCoverages(
   const renewalByType = new Map(renewalCoverages.map((c) => [c.type, c]));
   const baselineByType = new Map(baselineCoverages.map((c) => [c.type, c]));
 
+  // Detect likely parsing gaps for homeowners: if renewal has Cov B/C/D/E but
+  // not Cov A (dwelling) or Cov F (medical_payments), the carrier's AL3 probably
+  // embeds these differently — don't flag as removed.
+  const hasHomeCoverages = renewalByType.has('other_structures') ||
+    renewalByType.has('personal_property') ||
+    renewalByType.has('loss_of_use') ||
+    renewalByType.has('personal_liability');
+  const likelyHomeParsingGap = new Set<string>();
+  if (hasHomeCoverages) {
+    if (!renewalByType.has('dwelling') && baselineByType.has('dwelling')) {
+      likelyHomeParsingGap.add('dwelling');
+    }
+    if (!renewalByType.has('medical_payments') && baselineByType.has('medical_payments')) {
+      likelyHomeParsingGap.add('medical_payments');
+    }
+    if (!renewalByType.has('medical_payments_to_others') && baselineByType.has('medical_payments_to_others')) {
+      likelyHomeParsingGap.add('medical_payments_to_others');
+    }
+  }
+
   // Check for removed coverages
   // Note: Coverage changes are INFORMATIONAL - they help explain premium changes
   // Only major coverage gaps are flagged for review, not reshop triggers
   for (const [type, baseline] of baselineByType) {
     if (!renewalByType.has(type)) {
+      // Skip false positives from known parsing gaps
+      if (likelyHomeParsingGap.has(type)) continue;
+
       const isMajor = MAJOR_COVERAGE_TYPES.has(type);
       changes.push({
         field: `coverage.${type}`,

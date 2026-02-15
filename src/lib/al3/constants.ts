@@ -178,6 +178,27 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'BI_INCOME': 'business_income',
   'EQUIP': 'equipment_breakdown',
 
+  // Full-name aliases (HawkSoft sometimes stores description as code)
+  'DWELLING': 'dwelling',
+  'OTHER_STRUCTURES': 'other_structures',
+  'PERSONAL_PROPERTY': 'personal_property',
+  'LOSS_OF_USE': 'loss_of_use',
+  'PERSONAL_LIABILITY': 'personal_liability',
+  'MEDICAL_PAYMENTS': 'medical_payments',
+  'MEDICAL_PAYMENTS_TO_OTHERS': 'medical_payments_to_others',
+  'MED_PAY': 'medical_payments',
+  'BODILY_INJURY': 'bodily_injury',
+  'PROPERTY_DAMAGE': 'property_damage',
+  'UNINSURED_MOTORIST': 'uninsured_motorist',
+  'UNDERINSURED_MOTORIST': 'underinsured_motorist',
+  'COLLISION': 'collision',
+  'COMPREHENSIVE': 'comprehensive',
+
+  // HawkSoft-specific coverage codes
+  'TL': 'towing',
+  'RREIM': 'rental_reimbursement',
+  'UMPED': 'uninsured_motorist_pd',
+
   // IVANS-specific coverage codes
   'CSL': 'combined_single_limit',
   'UMISP': 'uninsured_motorist',
