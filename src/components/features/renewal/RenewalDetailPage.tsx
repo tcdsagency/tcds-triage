@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, FileDown, Loader2, Phone, Mail, Info, Eye, Map, ChevronDown, ChevronRight, Home, Car, Umbrella, Droplets, Heart, Shield, Building2 } from 'lucide-react';
+import { ArrowLeft, FileDown, Loader2, Phone, Mail, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useUser } from '@/hooks/useUser';
@@ -19,7 +19,9 @@ import ReviewActionBar from './ReviewActionBar';
 import CrossSellSection from './CrossSellSection';
 import { MortgageePaymentStatus } from '../MortgageePaymentStatus';
 import PremiumChangeSummary from './PremiumChangeSummary';
-import PropertyInspectionCard from './PropertyInspectionCard';
+import PropertyViewerCard from './PropertyViewerCard';
+import PublicRecordsCard from './PublicRecordsCard';
+import CustomerPoliciesSection from './CustomerPoliciesSection';
 import type { RenewalComparisonDetail, RenewalNote } from './types';
 import type { CheckResult } from '@/types/check-rules.types';
 
@@ -83,6 +85,14 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
   );
 }
 
+type TabId = 'overview' | 'coverage' | 'property';
+
+function isHomeLob(lob: string | null): boolean {
+  const l = (lob || '').toLowerCase();
+  return l.includes('home') || l.includes('dwelling') ||
+    l.includes('ho3') || l.includes('ho5') || l.includes('dp3');
+}
+
 function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
   const router = useRouter();
   const { user } = useUser();
@@ -95,12 +105,12 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
   const [notesLoading, setNotesLoading] = useState(false);
   const [checkResults, setCheckResults] = useState<CheckResult[]>([]);
   const [verificationLoading, setVerificationLoading] = useState(false);
-  const [streetViewUrl, setStreetViewUrl] = useState<string | null>(null);
   const [mciPaymentData, setMciPaymentData] = useState<any>(null);
   const [customerPolicies, setCustomerPolicies] = useState<any[]>([]);
   const [publicData, setPublicData] = useState<Record<string, any> | null>(null);
   const [riskData, setRiskData] = useState<Record<string, any> | null>(null);
   const [verificationSources, setVerificationSources] = useState<{ rpr: boolean; propertyApi: boolean; nearmap: boolean; orion180: boolean } | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
 
   // Fetch full detail
   const fetchDetail = useCallback(async () => {
@@ -160,10 +170,7 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
   // Property verification (home policies only)
   useEffect(() => {
     if (!detail) return;
-    const lob = (detail.lineOfBusiness || '').toLowerCase();
-    const isHome = lob.includes('home') || lob.includes('dwelling') ||
-                   lob.includes('ho3') || lob.includes('ho5') || lob.includes('dp3');
-    if (!isHome) return;
+    if (!isHomeLob(detail.lineOfBusiness)) return;
 
     setVerificationLoading(true);
     fetch(`/api/renewals/${renewalId}/property-verification`)
@@ -175,9 +182,6 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
               const nonPV = prev.filter((r: CheckResult) => !r.ruleId.startsWith('PV-'));
               return [...nonPV, ...data.verification.checkResults];
             });
-          }
-          if (data.verification?.streetViewUrl) {
-            setStreetViewUrl(data.verification.streetViewUrl);
           }
           if (data.verification?.publicData) {
             setPublicData(data.verification.publicData);
@@ -337,11 +341,10 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
   const reviewedCount = reviewable.filter(r => r.reviewed).length;
   const reviewProgress = reviewable.length > 0
     ? Math.round((reviewedCount / reviewable.length) * 100)
-    : materialChanges.length > 0 ? 0 : 0; // Don't show 100% when there's nothing to review
+    : 0;
 
-  // Claims from snapshots (defensive: ensure arrays)
+  // Claims from snapshots
   const claims = detail.renewalSnapshot?.claims || detail.baselineSnapshot?.claims || [];
-  // Ensure snapshot coverages are arrays (prevents crash if snapshot data is malformed)
   if (detail.renewalSnapshot && !Array.isArray(detail.renewalSnapshot.coverages)) {
     detail.renewalSnapshot.coverages = [];
   }
@@ -355,8 +358,9 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
 
   // Property context
   const propertyContext = detail.baselineSnapshot?.propertyContext;
+  const isHome = isHomeLob(current.lineOfBusiness);
 
-  // Build Quotamation URL from snapshot data
+  // Build Quotamation URL
   const quotamationUrl = (() => {
     const snap = detail.renewalSnapshot;
     if (!snap?.insuredName) return undefined;
@@ -389,10 +393,21 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
   const fmtPremium = (val: number | null | undefined) =>
     val != null ? `$${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '-';
 
+  // Tabs config
+  const tabs: { id: TabId; label: string; hidden?: boolean }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'coverage', label: 'Coverage' },
+    { id: 'property', label: 'Property', hidden: !isHome },
+  ];
+
+  // Mortgagees (deduplicated)
+  const allMortgagees = [...(detail.renewalSnapshot?.mortgagees || []), ...(detail.baselineSnapshot?.mortgagees || [])]
+    .filter((m, i, arr) => arr.findIndex(x => x.name === m.name) === i);
+
   return (
     <div className="-my-6 -mx-4 sm:-mx-6 lg:-mx-8">
-      {/* ==================== HEADER ==================== */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+      {/* ==================== STICKY HEADER ==================== */}
+      <div className="sticky top-0 z-30 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
         {/* Back link */}
         <button
           onClick={() => router.push('/renewal-review')}
@@ -446,7 +461,7 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
           </div>
         </div>
 
-        {/* Premium flow */}
+        {/* Premium flow + AZ Status */}
         <div className="flex items-center justify-between mt-3">
           <AZStatusBadge
             status={current.status}
@@ -480,220 +495,284 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
         </div>
       </div>
 
-      {/* ==================== BODY — 3-column ==================== */}
+      {/* ==================== BODY — 2-column ==================== */}
       <div className="h-[calc(100vh-16rem)] flex flex-col lg:flex-row">
-        {/* ============ LEFT COLUMN (260px) ============ */}
-        <div className="lg:w-[260px] lg:shrink-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4 bg-white dark:bg-gray-800">
-          {/* Policy Details */}
-          <div>
-            <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-              Policy Details
-            </h4>
-            <div className="space-y-1.5 text-sm text-gray-700 dark:text-gray-300">
-              {current.carrierName && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Carrier</span>
-                  <span className="font-medium">{current.carrierName}</span>
-                </div>
-              )}
-              {current.lineOfBusiness && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">LOB</span>
-                  <span className="font-medium">{current.lineOfBusiness}</span>
-                </div>
-              )}
-              {current.policyNumber && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Policy #</span>
-                  <span className="font-medium">{current.policyNumber}</span>
-                </div>
-              )}
-              {current.renewalEffectiveDate && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Effective</span>
-                  <span className="font-medium">
-                    {new Date(current.renewalEffectiveDate).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </span>
-                </div>
-              )}
-            </div>
+        {/* ============ MAIN CONTENT (flex-1, tabbed) ============ */}
+        <div className="flex-1 min-w-0 flex flex-col bg-gray-50 dark:bg-gray-900">
+          {/* Tab bar */}
+          <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-5">
+            <nav className="flex gap-6" aria-label="Tabs">
+              {tabs.filter(t => !t.hidden).map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'py-3 text-sm font-medium border-b-2 transition-colors',
+                    activeTab === tab.id
+                      ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
+                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
           </div>
 
-          {/* Customer Info */}
-          <div>
-            <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-              Customer
-            </h4>
-            <div className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
-              {detail.renewalSnapshot?.insuredName && (
-                <p className="font-medium">{detail.renewalSnapshot.insuredName}</p>
+          {/* Tab content — uses hidden/block for scroll position preservation */}
+          <div className="flex-1 overflow-y-auto">
+            {/* ===== Overview Tab ===== */}
+            <div className={activeTab === 'overview' ? 'block p-5 space-y-5' : 'hidden'}>
+              <TalkPoints
+                checkResults={checkResults}
+                materialChanges={materialChanges}
+                comparisonSummary={comparisonSummary}
+              />
+
+              <PremiumChangeSummary
+                checkResults={checkResults}
+                materialChanges={materialChanges}
+                renewalSnapshot={detail.renewalSnapshot ?? null}
+                baselineSnapshot={detail.baselineSnapshot ?? null}
+                premiumChangePercent={current.premiumChangePercent ?? null}
+                premiumChangeAmount={current.premiumChangeAmount ?? null}
+                lineOfBusiness={current.lineOfBusiness ?? null}
+              />
+
+              {/* Baseline status banners */}
+              {!detail.baselineSnapshot && (
+                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 flex items-start gap-2.5">
+                  <Info className="h-4 w-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-700 dark:text-amber-300">
+                    No baseline policy found — comparison data unavailable. Premium change shown is renewal-only.
+                  </p>
+                </div>
               )}
-              {detail.renewalSnapshot?.insuredAddress && (
-                <p>{detail.renewalSnapshot.insuredAddress}</p>
+              {comparisonSummary?.baselineStatus === 'current_term' && (
+                <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 flex items-start gap-2.5">
+                  <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    Baseline was captured from current term — changes may not reflect prior term differences.
+                  </p>
+                </div>
               )}
-              {(detail.renewalSnapshot?.insuredCity || detail.renewalSnapshot?.insuredState) && (
-                <p>
-                  {[detail.renewalSnapshot.insuredCity, detail.renewalSnapshot.insuredState, detail.renewalSnapshot.insuredZip]
-                    .filter(Boolean)
-                    .join(', ')}
-                </p>
+
+              {checkResults.length > 0 && (
+                <ReasonsForChange
+                  checkResults={checkResults}
+                  checkSummary={checkSummary}
+                  onReviewToggle={handleCheckReview}
+                />
               )}
             </div>
-          </div>
 
-          {/* Property Details (homeowners only) */}
-          {propertyContext && (
-            <div>
-              <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                Property
-              </h4>
-              <div className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
-                {propertyContext.yearBuilt && <p>Built: {propertyContext.yearBuilt}</p>}
-                {propertyContext.squareFeet && <p>Sq Ft: {propertyContext.squareFeet.toLocaleString()}</p>}
-                {propertyContext.constructionType && <p>Construction: {propertyContext.constructionType}</p>}
-                {propertyContext.roofType && <p>Roof: {propertyContext.roofType}</p>}
-                {propertyContext.roofAge != null && <p>Roof Age: {propertyContext.roofAge} years</p>}
-              </div>
+            {/* ===== Coverage Tab ===== */}
+            <div className={activeTab === 'coverage' ? 'block p-5 space-y-5' : 'hidden'}>
+              <CoverageComparisonTable
+                renewalSnapshot={detail.renewalSnapshot ?? null}
+                baselineSnapshot={detail.baselineSnapshot ?? null}
+              />
+
+              <DeductiblesSection
+                renewalSnapshot={detail.renewalSnapshot ?? null}
+                baselineSnapshot={detail.baselineSnapshot ?? null}
+              />
+
+              <DiscountPills discounts={renewalDiscounts} baselineDiscounts={baselineDiscounts} />
+
+              {claims.length > 0 && (
+                <ClaimsAgingSection claims={claims} />
+              )}
+
+              <CrossSellSection policies={customerPolicies} />
             </div>
-          )}
 
-          {/* Street View (home policies only) */}
-          {(() => {
-            const lob = (detail.lineOfBusiness || '').toLowerCase();
-            const isHome = lob.includes('home') || lob.includes('dwelling') ||
-                           lob.includes('ho3') || lob.includes('ho5') || lob.includes('dp3');
-            if (!isHome) return null;
-            const addr = detail.renewalSnapshot?.insuredAddress;
-            if (!addr) return null;
-            return <StreetViewSidebar address={{
-              street: detail.renewalSnapshot?.insuredAddress,
-              city: detail.renewalSnapshot?.insuredCity,
-              state: detail.renewalSnapshot?.insuredState,
-              zip: detail.renewalSnapshot?.insuredZip,
-            }} />;
-          })()}
+            {/* ===== Property Tab (home only) ===== */}
+            {isHome && (
+              <div className={activeTab === 'property' ? 'block p-5 space-y-5' : 'hidden'}>
+                <PropertyViewerCard
+                  renewalId={renewalId}
+                  lineOfBusiness={current.lineOfBusiness ?? null}
+                  address={{
+                    street: detail.renewalSnapshot?.insuredAddress,
+                    city: detail.renewalSnapshot?.insuredCity,
+                    state: detail.renewalSnapshot?.insuredState,
+                    zip: detail.renewalSnapshot?.insuredZip,
+                  }}
+                />
 
-          {/* Mortgagees */}
-          {((detail.renewalSnapshot?.mortgagees || []).length > 0 || (detail.baselineSnapshot?.mortgagees || []).length > 0) && (
-            <div>
-              <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                Mortgagees
-              </h4>
-              <div className="space-y-2">
-                {[...(detail.renewalSnapshot?.mortgagees || []), ...(detail.baselineSnapshot?.mortgagees || [])]
-                  .filter((m, i, arr) => arr.findIndex(x => x.name === m.name) === i)
-                  .map((m) => (
-                    <div key={m.name} className="text-sm text-gray-700 dark:text-gray-300">
-                      <div className="flex items-center gap-1.5">
-                        {m.type && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
-                            {m.type.replace('_', ' ')}
-                          </span>
-                        )}
-                        <span className="font-medium">{m.name}</span>
-                      </div>
-                      {m.loanNumber && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          Loan: {m.loanNumber}
-                        </p>
+                {verificationLoading && (
+                  <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Verifying property against public records...
+                  </div>
+                )}
+
+                <PublicRecordsCard
+                  publicData={publicData}
+                  riskData={riskData}
+                  sources={verificationSources}
+                  lineOfBusiness={current.lineOfBusiness ?? null}
+                />
+
+                {/* Property Details from snapshot */}
+                {propertyContext && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                    <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                      Property Details
+                    </h4>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm text-gray-700 dark:text-gray-300">
+                      {propertyContext.yearBuilt && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Year Built</span>
+                          <span className="font-medium">{propertyContext.yearBuilt}</span>
+                        </div>
+                      )}
+                      {propertyContext.squareFeet && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Sq Ft</span>
+                          <span className="font-medium">{propertyContext.squareFeet.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {propertyContext.constructionType && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Construction</span>
+                          <span className="font-medium">{propertyContext.constructionType}</span>
+                        </div>
+                      )}
+                      {propertyContext.roofType && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Roof Type</span>
+                          <span className="font-medium">{propertyContext.roofType}</span>
+                        </div>
+                      )}
+                      {propertyContext.roofAge != null && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Roof Age</span>
+                          <span className="font-medium">{propertyContext.roofAge} years</span>
+                        </div>
                       )}
                     </div>
-                  ))}
-              </div>
-            </div>
-          )}
-
-          {/* MCI Payment Status */}
-          {detail.policyId && (() => {
-            const lob = (detail.lineOfBusiness || '').toLowerCase();
-            const isHome = lob.includes('home') || lob.includes('dwelling') ||
-                           lob.includes('ho3') || lob.includes('ho5') || lob.includes('dp3');
-            if (!isHome) return null;
-            return (
-              <div>
-                <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                  MCI Payment
-                </h4>
-                {mciPaymentData ? (
-                  <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300 mb-3">
-                    {mciPaymentData.paymentStatus && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Status</span>
-                        <span className={`font-medium px-1.5 py-0.5 rounded text-xs ${
-                          mciPaymentData.paymentStatus === 'current' ? 'bg-green-50 text-green-600' :
-                          mciPaymentData.paymentStatus === 'late' || mciPaymentData.paymentStatus === 'lapsed' ? 'bg-red-50 text-red-600' :
-                          'bg-gray-50 text-gray-600'
-                        }`}>
-                          {mciPaymentData.paymentStatus.replace(/_/g, ' ').toUpperCase()}
-                        </span>
-                      </div>
-                    )}
-                    {mciPaymentData.mciCarrier && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Carrier</span>
-                        <span className="font-medium">{mciPaymentData.mciCarrier}</span>
-                      </div>
-                    )}
-                    {mciPaymentData.premiumAmount != null && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Premium</span>
-                        <span className="font-medium">${mciPaymentData.premiumAmount.toLocaleString()}</span>
-                      </div>
-                    )}
-                    {mciPaymentData.paidThroughDate && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Paid Through</span>
-                        <span className="font-medium">{new Date(mciPaymentData.paidThroughDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                      </div>
-                    )}
-                    {mciPaymentData.mciEffectiveDate && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Effective</span>
-                        <span className="font-medium">{new Date(mciPaymentData.mciEffectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                      </div>
-                    )}
-                    {mciPaymentData.mciExpirationDate && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Expiration</span>
-                        <span className="font-medium">{new Date(mciPaymentData.mciExpirationDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                      </div>
-                    )}
-                    {mciPaymentData.lastCheckedAt && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Last Checked</span>
-                        <span className="text-xs text-gray-400">{new Date(mciPaymentData.lastCheckedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                      </div>
-                    )}
                   </div>
-                ) : (
-                  <p className="text-xs text-gray-400 mb-2">No MCI data available</p>
                 )}
-                <MortgageePaymentStatus policyId={detail.policyId} onCheckComplete={fetchDetail} />
-              </div>
-            );
-          })()}
 
-          {/* Customer Policies */}
-          <CustomerPoliciesSection
-            policies={customerPolicies}
-            currentPolicyId={detail.policyId}
+                {/* Mortgagees */}
+                {allMortgagees.length > 0 && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                    <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                      Mortgagees
+                    </h4>
+                    <div className="space-y-2">
+                      {allMortgagees.map((m) => (
+                        <div key={m.name} className="text-sm text-gray-700 dark:text-gray-300">
+                          <div className="flex items-center gap-1.5">
+                            {m.type && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                {m.type.replace('_', ' ')}
+                              </span>
+                            )}
+                            <span className="font-medium">{m.name}</span>
+                          </div>
+                          {m.loanNumber && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                              Loan: {m.loanNumber}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* MCI Payment Status */}
+                {detail.policyId && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                    <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                      MCI Payment
+                    </h4>
+                    {mciPaymentData ? (
+                      <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300 mb-3">
+                        {mciPaymentData.paymentStatus && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Status</span>
+                            <span className={`font-medium px-1.5 py-0.5 rounded text-xs ${
+                              mciPaymentData.paymentStatus === 'current' ? 'bg-green-50 text-green-600' :
+                              mciPaymentData.paymentStatus === 'late' || mciPaymentData.paymentStatus === 'lapsed' ? 'bg-red-50 text-red-600' :
+                              'bg-gray-50 text-gray-600'
+                            }`}>
+                              {mciPaymentData.paymentStatus.replace(/_/g, ' ').toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+                        {mciPaymentData.mciCarrier && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Carrier</span>
+                            <span className="font-medium">{mciPaymentData.mciCarrier}</span>
+                          </div>
+                        )}
+                        {mciPaymentData.premiumAmount != null && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Premium</span>
+                            <span className="font-medium">${mciPaymentData.premiumAmount.toLocaleString()}</span>
+                          </div>
+                        )}
+                        {mciPaymentData.paidThroughDate && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Paid Through</span>
+                            <span className="font-medium">{new Date(mciPaymentData.paidThroughDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          </div>
+                        )}
+                        {mciPaymentData.mciEffectiveDate && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Effective</span>
+                            <span className="font-medium">{new Date(mciPaymentData.mciEffectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          </div>
+                        )}
+                        {mciPaymentData.mciExpirationDate && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Expiration</span>
+                            <span className="font-medium">{new Date(mciPaymentData.mciExpirationDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          </div>
+                        )}
+                        {mciPaymentData.lastCheckedAt && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Last Checked</span>
+                            <span className="text-xs text-gray-400">{new Date(mciPaymentData.lastCheckedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 mb-2">No MCI data available</p>
+                    )}
+                    <MortgageePaymentStatus policyId={detail.policyId} onCheckComplete={fetchDetail} />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ============ RIGHT PANEL (380px) ============ */}
+        <div className="lg:w-[380px] lg:shrink-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4 bg-white dark:bg-gray-800">
+          {/* Review Progress */}
+          <ReviewProgress
+            checkSummary={checkSummary}
+            checkResults={checkResults}
+            materialChangesCount={materialChanges.length}
           />
 
-          {/* AZ Status (compact) */}
-          <div>
-            <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-              AZ Status
-            </h4>
-            <AZStatusBadge
-              status={current.status}
-              agencyzoomSrId={current.agencyzoomSrId}
-              compact
-            />
-          </div>
+          {/* Review Action Bar */}
+          <ReviewActionBar
+            renewalId={renewalId}
+            currentDecision={current.agentDecision}
+            status={current.status}
+            onDecision={handleDecision}
+            reviewProgress={reviewProgress}
+            reviewedCount={reviewedCount}
+            totalReviewable={reviewable.length}
+            materialChangesCount={materialChanges.length}
+            quotamationUrl={quotamationUrl}
+          />
 
           {/* Agent Decision (if already decided) */}
           {current.agentDecision && (
@@ -723,133 +802,12 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
               )}
             </div>
           )}
-        </div>
 
-        {/* ============ CENTER COLUMN (flex-1, flex layout) ============ */}
-        <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900">
-          {/* Scrollable content area */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-5">
-            {/* Talk Points — moved here from right column for prominence */}
-            <TalkPoints
-              checkResults={checkResults}
-              materialChanges={materialChanges}
-              comparisonSummary={comparisonSummary}
-            />
-
-            {/* Property Inspection (home policies only) */}
-            <PropertyInspectionCard
-              renewalId={renewalId}
-              lineOfBusiness={current.lineOfBusiness ?? null}
-            />
-
-            {verificationLoading && (
-              <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Verifying property against public records...
-              </div>
-            )}
-
-            {/* Public Records Card (home policies only) */}
-            <PublicRecordsCard
-              publicData={publicData}
-              riskData={riskData}
-              sources={verificationSources}
-              lineOfBusiness={current.lineOfBusiness ?? null}
-            />
-
-            {/* Baseline status banners */}
-            {!detail.baselineSnapshot && (
-              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 flex items-start gap-2.5">
-                <Info className="h-4 w-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
-                <p className="text-sm text-amber-700 dark:text-amber-300">
-                  No baseline policy found — comparison data unavailable. Premium change shown is renewal-only.
-                </p>
-              </div>
-            )}
-            {comparisonSummary?.baselineStatus === 'current_term' && (
-              <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 flex items-start gap-2.5">
-                <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 shrink-0 mt-0.5" />
-                <p className="text-sm text-blue-700 dark:text-blue-300">
-                  Baseline was captured from current term — changes may not reflect prior term differences.
-                </p>
-              </div>
-            )}
-
-            {/* 0. Premium Change Summary */}
-            <PremiumChangeSummary
-              checkResults={checkResults}
-              materialChanges={materialChanges}
-              renewalSnapshot={detail.renewalSnapshot ?? null}
-              baselineSnapshot={detail.baselineSnapshot ?? null}
-              premiumChangePercent={current.premiumChangePercent ?? null}
-              premiumChangeAmount={current.premiumChangeAmount ?? null}
-              lineOfBusiness={current.lineOfBusiness ?? null}
-            />
-
-            {/* 1. Reasons for Premium Change */}
-            {checkResults.length > 0 && (
-              <ReasonsForChange
-                checkResults={checkResults}
-                checkSummary={checkSummary}
-                onReviewToggle={handleCheckReview}
-              />
-            )}
-
-            {/* 2. Coverage Comparison Table */}
-            <CoverageComparisonTable
-              renewalSnapshot={detail.renewalSnapshot ?? null}
-              baselineSnapshot={detail.baselineSnapshot ?? null}
-            />
-
-            {/* 3. Claims & Violations Aging */}
-            {claims.length > 0 && (
-              <ClaimsAgingSection claims={claims} />
-            )}
-
-            {/* 4. Deductibles */}
-            <DeductiblesSection
-              renewalSnapshot={detail.renewalSnapshot ?? null}
-              baselineSnapshot={detail.baselineSnapshot ?? null}
-            />
-
-            {/* 5. Discounts */}
-            <DiscountPills discounts={renewalDiscounts} baselineDiscounts={baselineDiscounts} />
-
-            {/* 6. Cross-Sell Opportunities */}
-            <CrossSellSection policies={customerPolicies} />
-          </div>
-
-          {/* Sticky bottom: Action Bar + Notes */}
-          <div className="shrink-0 p-5 pt-0 space-y-3">
-            <ReviewActionBar
-              renewalId={renewalId}
-              currentDecision={current.agentDecision}
-              status={current.status}
-              onDecision={handleDecision}
-              reviewProgress={reviewProgress}
-              reviewedCount={reviewedCount}
-              totalReviewable={reviewable.length}
-              materialChangesCount={materialChanges.length}
-              quotamationUrl={quotamationUrl}
-            />
-
-            <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-              <NotesPanel
-                notes={notes}
-                onAddNote={handleAddNote}
-                loading={notesLoading}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ============ RIGHT COLUMN (300px) ============ */}
-        <div className="lg:w-[300px] lg:shrink-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4 bg-white dark:bg-gray-800">
-          {/* Review Progress */}
-          <ReviewProgress
-            checkSummary={checkSummary}
-            checkResults={checkResults}
-            materialChangesCount={materialChanges.length}
+          {/* Notes Panel */}
+          <NotesPanel
+            notes={notes}
+            onAddNote={handleAddNote}
+            loading={notesLoading}
           />
 
           {/* Download Report */}
@@ -860,387 +818,82 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
             <FileDown className="h-4 w-4" />
             Download Report
           </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// LOB icon helper
-const LOB_ICONS: Record<string, React.ReactNode> = {
-  home: <Home className="h-3.5 w-3.5" />,
-  homeowners: <Home className="h-3.5 w-3.5" />,
-  dwelling: <Home className="h-3.5 w-3.5" />,
-  ho3: <Home className="h-3.5 w-3.5" />,
-  ho5: <Home className="h-3.5 w-3.5" />,
-  dp3: <Home className="h-3.5 w-3.5" />,
-  auto: <Car className="h-3.5 w-3.5" />,
-  'personal auto': <Car className="h-3.5 w-3.5" />,
-  umbrella: <Umbrella className="h-3.5 w-3.5" />,
-  flood: <Droplets className="h-3.5 w-3.5" />,
-  life: <Heart className="h-3.5 w-3.5" />,
-};
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            {/* Policy Details */}
+            <div className="mb-4">
+              <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                Policy Details
+              </h4>
+              <div className="space-y-1.5 text-sm text-gray-700 dark:text-gray-300">
+                {current.carrierName && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Carrier</span>
+                    <span className="font-medium">{current.carrierName}</span>
+                  </div>
+                )}
+                {current.lineOfBusiness && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">LOB</span>
+                    <span className="font-medium">{current.lineOfBusiness}</span>
+                  </div>
+                )}
+                {current.policyNumber && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Policy #</span>
+                    <span className="font-medium">{current.policyNumber}</span>
+                  </div>
+                )}
+                {current.renewalEffectiveDate && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Effective</span>
+                    <span className="font-medium">
+                      {new Date(current.renewalEffectiveDate).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
 
-function getLobIcon(lob: string) {
-  const key = lob.toLowerCase();
-  for (const [k, icon] of Object.entries(LOB_ICONS)) {
-    if (key.includes(k)) return icon;
-  }
-  return <Shield className="h-3.5 w-3.5" />;
-}
+            {/* Customer Policies */}
+            <CustomerPoliciesSection
+              policies={customerPolicies}
+              currentPolicyId={detail.policyId}
+            />
 
-const STANDARD_LOBS = ['Home', 'Auto', 'Umbrella', 'Flood', 'Life'];
-
-function normalizeLob(lob: string): string | null {
-  const l = lob.toLowerCase();
-  if (l.includes('home') || l.includes('dwelling') || l.includes('ho3') || l.includes('ho5') || l.includes('dp3')) return 'Home';
-  if (l.includes('auto')) return 'Auto';
-  if (l.includes('umbrella')) return 'Umbrella';
-  if (l.includes('flood')) return 'Flood';
-  if (l.includes('life')) return 'Life';
-  return null;
-}
-
-// Customer Policies section for left sidebar
-function CustomerPoliciesSection({ policies, currentPolicyId }: { policies: any[]; currentPolicyId: string | null }) {
-  if (!policies || policies.length === 0) return null;
-
-  const activeLobs = new Set(policies.map(p => normalizeLob(p.lineOfBusiness)).filter(Boolean));
-  const missingLobs = STANDARD_LOBS.filter(l => !activeLobs.has(l));
-
-  return (
-    <div>
-      <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
-        Policies
-        <span className="text-[10px] font-medium bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full px-1.5 py-0.5 leading-none">
-          {policies.length}
-        </span>
-      </h4>
-      <div className="space-y-1.5">
-        {policies.map(p => {
-          const isCurrent = p.id === currentPolicyId;
-          return (
-            <div
-              key={p.id}
-              className={cn(
-                'flex items-center gap-2 text-sm rounded px-1.5 py-1',
-                isCurrent ? 'bg-emerald-50 dark:bg-emerald-900/20 font-medium' : 'text-gray-700 dark:text-gray-300'
-              )}
-            >
-              <span className="text-gray-400 dark:text-gray-500 shrink-0">
-                {getLobIcon(p.lineOfBusiness)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1">
-                  <span className="truncate text-xs font-medium">{p.carrier || 'Unknown'}</span>
-                </div>
-                <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
-                  {p.policyNumber}
-                  {p.premium != null && (
-                    <span className="ml-1">&middot; ${Number(p.premium).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                  )}
+            {/* Mortgagees in right panel for auto policies */}
+            {!isHome && allMortgagees.length > 0 && (
+              <div className="mt-4">
+                <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                  Mortgagees
+                </h4>
+                <div className="space-y-2">
+                  {allMortgagees.map((m) => (
+                    <div key={m.name} className="text-sm text-gray-700 dark:text-gray-300">
+                      <div className="flex items-center gap-1.5">
+                        {m.type && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                            {m.type.replace('_', ' ')}
+                          </span>
+                        )}
+                        <span className="font-medium">{m.name}</span>
+                      </div>
+                      {m.loanNumber && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Loan: {m.loanNumber}
+                        </p>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-      {missingLobs.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          <span className="text-[10px] text-gray-400 dark:text-gray-500">Missing:</span>
-          {missingLobs.map(l => (
-            <span
-              key={l}
-              className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
-            >
-              {l}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Public Records card for center column
-function PublicRecordsCard({
-  publicData,
-  riskData,
-  sources,
-  lineOfBusiness,
-}: {
-  publicData: Record<string, any> | null;
-  riskData?: Record<string, any> | null;
-  sources: { rpr: boolean; propertyApi: boolean; nearmap: boolean; orion180: boolean } | null;
-  lineOfBusiness: string | null;
-}) {
-  const [expanded, setExpanded] = useState(true);
-
-  const lob = (lineOfBusiness || '').toLowerCase();
-  const isHome = lob.includes('home') || lob.includes('dwelling') ||
-                 lob.includes('ho3') || lob.includes('ho5') || lob.includes('dp3');
-  if (!isHome) return null;
-  if (!publicData || Object.values(publicData).every(v => v == null)) return null;
-
-  const fmtCurrency = (val: number | null | undefined) =>
-    val != null ? `$${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : null;
-
-  const fmtDate = (val: string | null | undefined) => {
-    if (!val) return null;
-    try { return new Date(val).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
-    catch { return val; }
-  };
-
-  const listingStatus = publicData.listingStatus;
-  const isListed = listingStatus && ['active', 'pending', 'sold'].includes(listingStatus.toLowerCase());
-
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-gray-500" />
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Public Records</h3>
-          {isListed && (
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
-              {listingStatus.toUpperCase()}
-            </span>
-          )}
-        </div>
-        {expanded ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
-      </button>
-
-      {expanded && (
-        <div className="px-4 pb-4 space-y-3">
-          {/* Owner */}
-          {(publicData.ownerName || publicData.ownerOccupied != null) && (
-            <div>
-              <h4 className="text-[10px] font-semibold uppercase text-gray-400 dark:text-gray-500 mb-1">Owner</h4>
-              <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                {publicData.ownerName && <span className="font-medium">{publicData.ownerName}</span>}
-                {publicData.ownerOccupied && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800">
-                    Owner-Occupied
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Property Details */}
-          {(publicData.yearBuilt || publicData.sqft || publicData.stories || publicData.constructionType || publicData.roofType) && (
-            <div>
-              <h4 className="text-[10px] font-semibold uppercase text-gray-400 dark:text-gray-500 mb-1">Property</h4>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                {publicData.yearBuilt && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Year Built</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{publicData.yearBuilt}</span>
-                  </div>
-                )}
-                {publicData.sqft && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Sq Ft</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{Number(publicData.sqft).toLocaleString()}</span>
-                  </div>
-                )}
-                {publicData.stories && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Stories</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{publicData.stories}</span>
-                  </div>
-                )}
-                {publicData.constructionType && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Construction</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{publicData.constructionType}</span>
-                  </div>
-                )}
-                {publicData.roofType && (
-                  <div className="col-span-2 flex justify-between">
-                    <span className="text-gray-500">Roof</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{publicData.roofType}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Valuation */}
-          {(publicData.estimatedValue || publicData.lastSaleDate || publicData.lastSalePrice) && (
-            <div>
-              <h4 className="text-[10px] font-semibold uppercase text-gray-400 dark:text-gray-500 mb-1">Valuation</h4>
-              <div className="space-y-1 text-sm">
-                {publicData.estimatedValue && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Estimated Value</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{fmtCurrency(publicData.estimatedValue)}</span>
-                  </div>
-                )}
-                {(publicData.lastSaleDate || publicData.lastSalePrice) && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Last Sale</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">
-                      {[fmtCurrency(publicData.lastSalePrice), fmtDate(publicData.lastSaleDate)].filter(Boolean).join(' · ')}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Risk Profile (Orion180 HazardHub) */}
-          {riskData && (
-            <div>
-              <h4 className="text-[10px] font-semibold uppercase text-gray-400 dark:text-gray-500 mb-1">Risk Profile</h4>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {([
-                  ['Hurricane', riskData.hurricane],
-                  ['Flood', riskData.flood],
-                  ['Tornado', riskData.tornado],
-                  ['Wildfire', riskData.wildfire],
-                  ['Storm', riskData.convectionStorm],
-                  ['Lightning', riskData.lightning],
-                ] as [string, string | null][]).map(([label, grade]) => {
-                  if (!grade) return null;
-                  const g = grade.toUpperCase();
-                  const color = g === 'A' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                    : g === 'B' ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400'
-                    : g === 'C' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-500'
-                    : g === 'D' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
-                    : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
-                  return (
-                    <span key={label} className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', color)}>
-                      {label}: {g}
-                    </span>
-                  );
-                })}
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                {riskData.femaFloodZone && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">FEMA Flood Zone</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{riskData.femaFloodZone}</span>
-                  </div>
-                )}
-                {riskData.protectionClass && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Protection Class</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">{riskData.protectionClass}</span>
-                  </div>
-                )}
-                {riskData.distanceToCoast != null && (
-                  <div className="flex justify-between col-span-2">
-                    <span className="text-gray-500">Distance to Coast</span>
-                    <span className="font-medium text-gray-700 dark:text-gray-300">
-                      {Number(riskData.distanceToCoast) < 1
-                        ? `${(Number(riskData.distanceToCoast) * 5280).toFixed(0)} ft`
-                        : `${Number(riskData.distanceToCoast).toFixed(1)} mi`}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Source badges */}
-          {sources && (
-            <div className="flex items-center gap-1.5 pt-1">
-              <span className="text-[10px] text-gray-400">Sources:</span>
-              {(['rpr', 'propertyApi', 'nearmap', 'orion180'] as const).map(src => (
-                <span
-                  key={src}
-                  className={cn(
-                    'text-[10px] px-1.5 py-0.5 rounded',
-                    sources[src]
-                      ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500'
-                  )}
-                >
-                  {src === 'propertyApi' ? 'PropertyAPI' : src === 'rpr' ? 'RPR' : src === 'orion180' ? 'Orion180' : 'Nearmap'}
-                  {sources[src] ? ' ✓' : ' ✗'}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Compact Street View card for left sidebar
-function StreetViewSidebar({ address }: { address: { street?: string; city?: string; state?: string; zip?: string } }) {
-  const [imgError, setImgError] = useState(false);
-  const [viewMode, setViewMode] = useState<'streetview' | 'map'>('streetview');
-
-  const fullAddress = [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ');
-  if (!fullAddress) return null;
-
-  const encodedAddress = encodeURIComponent(fullAddress);
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-
-  // Static Street View Image API accepts address strings directly (unlike Embed API which needs lat/lng)
-  const streetViewImgUrl = `https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${encodedAddress}&key=${apiKey}`;
-  const mapEmbedUrl = `https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodedAddress}&zoom=18&maptype=satellite`;
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-          <Eye className="w-3.5 h-3.5" />
-          Street View
-        </h4>
-        <div className="flex rounded overflow-hidden border border-gray-300 dark:border-gray-600">
-          <button
-            onClick={() => setViewMode('streetview')}
-            className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
-              viewMode === 'streetview'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
-            }`}
-          >
-            Street
-          </button>
-          <button
-            onClick={() => setViewMode('map')}
-            className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
-              viewMode === 'map'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
-            }`}
-          >
-            Satellite
-          </button>
-        </div>
-      </div>
-      <div className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
-        {apiKey && viewMode === 'streetview' && !imgError ? (
-          <img
-            src={streetViewImgUrl}
-            alt={`Street view of ${fullAddress}`}
-            className="w-full h-48 object-cover"
-            loading="lazy"
-            onError={() => setImgError(true)}
-          />
-        ) : apiKey && viewMode === 'map' ? (
-          <iframe
-            src={mapEmbedUrl}
-            className="w-full h-48 border-0"
-            allowFullScreen
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-          />
-        ) : (
-          <div className="w-full h-48 flex items-center justify-center text-gray-400 dark:text-gray-500">
-            <div className="text-center">
-              <Map className="w-8 h-8 mx-auto mb-1 opacity-50" />
-              <p className="text-xs">Street View unavailable</p>
-            </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
