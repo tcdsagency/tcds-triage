@@ -173,13 +173,15 @@ export class MortgageePaymentScheduler {
       return [];
     }
 
-    return await db
-      .select()
+    const rows = await db
+      .select({ mortgagee: mortgagees })
       .from(mortgagees)
+      .innerJoin(policies, eq(policies.id, mortgagees.policyId))
       .where(
         and(
           eq(mortgagees.tenantId, this.tenantId),
           eq(mortgagees.isActive, true),
+          eq(policies.status, "active"),
           or(
             isNull(mortgagees.lastPaymentCheckAt),
             lte(mortgagees.lastPaymentCheckAt, cutoffDate)
@@ -188,6 +190,8 @@ export class MortgageePaymentScheduler {
       )
       .orderBy(mortgagees.lastPaymentCheckAt) // Check oldest first
       .limit(remainingBudget);
+
+    return rows.map((r) => r.mortgagee);
   }
 
   /**

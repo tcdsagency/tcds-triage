@@ -66,6 +66,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Skip inactive policies
+    if (policy.status !== "active") {
+      return NextResponse.json({
+        success: false,
+        skipped: true,
+        message: `Policy is ${policy.status} — MCI check not needed.`,
+      });
+    }
+
     // Get property for ZIP code (fallback to customer address)
     const [property] = await db
       .select()
