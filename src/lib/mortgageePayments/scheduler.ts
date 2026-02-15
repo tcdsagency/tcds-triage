@@ -13,6 +13,7 @@ import {
   mortgageePaymentActivityLog,
   policies,
   properties,
+  customers,
 } from "@/db/schema";
 import { eq, and, lte, sql, isNull, or, desc } from "drizzle-orm";
 
@@ -370,6 +371,17 @@ export class MortgageePaymentScheduler {
     const zipCode = property?.address?.zip || "";
     const loanNumber = mortgagee.loanNumber || policy?.policyNumber || "";
 
+    // Get customer last name for MCI lookup
+    let lastName = "";
+    if (mortgagee.customerId) {
+      const [customer] = await db
+        .select({ lastName: customers.lastName })
+        .from(customers)
+        .where(eq(customers.id, mortgagee.customerId))
+        .limit(1);
+      lastName = customer?.lastName || "";
+    }
+
     // Create check record
     const [checkRecord] = await db
       .insert(mortgageePaymentChecks)
@@ -397,7 +409,7 @@ export class MortgageePaymentScheduler {
           body: JSON.stringify({
             loan_number: loanNumber,
             zip_code: zipCode,
-            last_name: null,
+            last_name: lastName || null,
           }),
         }
       );
@@ -420,7 +432,8 @@ export class MortgageePaymentScheduler {
           mciExpirationDate: result.expiration_date,
           mciCancellationDate: result.cancellation_date,
           mciReason: result.cancellation_reason,
-          rawResponse: result,
+          paymentScreenshotUrl: result.payment_screenshot_url || null,
+          rawResponse: result.raw_data || result,
           errorMessage: result.error_message,
           errorCode: result.error_code,
           completedAt: new Date(),

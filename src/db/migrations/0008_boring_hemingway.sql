@@ -1,0 +1,1 @@
+ALTER TABLE "mortgagee_payment_checks" ADD COLUMN "payment_screenshot_url" text;

@@ -894,6 +894,18 @@ export const propertyLookups = pgTable('property_lookups', {
     lastUpdated: string;
   }>(),
 
+  // PropertyAPI.co Data (parcel, building, owner, valuation)
+  propertyApiData: jsonb('property_api_data').$type<{
+    parcel?: { fips?: string; apn?: string; county?: string; legalDescription?: string };
+    location?: { lat?: number; lng?: number };
+    building?: { sqft?: number; bedrooms?: number; bathrooms?: number; yearBuilt?: number; lotSizeAcres?: number; stories?: number };
+    owner?: { name?: string; type?: string; ownerOccupied?: boolean; mailingAddress?: string };
+    valuation?: { marketValue?: number; assessedTotal?: number };
+    saleHistory?: { lastSaleDate?: string; lastSalePrice?: number };
+    tax?: { annualTax?: number; taxYear?: number };
+    propertyType?: string;
+  }>(),
+
   // Lookup Metadata
   lookupSource: varchar('lookup_source', { length: 20 }).default('manual'), // 'manual', 'quote', 'policy'
   linkedQuoteId: uuid('linked_quote_id').references(() => quotes.id, { onDelete: 'set null' }),
@@ -3830,6 +3842,7 @@ export const mortgageePaymentChecks = pgTable('mortgagee_payment_checks', {
 
   // Scraping details
   screenshotUrl: text('screenshot_url'), // S3 URL of page screenshot for audit
+  paymentScreenshotUrl: text('payment_screenshot_url'), // Screenshot of payment activity tab
   rawResponse: jsonb('raw_response'), // Full scraped data
 
   // Error handling

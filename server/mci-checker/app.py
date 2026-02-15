@@ -1,6 +1,6 @@
 """
-MCI (MyCoverageInfo) Payment Checker Microservice
-==================================================
+MCI (MyCoverageInfo) Payment Checker Microservice v3.1.0
+========================================================
 Automated lookup service for mortgagee payment status.
 
 Endpoints:
@@ -11,6 +11,7 @@ Environment Variables:
 - TWOCAPTCHA_API_KEY - 2Captcha API key for CAPTCHA solving
 - API_KEY - API key for authenticating requests
 - PORT - Server port (default: 8080)
+- BASE_URL - Base URL for screenshot serving
 """
 
 import os
@@ -22,7 +23,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
 from flask import Flask, request, jsonify, send_from_directory
@@ -61,6 +62,8 @@ SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 # Browser instance (reused for efficiency)
 browser: Optional[Browser] = None
 
+MAX_CAPTCHA_ATTEMPTS = 3
+
 
 @dataclass
 class PaymentCheckResult:
@@ -78,9 +81,21 @@ class PaymentCheckResult:
     expiration_date: Optional[str] = None
     cancellation_date: Optional[str] = None
     cancellation_reason: Optional[str] = None
+    coverage_amount: Optional[float] = None
+    deductible: Optional[str] = None
+    payment_date: Optional[str] = None
+    payment_amount: Optional[float] = None
+    homeowner: Optional[str] = None
+    additional_homeowner: Optional[str] = None
+    property_address: Optional[str] = None
+    mortgagee: Optional[str] = None
+    mortgagee_address: Optional[str] = None
+    mortgagee_clause: Optional[str] = None
     error_message: Optional[str] = None
     error_code: Optional[str] = None
     screenshot_url: Optional[str] = None
+    payment_screenshot_url: Optional[str] = None
+    raw_data: Optional[dict] = field(default=None)
     duration_ms: int = 0
 
 
@@ -131,12 +146,110 @@ async def solve_captcha(page: Page, site_key: str) -> Optional[str]:
         return None
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def inject_captcha_and_submit(page: Page, site_key: str) -> bool:
+    """Solve CAPTCHA, inject response, and submit. Returns True if successful."""
+    captcha_response = await solve_captcha(page, site_key)
+    if not captcha_response:
+        return False
+
+    logger.info("Got CAPTCHA solution, injecting")
+
+    # Inject the CAPTCHA response
+    escaped_response = json.dumps(captcha_response)
+    await page.evaluate(f'''
+        var responseEl = document.getElementById("g-recaptcha-response");
+        var captchaVal = {escaped_response};
+        if (responseEl) {{
+            responseEl.innerHTML = captchaVal;
+            responseEl.value = captchaVal;
+            responseEl.style.display = "block";
+        }}
+        var altResponse = document.querySelector('[name="g-recaptcha-response"]');
+        if (altResponse) {{
+            altResponse.value = captchaVal;
+        }}
+    ''')
+    logger.info("CAPTCHA response injected into textarea")
+    await page.wait_for_timeout(500)
+
+    # Try to trigger the callback function
+    await page.evaluate(f'''
+        (function() {{
+            var captchaVal = {escaped_response};
+            if (typeof ___grecaptcha_cfg !== 'undefined' && ___grecaptcha_cfg.clients) {{
+                Object.keys(___grecaptcha_cfg.clients).forEach(key => {{
+                    var client = ___grecaptcha_cfg.clients[key];
+                    if (client && client.callback) {{
+                        try {{ client.callback(captchaVal); }} catch(e) {{}}
+                    }}
+                    for (var prop in client) {{
+                        if (client[prop] && typeof client[prop].callback === 'function') {{
+                            try {{ client[prop].callback(captchaVal); }} catch(e) {{}}
+                        }}
+                    }}
+                }});
+            }}
+            try {{
+                if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {{
+                    for (var i in window.___grecaptcha_cfg.clients) {{
+                        var c = window.___grecaptcha_cfg.clients[i];
+                        for (var j in c) {{
+                            if (c[j] && c[j].callback) {{
+                                c[j].callback(captchaVal);
+                            }}
+                        }}
+                    }}
+                }}
+            }} catch(e) {{}}
+            if (typeof grecaptcha !== 'undefined' && grecaptcha.execute) {{
+                try {{ grecaptcha.execute(); }} catch(e) {{}}
+            }}
+        }})()
+    ''')
+
+    await page.wait_for_timeout(2000)
+
+    # Try clicking submit again after CAPTCHA is solved
+    submit_selectors = [
+        'button:has-text("Search")',
+        'button[type="submit"]',
+        'input[type="submit"]',
+        'button.btn-primary',
+        'button:has-text("Submit")',
+    ]
+
+    for selector in submit_selectors:
+        try:
+            submit_btn = await page.query_selector(selector)
+            if submit_btn:
+                is_visible = await submit_btn.is_visible()
+                is_enabled = await submit_btn.is_enabled()
+                if is_visible and is_enabled:
+                    await submit_btn.click()
+                    logger.info("Clicked submit after CAPTCHA", selector=selector)
+                    return True
+        except Exception:
+            continue
+
+    # Fallback: press Enter
+    logger.info("No submit found, trying Enter key")
+    await page.keyboard.press('Enter')
+    return True
+
+
+def get_captcha_site_key_from_page(page_source: str) -> Optional[str]:
+    """Extract reCAPTCHA site key from page source."""
+    match = re.search(r'data-sitekey="([^"]+)"', page_source)
+    if match:
+        return match.group(1)
+    return None
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def check_mci_payment(
     loan_number: str,
     zip_code: str,
-    last_name: Optional[str] = None,
-    _ssn_last4: Optional[str] = None,  # Reserved for future use
+    last_name: str,
     servicer: Optional[str] = None
 ) -> PaymentCheckResult:
     """
@@ -144,11 +257,9 @@ async def check_mci_payment(
 
     This performs the following steps:
     1. Navigate to MCI lookup page
-    2. Enter loan number and ZIP code
-    3. Solve CAPTCHA if present
-    4. Extract payment status from results
-
-    Note: _ssn_last4 is accepted but not currently used (reserved for future MCI lookup methods).
+    2. Enter loan number, ZIP code, and last name
+    3. Solve CAPTCHA if present (up to 3 attempts)
+    4. Extract payment status from results using regex-based text parsing
     """
     start_time = time.time()
     context = None
@@ -162,7 +273,7 @@ async def check_mci_payment(
 
         logger.info("Starting MCI lookup", loan_number=loan_number[:4] + "****", zip_code=zip_code)
 
-        # Navigate to MCI Agent Portal (only requires loan number, zip, last name)
+        # Navigate to MCI Agent Portal
         url = f"{MCI_BASE_URL}/agent"
         if servicer:
             url = f"{MCI_BASE_URL}/{servicer}"
@@ -170,30 +281,16 @@ async def check_mci_payment(
         logger.info("Navigating to MCI Agent Portal", url=url)
         await page.goto(url, timeout=45000)
 
-        # Wait for Angular app to bootstrap - look for any input field
+        # Wait for Angular app to bootstrap
         logger.info("Waiting for page to load...")
         await page.wait_for_load_state("networkidle", timeout=30000)
-
-        # Give Angular extra time to render
         await page.wait_for_timeout(3000)
 
-        # Capture page structure and find all inputs
+        # Find all visible inputs
         inputs = await page.query_selector_all('input:not([type="hidden"])')
         logger.info("Found input fields", count=len(inputs))
 
-        for i, inp in enumerate(inputs[:6]):  # Log first 6 inputs
-            try:
-                inp_id = await inp.get_attribute('id') or ''
-                inp_name = await inp.get_attribute('name') or ''
-                inp_placeholder = await inp.get_attribute('placeholder') or ''
-                inp_type = await inp.get_attribute('type') or ''
-                inp_formcontrol = await inp.get_attribute('formcontrolname') or ''
-                logger.info(f"Input {i}: id={inp_id}, name={inp_name}, formcontrolname={inp_formcontrol}, placeholder={inp_placeholder}, type={inp_type}")
-            except Exception as e:
-                logger.warning(f"Could not inspect input {i}: {e}")
-
         # MCI Agent Portal has 3 fields: Loan Number, ZIP Code, Last Name
-        # Fill by position since selectors may vary
         if len(inputs) >= 3:
             logger.info("Filling Agent Portal form", input_count=len(inputs))
 
@@ -216,31 +313,24 @@ async def check_mci_payment(
                 logger.warning("Failed to fill ZIP code", error=str(e))
 
             # Third input: Last Name
-            if last_name:
-                try:
-                    await inputs[2].click()
-                    await page.wait_for_timeout(100)
-                    await inputs[2].type(last_name, delay=30)
-                    logger.info("Filled last name field")
-                except Exception as e:
-                    logger.warning("Failed to fill last name", error=str(e))
-            else:
-                logger.warning("No last name provided - may fail validation")
+            try:
+                await inputs[2].click()
+                await page.wait_for_timeout(100)
+                await inputs[2].type(last_name, delay=30)
+                logger.info("Filled last name field")
+            except Exception as e:
+                logger.warning("Failed to fill last name", error=str(e))
 
-            # Wait a moment for Angular to process
             await page.wait_for_timeout(500)
-
         else:
             # Fallback: Try selector-based approach
             logger.info(f"Only found {len(inputs)} inputs, trying selector-based approach")
 
-            # Try to find loan number input
             loan_selectors = [
                 'input[formcontrolname="loanNumber"]',
                 'input[name="loanNumber"]',
                 'input[id="loanNumber"]',
             ]
-
             for selector in loan_selectors:
                 try:
                     loan_input = await page.query_selector(selector)
@@ -251,12 +341,10 @@ async def check_mci_payment(
                 except Exception:
                     continue
 
-            # Try to find ZIP input
             zip_selectors = [
                 'input[formcontrolname="zipCode"]',
                 'input[name="zipCode"]',
             ]
-
             for selector in zip_selectors:
                 try:
                     zip_input = await page.query_selector(selector)
@@ -267,27 +355,7 @@ async def check_mci_payment(
                 except Exception:
                     continue
 
-        # Check for reCAPTCHA
-        recaptcha_frame = await page.query_selector('iframe[src*="recaptcha"]')
-        if recaptcha_frame:
-            logger.info("reCAPTCHA detected, attempting to solve...")
-            # Extract site key
-            site_key = None
-            recaptcha_div = await page.query_selector('.g-recaptcha, [data-sitekey]')
-            if recaptcha_div:
-                site_key = await recaptcha_div.get_attribute('data-sitekey')
-
-            if site_key:
-                captcha_response = await solve_captcha(page, site_key)
-                if captcha_response:
-                    # Inject the CAPTCHA response (properly escaped for JS)
-                    escaped_response = json.dumps(captcha_response)
-                    await page.evaluate(f'''
-                        document.getElementById("g-recaptcha-response").innerHTML = {escaped_response};
-                    ''')
-                    logger.info("CAPTCHA response injected")
-
-        # Submit the form - try multiple approaches
+        # Submit the form
         logger.info("Looking for submit button")
         submit_selectors = [
             'button:has-text("Search")',
@@ -314,170 +382,58 @@ async def check_mci_payment(
             logger.info("No submit button found, pressing Enter")
             await page.keyboard.press('Enter')
 
-        # Wait for page response and check for CAPTCHA
+        # Wait for response
         logger.info("Waiting for response")
-        await page.wait_for_timeout(3000)  # Wait for CAPTCHA or results to appear
+        await page.wait_for_timeout(3000)
 
-        # Check for reCAPTCHA that appears after submit
-        recaptcha_frame = await page.query_selector('iframe[src*="recaptcha"]')
-        if recaptcha_frame:
-            logger.info("reCAPTCHA detected after submit, solving")
+        # Handle CAPTCHA with retry (up to MAX_CAPTCHA_ATTEMPTS)
+        for captcha_attempt in range(MAX_CAPTCHA_ATTEMPTS):
+            recaptcha_frame = await page.query_selector('iframe[src*="recaptcha"]')
+            if not recaptcha_frame:
+                logger.info("No reCAPTCHA detected")
+                break
 
-            # Extract site key from iframe src or page elements
+            logger.info("reCAPTCHA detected", attempt=captcha_attempt + 1, max_attempts=MAX_CAPTCHA_ATTEMPTS)
+
+            # Extract site key
             site_key = None
-
-            # Try to get site key from iframe src
             frame_src = await recaptcha_frame.get_attribute('src')
             if frame_src and 'k=' in frame_src:
                 match = re.search(r'k=([^&]+)', frame_src)
                 if match:
                     site_key = match.group(1)
-                    logger.info("Got site key from iframe", site_key_prefix=site_key[:20])
 
-            # Fallback: try data-sitekey attribute
             if not site_key:
                 recaptcha_div = await page.query_selector('.g-recaptcha, [data-sitekey]')
                 if recaptcha_div:
                     site_key = await recaptcha_div.get_attribute('data-sitekey')
-                    if site_key:
-                        logger.info("Got site key from div", site_key_prefix=site_key[:20])
 
-            logger.info("CAPTCHA configuration", has_site_key=bool(site_key), has_2captcha=bool(TWOCAPTCHA_API_KEY))
+            if not site_key or not TWOCAPTCHA_API_KEY:
+                logger.warning("Cannot solve CAPTCHA: missing site key or 2Captcha key")
+                break
 
-            if site_key and TWOCAPTCHA_API_KEY:
-                captcha_response = await solve_captcha(page, site_key)
-                if captcha_response:
-                    logger.info("Got CAPTCHA solution, injecting")
+            solved = await inject_captcha_and_submit(page, site_key)
+            if not solved:
+                logger.warning("CAPTCHA solve failed", attempt=captcha_attempt + 1)
+                if captcha_attempt == MAX_CAPTCHA_ATTEMPTS - 1:
+                    return PaymentCheckResult(
+                        success=False,
+                        loan_number=loan_number,
+                        error_message=f"Failed to solve CAPTCHA after {MAX_CAPTCHA_ATTEMPTS} attempts",
+                        error_code="CAPTCHA_FAILED",
+                        duration_ms=int((time.time() - start_time) * 1000)
+                    )
+                continue
 
-                    # Save debug screenshot before injection
-                    try:
-                        debug_screenshot = SCREENSHOTS_DIR / f"debug-pre-inject-{uuid.uuid4()}.png"
-                        await page.screenshot(path=str(debug_screenshot), full_page=True)
-                        logger.info("Pre-inject screenshot saved", path=str(debug_screenshot))
-                    except Exception as e:
-                        logger.warning("Failed to save pre-inject screenshot", error=str(e))
+            await page.wait_for_timeout(3000)
 
-                    # Inject the CAPTCHA response - set value and make visible
-                    # Properly escape for JavaScript to prevent injection
-                    escaped_response = json.dumps(captcha_response)
-                    await page.evaluate(f'''
-                        var responseEl = document.getElementById("g-recaptcha-response");
-                        var captchaVal = {escaped_response};
-                        if (responseEl) {{
-                            responseEl.innerHTML = captchaVal;
-                            responseEl.value = captchaVal;
-                            responseEl.style.display = "block";
-                        }}
-                        // Also try alternative response element names
-                        var altResponse = document.querySelector('[name="g-recaptcha-response"]');
-                        if (altResponse) {{
-                            altResponse.value = captchaVal;
-                        }}
-                    ''')
-                    logger.info("CAPTCHA response injected into textarea")
-                    await page.wait_for_timeout(500)
+            # Check if CAPTCHA is still present (need to retry)
+            still_captcha = await page.query_selector('iframe[src*="recaptcha"]')
+            if not still_captcha:
+                logger.info("CAPTCHA solved, proceeding to results")
+                break
 
-                    # Try to trigger the callback function
-                    logger.info("Attempting to trigger CAPTCHA callback")
-                    callback_triggered = await page.evaluate(f'''
-                        (function() {{
-                            var triggered = false;
-                            var captchaVal = {escaped_response};
-                            // Method 1: ___grecaptcha_cfg
-                            if (typeof ___grecaptcha_cfg !== 'undefined' && ___grecaptcha_cfg.clients) {{
-                                Object.keys(___grecaptcha_cfg.clients).forEach(key => {{
-                                    var client = ___grecaptcha_cfg.clients[key];
-                                    if (client && client.callback) {{
-                                        try {{
-                                            client.callback(captchaVal);
-                                            triggered = true;
-                                        }} catch(e) {{}}
-                                    }}
-                                    // Check nested structure
-                                    for (var prop in client) {{
-                                        if (client[prop] && typeof client[prop].callback === 'function') {{
-                                            try {{
-                                                client[prop].callback(captchaVal);
-                                                triggered = true;
-                                            }} catch(e) {{}}
-                                        }}
-                                    }}
-                                }});
-                            }}
-                            // Method 2: Find callback in window.___grecaptcha_cfg
-                            try {{
-                                if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {{
-                                    for (var i in window.___grecaptcha_cfg.clients) {{
-                                        var c = window.___grecaptcha_cfg.clients[i];
-                                        for (var j in c) {{
-                                            if (c[j] && c[j].callback) {{
-                                                c[j].callback(captchaVal);
-                                                triggered = true;
-                                            }}
-                                        }}
-                                    }}
-                                }}
-                            }} catch(e) {{}}
-                            // Method 3: Call grecaptcha.execute if available
-                            if (typeof grecaptcha !== 'undefined' && grecaptcha.execute) {{
-                                try {{
-                                    grecaptcha.execute();
-                                    triggered = true;
-                                }} catch(e) {{}}
-                            }}
-                            return triggered;
-                        }})()
-                    ''')
-                    logger.info("Callback trigger result", triggered=callback_triggered)
-
-                    await page.wait_for_timeout(2000)
-
-                    # Save debug screenshot after injection
-                    try:
-                        debug_screenshot2 = SCREENSHOTS_DIR / f"debug-post-inject-{uuid.uuid4()}.png"
-                        await page.screenshot(path=str(debug_screenshot2), full_page=True)
-                        logger.info("Post-inject screenshot saved", path=str(debug_screenshot2))
-                    except Exception as e:
-                        logger.warning("Failed to save post-inject screenshot", error=str(e))
-
-                    # Try clicking submit again after CAPTCHA is solved
-                    logger.info("Looking for submit button after CAPTCHA")
-
-                    # Try multiple selectors for submit button
-                    post_captcha_selectors = [
-                        'button:has-text("Search")',
-                        'button[type="submit"]',
-                        'input[type="submit"]',
-                        'button.btn-primary',
-                        'button:has-text("Submit")',
-                    ]
-
-                    submit_found = False
-                    for selector in post_captcha_selectors:
-                        try:
-                            submit_btn = await page.query_selector(selector)
-                            if submit_btn:
-                                is_visible = await submit_btn.is_visible()
-                                is_enabled = await submit_btn.is_enabled()
-                                logger.info("Found submit button", selector=selector, visible=is_visible, enabled=is_enabled)
-                                if is_visible and is_enabled:
-                                    await submit_btn.click()
-                                    logger.info("Clicked submit after CAPTCHA", selector=selector)
-                                    submit_found = True
-                                    break
-                        except Exception:
-                            continue
-
-                    if not submit_found:
-                        # Try pressing Enter as fallback
-                        logger.info("No submit found, trying Enter key")
-                        await page.keyboard.press('Enter')
-
-                    await page.wait_for_timeout(3000)
-            else:
-                logger.info("No site key or 2Captcha not configured")
-        else:
-            logger.info("No reCAPTCHA detected")
+            logger.info("CAPTCHA still present, retrying", attempt=captcha_attempt + 1)
 
         # Wait for final results
         logger.info("Waiting for results page to load")
@@ -532,25 +488,33 @@ async def check_mci_payment(
         )
 
 
+def parse_currency(value: str) -> Optional[float]:
+    """Parse a currency string like '$2,623.79' into a float."""
+    if not value:
+        return None
+    cleaned = re.sub(r'[^\d.]', '', value)
+    try:
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return None
+
+
+def parse_date(text: str) -> Optional[str]:
+    """Extract a date pattern (MM/DD/YYYY) from text."""
+    match = re.search(r'\d{1,2}/\d{1,2}/\d{4}', text)
+    return match.group(0) if match else None
+
+
 async def extract_payment_data(
     page: Page,
     loan_number: str,
     start_time: float
 ) -> PaymentCheckResult:
-    """Extract payment data from MCI results page"""
+    """Extract payment data from MCI results page using regex-based text parsing"""
 
-    # Try to find payment status indicators
-    payment_status = "unknown"
-    paid_through = None
-    next_due = None
-    amount_due = None
-    policy_number = None
-    carrier = None
-    effective = None
-    expiration = None
-    cancellation = None
-    cancel_reason = None
     screenshot_url = None
+    payment_screenshot_url = None
+    raw_data: dict = {}
 
     # Take screenshot of results page
     try:
@@ -563,11 +527,107 @@ async def extract_payment_data(
     except Exception as e:
         logger.warning("Failed to save screenshot", error=str(e))
 
-    # Look for common status indicators
+    # Get full page text for regex parsing
     page_text = await page.inner_text("body")
+    raw_data["page_text"] = page_text
+
+    # --- Parse homeowner info ---
+    homeowner = None
+    additional_homeowner = None
+    match = re.search(r'(?:Homeowner|Insured|Named Insured)[:\s]*([^\n]+)', page_text, re.IGNORECASE)
+    if match:
+        homeowner = match.group(1).strip()
+    match = re.search(r'(?:Additional (?:Homeowner|Insured)|Co-Insured)[:\s]*([^\n]+)', page_text, re.IGNORECASE)
+    if match:
+        additional_homeowner = match.group(1).strip()
+
+    # --- Parse property address ---
+    property_address = None
+    match = re.search(r'(?:Property Address|Property Location|Risk Address)[:\s]*([^\n]+(?:\n[^\n]+)?)', page_text, re.IGNORECASE)
+    if match:
+        property_address = re.sub(r'\s+', ' ', match.group(1)).strip()
+
+    # --- Parse policy info ---
+    policy_number = None
+    carrier = None
+    policy_type = None
+    policy_status = None
+
+    match = re.search(r'(?:Policy\s*(?:#|Number|No\.?))[:\s]*([A-Z0-9-]+)', page_text, re.IGNORECASE)
+    if match:
+        policy_number = match.group(1).strip()
+
+    match = re.search(r'(?:Carrier|Insurance Company|Company)[:\s]*([^\n]+)', page_text, re.IGNORECASE)
+    if match:
+        carrier = match.group(1).strip()
+
+    match = re.search(r'(?:Policy Type|Type of Policy|Coverage Type)[:\s]*([^\n]+)', page_text, re.IGNORECASE)
+    if match:
+        policy_type = match.group(1).strip()
+        raw_data["policy_type"] = policy_type
+
+    match = re.search(r'(?:Policy Status|Status)[:\s]*([^\n]+)', page_text, re.IGNORECASE)
+    if match:
+        policy_status = match.group(1).strip()
+        raw_data["policy_status"] = policy_status
+
+    # --- Parse dates ---
+    effective_date = None
+    expiration_date = None
+    cancellation_date = None
+    cancellation_reason = None
+
+    match = re.search(r'(?:Effective\s*Date|Eff\.?\s*Date)[:\s]*(\d{1,2}/\d{1,2}/\d{4})', page_text, re.IGNORECASE)
+    if match:
+        effective_date = match.group(1)
+
+    match = re.search(r'(?:Expiration\s*Date|Exp\.?\s*Date)[:\s]*(\d{1,2}/\d{1,2}/\d{4})', page_text, re.IGNORECASE)
+    if match:
+        expiration_date = match.group(1)
+
+    match = re.search(r'(?:Cancellation\s*Date|Cancel\.?\s*Date)[:\s]*(\d{1,2}/\d{1,2}/\d{4})', page_text, re.IGNORECASE)
+    if match:
+        cancellation_date = match.group(1)
+
+    match = re.search(r'(?:Cancellation\s*Reason|Cancel\s*Reason|Reason)[:\s]*([^\n]+)', page_text, re.IGNORECASE)
+    if match:
+        reason = match.group(1).strip()
+        if reason and reason.lower() not in ('n/a', 'none', ''):
+            cancellation_reason = reason
+
+    # --- Parse financials ---
+    premium_amount = None
+    coverage_amount = None
+    deductible = None
+    amount_due = None
+
+    match = re.search(r'(?:Annual\s*Premium|Premium\s*Amount|Premium)[:\s]*\$?([\d,]+\.?\d*)', page_text, re.IGNORECASE)
+    if match:
+        premium_amount = parse_currency(match.group(1))
+
+    match = re.search(r'(?:Coverage\s*Amount|Dwelling\s*Coverage|Coverage\s*A)[:\s]*\$?([\d,]+\.?\d*)', page_text, re.IGNORECASE)
+    if match:
+        coverage_amount = parse_currency(match.group(1))
+
+    match = re.search(r'(?:Deductible)[:\s]*([^\n]+)', page_text, re.IGNORECASE)
+    if match:
+        deductible = match.group(1).strip()
+
+    match = re.search(r'(?:Amount\s*Due|Balance\s*Due)[:\s]*\$?([\d,]+\.?\d*)', page_text, re.IGNORECASE)
+    if match:
+        amount_due = parse_currency(match.group(1))
+
+    # --- Parse payment status ---
+    payment_status = "unknown"
+    paid_through_date = None
+    next_due_date = None
+    payment_date = None
+    payment_amount = None
     page_lower = page_text.lower()
 
-    if "current" in page_lower and "status" in page_lower:
+    if cancellation_date:
+        payment_status = "lapsed"
+    elif "current" in page_lower and ("status" in page_lower or "payment" in page_lower):
         payment_status = "current"
     elif "past due" in page_lower or "late" in page_lower:
         payment_status = "late"
@@ -576,73 +636,98 @@ async def extract_payment_data(
     elif "lapsed" in page_lower or "cancelled" in page_lower or "canceled" in page_lower:
         payment_status = "lapsed"
 
-    # Try to extract dates and amounts
-    # These selectors are examples - actual MCI page structure may differ
+    match = re.search(r'(?:Paid\s*Through|Paid\s*Thru)[:\s]*(\d{1,2}/\d{1,2}/\d{4})', page_text, re.IGNORECASE)
+    if match:
+        paid_through_date = match.group(1)
+
+    match = re.search(r'(?:Next\s*Due|Due\s*Date|Next\s*Payment)[:\s]*(\d{1,2}/\d{1,2}/\d{4})', page_text, re.IGNORECASE)
+    if match:
+        next_due_date = match.group(1)
+
+    # --- Parse last payment info ---
+    match = re.search(r'(?:Last\s*Payment\s*Date|Payment\s*Date|Date\s*Paid)[:\s]*(\d{1,2}/\d{1,2}/\d{4})', page_text, re.IGNORECASE)
+    if match:
+        payment_date = match.group(1)
+
+    match = re.search(r'(?:Last\s*Payment\s*Amount|Payment\s*Amount|Amount\s*Paid)[:\s]*\$?([\d,]+\.?\d*)', page_text, re.IGNORECASE)
+    if match:
+        payment_amount = parse_currency(match.group(1))
+
+    # --- Parse mortgagee info ---
+    mortgagee_name = None
+    mortgagee_address = None
+    mortgagee_clause = None
+
+    match = re.search(r'(?:Mortgagee|Lender|Loss Payee)[:\s]*([^\n]+)', page_text, re.IGNORECASE)
+    if match:
+        mortgagee_name = match.group(1).strip()
+
+    match = re.search(r'(?:Mortgagee Address|Lender Address)[:\s]*([^\n]+(?:\n[^\n]+)?)', page_text, re.IGNORECASE)
+    if match:
+        mortgagee_address = re.sub(r'\s+', ' ', match.group(1)).strip()
+
+    match = re.search(r'(?:Mortgagee Clause|Mortgage Clause)[:\s]*([^\n]+)', page_text, re.IGNORECASE)
+    if match:
+        mortgagee_clause = match.group(1).strip()
+
+    # --- Try to capture payment activity tab screenshot ---
     try:
-        # Paid through date
-        paid_el = await page.query_selector('[class*="paid-through"], [data-field="paidThrough"]')
-        if paid_el:
-            paid_through = await paid_el.inner_text()
+        # Look for payment activity / payment history tab
+        tab_selectors = [
+            'a:has-text("Payment Activity")',
+            'a:has-text("Payment History")',
+            'mat-tab:has-text("Payment")',
+            '[role="tab"]:has-text("Payment")',
+            'button:has-text("Payment Activity")',
+        ]
 
-        # Next due date
-        due_el = await page.query_selector('[class*="next-due"], [data-field="nextDue"]')
-        if due_el:
-            next_due = await due_el.inner_text()
+        for selector in tab_selectors:
+            try:
+                tab = await page.query_selector(selector)
+                if tab:
+                    await tab.click()
+                    await page.wait_for_timeout(2000)
+                    logger.info("Clicked payment activity tab", selector=selector)
 
-        # Amount due
-        amount_el = await page.query_selector('[class*="amount-due"], [data-field="amountDue"]')
-        if amount_el:
-            amount_text = await amount_el.inner_text()
-            # Parse amount (remove $ and commas)
-            amount_due = float(amount_text.replace("$", "").replace(",", "").strip())
-
-        # Policy number
-        policy_el = await page.query_selector('[class*="policy-number"], [data-field="policyNumber"]')
-        if policy_el:
-            policy_number = await policy_el.inner_text()
-
-        # Carrier
-        carrier_el = await page.query_selector('[class*="carrier"], [data-field="carrier"]')
-        if carrier_el:
-            carrier = await carrier_el.inner_text()
-
-        # Effective date
-        eff_el = await page.query_selector('[class*="effective"], [data-field="effectiveDate"]')
-        if eff_el:
-            effective = await eff_el.inner_text()
-
-        # Expiration date
-        exp_el = await page.query_selector('[class*="expiration"], [data-field="expirationDate"]')
-        if exp_el:
-            expiration = await exp_el.inner_text()
-
-        # Cancellation info
-        cancel_el = await page.query_selector('[class*="cancellation"], [data-field="cancellationDate"]')
-        if cancel_el:
-            cancellation = await cancel_el.inner_text()
-            payment_status = "lapsed"
-
-        reason_el = await page.query_selector('[class*="cancel-reason"], [data-field="cancelReason"]')
-        if reason_el:
-            cancel_reason = await reason_el.inner_text()
-
+                    payment_screenshot_id = str(uuid.uuid4())
+                    payment_screenshot_filename = f"{payment_screenshot_id}-payment.png"
+                    payment_screenshot_path = SCREENSHOTS_DIR / payment_screenshot_filename
+                    await page.screenshot(path=str(payment_screenshot_path), full_page=True)
+                    payment_screenshot_url = f"{BASE_URL}/screenshots/{payment_screenshot_filename}"
+                    logger.info("Payment activity screenshot saved", url=payment_screenshot_url)
+                    break
+            except Exception:
+                continue
     except Exception as e:
-        logger.warning("Error extracting some fields", error=str(e))
+        logger.warning("Failed to capture payment activity screenshot", error=str(e))
 
     return PaymentCheckResult(
         success=True,
         loan_number=loan_number,
         payment_status=payment_status,
-        paid_through_date=paid_through,
-        next_due_date=next_due,
+        paid_through_date=paid_through_date,
+        next_due_date=next_due_date,
         amount_due=amount_due,
+        premium_amount=premium_amount,
         policy_number=policy_number,
         carrier=carrier,
-        effective_date=effective,
-        expiration_date=expiration,
-        cancellation_date=cancellation,
-        cancellation_reason=cancel_reason,
+        effective_date=effective_date,
+        expiration_date=expiration_date,
+        cancellation_date=cancellation_date,
+        cancellation_reason=cancellation_reason,
+        coverage_amount=coverage_amount,
+        deductible=deductible,
+        payment_date=payment_date,
+        payment_amount=payment_amount,
+        homeowner=homeowner,
+        additional_homeowner=additional_homeowner,
+        property_address=property_address,
+        mortgagee=mortgagee_name,
+        mortgagee_address=mortgagee_address,
+        mortgagee_clause=mortgagee_clause,
         screenshot_url=screenshot_url,
+        payment_screenshot_url=payment_screenshot_url,
+        raw_data=raw_data,
         duration_ms=int((time.time() - start_time) * 1000)
     )
 
@@ -657,7 +742,7 @@ def health():
     return jsonify({
         "status": "healthy",
         "service": "mci-checker",
-        "version": "1.0.0",
+        "version": "3.1.0",
         "captcha_configured": bool(TWOCAPTCHA_API_KEY),
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
@@ -672,7 +757,7 @@ def check_payment():
     {
         "loan_number": "123456789",
         "zip_code": "12345",
-        "last_name": "Smith"  // optional
+        "last_name": "Smith"  // required
     }
     """
     # Verify API key
@@ -688,13 +773,14 @@ def check_payment():
     loan_number = data.get("loan_number")
     zip_code = data.get("zip_code")
     last_name = data.get("last_name")
-    ssn_last4 = data.get("ssn_last4")
     servicer = data.get("servicer")
 
     if not loan_number:
         return jsonify({"error": "loan_number is required"}), 400
     if not zip_code:
         return jsonify({"error": "zip_code is required"}), 400
+    if not last_name:
+        return jsonify({"error": "last_name is required"}), 400
 
     # Run async check
     loop = asyncio.new_event_loop()
@@ -702,7 +788,7 @@ def check_payment():
 
     try:
         result = loop.run_until_complete(
-            check_mci_payment(loan_number, zip_code, last_name, _ssn_last4=ssn_last4, servicer=servicer)
+            check_mci_payment(loan_number, zip_code, last_name, servicer=servicer)
         )
         return jsonify(asdict(result))
     except Exception as e:
