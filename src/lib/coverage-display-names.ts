@@ -445,6 +445,52 @@ export const COVERAGE_DISPLAY_NAMES: Record<string, string> = {
   xumac: 'Excl — Unmanned Aircraft',
   xy2k: 'Excl — Year 2000',
 
+  // --- Short-code fallbacks (old snapshots built before COVERAGE_CODE_MAP) ---
+  // American Strategic
+  abild: 'Accredited Builder Discount',
+  hroof: 'Hip Roof Discount',
+  aqdis: 'All Quotes Discount',
+  epold: 'Existing Policy Discount',
+  lwtdm: 'Limited Water Damage',
+  alar1: 'Alarm System — Primary',
+  alar2: 'Alarm System — Secondary',
+  marst: 'Married Status Discount',
+  child: 'Child Discount',
+  nhdis: 'New Home Discount',
+  dswat: 'Distance to Water',
+  hplat: 'Home Platinum',
+  hpack: 'Home Package',
+  // Integon / National General
+  adb: 'Accidental Death Benefit',
+  mulp: 'Multi-Policy Discount',
+  mcar: 'Multi-Car Discount',
+  nbsdc: 'New Business Discount',
+  acqis: 'Acquisition Fee',
+  accfv: 'Accident Forgiveness',
+  aqd: 'Advance Quote Discount',
+  gsd: 'Good Student Discount',
+  // Allstate
+  ghppd: 'Good Hands People Program Discount',
+  viol: 'Violation Surcharge',
+  // Universal P&C
+  hurr: 'Hurricane Deductible',
+  // GEICO
+  eftd: 'Auto Pay Discount',
+  // American Strategic rating components (baseline short codes)
+  hofac: 'Home Factor',
+  butln: 'Building Outline',
+  cfact: 'Construction Factor',
+  fbasp: 'Base Premium',
+  dwupd: 'Dwelling Update',
+  agedw: 'Age of Dwelling Factor',
+  // Cross-carrier (from baselines)
+  grprt: 'Group Rating',
+  mexco: 'Mexico Coverage',
+  custe: 'Customized Equipment',
+  auext: 'Auto Extension',
+  wliab: 'Personal Liability',
+  autop: 'Auto Policy',
+
   // --- Additional carrier-specific ---
   additional_dwelling_fire: 'Additional Dwelling Fire',
   additional_factors: 'Additional Factors',

@@ -531,18 +531,12 @@ export const RATING_FACTOR_TYPES = new Set([
   'rpded',                         // Replacement Deductible (alt)
   'roof_material',                 // Roof Material (factor)
   'household_factor',              // Household Factor
-  'home_factor',                   // Home Factor
-  'hofac',                         // Home Factor (short code)
   'pdif',                          // Property Damage Increase Factor
   'property_damage_increase_factor',
   'fixed_base_premium',            // Fixed Base Premium
   'fxbs',                          // Fixed Base Premium (short code)
-  'base_premium',                  // Base Premium
-  'fbasp',                         // Base Premium (AS full code)
   'fire_protection',               // Fire Protection (factor)
   'frpr',                          // Fire Protection (short code)
-  'age_dwelling',                  // Age of Dwelling (factor)
-  'agedw',                         // Age of Dwelling (AS full code)
   'claims_surcharge',              // Claims Surcharge
   'clsur',                         // Claims Surcharge (AS full code)
   'clms',                          // Claims Surcharge (short code)
@@ -552,22 +546,18 @@ export const RATING_FACTOR_TYPES = new Set([
   'wleak',                         // Water Leak (short code)
   'named_storm_deductible',        // Named Storm Deductible (factor)
   'numst',                         // Named Storm Deductible (short code)
-  'construction_factor',           // Construction Factor
-  'cfact',                         // Construction Factor (AS full code)
   'hurricane_surcharge',           // Hurricane Surcharge
   'hurrs',                         // Hurricane Surcharge (AS full code)
-  'building_outline',              // Building Outline
-  'butln',                         // Building Outline (AS full code)
   'month_occupied',                // Month Occupied
   'moocc',                         // Month Occupied (AS full code)
-  'dwelling_update',               // Dwelling Update
-  'dwupd',                         // Dwelling Update (AS full code)
   'additional_factors',            // Additional Factors
   'afacc',                         // Additional Factors (AS full code)
   'aodw',                          // All Other Dwelling Perils (factor)
   'nrnh',                          // Non-Renewed/Non-Homestead
   'hmup',                          // Home Update (factor)
   'tpds',                          // Third Party Designation
+  'dswat',                          // Distance to Water (factor)
+  'dwelling_water_damage',           // Distance to Water (canonical)
   // Generic rating components
   'territory_rating',
   'terr',
