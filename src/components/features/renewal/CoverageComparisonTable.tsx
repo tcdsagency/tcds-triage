@@ -106,6 +106,19 @@ const COVERAGE_ORDER = [
   'gap_coverage', 'combined_single_limit', 'loan_lease_payoff',
 ];
 
+// Endorsement flags that should not appear in coverage comparison
+// (they have no limit/premium — just indicate a coverage modifier)
+const ENDORSEMENT_FLAG_TYPES = new Set([
+  'replacement_value_personal_property',
+  'functional_replacement_value',
+]);
+
+function isEndorsementFlag(type: string, cov: CanonicalCoverage | undefined): boolean {
+  if (!ENDORSEMENT_FLAG_TYPES.has(type)) return false;
+  if (!cov) return true;
+  return cov.limitAmount == null && cov.premium == null;
+}
+
 function buildRows(
   baselineCovs: CanonicalCoverage[],
   renewalCovs: CanonicalCoverage[],
@@ -120,6 +133,7 @@ function buildRows(
     const b = baselineByType.get(type);
     const r = renewalByType.get(type);
     if (!b && !r) continue;
+    if (isEndorsementFlag(type, b) && isEndorsementFlag(type, r)) continue;
     seenTypes.add(type);
     const change = computeChange(b, r);
     rows.push({
@@ -137,9 +151,10 @@ function buildRows(
   const allTypes = new Set([...baselineByType.keys(), ...renewalByType.keys()]);
   for (const type of allTypes) {
     if (seenTypes.has(type)) continue;
-    seenTypes.add(type);
     const b = baselineByType.get(type);
     const r = renewalByType.get(type);
+    if (isEndorsementFlag(type, b) && isEndorsementFlag(type, r)) continue;
+    seenTypes.add(type);
     const change = computeChange(b, r);
     rows.push({
       type,

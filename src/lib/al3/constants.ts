@@ -511,6 +511,9 @@ export const DISCOUNT_COVERAGE_TYPES = new Set([
   'anti_lock_brakes_discount',
   'safe_driver_course_discount',
   'first_year_buyer_discount',
+  // Endorsement flags (no limit/premium, just indicate coverage modifier)
+  'replacement_value_personal_property',
+  'functional_replacement_value',
 ]);
 
 /**
