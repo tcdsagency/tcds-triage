@@ -222,3 +222,106 @@ https://tcdsagency.vercel.app/api/calls/{sessionId}/transcript/segment
 ```
 
 Using header: `X-Api-Key: 2058475616`
+
+---
+
+# MCI Payment Checker (v3.1.0)
+
+Automated mortgagee payment status checker running on a separate Ubuntu VM.
+
+## Accessing the VM
+
+### SSH Login
+
+```bash
+ssh todd@75.37.55.209
+Password: Brother1!
+```
+
+## File Locations
+
+| Path | Description |
+|------|-------------|
+| `/home/todd/services/mci-checker/` | Main application directory |
+| `/home/todd/services/mci-checker/app.py` | Main code |
+| `/home/todd/services/mci-checker/.env` | Configuration (API_KEY, TWOCAPTCHA_API_KEY, PORT) |
+| `/home/todd/services/mci-checker/venv/` | Python virtual environment |
+| `/home/todd/services/mci-checker/screenshots/` | Saved screenshots from MCI lookups |
+| `/tmp/mci-checker.log` | Logs |
+
+## Configuration (.env file)
+
+| Variable | Description |
+|----------|-------------|
+| `API_KEY` | API key for authenticating requests from TCDS |
+| `TWOCAPTCHA_API_KEY` | 2Captcha API key for CAPTCHA solving |
+| `PORT` | Server port (currently 8090) |
+
+## Process Management
+
+### Check if Running
+
+```bash
+ps aux | grep "python.*app.py" | grep -v grep
+```
+
+### Start the Service
+
+```bash
+cd /home/todd/services/mci-checker
+source venv/bin/activate
+source .env && export API_KEY TWOCAPTCHA_API_KEY PORT
+nohup python app.py > /tmp/mci-checker.log 2>&1 &
+```
+
+### Stop the Service
+
+```bash
+kill $(ps aux | grep "python.*app.py" | grep -v grep | awk '{print $2}')
+```
+
+### Restart the Service
+
+```bash
+kill $(ps aux | grep "python.*app.py" | grep -v grep | awk '{print $2}')
+sleep 2
+cd /home/todd/services/mci-checker
+source venv/bin/activate
+source .env && export API_KEY TWOCAPTCHA_API_KEY PORT
+nohup python app.py > /tmp/mci-checker.log 2>&1 &
+```
+
+### Verify Health
+
+```bash
+curl -s http://localhost:8090/health
+```
+
+## Deploying Updates
+
+From the local dev machine:
+
+```bash
+scp server/mci-checker/app.py todd@75.37.55.209:/home/todd/services/mci-checker/app.py
+```
+
+Then SSH in and restart the service (see above).
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check (version, captcha status) |
+| POST | `/api/v1/check` | Check payment status (requires `loan_number`, `zip_code`, `last_name`) |
+| GET | `/api/v1/balance` | Get 2Captcha account balance |
+| GET | `/screenshots/<filename>` | Serve saved screenshots |
+
+## Viewing Logs
+
+```bash
+# Real-time
+tail -f /tmp/mci-checker.log
+
+# Recent errors
+grep -i "error\|fail" /tmp/mci-checker.log | tail -20
+```
