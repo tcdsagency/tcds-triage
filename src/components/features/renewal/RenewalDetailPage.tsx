@@ -17,6 +17,7 @@ import DeductiblesSection from './DeductiblesSection';
 import DiscountPills from './DiscountPills';
 import ReviewActionBar from './ReviewActionBar';
 import CrossSellSection from './CrossSellSection';
+import { MortgageePaymentStatus } from '../MortgageePaymentStatus';
 import PremiumChangeSummary from './PremiumChangeSummary';
 import PropertyInspectionCard from './PropertyInspectionCard';
 import type { RenewalComparisonDetail, RenewalNote } from './types';
@@ -39,6 +40,7 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
   const [checkResults, setCheckResults] = useState<CheckResult[]>([]);
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [streetViewUrl, setStreetViewUrl] = useState<string | null>(null);
+  const [mciPaymentData, setMciPaymentData] = useState<any>(null);
 
   // Fetch full detail
   const fetchDetail = useCallback(async () => {
@@ -53,6 +55,7 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
       if (data.success) {
         setDetail(data.renewal);
         setCheckResults(data.renewal.checkResults || []);
+        if (data.mciPaymentData) setMciPaymentData(data.mciPaymentData);
       }
     } catch (err) {
       console.error('Error fetching renewal detail:', err);
@@ -516,6 +519,76 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
               </div>
             </div>
           )}
+
+          {/* MCI Payment Status */}
+          {detail.policyId && (() => {
+            const lob = (detail.lineOfBusiness || '').toLowerCase();
+            const isHome = lob.includes('home') || lob.includes('dwelling') ||
+                           lob.includes('ho3') || lob.includes('ho5') || lob.includes('dp3');
+            if (!isHome) return null;
+            return (
+              <div>
+                <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
+                  MCI Payment
+                </h4>
+                {mciPaymentData ? (
+                  <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300 mb-3">
+                    {mciPaymentData.paymentStatus && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Status</span>
+                        <span className={`font-medium px-1.5 py-0.5 rounded text-xs ${
+                          mciPaymentData.paymentStatus === 'current' ? 'bg-green-50 text-green-600' :
+                          mciPaymentData.paymentStatus === 'late' || mciPaymentData.paymentStatus === 'lapsed' ? 'bg-red-50 text-red-600' :
+                          'bg-gray-50 text-gray-600'
+                        }`}>
+                          {mciPaymentData.paymentStatus.replace(/_/g, ' ').toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                    {mciPaymentData.mciCarrier && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Carrier</span>
+                        <span className="font-medium">{mciPaymentData.mciCarrier}</span>
+                      </div>
+                    )}
+                    {mciPaymentData.premiumAmount != null && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Premium</span>
+                        <span className="font-medium">${mciPaymentData.premiumAmount.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {mciPaymentData.paidThroughDate && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Paid Through</span>
+                        <span className="font-medium">{new Date(mciPaymentData.paidThroughDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      </div>
+                    )}
+                    {mciPaymentData.mciEffectiveDate && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Effective</span>
+                        <span className="font-medium">{new Date(mciPaymentData.mciEffectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      </div>
+                    )}
+                    {mciPaymentData.mciExpirationDate && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Expiration</span>
+                        <span className="font-medium">{new Date(mciPaymentData.mciExpirationDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      </div>
+                    )}
+                    {mciPaymentData.lastCheckedAt && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Last Checked</span>
+                        <span className="text-xs text-gray-400">{new Date(mciPaymentData.lastCheckedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 mb-2">No MCI data available</p>
+                )}
+                <MortgageePaymentStatus policyId={detail.policyId} />
+              </div>
+            );
+          })()}
 
           {/* AZ Status (compact) */}
           <div>

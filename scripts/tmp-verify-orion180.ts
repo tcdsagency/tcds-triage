@@ -8,7 +8,7 @@ import { buildRenewalSnapshot } from '../src/lib/al3/snapshot-builder';
 import { DISCOUNT_COVERAGE_TYPES } from '../src/lib/al3/constants';
 import { resolveCoverageDisplayName, COVERAGE_DISPLAY_NAMES } from '../src/lib/coverage-display-names';
 
-const BASE_DIR = path.resolve(__dirname, '../tmp-al3-extract/orion180-feb14');
+const BASE_DIR = path.resolve(__dirname, '../tmp-al3-extract');
 
 // Recursively find all .dat/.DAT files, dedupe by content hash
 function findDatFiles(dir: string): string[] {
@@ -105,10 +105,11 @@ for (const file of files) {
         for (const c of realCovs) {
           if (!c.type) continue;
           allCoverageTypes.add(c.type);
-          // A type is "mapped" if it exists in the display names map (exact key match)
+          // A type is "mapped" if it exists in the display names map
           if (COVERAGE_DISPLAY_NAMES[c.type]) continue;
-          // Also check if it's a multi-word canonical type (contains underscore + long enough)
-          if (c.type.includes('_') && c.type.length > 12) continue;
+          // Multi-word canonical types (contain underscore) are already human-readable
+          if (c.type.includes('_')) continue;
+          // Short all-lowercase codes that aren't in the map are truly unmapped
           unmappedCodes.add(`${c.type} (${c.code || '?'}) [${carrier}]`);
           fileUnmapped.push(c.type);
         }
@@ -158,7 +159,8 @@ console.log('\n--- ALL COVERAGE TYPES SEEN ---');
 const sortedTypes = Array.from(allCoverageTypes).sort();
 for (const t of sortedTypes) {
   const display = resolveCoverageDisplayName(t);
-  const marker = display === t.replace(/[_-]/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()) ? ' ⚠️ UNMAPPED' : '';
+  const isInMap = !!COVERAGE_DISPLAY_NAMES[t] || t.includes('_');
+  const marker = isInMap ? '' : ' ⚠️ UNMAPPED';
   console.log(`  ${t.padEnd(35)} → ${display}${marker}`);
 }
 

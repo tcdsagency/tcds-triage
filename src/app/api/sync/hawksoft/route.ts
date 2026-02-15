@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { customers, policies, vehicles, drivers, mortgagees, properties, syncMetadata, users } from '@/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { customers, policies, vehicles, drivers, mortgagees, properties, syncMetadata, users, renewalComparisons } from '@/db/schema';
+import { eq, and, sql, notInArray } from 'drizzle-orm';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
 
 export const maxDuration = 300; // Pro plan: 5 minutes
@@ -94,6 +94,18 @@ export async function POST(request: Request) {
       }
     }
     log(`Loaded ${agentCodeToUserId.size} agent code mappings`);
+
+    // Query policies with active renewal comparisons — these are "frozen" during sync
+    const frozenRows = await db
+      .selectDistinct({ policyId: renewalComparisons.policyId })
+      .from(renewalComparisons)
+      .where(and(
+        eq(renewalComparisons.tenantId, tenantId),
+        notInArray(renewalComparisons.status, ['completed', 'cancelled'])
+      ));
+    const frozenPolicyIds = new Set(frozenRows.map(r => r.policyId).filter(Boolean) as string[]);
+    log(`${frozenPolicyIds.size} policies frozen (pending renewal review)`);
+    let frozenCount = 0;
 
     const totalWithHs = customersWithHs.length;
     let hsClientNumbers: number[];
@@ -267,45 +279,66 @@ export async function POST(request: Request) {
                 };
 
                 let savedPolicyId: string;
-                if (existingPolicy.length > 0) {
-                  // Preserve prior-term snapshot when effectiveDate changes
-                  const existingFull = await db.select().from(policies).where(eq(policies.id, existingPolicy[0].id)).limit(1);
-                  if (existingFull.length > 0) {
-                    const oldEff = existingFull[0].effectiveDate?.toISOString().split('T')[0];
-                    const newEff = policyData.effectiveDate instanceof Date
-                      ? policyData.effectiveDate.toISOString().split('T')[0]
-                      : undefined;
-                    if (oldEff && newEff && oldEff !== newEff) {
-                      const oldVehicles = await db.select().from(vehicles).where(eq(vehicles.policyId, existingPolicy[0].id));
-                      const oldDrivers = await db.select().from(drivers).where(eq(drivers.policyId, existingPolicy[0].id));
-                      policyData.priorTermSnapshot = {
-                        premium: existingFull[0].premium,
-                        effectiveDate: oldEff,
-                        expirationDate: existingFull[0].expirationDate?.toISOString().split('T')[0],
-                        coverages: existingFull[0].coverages,
-                        vehicles: oldVehicles.map((v: any) => ({ vin: v.vin, year: v.year, make: v.make, model: v.model, use: v.use })),
-                        drivers: oldDrivers.map((d: any) => ({
-                          firstName: d.firstName, lastName: d.lastName,
-                          dateOfBirth: d.dateOfBirth?.toISOString().split('T')[0],
-                          licenseNumber: d.licenseNumber, licenseState: d.licenseState,
-                        })),
-                        savedAt: new Date().toISOString(),
-                      };
-                      log(`Prior-term snapshot saved for ${policy.policyNumber} (${oldEff} → ${newEff})`);
-                    }
-                  }
+                let skipSubRecords = false;
 
-                  await db.update(policies)
-                    .set(policyData)
-                    .where(eq(policies.id, existingPolicy[0].id));
-                  savedPolicyId = existingPolicy[0].id;
+                if (existingPolicy.length > 0) {
+                  const isFrozen = frozenPolicyIds.has(existingPolicy[0].id);
+
+                  if (isFrozen) {
+                    // Frozen: only update safe fields (agent assignments, status)
+                    await db.update(policies)
+                      .set({
+                        status: policyData.status,
+                        agent1: policyData.agent1,
+                        agent2: policyData.agent2,
+                        agent3: policyData.agent3,
+                        producerId: policyData.producerId,
+                      })
+                      .where(eq(policies.id, existingPolicy[0].id));
+                    savedPolicyId = existingPolicy[0].id;
+                    skipSubRecords = true;
+                    frozenCount++;
+                  } else {
+                    // Not frozen: full update with prior-term snapshot
+                    const existingFull = await db.select().from(policies).where(eq(policies.id, existingPolicy[0].id)).limit(1);
+                    if (existingFull.length > 0) {
+                      const oldEff = existingFull[0].effectiveDate?.toISOString().split('T')[0];
+                      const newEff = policyData.effectiveDate instanceof Date
+                        ? policyData.effectiveDate.toISOString().split('T')[0]
+                        : undefined;
+                      if (oldEff && newEff && oldEff !== newEff) {
+                        const oldVehicles = await db.select().from(vehicles).where(eq(vehicles.policyId, existingPolicy[0].id));
+                        const oldDrivers = await db.select().from(drivers).where(eq(drivers.policyId, existingPolicy[0].id));
+                        policyData.priorTermSnapshot = {
+                          premium: existingFull[0].premium,
+                          effectiveDate: oldEff,
+                          expirationDate: existingFull[0].expirationDate?.toISOString().split('T')[0],
+                          coverages: existingFull[0].coverages,
+                          vehicles: oldVehicles.map((v: any) => ({ vin: v.vin, year: v.year, make: v.make, model: v.model, use: v.use })),
+                          drivers: oldDrivers.map((d: any) => ({
+                            firstName: d.firstName, lastName: d.lastName,
+                            dateOfBirth: d.dateOfBirth?.toISOString().split('T')[0],
+                            licenseNumber: d.licenseNumber, licenseState: d.licenseState,
+                          })),
+                          savedAt: new Date().toISOString(),
+                        };
+                        log(`Prior-term snapshot saved for ${policy.policyNumber} (${oldEff} → ${newEff})`);
+                      }
+                    }
+
+                    await db.update(policies)
+                      .set(policyData)
+                      .where(eq(policies.id, existingPolicy[0].id));
+                    savedPolicyId = existingPolicy[0].id;
+                  }
                 } else {
                   const [newPolicy] = await db.insert(policies).values(policyData as any).returning({ id: policies.id });
                   savedPolicyId = newPolicy.id;
                 }
                 policiesSynced++;
 
-                // Sync vehicles (delete+insert)
+                // Sync vehicles (delete+insert) — skip if frozen
+                if (!skipSubRecords) {
                 const hsVehicles = policy.autos || (policy as any).vehicles || [];
                 if (hsVehicles.length > 0) {
                   await db.delete(vehicles).where(eq(vehicles.policyId, savedPolicyId));
@@ -459,6 +492,7 @@ export async function POST(request: Request) {
                     // Continue on location sync errors
                   }
                 }
+                } // end skipSubRecords guard
               } catch (policyErr) {
                 policyErrors++;
               }
@@ -473,6 +507,9 @@ export async function POST(request: Request) {
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
+    if (frozenCount > 0) {
+      log(`${frozenCount} policies skipped (pending renewal review)`);
+    }
     log(`Done! ${customersUpdated} updated, ${policiesSynced} policies, ${mortgageesSynced} mortgagees in ${duration}s`);
 
     // Update sync metadata cursor for incremental mode
@@ -490,6 +527,7 @@ export async function POST(request: Request) {
         customersUpdated,
         policiesSynced,
         mortgageesSynced,
+        frozenPolicies: frozenCount,
         policyErrors,
         apiErrors,
         duration: `${duration}s`,
@@ -499,6 +537,12 @@ export async function POST(request: Request) {
 
     const nextOffset = offset + limit;
     const hasMore = nextOffset < totalWithHs;
+
+    // Update lastFullSyncAt when the final page of a full sync completes
+    if (mode === 'full' && !hasMore) {
+      await upsertSyncMetadata(tenantId, syncStartTime, apiErrors > 0 ? 'partial' : 'success', customersUpdated, true);
+      log('Full sync complete — lastFullSyncAt updated');
+    }
 
     return NextResponse.json({
       success: true,
@@ -510,6 +554,7 @@ export async function POST(request: Request) {
       customersUpdated,
       policiesSynced,
       mortgageesSynced,
+      frozenPolicies: frozenCount,
       policyErrors,
       apiErrors,
       hasMore,
@@ -615,7 +660,8 @@ async function upsertSyncMetadata(
   tenantId: string,
   syncTimestamp: string,
   status: string,
-  recordsProcessed: number
+  recordsProcessed: number,
+  isFullSync = false
 ) {
   const [existing] = await db.select()
     .from(syncMetadata)
@@ -625,15 +671,22 @@ async function upsertSyncMetadata(
     ))
     .limit(1);
 
+  const updateFields: Record<string, any> = {
+    lastSyncStatus: status,
+    lastSyncRecordsProcessed: recordsProcessed,
+    updatedAt: new Date(),
+  };
+
+  if (isFullSync) {
+    updateFields.lastFullSyncAt = new Date();
+  } else {
+    updateFields.lastIncrementalSyncAt = new Date();
+    updateFields.incrementalSyncCursor = syncTimestamp;
+  }
+
   if (existing) {
     await db.update(syncMetadata)
-      .set({
-        lastIncrementalSyncAt: new Date(),
-        incrementalSyncCursor: syncTimestamp,
-        lastSyncStatus: status,
-        lastSyncRecordsProcessed: recordsProcessed,
-        updatedAt: new Date(),
-      })
+      .set(updateFields)
       .where(and(
         eq(syncMetadata.tenantId, tenantId),
         eq(syncMetadata.integration, 'hawksoft')
@@ -642,10 +695,7 @@ async function upsertSyncMetadata(
     await db.insert(syncMetadata).values({
       tenantId,
       integration: 'hawksoft',
-      lastIncrementalSyncAt: new Date(),
-      incrementalSyncCursor: syncTimestamp,
-      lastSyncStatus: status,
-      lastSyncRecordsProcessed: recordsProcessed,
+      ...updateFields,
     });
   }
 }

@@ -2,10 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { createMortgageePaymentScheduler } from "@/lib/mortgageePayments/scheduler";
 
 /**
+ * GET /api/mortgagee-payments/trigger
+ * Vercel cron sends GET requests — delegate to shared logic
+ */
+export async function GET(request: NextRequest) {
+  return runTrigger(request);
+}
+
+/**
  * POST /api/mortgagee-payments/trigger
  * Trigger the scheduler manually or via cron
  */
 export async function POST(request: NextRequest) {
+  return runTrigger(request);
+}
+
+async function runTrigger(request: NextRequest) {
   try {
     const tenantId = process.env.DEFAULT_TENANT_ID;
     if (!tenantId) {

@@ -5,8 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { renewalComparisons, customers, users } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { renewalComparisons, customers, users, mortgageePaymentChecks } from '@/db/schema';
+import { eq, desc, and } from 'drizzle-orm';
 import { getRenewalAuditHistory } from '@/lib/api/renewal-audit';
 
 export async function GET(
@@ -77,6 +77,41 @@ export async function GET(
     // Get audit history
     const auditHistory = await getRenewalAuditHistory(id);
 
+    // Get latest MCI payment check if policy exists
+    let mciPaymentData = null;
+    if (renewal.policyId) {
+      const [latestCheck] = await db
+        .select({
+          paymentStatus: mortgageePaymentChecks.paymentStatus,
+          paidThroughDate: mortgageePaymentChecks.paidThroughDate,
+          nextDueDate: mortgageePaymentChecks.nextDueDate,
+          amountDue: mortgageePaymentChecks.amountDue,
+          premiumAmount: mortgageePaymentChecks.premiumAmount,
+          mciCarrier: mortgageePaymentChecks.mciCarrier,
+          mciEffectiveDate: mortgageePaymentChecks.mciEffectiveDate,
+          mciExpirationDate: mortgageePaymentChecks.mciExpirationDate,
+          paymentScreenshotUrl: mortgageePaymentChecks.paymentScreenshotUrl,
+          lastCheckedAt: mortgageePaymentChecks.completedAt,
+        })
+        .from(mortgageePaymentChecks)
+        .where(
+          and(
+            eq(mortgageePaymentChecks.policyId, renewal.policyId),
+            eq(mortgageePaymentChecks.status, 'completed')
+          )
+        )
+        .orderBy(desc(mortgageePaymentChecks.createdAt))
+        .limit(1);
+
+      if (latestCheck) {
+        mciPaymentData = {
+          ...latestCheck,
+          amountDue: latestCheck.amountDue ? parseFloat(latestCheck.amountDue) : null,
+          premiumAmount: latestCheck.premiumAmount ? parseFloat(latestCheck.premiumAmount) : null,
+        };
+      }
+    }
+
     // Build notes from audit trail
     const notes = auditHistory
       .filter((e) => e.eventType === 'note_posted' || e.eventType === 'agent_decision')
@@ -101,6 +136,7 @@ export async function GET(
           : (renewal.renewalSnapshot as Record<string, any> | null)?.insuredName || null,
         agentDecisionByName,
       },
+      mciPaymentData,
       auditHistory,
       notes,
     });

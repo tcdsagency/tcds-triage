@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { syncLogs, policies } from '@/db/schema';
+import { syncLogs, policies, syncMetadata } from '@/db/schema';
 import { eq, desc, and, count, max } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
@@ -48,11 +48,21 @@ export async function GET() {
       .from(policies)
       .where(eq(policies.tenantId, tenantId));
 
+    // Get last full sync timestamp from sync_metadata
+    const [hsMeta] = await db.select({ lastFullSyncAt: syncMetadata.lastFullSyncAt })
+      .from(syncMetadata)
+      .where(and(
+        eq(syncMetadata.tenantId, tenantId),
+        eq(syncMetadata.integration, 'hawksoft')
+      ))
+      .limit(1);
+
     return NextResponse.json({
       success: true,
       stats: {
         hawksoft: {
           lastSync: lastHawksoftSync?.createdAt?.toISOString() || lastPolicySync[0]?.lastSync?.toISOString() || null,
+          lastFullSync: hsMeta?.lastFullSyncAt?.toISOString() || null,
           policiesSynced: totalPolicies,
           status: lastHawksoftSync?.status || 'unknown',
         },

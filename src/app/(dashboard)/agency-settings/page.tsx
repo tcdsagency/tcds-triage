@@ -108,11 +108,17 @@ export default function AgencySettingsPage() {
 
   // Data Sync state
   const [dataSyncStats, setDataSyncStats] = useState<{
-    hawksoft: { lastSync: string | null; policiesSynced: number; status: string };
+    hawksoft: { lastSync: string | null; lastFullSync: string | null; policiesSynced: number; status: string };
     agencyzoom: { lastSync: string | null; customersSynced: number; status: string };
   } | null>(null);
   const [dataSyncLoading, setDataSyncLoading] = useState(false);
   const [hawksoftSyncing, setHawksoftSyncing] = useState(false);
+  const [hawksoftSyncProgress, setHawksoftSyncProgress] = useState<{
+    offset: number;
+    total: number;
+    policiesSynced: number;
+    frozenPolicies: number;
+  } | null>(null);
   const [hawksoftSyncResult, setHawksoftSyncResult] = useState<{
     success: boolean;
     message: string;
@@ -673,32 +679,60 @@ export default function AgencySettingsPage() {
     }
   };
 
-  // Handle HawkSoft sync
+  // Handle HawkSoft sync — auto-paginating full sync
   const handleHawksoftSync = async () => {
     setHawksoftSyncing(true);
     setHawksoftSyncResult(null);
+    setHawksoftSyncProgress(null);
+
+    let offset = 0;
+    const limit = 500;
+    let totalPoliciesSynced = 0;
+    let totalCustomersUpdated = 0;
+    let totalFrozenPolicies = 0;
+    let totalWithHs = 0;
 
     try {
-      const res = await fetch("/api/sync/hawksoft", {
-        method: "POST",
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        setHawksoftSyncResult({
-          success: true,
-          message: `Synced ${data.policiesSynced} policies from ${data.customersUpdated} customers`,
-          details: data,
+      let hasMore = true;
+      while (hasMore) {
+        const res = await fetch(`/api/sync/hawksoft?mode=full&offset=${offset}&limit=${limit}`, {
+          method: "POST",
         });
-        // Reload stats after sync
-        await loadDataSyncStats();
-      } else {
-        setHawksoftSyncResult({
-          success: false,
-          message: data.error || "Sync failed",
-          details: data,
+        const data = await res.json();
+
+        if (!data.success) {
+          setHawksoftSyncResult({
+            success: false,
+            message: data.error || "Sync failed",
+            details: data,
+          });
+          return;
+        }
+
+        totalPoliciesSynced += data.policiesSynced || 0;
+        totalCustomersUpdated += data.customersUpdated || 0;
+        totalFrozenPolicies += data.frozenPolicies || 0;
+        totalWithHs = data.totalWithHs || totalWithHs;
+        hasMore = data.hasMore === true;
+        offset = data.nextOffset || offset + limit;
+
+        setHawksoftSyncProgress({
+          offset: Math.min(offset, totalWithHs),
+          total: totalWithHs,
+          policiesSynced: totalPoliciesSynced,
+          frozenPolicies: totalFrozenPolicies,
         });
       }
+
+      const frozenMsg = totalFrozenPolicies > 0
+        ? ` (${totalFrozenPolicies} policies skipped — pending renewal review)`
+        : "";
+      setHawksoftSyncResult({
+        success: true,
+        message: `Synced ${totalPoliciesSynced} policies from ${totalCustomersUpdated} customers${frozenMsg}`,
+        details: { totalPoliciesSynced, totalCustomersUpdated, totalFrozenPolicies, totalWithHs },
+      });
+      await loadDataSyncStats();
     } catch (err: any) {
       setHawksoftSyncResult({
         success: false,
@@ -706,6 +740,7 @@ export default function AgencySettingsPage() {
       });
     } finally {
       setHawksoftSyncing(false);
+      setHawksoftSyncProgress(null);
     }
   };
 
@@ -1816,18 +1851,27 @@ export default function AgencySettingsPage() {
                           <p className="text-sm text-gray-500 mt-1">
                             Sync policies from HawkSoft to update LOB types, carriers, and coverage details
                           </p>
-                          <div className="flex items-center gap-4 mt-3 text-sm">
-                            <div className="flex items-center gap-1.5 text-gray-500">
-                              <Clock className="w-4 h-4" />
-                              <span>
-                                Last sync: {dataSyncStats?.hawksoft?.lastSync
-                                  ? new Date(dataSyncStats.hawksoft.lastSync).toLocaleString()
-                                  : "Never"}
-                              </span>
+                          <div className="flex flex-col gap-1 mt-3 text-sm">
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-1.5 text-gray-500">
+                                <Clock className="w-4 h-4" />
+                                <span>
+                                  Last sync: {dataSyncStats?.hawksoft?.lastSync
+                                    ? new Date(dataSyncStats.hawksoft.lastSync).toLocaleString()
+                                    : "Never"}
+                                </span>
+                              </div>
+                              {dataSyncStats?.hawksoft?.policiesSynced !== undefined && (
+                                <div className="text-gray-500">
+                                  {dataSyncStats.hawksoft.policiesSynced.toLocaleString()} policies synced
+                                </div>
+                              )}
                             </div>
-                            {dataSyncStats?.hawksoft?.policiesSynced !== undefined && (
-                              <div className="text-gray-500">
-                                {dataSyncStats.hawksoft.policiesSynced.toLocaleString()} policies synced
+                            {dataSyncStats?.hawksoft?.lastFullSync && (
+                              <div className="flex items-center gap-1.5 text-gray-400 text-xs">
+                                <span>
+                                  Last full sync: {new Date(dataSyncStats.hawksoft.lastFullSync).toLocaleString()}
+                                </span>
                               </div>
                             )}
                           </div>
@@ -1846,11 +1890,29 @@ export default function AgencySettingsPage() {
                         ) : (
                           <>
                             <RefreshCw className="w-4 h-4 mr-2" />
-                            Sync Now
+                            Full Sync
                           </>
                         )}
                       </Button>
                     </div>
+
+                    {/* Progress Bar */}
+                    {hawksoftSyncProgress && (
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-1.5">
+                          <span>
+                            Syncing... {hawksoftSyncProgress.offset.toLocaleString()} of {hawksoftSyncProgress.total.toLocaleString()} customers ({hawksoftSyncProgress.policiesSynced.toLocaleString()} policies)
+                          </span>
+                          <span>{Math.round((hawksoftSyncProgress.offset / hawksoftSyncProgress.total) * 100)}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                          <div
+                            className="bg-emerald-500 h-2.5 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, (hawksoftSyncProgress.offset / hawksoftSyncProgress.total) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {/* Sync Result */}
                     {hawksoftSyncResult && (
@@ -1883,9 +1945,9 @@ export default function AgencySettingsPage() {
                             )}>
                               {hawksoftSyncResult.message}
                             </p>
-                            {hawksoftSyncResult.details?.hasMore && (
+                            {hawksoftSyncResult.details?.totalFrozenPolicies > 0 && (
                               <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
-                                More records available. Click "Sync Now" again to continue syncing.
+                                {hawksoftSyncResult.details.totalFrozenPolicies} policies were protected from overwrite (pending renewal review).
                               </p>
                             )}
                           </div>
