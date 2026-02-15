@@ -645,6 +645,99 @@ class NearmapClient {
 export const nearmapClient = new NearmapClient();
 
 // =============================================================================
+// Insurance Risk Score
+// =============================================================================
+
+export interface InsuranceRiskScore {
+  score: number;
+  grade: string;
+  factors: { name: string; points: number }[];
+}
+
+/**
+ * Calculate an insurance risk score (0-100, higher = more risk) from
+ * rollup metrics and AI feature data.
+ */
+export function calculateRiskScore(
+  metrics: Record<string, number | string>,
+  features?: NearmapFeatures | null
+): InsuranceRiskScore {
+  const factors: { name: string; points: number }[] = [];
+  let score = 0;
+
+  // --- Roof staining ratio (up to 25 pts) ---
+  const stainingRatio =
+    Number(metrics['roof_cond_staining_ratio'] || metrics['roof_condition_staining_ratio'] || 0);
+  if (stainingRatio > 0) {
+    const pts = Math.min(25, Math.round(stainingRatio * 25));
+    if (pts > 0) {
+      factors.push({ name: `Roof staining (${(stainingRatio * 100).toFixed(0)}%)`, points: pts });
+      score += pts;
+    }
+  }
+
+  // --- Roof damage ratio (up to 40 pts) ---
+  const damageRatio =
+    Number(metrics['roof_cond_structural_damage_ratio'] || metrics['roof_condition_structural_damage_ratio'] || 0);
+  if (damageRatio > 0) {
+    const pts = Math.min(40, Math.round(damageRatio * 40));
+    if (pts > 0) {
+      factors.push({ name: 'Structural damage', points: pts });
+      score += pts;
+    }
+  }
+
+  // --- Tree overhang area ---
+  const treeOverhang = features?.vegetation?.treeOverhangArea ?? 0;
+  if (treeOverhang > 200) {
+    factors.push({ name: `Tree overhang (${Math.round(treeOverhang)} sqft)`, points: 15 });
+    score += 15;
+  } else if (treeOverhang > 100) {
+    factors.push({ name: `Tree overhang (${Math.round(treeOverhang)} sqft)`, points: 10 });
+    score += 10;
+  } else if (treeOverhang > 50) {
+    factors.push({ name: `Tree overhang (${Math.round(treeOverhang)} sqft)`, points: 5 });
+    score += 5;
+  }
+
+  // --- Solar panels ---
+  if (features?.solar?.present) {
+    factors.push({ name: 'Solar panels present', points: 3 });
+    score += 3;
+  }
+
+  // --- Multiple buildings ---
+  if (features?.building && features.building.count > 1) {
+    factors.push({ name: `${features.building.count} buildings`, points: 5 });
+    score += 5;
+  }
+
+  // --- Missing/tarp/debris from roof issues ---
+  const severeIssues = (features?.roof?.issues || []).filter(
+    (i) => /missing|tarp|debris/i.test(i)
+  );
+  if (severeIssues.length > 0) {
+    factors.push({ name: 'Missing/tarp/debris detected', points: 15 });
+    score += 15;
+  }
+
+  score = Math.min(100, Math.max(0, score));
+
+  return { score, grade: riskGrade(score), factors };
+}
+
+/**
+ * Map a numeric risk score to a letter grade.
+ */
+export function riskGrade(score: number): string {
+  if (score <= 15) return 'A';
+  if (score <= 30) return 'B';
+  if (score <= 50) return 'C';
+  if (score <= 70) return 'D';
+  return 'F';
+}
+
+// =============================================================================
 // Mock Data for Development/Fallback
 // =============================================================================
 

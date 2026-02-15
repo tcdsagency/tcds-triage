@@ -58,13 +58,9 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays }: Nearma
     building: false,
   });
 
-  // Get Nearmap API key (strip any trailing \n)
-  const nearmapKey = (process.env.NEXT_PUBLIC_NEARMAP_API_KEY || '').trim();
-
-  // Build tile URL with optional date parameter
+  // Build tile URL using server-side proxy (keeps API key off the client)
   const getTileUrl = (date?: string) => {
-    if (!nearmapKey) return '';
-    let url = `https://api.nearmap.com/tiles/v3/Vert/{z}/{x}/{y}.img?apikey=${nearmapKey}`;
+    let url = `/api/nearmap/tile?z={z}&x={x}&y={y}`;
     if (date) {
       const formattedDate = date.replace(/-/g, '');
       url += `&until=${formattedDate}`;
@@ -76,8 +72,6 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays }: Nearma
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
 
-    const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-
     const map = L.map(mapRef.current, {
       center: [lat, lng],
       zoom: zoom,
@@ -88,9 +82,9 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays }: Nearma
     mapInstance.current = map;
     tileLoadCountRef.current = 0;
 
-    // Add Nearmap tiles as primary source
-    if (nearmapKey) {
-      console.log('[NearmapMap] Using Nearmap tiles');
+    // Add Nearmap tiles via server-side proxy as primary source
+    {
+      console.log('[NearmapMap] Using Nearmap tiles via proxy');
       const nearmapLayer = L.tileLayer(getTileUrl(surveyDate), {
         maxZoom: 21,
         minZoom: 10,
@@ -115,53 +109,23 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays }: Nearma
       // Time-based fallback: only switch if NO tiles load after 5 seconds
       fallbackTimeoutRef.current = setTimeout(() => {
         if (tileLoadCountRef.current === 0 && mapInstance.current) {
-          console.log('[NearmapMap] No Nearmap tiles loaded after 5s, falling back to Google');
+          console.log('[NearmapMap] No Nearmap tiles loaded after 5s, falling back to ESRI');
           setUsingFallback(true);
 
-          // Remove Nearmap layer and add Google
+          // Remove Nearmap layer and add ESRI fallback
           if (tileLayerRef.current) {
             mapInstance.current.removeLayer(tileLayerRef.current);
           }
 
-          if (googleKey) {
-            const googleLayer = L.tileLayer(
-              `https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}`,
-              { maxZoom: 21, minZoom: 10, attribution: '&copy; Google Maps' }
-            );
-            tileLayerRef.current = googleLayer;
-            googleLayer.addTo(mapInstance.current);
-          } else {
-            const esriLayer = L.tileLayer(
-              'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-              { maxZoom: 19, attribution: '&copy; Esri' }
-            );
-            tileLayerRef.current = esriLayer;
-            esriLayer.addTo(mapInstance.current);
-          }
+          const esriLayer = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { maxZoom: 19, attribution: '&copy; Esri' }
+          );
+          tileLayerRef.current = esriLayer;
+          esriLayer.addTo(mapInstance.current);
           setIsLoaded(true);
         }
       }, 5000);
-
-    } else if (googleKey) {
-      // No Nearmap key, use Google directly
-      console.log('[NearmapMap] Using Google satellite imagery');
-      const googleLayer = L.tileLayer(
-        `https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}`,
-        { maxZoom: 21, minZoom: 10, attribution: '&copy; Google Maps' }
-      );
-      tileLayerRef.current = googleLayer;
-      googleLayer.addTo(map);
-      setIsLoaded(true);
-    } else {
-      // Fallback to ESRI
-      console.log('[NearmapMap] Using ESRI World Imagery');
-      const esriLayer = L.tileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        { maxZoom: 19, attribution: '&copy; Esri' }
-      );
-      tileLayerRef.current = esriLayer;
-      esriLayer.addTo(map);
-      setIsLoaded(true);
     }
 
     // Add property marker
@@ -188,7 +152,7 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays }: Nearma
 
   // Update tile layer when surveyDate changes
   useEffect(() => {
-    if (mapInstance.current && tileLayerRef.current && nearmapKey && !usingFallback && surveyDate !== currentDate) {
+    if (mapInstance.current && tileLayerRef.current && !usingFallback && surveyDate !== currentDate) {
       setIsLoaded(false);
       setCurrentDate(surveyDate);
 
@@ -205,7 +169,7 @@ export function NearmapMap({ lat, lng, zoom = 19, surveyDate, overlays }: Nearma
       newLayer.addTo(mapInstance.current);
       newLayer.on('tileload', () => setIsLoaded(true));
     }
-  }, [surveyDate, currentDate, nearmapKey, usingFallback]);
+  }, [surveyDate, currentDate, usingFallback]);
 
   // Update map center when coordinates change
   useEffect(() => {

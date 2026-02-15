@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { renewalComparisons } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { nearmapClient } from '@/lib/nearmap';
+import { nearmapClient, calculateRiskScore } from '@/lib/nearmap';
 
 export async function GET(
   _request: NextRequest,
@@ -69,9 +69,17 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Could not fetch property data from Nearmap' }, { status: 502 });
     }
 
+    // 6. Get AI feature polygons for map overlays
+    const features = await nearmapClient.getFeatures(lat, lng);
+
+    // 7. Calculate insurance risk score
+    const riskScore = calculateRiskScore(propertyData.metrics, features);
+
     return NextResponse.json({
       success: true,
       propertyData,
+      features,
+      riskScore,
     });
   } catch (error) {
     console.error('[Property Data] Error:', error);

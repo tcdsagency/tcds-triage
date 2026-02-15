@@ -1,29 +1,57 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronDown, ChevronUp, ExternalLink, Loader2, AlertTriangle, Home, Eye, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
-import type { PropertyData } from '@/lib/nearmap';
+import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
+import { ChevronDown, ChevronUp, ExternalLink, Loader2, AlertTriangle, Eye, Home } from 'lucide-react';
+import type { PropertyData, NearmapFeatures, InsuranceRiskScore } from '@/lib/nearmap';
+
+// Dynamically import NearmapMap to avoid SSR issues with Leaflet
+const NearmapMap = dynamic(() => import('@/components/features/NearmapMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-72 flex items-center justify-center bg-gray-100 dark:bg-gray-900 rounded-md">
+      <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+    </div>
+  ),
+});
 
 interface PropertyInspectionCardProps {
   renewalId: string;
   lineOfBusiness: string | null;
 }
 
+interface PropertyDataResponse {
+  success: boolean;
+  error?: string;
+  propertyData?: PropertyData;
+  features?: NearmapFeatures | null;
+  riskScore?: InsuranceRiskScore;
+}
+
+// Risk grade colors
+const GRADE_COLORS: Record<string, { bg: string; text: string; ring: string }> = {
+  A: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-400', ring: 'ring-green-400' },
+  B: { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-400', ring: 'ring-emerald-400' },
+  C: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-400', ring: 'ring-yellow-400' },
+  D: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-400', ring: 'ring-orange-400' },
+  F: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400', ring: 'ring-red-400' },
+};
+
+const CONDITION_COLORS: Record<string, string> = {
+  excellent: 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20',
+  good: 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20',
+  fair: 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20',
+  poor: 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20',
+  unknown: 'text-gray-700 dark:text-gray-400 bg-gray-50 dark:bg-gray-800',
+};
+
 export default function PropertyInspectionCard({ renewalId, lineOfBusiness }: PropertyInspectionCardProps) {
   const [data, setData] = useState<PropertyData | null>(null);
+  const [features, setFeatures] = useState<NearmapFeatures | null>(null);
+  const [riskScore, setRiskScore] = useState<InsuranceRiskScore | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-
-  // Pan/zoom state
-  const [scale, setScale] = useState(1);
-  const [translate, setTranslate] = useState({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
-  const dragStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const MIN_SCALE = 0.5;
-  const MAX_SCALE = 4;
 
   // Only fetch for home policies
   const isHome = lineOfBusiness?.toLowerCase().includes('home') ||
@@ -42,11 +70,13 @@ export default function PropertyInspectionCard({ renewalId, lineOfBusiness }: Pr
     fetch(`/api/renewals/${renewalId}/property-data`)
       .then(async (res) => {
         if (cancelled) return;
-        const json = await res.json();
+        const json: PropertyDataResponse = await res.json();
         if (!res.ok || !json.success) {
           setError(json.error || 'Failed to load property data');
         } else {
-          setData(json.propertyData);
+          setData(json.propertyData || null);
+          setFeatures(json.features || null);
+          setRiskScore(json.riskScore || null);
         }
       })
       .catch((err) => {
@@ -58,42 +88,6 @@ export default function PropertyInspectionCard({ renewalId, lineOfBusiness }: Pr
 
     return () => { cancelled = true; };
   }, [renewalId, isHome]);
-
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.15 : 0.15;
-    setScale(prev => Math.min(MAX_SCALE, Math.max(MIN_SCALE, prev + delta)));
-  }, []);
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setDragging(true);
-    dragStart.current = { x: e.clientX, y: e.clientY, tx: translate.x, ty: translate.y };
-  }, [translate]);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!dragging) return;
-    const dx = e.clientX - dragStart.current.x;
-    const dy = e.clientY - dragStart.current.y;
-    setTranslate({ x: dragStart.current.tx + dx, y: dragStart.current.ty + dy });
-  }, [dragging]);
-
-  const handleMouseUp = useCallback(() => {
-    setDragging(false);
-  }, []);
-
-  const handleReset = useCallback(() => {
-    setScale(1);
-    setTranslate({ x: 0, y: 0 });
-  }, []);
-
-  const handleZoomIn = useCallback(() => {
-    setScale(prev => Math.min(MAX_SCALE, prev + 0.3));
-  }, []);
-
-  const handleZoomOut = useCallback(() => {
-    setScale(prev => Math.max(MIN_SCALE, prev - 0.3));
-  }, []);
 
   if (!isHome) return null;
 
@@ -121,15 +115,17 @@ export default function PropertyInspectionCard({ renewalId, lineOfBusiness }: Pr
 
   if (!data) return null;
 
-  const conditionColors: Record<string, string> = {
-    excellent: 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20',
-    good: 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20',
-    fair: 'text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20',
-    poor: 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20',
-    unknown: 'text-gray-700 dark:text-gray-400 bg-gray-50 dark:bg-gray-800',
-  };
+  const gradeColors = riskScore ? GRADE_COLORS[riskScore.grade] || GRADE_COLORS.C : null;
+  const conditionClass = CONDITION_COLORS[data.roofConditionSummary] || CONDITION_COLORS.unknown;
 
-  const conditionClass = conditionColors[data.roofConditionSummary] || conditionColors.unknown;
+  // Extract useful metrics for display
+  const buildingSqft = data.metrics.building_sqft != null ? Number(data.metrics.building_sqft) : null;
+  const solarPanelCount = data.metrics.solar_panel_count != null ? Number(data.metrics.solar_panel_count) : 0;
+  const treeOverhangArea = features?.vegetation?.treeOverhangArea ?? 0;
+  const stainingPct = (() => {
+    const v = data.metrics['roof_cond_staining_ratio'] ?? data.metrics['roof_condition_staining_ratio'];
+    return typeof v === 'number' ? v : null;
+  })();
 
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
@@ -149,74 +145,46 @@ export default function PropertyInspectionCard({ renewalId, lineOfBusiness }: Pr
             </span>
           )}
         </div>
-        {collapsed ? (
-          <ChevronDown className="h-4 w-4 text-gray-400" />
-        ) : (
-          <ChevronUp className="h-4 w-4 text-gray-400" />
-        )}
+        <div className="flex items-center gap-2">
+          {/* Risk Score Badge */}
+          {riskScore && gradeColors && (
+            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full ring-1 ${gradeColors.bg} ${gradeColors.text} ${gradeColors.ring}`}>
+              <span className="text-xs font-bold">{riskScore.score}</span>
+              <span className="text-[10px] font-semibold">{riskScore.grade}</span>
+            </div>
+          )}
+          {collapsed ? (
+            <ChevronDown className="h-4 w-4 text-gray-400" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-gray-400" />
+          )}
+        </div>
       </button>
 
       {!collapsed && (
         <div className="px-4 pb-4 space-y-3">
-          {/* Aerial Image with Pan/Zoom */}
-          {data.tileUrl && (
-            <div className="relative rounded-md overflow-hidden bg-gray-100 dark:bg-gray-900">
-              <div
-                ref={containerRef}
-                className="relative h-64 overflow-hidden select-none"
-                style={{ cursor: dragging ? 'grabbing' : 'grab' }}
-                onWheel={handleWheel}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={data.tileUrl}
-                  alt="Aerial view of property"
-                  className="absolute inset-0 w-full h-full object-cover"
-                  style={{
-                    transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
-                    transformOrigin: 'center center',
-                    transition: dragging ? 'none' : 'transform 0.15s ease-out',
-                  }}
-                  draggable={false}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              </div>
-              {/* Zoom controls */}
-              <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-white/90 dark:bg-gray-800/90 rounded-md shadow-sm border border-gray-200 dark:border-gray-600 p-0.5">
-                <button
-                  onClick={handleZoomIn}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                  title="Zoom in"
+          {/* Interactive Leaflet Map */}
+          <div className="relative rounded-md overflow-hidden bg-gray-100 dark:bg-gray-900 h-72">
+            <NearmapMap
+              lat={data.lat}
+              lng={data.lon}
+              zoom={19}
+              surveyDate={data.surveyDate || undefined}
+              overlays={features?.overlays}
+            />
+          </div>
+
+          {/* Risk Score Factors */}
+          {riskScore && riskScore.factors.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {riskScore.factors.map((f, i) => (
+                <span
+                  key={i}
+                  className="text-[11px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
                 >
-                  <ZoomIn className="h-3.5 w-3.5 text-gray-600 dark:text-gray-300" />
-                </button>
-                <button
-                  onClick={handleZoomOut}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                  title="Zoom out"
-                >
-                  <ZoomOut className="h-3.5 w-3.5 text-gray-600 dark:text-gray-300" />
-                </button>
-                <button
-                  onClick={handleReset}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                  title="Reset view"
-                >
-                  <RotateCcw className="h-3.5 w-3.5 text-gray-600 dark:text-gray-300" />
-                </button>
-              </div>
-              {/* Zoom level indicator */}
-              {scale !== 1 && (
-                <div className="absolute top-2 left-2 text-[10px] font-medium px-1.5 py-0.5 rounded bg-black/50 text-white">
-                  {(scale * 100).toFixed(0)}%
-                </div>
-              )}
+                  {f.name}: +{f.points}
+                </span>
+              ))}
             </div>
           )}
 
@@ -238,35 +206,37 @@ export default function PropertyInspectionCard({ renewalId, lineOfBusiness }: Pr
             </div>
           </div>
 
-          {/* Roof Shape Breakdown */}
-          {Object.keys(data.roofShapeBreakdown).length > 0 && (
-            <div className="flex gap-2 flex-wrap">
-              {Object.entries(data.roofShapeBreakdown).map(([shape, ratio]) => (
-                <span
-                  key={shape}
-                  className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
-                >
-                  {shape}: {typeof ratio === 'number' ? `${(ratio * 100).toFixed(0)}%` : ratio}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Key Metrics */}
+          {/* Key Metrics Grid */}
           <div className="grid grid-cols-2 gap-2 text-sm">
-            {data.metrics.building_sqft != null && (
+            {stainingPct != null && stainingPct > 0 && (
               <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Building</span>
+                <span className="text-gray-500 dark:text-gray-400">Staining</span>
                 <span className="font-medium text-gray-700 dark:text-gray-300">
-                  {Number(data.metrics.building_sqft).toLocaleString()} sqft
+                  {(stainingPct * 100).toFixed(0)}%
                 </span>
               </div>
             )}
-            {data.metrics.solar_panel_count != null && Number(data.metrics.solar_panel_count) > 0 && (
+            {treeOverhangArea > 0 && (
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Tree Overhang</span>
+                <span className="font-medium text-gray-700 dark:text-gray-300">
+                  {Math.round(treeOverhangArea)} sqft
+                </span>
+              </div>
+            )}
+            {buildingSqft != null && (
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Building</span>
+                <span className="font-medium text-gray-700 dark:text-gray-300">
+                  {buildingSqft.toLocaleString()} sqft
+                </span>
+              </div>
+            )}
+            {solarPanelCount > 0 && (
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-400">Solar Panels</span>
                 <span className="font-medium text-gray-700 dark:text-gray-300">
-                  {data.metrics.solar_panel_count}
+                  {solarPanelCount}
                 </span>
               </div>
             )}
