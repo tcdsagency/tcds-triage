@@ -53,7 +53,7 @@ app = Flask(__name__)
 API_KEY = os.environ.get("API_KEY", "")
 TWOCAPTCHA_API_KEY = os.environ.get("TWOCAPTCHA_API_KEY", "")
 MCI_BASE_URL = "https://www.mycoverageinfo.com"
-SCREENSHOTS_DIR = Path("/home/manus_temp/mci-checker/screenshots")
+SCREENSHOTS_DIR = Path("/home/todd/services/mci-checker/screenshots")
 BASE_URL = os.environ.get("BASE_URL", "https://realtime.tcdsagency.com/mci")
 
 # Ensure screenshots directory exists
