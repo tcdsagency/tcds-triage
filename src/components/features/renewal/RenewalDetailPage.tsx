@@ -748,7 +748,7 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
             <DiscountPills discounts={renewalDiscounts} baselineDiscounts={baselineDiscounts} />
 
             {/* 6. Cross-Sell Opportunities */}
-            <CrossSellSection customerId={current.customerId} />
+            <CrossSellSection policies={customerPolicies} />
           </div>
 
           {/* Sticky bottom: Action Bar + Notes */}

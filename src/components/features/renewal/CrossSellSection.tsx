@@ -1,58 +1,104 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, Home, Car, Umbrella, Droplets, Heart, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CollapsibleSection from './CollapsibleSection';
 
-interface CrossSellOpportunity {
-  product: string;
-  probability: number;
-  expectedRevenue: number;
-  confidence: number;
-  reasoning: string;
-  timing: 'immediate' | 'renewal' | 'next_contact' | 'future';
-  approach: string;
-  talkingPoints: string[];
+interface CustomerPolicy {
+  id: string;
+  policyNumber: string;
+  lineOfBusiness: string;
+  carrier: string | null;
+  premium: string | null;
+  status: string | null;
 }
 
 interface CrossSellSectionProps {
-  customerId: string | null;
+  policies: CustomerPolicy[];
 }
 
-const TIMING_LABELS: Record<string, { label: string; color: string }> = {
-  immediate: { label: 'Immediate', color: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' },
-  renewal: { label: 'At Renewal', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400' },
-  next_contact: { label: 'Next Contact', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' },
-  future: { label: 'Future', color: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' },
+interface GapOpportunity {
+  product: string;
+  icon: React.ReactNode;
+  reasoning: string;
+  talkingPoints: string[];
+}
+
+function normalizeLob(lob: string): string | null {
+  const l = lob.toLowerCase();
+  if (l.includes('home') || l.includes('dwelling') || l.includes('ho3') || l.includes('ho5') || l.includes('dp3')) return 'Home';
+  if (l.includes('auto')) return 'Auto';
+  if (l.includes('umbrella')) return 'Umbrella';
+  if (l.includes('flood')) return 'Flood';
+  if (l.includes('life')) return 'Life';
+  return null;
+}
+
+const GAP_DETAILS: Record<string, { icon: React.ReactNode; reasoning: string; talkingPoints: string[] }> = {
+  Home: {
+    icon: <Home className="h-4 w-4" />,
+    reasoning: 'Customer has no active homeowners policy — potential for bundling discount with existing lines.',
+    talkingPoints: [
+      'Multi-policy discount when bundled with auto',
+      'Ask about homeownership status or renting situation',
+      'If renting, consider renters insurance instead',
+    ],
+  },
+  Auto: {
+    icon: <Car className="h-4 w-4" />,
+    reasoning: 'Customer has no active auto policy — bundling with home could save them money.',
+    talkingPoints: [
+      'Multi-policy discount when bundled with home',
+      'Ask how many vehicles in household',
+      'Review current auto carrier for comparison quote',
+    ],
+  },
+  Umbrella: {
+    icon: <Umbrella className="h-4 w-4" />,
+    reasoning: 'No umbrella policy in place — extra liability protection is recommended for customers with home and auto.',
+    talkingPoints: [
+      'Typically $200-400/yr for $1M in additional coverage',
+      'Protects assets beyond home/auto liability limits',
+      'Especially important if customer has a pool, trampoline, or teenage drivers',
+    ],
+  },
+  Flood: {
+    icon: <Droplets className="h-4 w-4" />,
+    reasoning: 'No flood insurance on file — standard homeowners policies exclude flood damage.',
+    talkingPoints: [
+      'Homeowners insurance does NOT cover flood damage',
+      'Even low-risk zones can flood — 25% of claims come from outside high-risk areas',
+      'Private flood options may be cheaper than NFIP',
+    ],
+  },
+  Life: {
+    icon: <Heart className="h-4 w-4" />,
+    reasoning: 'No life insurance on file — worth discussing if customer has dependents or a mortgage.',
+    talkingPoints: [
+      'Term life is affordable — often $20-40/month for $500K',
+      'Mortgage protection ensures family keeps the home',
+      'Ask about dependents, income replacement needs',
+    ],
+  },
 };
 
-function probabilityBadge(probability: number) {
-  if (probability >= 0.7) return { label: 'High', color: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400' };
-  if (probability >= 0.4) return { label: 'Medium', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' };
-  return { label: 'Low', color: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' };
-}
+const STANDARD_LOBS = ['Home', 'Auto', 'Umbrella', 'Flood', 'Life'];
 
-function OpportunityCard({ opp }: { opp: CrossSellOpportunity }) {
+function OpportunityCard({ opp }: { opp: GapOpportunity }) {
   const [expanded, setExpanded] = useState(false);
-  const prob = probabilityBadge(opp.probability);
-  const timing = TIMING_LABELS[opp.timing] || TIMING_LABELS.future;
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-sm text-gray-800 dark:text-gray-200">{opp.product}</span>
-          <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded', prob.color)}>
-            {prob.label}
-          </span>
-          <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', timing.color)}>
-            {timing.label}
-          </span>
-        </div>
+      <div className="flex items-center gap-2">
+        <span className="text-amber-500">{opp.icon}</span>
+        <span className="font-medium text-sm text-gray-800 dark:text-gray-200">{opp.product}</span>
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+          Missing
+        </span>
       </div>
 
-      <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-1">{opp.reasoning}</p>
+      <p className="text-xs text-gray-600 dark:text-gray-400">{opp.reasoning}</p>
 
       {opp.talkingPoints.length > 0 && (
         <button
@@ -64,7 +110,7 @@ function OpportunityCard({ opp }: { opp: CrossSellOpportunity }) {
         </button>
       )}
 
-      {expanded && opp.talkingPoints.length > 0 && (
+      {expanded && (
         <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-0.5 pl-4 list-disc">
           {opp.talkingPoints.map((tp, i) => (
             <li key={i}>{tp}</li>
@@ -75,71 +121,25 @@ function OpportunityCard({ opp }: { opp: CrossSellOpportunity }) {
   );
 }
 
-export default function CrossSellSection({ customerId }: CrossSellSectionProps) {
-  const [opportunities, setOpportunities] = useState<CrossSellOpportunity[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export default function CrossSellSection({ policies }: CrossSellSectionProps) {
+  if (!policies || policies.length === 0) return null;
 
-  useEffect(() => {
-    if (!customerId) return;
+  const activeLobs = new Set(
+    policies.map(p => normalizeLob(p.lineOfBusiness)).filter(Boolean)
+  );
 
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    fetch('/api/ai/cross-sell', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId }),
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (cancelled) return;
-        if (data.success) {
-          setOpportunities(data.opportunities || []);
-        } else {
-          setError(data.error || 'Failed to load cross-sell opportunities');
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setError('Failed to load cross-sell opportunities');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [customerId]);
-
-  if (!customerId) return null;
-
-  if (loading) {
-    return (
-      <CollapsibleSection title="Cross-Sell Opportunities" defaultOpen={false}>
-        <div className="p-4 space-y-3">
-          {[1, 2].map(i => (
-            <div key={i} className="h-16 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
-          ))}
-        </div>
-      </CollapsibleSection>
-    );
-  }
-
-  if (error) {
-    return (
-      <CollapsibleSection title="Cross-Sell Opportunities" defaultOpen={false}>
-        <div className="p-4">
-          <p className="text-xs text-gray-400">{error}</p>
-        </div>
-      </CollapsibleSection>
-    );
-  }
+  const opportunities: GapOpportunity[] = STANDARD_LOBS
+    .filter(lob => !activeLobs.has(lob))
+    .map(lob => ({
+      product: lob,
+      ...GAP_DETAILS[lob],
+    }));
 
   if (opportunities.length === 0) {
     return (
       <CollapsibleSection title="Cross-Sell Opportunities" badge="0" defaultOpen={false}>
         <div className="p-4">
-          <p className="text-xs text-gray-400">No cross-sell opportunities identified</p>
+          <p className="text-xs text-gray-400">Customer has all standard policy types covered</p>
         </div>
       </CollapsibleSection>
     );
@@ -149,14 +149,11 @@ export default function CrossSellSection({ customerId }: CrossSellSectionProps) 
     <CollapsibleSection
       title="Cross-Sell Opportunities"
       badge={`${opportunities.length}`}
-      defaultOpen={false}
-      headerRight={
-        <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-      }
+      defaultOpen={opportunities.length > 0}
     >
       <div className="p-4 space-y-2">
-        {opportunities.map((opp, i) => (
-          <OpportunityCard key={i} opp={opp} />
+        {opportunities.map(opp => (
+          <OpportunityCard key={opp.product} opp={opp} />
         ))}
       </div>
     </CollapsibleSection>
