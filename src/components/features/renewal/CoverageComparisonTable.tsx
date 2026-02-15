@@ -2,58 +2,10 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Car, Home, ChevronDown, ChevronRight } from 'lucide-react';
+import { Car, Home, ChevronDown, ChevronRight, Filter } from 'lucide-react';
 import CollapsibleSection from './CollapsibleSection';
+import { resolveCoverageDisplayName } from '@/lib/coverage-display-names';
 import type { RenewalSnapshot, BaselineSnapshot, CanonicalCoverage, CanonicalVehicle } from '@/types/renewal.types';
-
-// Human-readable labels for coverage types
-const COVERAGE_TYPE_LABELS: Record<string, string> = {
-  bodily_injury: 'Bodily Injury',
-  property_damage: 'Property Damage',
-  collision: 'Collision',
-  comprehensive: 'Comprehensive',
-  uninsured_motorist: 'Uninsured Motorist',
-  uninsured_motorist_bi: 'Uninsured Motorist BI',
-  uninsured_motorist_pd: 'Uninsured Motorist PD',
-  underinsured_motorist: 'Underinsured Motorist',
-  medical_payments: 'Medical Payments',
-  pip: 'Personal Injury Protection',
-  personal_injury_protection: 'Personal Injury Protection',
-  tl: 'Towing & Roadside',
-  rreim: 'Rental Reimbursement',
-  rental_reimbursement: 'Rental Reimbursement',
-  towing: 'Towing/Roadside',
-  roadside_assistance: 'Roadside Assistance',
-  combined_single_limit: 'Combined Single Limit',
-  gap_coverage: 'GAP Coverage',
-  dwelling: 'Dwelling',
-  personal_property: 'Personal Property',
-  personal_liability: 'Personal Liability',
-  medical_payments_to_others: 'Medical Payments to Others',
-  other_structures: 'Other Structures',
-  loss_of_use: 'Loss of Use',
-  water_damage: 'Water Damage',
-  mine_subsidence: 'Mine Subsidence',
-  sinkhole: 'Sinkhole',
-  hurricane_deductible: 'Hurricane Deductible',
-  cyber_liability: 'Cyber Liability',
-  service_line: 'Service Line',
-  sewer_water_backup: 'Sewer/Water Backup',
-  equipment_breakdown: 'Equipment Breakdown',
-  wind_hail: 'Wind/Hail',
-  roof_surfaces: 'Roof Surfaces',
-  roof_replacement_cost: 'Roof Replacement Cost',
-  extended_dwelling: 'Extended Dwelling',
-  personal_property_replacement: 'Personal Property Replacement',
-  liability_additional: 'Additional Liability',
-  identity_fraud: 'Identity Fraud',
-  loan_lease_payoff: 'Loan/Lease Payoff',
-  tropical_cyclone: 'Tropical Cyclone',
-  additional_coverage_a: 'Additional Coverage A',
-  building_structures_extended: 'Building Structures Extended',
-  by_operation_of_law: 'By Operation of Law',
-  additional_insured: 'Additional Insured',
-};
 
 interface CoverageComparisonTableProps {
   renewalSnapshot: RenewalSnapshot | null;
@@ -135,6 +87,7 @@ const COVERAGE_ORDER = [
 function buildRows(
   baselineCovs: CanonicalCoverage[],
   renewalCovs: CanonicalCoverage[],
+  carrier?: string,
 ): CoverageRow[] {
   const baselineByType = new Map(baselineCovs.map(c => [c.type, c]));
   const renewalByType = new Map(renewalCovs.map(c => [c.type, c]));
@@ -149,7 +102,7 @@ function buildRows(
     const change = computeChange(b, r);
     rows.push({
       type,
-      label: COVERAGE_TYPE_LABELS[type] || b?.description || r?.description || type,
+      label: b?.description || r?.description || resolveCoverageDisplayName(type, carrier),
       currentLimit: formatLimit(b),
       renewalLimit: formatLimit(r),
       changeText: change.text,
@@ -168,7 +121,7 @@ function buildRows(
     const change = computeChange(b, r);
     rows.push({
       type,
-      label: COVERAGE_TYPE_LABELS[type] || b?.description || r?.description || type,
+      label: b?.description || r?.description || resolveCoverageDisplayName(type, carrier),
       currentLimit: formatLimit(b),
       renewalLimit: formatLimit(r),
       changeText: change.text,
@@ -346,11 +299,13 @@ function VehicleSection({
   policyCovBaseline,
   policyCovRenewal,
   defaultExpanded,
+  changesOnly,
 }: {
   vehicle: VehicleData;
   policyCovBaseline: CanonicalCoverage[];
   policyCovRenewal: CanonicalCoverage[];
   defaultExpanded: boolean;
+  changesOnly: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -390,11 +345,14 @@ function VehicleSection({
 
   const baselineCovs = mergeCoverages(policyCovBaseline, vehicle.baseline?.coverages || []);
   const renewalCovs = mergeCoverages(policyCovRenewal, vehicle.renewal?.coverages || []);
-  const rows = buildRows(baselineCovs, renewalCovs);
+  const allRows = buildRows(baselineCovs, renewalCovs);
+  const rows = changesOnly
+    ? allRows.filter(r => r.changeText !== 'No change' && r.changeText !== '-')
+    : allRows;
 
   const baselinePremium = calculateTotalPremium(baselineCovs);
   const renewalPremium = calculateTotalPremium(renewalCovs);
-  const hasChange = rows.some(r => r.changeText !== 'No change' && r.changeText !== '-');
+  const hasChange = allRows.some(r => r.changeText !== 'No change' && r.changeText !== '-');
 
   const premiumColor = renewalPremium > baselinePremium
     ? 'text-red-600 dark:text-red-400'
@@ -451,6 +409,8 @@ export default function CoverageComparisonTable({
   renewalSnapshot,
   baselineSnapshot,
 }: CoverageComparisonTableProps) {
+  const [changesOnly, setChangesOnly] = useState(true);
+
   if (!renewalSnapshot && !baselineSnapshot) return null;
 
   const isHome = isHomePolicy(renewalSnapshot) || isHomePolicy(baselineSnapshot);
@@ -460,16 +420,39 @@ export default function CoverageComparisonTable({
   // Policy-level coverages (for home or when no vehicles)
   const policyBaselineCovs = baselineSnapshot?.coverages || [];
   const policyRenewalCovs = renewalSnapshot?.coverages || [];
-  const policyRows = buildRows(policyBaselineCovs, policyRenewalCovs);
+  const allPolicyRows = buildRows(policyBaselineCovs, policyRenewalCovs);
+  const policyRows = changesOnly
+    ? allPolicyRows.filter(r => r.changeText !== 'No change' && r.changeText !== '-')
+    : allPolicyRows;
   const showPolicyLevel = isHome || !hasVehicles;
 
-  const totalItems = (showPolicyLevel ? policyRows.length : 0) + vehicles.length;
+  const totalItems = (showPolicyLevel ? allPolicyRows.length : 0) + vehicles.length;
   if (totalItems === 0) return null;
+
+  const changedCount = allPolicyRows.filter(r => r.changeText !== 'No change' && r.changeText !== '-').length;
+
+  const filterToggle = (
+    <button
+      onClick={() => setChangesOnly(!changesOnly)}
+      className={cn(
+        'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors',
+        changesOnly
+          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+          : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
+      )}
+    >
+      <Filter className="h-3 w-3" />
+      {changesOnly
+        ? `${changedCount} of ${allPolicyRows.length} with changes`
+        : `All ${allPolicyRows.length} coverages`}
+    </button>
+  );
 
   return (
     <CollapsibleSection
       title="Coverage Comparison"
-      badge={hasVehicles ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''}` : `${policyRows.length} coverages`}
+      badge={hasVehicles ? `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''}` : undefined}
+      headerRight={filterToggle}
     >
       <div className="space-y-0">
         {/* Policy-level coverages (home policies or no-vehicle fallback) */}
@@ -487,6 +470,13 @@ export default function CoverageComparisonTable({
           </div>
         )}
 
+        {/* Show message when filter hides all rows */}
+        {showPolicyLevel && changesOnly && policyRows.length === 0 && allPolicyRows.length > 0 && (
+          <div className="px-4 py-3 text-center text-xs text-gray-400 italic">
+            No coverage changes detected — <button onClick={() => setChangesOnly(false)} className="text-blue-500 hover:underline">show all</button>
+          </div>
+        )}
+
         {/* Per-vehicle coverages */}
         {hasVehicles && (
           <div className="p-3 space-y-2">
@@ -497,6 +487,7 @@ export default function CoverageComparisonTable({
                 policyCovBaseline={policyBaselineCovs}
                 policyCovRenewal={policyRenewalCovs}
                 defaultExpanded={vehicleHasChanges(vehicle, policyBaselineCovs, policyRenewalCovs)}
+                changesOnly={changesOnly}
               />
             ))}
           </div>

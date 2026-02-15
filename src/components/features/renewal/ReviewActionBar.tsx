@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, RefreshCw, Flag, Lock, ShieldCheck, FileText } from 'lucide-react';
+import { Check, RefreshCw, Flag, Lock, ShieldCheck, FileText, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DecisionConfirmModal from './DecisionConfirmModal';
 
@@ -13,6 +13,8 @@ interface ReviewActionBarProps {
   reviewProgress: number;
   reviewedCount: number;
   totalReviewable: number;
+  materialChangesCount?: number;
+  quotamationUrl?: string;
 }
 
 export default function ReviewActionBar({
@@ -23,6 +25,8 @@ export default function ReviewActionBar({
   reviewProgress,
   reviewedCount,
   totalReviewable,
+  materialChangesCount = 0,
+  quotamationUrl,
 }: ReviewActionBarProps) {
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
@@ -34,7 +38,10 @@ export default function ReviewActionBar({
 
   const isCompleted = status === 'completed' || status === 'cancelled';
   const isReshopPhase = currentDecision === 'reshop' || status === 'requote_requested' || status === 'quote_ready';
-  const reviewIncomplete = reviewProgress < 100;
+  // When check engine didn't run but material changes exist, treat as incomplete
+  const reviewIncomplete = totalReviewable === 0
+    ? materialChangesCount > 0
+    : reviewProgress < 100;
 
   const openModal = (decision: string, title: string, description: string, notesRequired: boolean) => {
     setModalState({ isOpen: true, decision, title, description, notesRequired });
@@ -74,6 +81,19 @@ export default function ReviewActionBar({
           />
         </div>
 
+        {/* Quotamation reshop link (always visible) */}
+        {quotamationUrl && (
+          <a
+            href={quotamationUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-sm font-medium"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Reshop via Quotamation
+          </a>
+        )}
+
         {!isReshopPhase ? (
           // Three side-by-side buttons
           <div className="flex gap-2">
@@ -109,13 +129,13 @@ export default function ReviewActionBar({
               )}
             </div>
 
-            {/* Reshop via Quotation */}
+            {/* Reshop */}
             <div className="flex-1 relative group">
               <button
                 onClick={() =>
                   openModal(
                     'reshop',
-                    'Reshop via Quotation',
+                    'Reshop',
                     reviewIncomplete
                       ? 'You have not reviewed all items yet. Are you sure you want to reshop? Notes are required.'
                       : 'Send this renewal for re-quoting. The SR will move to "Requote Requested" stage.',

@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { MessageSquare } from 'lucide-react';
+import { resolveFieldDisplayName } from '@/lib/coverage-display-names';
 import type { CheckResult, CheckSeverity } from '@/types/check-rules.types';
 import type { MaterialChange, ComparisonSummary } from '@/types/renewal.types';
 
@@ -44,7 +45,7 @@ function buildTalkPoints(results: CheckResult[]): TalkPoint[] {
   for (const r of coverageChanges) {
     const change = r.change && r.change !== 'No change' ? r.change : r.message || 'changed';
     const action = r.agentAction ? ` ${r.agentAction}` : '';
-    points.push({ text: `${r.field}: ${change}.${action}`, severity: r.severity });
+    points.push({ text: `${resolveFieldDisplayName(r.field)}: ${change}.${action}`, severity: r.severity });
   }
 
   // Deductible changes
@@ -53,7 +54,7 @@ function buildTalkPoints(results: CheckResult[]): TalkPoint[] {
   );
   for (const r of deductibleChanges) {
     const change = r.change && r.change !== 'No change' ? r.change : r.message || 'changed';
-    points.push({ text: `${r.field}: ${change}.`, severity: r.severity });
+    points.push({ text: `${resolveFieldDisplayName(r.field)}: ${change}.`, severity: r.severity });
   }
 
   // Removed items
@@ -157,7 +158,7 @@ function buildFallbackTalkPoints(changes: MaterialChange[]): TalkPoint[] {
   const coverageAdded = changes.filter(m => m.category === 'coverage_added');
   for (const c of coverageLimit) {
     const severity: CheckSeverity = c.classification === 'material_negative' ? 'warning' : 'info';
-    points.push({ text: `${c.field}: ${c.description}`, severity });
+    points.push({ text: `${resolveFieldDisplayName(c.field)}: ${c.description}`, severity });
   }
   for (const c of coverageRemoved) {
     points.push({ text: `Coverage removed: ${c.description}`, severity: 'removed' });
@@ -170,7 +171,7 @@ function buildFallbackTalkPoints(changes: MaterialChange[]): TalkPoint[] {
   const deductibles = changes.filter(m => m.category === 'deductible');
   for (const d of deductibles) {
     const severity: CheckSeverity = d.classification === 'material_negative' ? 'warning' : 'info';
-    points.push({ text: `${d.field}: ${d.description}`, severity });
+    points.push({ text: `${resolveFieldDisplayName(d.field)}: ${d.description}`, severity });
   }
 
   // Discount changes

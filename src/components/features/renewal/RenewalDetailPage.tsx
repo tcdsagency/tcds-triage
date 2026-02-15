@@ -223,7 +223,7 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
   const reviewedCount = reviewable.filter(r => r.reviewed).length;
   const reviewProgress = reviewable.length > 0
     ? Math.round((reviewedCount / reviewable.length) * 100)
-    : 100;
+    : materialChanges.length > 0 ? 0 : 0; // Don't show 100% when there's nothing to review
 
   // Claims from snapshots
   const claims = detail.renewalSnapshot?.claims || detail.baselineSnapshot?.claims || [];
@@ -234,6 +234,27 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
 
   // Property context
   const propertyContext = detail.baselineSnapshot?.propertyContext;
+
+  // Build Quotamation URL from snapshot data
+  const quotamationUrl = (() => {
+    const snap = detail.renewalSnapshot;
+    if (!snap?.insuredName) return undefined;
+    const nameParts = snap.insuredName.trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    const lob = (current.lineOfBusiness || '').toLowerCase().includes('auto') ? 'auto' : 'home';
+    const params = new URLSearchParams();
+    if (firstName) params.set('firstName', firstName);
+    if (lastName) params.set('lastName', lastName);
+    if (snap.insuredAddress) params.set('address', snap.insuredAddress);
+    if (snap.insuredCity) params.set('city', snap.insuredCity);
+    if (snap.insuredState) params.set('state', snap.insuredState);
+    if (snap.insuredZip) params.set('zip', snap.insuredZip);
+    params.set('lob', lob);
+    if (current.carrierName) params.set('currentCarrier', current.carrierName);
+    if (current.renewalPremium) params.set('currentPremium', String(current.renewalPremium));
+    return `https://quote.quotamation.com/direct-quote/TCDSInsuranceAgency?${params.toString()}`;
+  })();
 
   const premiumColor =
     premiumChange < 0
@@ -573,6 +594,8 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
             reviewProgress={reviewProgress}
             reviewedCount={reviewedCount}
             totalReviewable={reviewable.length}
+            materialChangesCount={materialChanges.length}
+            quotamationUrl={quotamationUrl}
           />
 
           {/* 7. Notes Panel */}
@@ -591,6 +614,7 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
           <ReviewProgress
             checkSummary={checkSummary}
             checkResults={checkResults}
+            materialChangesCount={materialChanges.length}
           />
 
           {/* Download Report */}

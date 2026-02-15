@@ -7,6 +7,7 @@ interface CollapsibleSectionProps {
   title: string;
   badge?: string;
   defaultOpen?: boolean;
+  headerRight?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -14,6 +15,7 @@ export default function CollapsibleSection({
   title,
   badge,
   defaultOpen = true,
+  headerRight,
   children,
 }: CollapsibleSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
@@ -39,6 +41,11 @@ export default function CollapsibleSection({
             </span>
           )}
         </div>
+        {headerRight && (
+          <div className="flex items-center" onClick={e => e.stopPropagation()}>
+            {headerRight}
+          </div>
+        )}
       </button>
       {open && children}
     </div>

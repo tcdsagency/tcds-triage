@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import CollapsibleSection from './CollapsibleSection';
+import { resolveCoverageDisplayName } from '@/lib/coverage-display-names';
 import type { RenewalSnapshot, BaselineSnapshot, CanonicalCoverage, CanonicalVehicle } from '@/types/renewal.types';
 
 interface DeductiblesSectionProps {
@@ -24,19 +25,11 @@ interface DeductibleGroup {
   rows: DeductibleRow[];
 }
 
+// Deductible-specific overrides (for labels that differ from coverage names)
 const DEDUCTIBLE_LABELS: Record<string, string> = {
-  collision: 'Collision',
-  comprehensive: 'Comprehensive',
   dwelling: 'Dwelling (All Perils)',
-  wind_hail: 'Wind/Hail',
   hurricane_deductible: 'Hurricane',
   named_storm_deductible: 'Named Storm',
-  water_damage: 'Water Damage',
-  sewer_water_backup: 'Sewer/Water Backup',
-  equipment_breakdown: 'Equipment Breakdown',
-  mine_subsidence: 'Mine Subsidence',
-  sinkhole: 'Sinkhole',
-  tropical_cyclone: 'Tropical Cyclone',
 };
 
 function extractDeductibles(coverages: CanonicalCoverage[]): Map<string, CanonicalCoverage> {
@@ -71,7 +64,7 @@ function buildRows(
     const isRemoved = bVal != null && rVal == null;
 
     rows.push({
-      label: DEDUCTIBLE_LABELS[type] || b?.description || r?.description || type,
+      label: DEDUCTIBLE_LABELS[type] || b?.description || r?.description || resolveCoverageDisplayName(type),
       currentValue: bVal != null ? `$${bVal.toLocaleString()}` : '-',
       renewalValue: rVal != null ? `$${rVal.toLocaleString()}` : '-',
       changed,
