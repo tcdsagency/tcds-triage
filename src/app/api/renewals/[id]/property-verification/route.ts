@@ -110,10 +110,11 @@ export async function GET(
       dwellingLimit = dwellingCov.limitAmount;
     }
 
-    // 7. Build Street View embed URL
+    // 7. Build Street View embed URL (use space-separated address — Google embed API geocodes it more reliably)
     const googleApiKey = process.env.GOOGLE_MAPS_API_KEY || '';
+    const svAddress = addressParts.join(' ');
     const streetViewUrl = googleApiKey
-      ? `https://www.google.com/maps/embed/v1/streetview?key=${googleApiKey}&location=${encodeURIComponent(fullAddress)}&heading=0&pitch=0&fov=90`
+      ? `https://www.google.com/maps/embed/v1/streetview?key=${googleApiKey}&location=${encodeURIComponent(svAddress)}&heading=0&pitch=0&fov=90`
       : null;
 
     // 8. Run verification rules

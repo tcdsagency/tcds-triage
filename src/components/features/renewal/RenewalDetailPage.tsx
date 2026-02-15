@@ -776,7 +776,9 @@ function StreetViewSidebar({ address }: { address: { street?: string; city?: str
   const encodedAddress = encodeURIComponent(fullAddress);
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-  const streetViewEmbedUrl = `https://www.google.com/maps/embed/v1/streetview?key=${apiKey}&location=${encodedAddress}&heading=0&pitch=0&fov=90`;
+  // Use space-separated address (no commas) for street view — Google's embed API geocodes this more reliably
+  const svAddress = [address.street, address.city, address.state, address.zip].filter(Boolean).join(' ');
+  const streetViewEmbedUrl = `https://www.google.com/maps/embed/v1/streetview?key=${apiKey}&location=${encodeURIComponent(svAddress)}&heading=0&pitch=0&fov=90`;
   const mapEmbedUrl = `https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodedAddress}&zoom=18&maptype=satellite`;
 
   return (
@@ -817,7 +819,7 @@ function StreetViewSidebar({ address }: { address: { street?: string; city?: str
             allowFullScreen
             loading="lazy"
             referrerPolicy="no-referrer-when-downgrade"
-            onError={() => setIframeError(true)}
+            onError={() => { if (viewMode === 'streetview') setViewMode('map'); else setIframeError(true); }}
           />
         ) : (
           <div className="w-full h-48 flex items-center justify-center text-gray-400 dark:text-gray-500">
