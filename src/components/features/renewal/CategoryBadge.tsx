@@ -17,6 +17,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Identity: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
   Endorsements: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
   Endorsement: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+  'Property Verification': 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
 };
 
 const DEFAULT_COLOR = 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';

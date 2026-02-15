@@ -4881,6 +4881,9 @@ export const renewalComparisons = pgTable('renewal_comparisons', {
   checkResults: jsonb('check_results').$type<Array<Record<string, unknown>>>(),
   checkSummary: jsonb('check_summary'),
 
+  // Property verification (on-demand, cached)
+  propertyVerification: jsonb('property_verification'),
+
   // AgencyZoom link
   agencyzoomSrId: integer('agencyzoom_sr_id'),
   agencyzoomSrCreatedAt: timestamp('agencyzoom_sr_created_at'),

@@ -1,0 +1,1 @@
+ALTER TABLE "renewal_comparisons" ADD COLUMN "property_verification" jsonb;

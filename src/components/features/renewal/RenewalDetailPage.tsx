@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, FileDown, Loader2, Phone, Mail, Info } from 'lucide-react';
+import { ArrowLeft, FileDown, Loader2, Phone, Mail, Info, Eye, Map } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useUser } from '@/hooks/useUser';
@@ -37,6 +37,8 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
   const [loading, setLoading] = useState(true);
   const [notesLoading, setNotesLoading] = useState(false);
   const [checkResults, setCheckResults] = useState<CheckResult[]>([]);
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [streetViewUrl, setStreetViewUrl] = useState<string | null>(null);
 
   // Fetch full detail
   const fetchDetail = useCallback(async () => {
@@ -80,6 +82,34 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
     fetchDetail();
     fetchNotes();
   }, [fetchDetail, fetchNotes]);
+
+  // Property verification (home policies only)
+  useEffect(() => {
+    if (!detail) return;
+    const lob = (detail.lineOfBusiness || '').toLowerCase();
+    const isHome = lob.includes('home') || lob.includes('dwelling') ||
+                   lob.includes('ho3') || lob.includes('ho5') || lob.includes('dp3');
+    if (!isHome) return;
+
+    setVerificationLoading(true);
+    fetch(`/api/renewals/${renewalId}/property-verification`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (data.verification?.checkResults?.length > 0) {
+            setCheckResults(prev => {
+              const nonPV = prev.filter((r: CheckResult) => !r.ruleId.startsWith('PV-'));
+              return [...nonPV, ...data.verification.checkResults];
+            });
+          }
+          if (data.verification?.streetViewUrl) {
+            setStreetViewUrl(data.verification.streetViewUrl);
+          }
+        }
+      })
+      .catch(console.error)
+      .finally(() => setVerificationLoading(false));
+  }, [detail, renewalId]);
 
   // Handle agent decision
   const handleDecision = async (decision: string, decisionNotes: string) => {
@@ -441,6 +471,22 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
             </div>
           )}
 
+          {/* Street View (home policies only) */}
+          {(() => {
+            const lob = (detail.lineOfBusiness || '').toLowerCase();
+            const isHome = lob.includes('home') || lob.includes('dwelling') ||
+                           lob.includes('ho3') || lob.includes('ho5') || lob.includes('dp3');
+            if (!isHome) return null;
+            const addr = detail.renewalSnapshot?.insuredAddress;
+            if (!addr) return null;
+            return <StreetViewSidebar address={{
+              street: detail.renewalSnapshot?.insuredAddress,
+              city: detail.renewalSnapshot?.insuredCity,
+              state: detail.renewalSnapshot?.insuredState,
+              zip: detail.renewalSnapshot?.insuredZip,
+            }} />;
+          })()}
+
           {/* Mortgagees */}
           {((detail.renewalSnapshot?.mortgagees || []).length > 0 || (detail.baselineSnapshot?.mortgagees || []).length > 0) && (
             <div>
@@ -529,6 +575,13 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
               renewalId={renewalId}
               lineOfBusiness={current.lineOfBusiness ?? null}
             />
+
+            {verificationLoading && (
+              <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Verifying property against public records...
+              </div>
+            )}
 
             {/* Baseline status banners */}
             {!detail.baselineSnapshot && (
@@ -634,6 +687,73 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
             Download Report
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Compact Street View card for left sidebar
+function StreetViewSidebar({ address }: { address: { street?: string; city?: string; state?: string; zip?: string } }) {
+  const [iframeError, setIframeError] = useState(false);
+  const [viewMode, setViewMode] = useState<'streetview' | 'map'>('streetview');
+
+  const fullAddress = [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ');
+  if (!fullAddress) return null;
+
+  const encodedAddress = encodeURIComponent(fullAddress);
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+  const streetViewEmbedUrl = `https://www.google.com/maps/embed/v1/streetview?key=${apiKey}&location=${encodedAddress}&heading=0&pitch=0&fov=90`;
+  const mapEmbedUrl = `https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodedAddress}&zoom=18&maptype=satellite`;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+          <Eye className="w-3.5 h-3.5" />
+          Street View
+        </h4>
+        <div className="flex rounded overflow-hidden border border-gray-300 dark:border-gray-600">
+          <button
+            onClick={() => setViewMode('streetview')}
+            className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+              viewMode === 'streetview'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
+            }`}
+          >
+            Street
+          </button>
+          <button
+            onClick={() => setViewMode('map')}
+            className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+              viewMode === 'map'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
+            }`}
+          >
+            Satellite
+          </button>
+        </div>
+      </div>
+      <div className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
+        {apiKey && !iframeError ? (
+          <iframe
+            src={viewMode === 'streetview' ? streetViewEmbedUrl : mapEmbedUrl}
+            className="w-full h-48 border-0"
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            onError={() => setIframeError(true)}
+          />
+        ) : (
+          <div className="w-full h-48 flex items-center justify-center text-gray-400 dark:text-gray-500">
+            <div className="text-center">
+              <Map className="w-8 h-8 mx-auto mb-1 opacity-50" />
+              <p className="text-xs">Street View unavailable</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
