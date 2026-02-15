@@ -835,7 +835,7 @@ function normalizeLob(lob: string): string | null {
 
 // Customer Policies section for left sidebar
 function CustomerPoliciesSection({ policies, currentPolicyId }: { policies: any[]; currentPolicyId: string | null }) {
-  if (policies.length === 0) return null;
+  if (!policies || policies.length === 0) return null;
 
   const activeLobs = new Set(policies.map(p => normalizeLob(p.lineOfBusiness)).filter(Boolean));
   const missingLobs = STANDARD_LOBS.filter(l => !activeLobs.has(l));
