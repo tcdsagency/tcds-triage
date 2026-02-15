@@ -25,7 +25,15 @@ export function normalizeCoverageType(
   code: string,
   carrierOverrides?: Record<string, string>
 ): string {
-  const upperCode = code.toUpperCase().trim();
+  let upperCode = code.toUpperCase().trim();
+
+  // Strip trailing effective dates that some carriers embed in the code field
+  // 6-digit (YYMMDD): "DWELL250915" → "DWELL", "BI   260201" → "BI"
+  // 4-digit (YYMM): "ALARM2511" → "ALARM", "BOLAW2512" → "BOLAW"
+  // Only strip 4-digit dates in the 2024-2027 range (24xx-27xx)
+  // Also handles underscore-separated: "AQD_260201" → "AQD"
+  upperCode = upperCode.replace(/[_\s]*\d{6}$/, '').replace(/[_\s]*2[4-7][01]\d$/, '');
+
   // Also normalize spaces/hyphens to underscores for map lookup
   const normalizedCode = upperCode.replace(/[^A-Z0-9]+/g, '_');
 

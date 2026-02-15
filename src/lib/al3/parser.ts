@@ -1524,6 +1524,26 @@ function parseTransactionHeader(line: string): AL3TransactionHeader {
       .trim();
   }
 
+  // Fix truncated carrier names from 33-char field width
+  if (header.carrierName) {
+    const CARRIER_NAME_FIXES: Record<string, string> = {
+      'ial Fire & Casualty': 'National General Insurance Co',
+      'nalGeneral OneChoice': 'National General OneChoice',
+      'WNERS ASSOC OF AMERI': 'Homeowners Association of America',
+      'on General Ins Corp': 'Integon General Insurance Corp',
+      'ONAL GENERAL INS CO': 'National General Insurance Co',
+      'NPS AUTOP Integon Indemnity Corp': 'Integon Indemnity Corp',
+      'CAN MODERN INSURANCE': 'American Modern Insurance',
+      'HILL INSURANCE': 'Churchill Insurance',
+    };
+    for (const [fragment, full] of Object.entries(CARRIER_NAME_FIXES)) {
+      if (header.carrierName === fragment || header.carrierName.includes(fragment)) {
+        header.carrierName = full;
+        break;
+      }
+    }
+  }
+
   // Fallback: extract effective date via regex if position-based failed
   if (!header.effectiveDate) {
     // Look for YYYYMMDD dates in the line (2025-2027 range)
