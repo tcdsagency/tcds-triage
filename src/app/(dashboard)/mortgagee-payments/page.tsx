@@ -693,16 +693,9 @@ function SettingsTab() {
 
     setTestResult(null);
     try {
-      const res = await fetch(`${settings.microserviceUrl}/health`);
-      if (res.ok) {
-        const data = await res.json();
-        setTestResult({
-          success: true,
-          message: `Connected! Service: ${data.service} v${data.version}, CAPTCHA: ${data.captcha_configured ? 'Yes' : 'No'}`
-        });
-      } else {
-        setTestResult({ success: false, message: `Connection failed: ${res.status}` });
-      }
+      const res = await fetch('/api/mortgagee-payments/test-connection', { method: 'POST' });
+      const data = await res.json();
+      setTestResult({ success: data.success, message: data.message });
     } catch (error: any) {
       setTestResult({ success: false, message: `Connection failed: ${error.message}` });
     }

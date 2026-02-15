@@ -7,25 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { mortgagees, policies, customers, properties } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
-import { getHawkSoftClient, FULL_CLIENT_INCLUDES, FULL_CLIENT_EXPANDS } from "@/lib/api/hawksoft";
-
-interface HawkSoftLienholder {
-  lienholderId?: string;
-  name?: string;
-  lienholderName?: string;
-  loanNumber?: string;
-  accountNumber?: string;
-  address1?: string;
-  address2?: string;
-  addressLine1?: string;
-  addressLine2?: string;
-  city?: string;
-  state?: string;
-  zip?: string;
-  zipCode?: string;
-  position?: number;
-  type?: string; // mortgagee, lienholder, loss_payee, additional_interest
-}
+import { getHawkSoftClient } from "@/lib/api/hawksoft";
 
 /**
  * POST /api/mortgagee-payments/sync
@@ -112,11 +94,10 @@ export async function POST(request: NextRequest) {
           continue; // Skip if no HawkSoft link
         }
 
-        // Fetch client with policy lienholders from HawkSoft
+        // Fetch client with policies from HawkSoft (additionalInterests included by default)
         const hsClientData = await hsClient.getClient(
           hawkSoftClientId,
-          ["policies"],
-          ["policies.lienholders"]
+          ["policies"]
         );
 
         if (!hsClientData.policies) {
@@ -134,18 +115,18 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Get lienholders from policy
-        const lienholders = (hsPolicy as any).lienholders as HawkSoftLienholder[] || [];
+        // Get additional interests from policy (HawkSoft uses additionalInterests, not lienholders)
+        const additionalInterests = (hsPolicy as any).additionalInterests || [];
 
-        for (const lh of lienholders) {
-          if (!lh.name && !lh.lienholderName) {
+        for (const ai of additionalInterests) {
+          if (!ai.name) {
             continue; // Skip if no name
           }
 
           results.mortgageesFound++;
 
-          const name = lh.name || lh.lienholderName || "Unknown";
-          const loanNumber = lh.loanNumber || lh.accountNumber || null;
+          const name = ai.name;
+          const loanNumber = ai.loanNumber || null;
           const mortgageeKey = `${policy.id}:${name}:${loanNumber || ""}`;
           seenMortgageeKeys.add(mortgageeKey);
 
@@ -165,16 +146,17 @@ export async function POST(request: NextRequest) {
             )
             .limit(1);
 
+          const addr = ai.address || {};
           const mortgageeData = {
             name,
             loanNumber,
-            addressLine1: lh.address1 || lh.addressLine1 || null,
-            addressLine2: lh.address2 || lh.addressLine2 || null,
-            city: lh.city || null,
-            state: lh.state || null,
-            zipCode: lh.zip || lh.zipCode || null,
-            type: normalizeLienholderType(lh.type),
-            position: lh.position || 1,
+            addressLine1: addr.address1 || null,
+            addressLine2: addr.address2 || null,
+            city: addr.city || null,
+            state: addr.state || null,
+            zipCode: addr.zip || null,
+            type: normalizeAdditionalInterestType(ai.type),
+            position: (ai.rank || 0) + 1,
             isActive: true,
             updatedAt: new Date(),
           };
@@ -294,12 +276,18 @@ export async function GET() {
   }
 }
 
-function normalizeLienholderType(type?: string): string {
+/**
+ * HawkSoft additional interest type codes:
+ * MS = Mortgagee, A1 = Additional Interest, LP = Loss Payee,
+ * LH = Lienholder, AI = Additional Insured
+ */
+function normalizeAdditionalInterestType(type?: string): string {
   if (!type) return "mortgagee";
 
-  const lower = type.toLowerCase();
-  if (lower.includes("loss") || lower.includes("payee")) return "loss_payee";
-  if (lower.includes("lien")) return "lienholder";
-  if (lower.includes("additional")) return "additional_interest";
+  const upper = type.toUpperCase();
+  if (upper === "MS") return "mortgagee";
+  if (upper === "LP") return "loss_payee";
+  if (upper === "LH") return "lienholder";
+  if (upper === "A1" || upper === "AI") return "additional_interest";
   return "mortgagee";
 }
