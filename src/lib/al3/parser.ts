@@ -491,8 +491,9 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
       // For split-limit coverages (BI, UM), the next number after limit is per-accident limit, not deductible
       if (deductibleAmount === undefined && limitAmount !== undefined && /^\d{4,8}$/.test(d)) {
         const val = parseInt(d, 10);
-        // Filter out values that look like dates (20YYMMDD range, including 6-digit truncated)
-        const isDateLike = /^20[2-3]\d[01]\d[0-3]?\d?$/.test(d) && d.length >= 6;
+        // Filter out values that look like dates (YYYYMMDD range, including 6-digit truncated)
+        // Covers years 1990-2039: 199X, 200X, 201X, 202X, 203X
+        const isDateLike = /^(19[9]\d|20[0-3]\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])?$/.test(d) && d.length >= 6;
         // For split-limit types (BI, UM), second numeric value is per-accident limit, not deductible
         const splitTypes = new Set(['BI', 'UM', 'UMBI', 'UMISP', 'UIM']);
         const isSplitLimitType = splitTypes.has(code.toUpperCase());
@@ -502,7 +503,8 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
           // limitAmount stays as per-person for numeric comparison
           continue;
         }
-        if (val > 0 && val !== limitAmount && !isDateLike) {
+        // Sanity: deductibles over $100k are almost certainly misinterpreted data
+        if (val > 0 && val !== limitAmount && !isDateLike && val <= 100000) {
           deductibleAmount = val;
           deductibleStr = d;
         }
@@ -1632,13 +1634,32 @@ function parseCoverage(line: string): AL3Coverage | null {
   const limitStr = extractField(line, CVG_FIELDS.LIMIT);
   const deductibleStr = extractField(line, CVG_FIELDS.DEDUCTIBLE);
 
+  // For split-limit coverages (BI, UM, UMBI, UIM), the "deductible" field
+  // in 5CVG actually contains the per-accident portion of the limit, not a deductible.
+  const SPLIT_LIMIT_CODES = new Set(['BI', 'UM', 'UMBI', 'UMISP', 'UIM']);
+  const baseCode = code.toUpperCase().replace(/[\s_]*\d{4,6}$/, '').trim();
+  const isSplitLimit = SPLIT_LIMIT_CODES.has(baseCode);
+
+  let finalLimit = limitStr || undefined;
+  let finalLimitAmount = parseAL3Number(limitStr);
+  let finalDeductible: string | undefined = deductibleStr || undefined;
+  let finalDeductibleAmount = parseAL3Number(deductibleStr);
+
+  if (isSplitLimit && finalLimitAmount && finalDeductibleAmount) {
+    // Combine into split-limit format: per-person/per-accident
+    finalLimit = `${finalLimitAmount}/${finalDeductibleAmount}`;
+    // Keep per-person for numeric comparison
+    finalDeductible = undefined;
+    finalDeductibleAmount = undefined;
+  }
+
   return {
     code,
     description: code,
-    limit: limitStr || undefined,
-    limitAmount: parseAL3Number(limitStr),
-    deductible: deductibleStr || undefined,
-    deductibleAmount: parseAL3Number(deductibleStr),
+    limit: finalLimit,
+    limitAmount: finalLimitAmount,
+    deductible: finalDeductible,
+    deductibleAmount: finalDeductibleAmount,
     premium: undefined, // Premiums are in 6CVA records, not 5CVG
   };
 }
@@ -1757,13 +1778,27 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
         .join(' ');
     }
 
+    // For split-limit types, the deductible field may contain leftover data
+    // from the limit encoding, not an actual deductible. Clear it.
+    let finalDeductible = deductibleStr || undefined;
+    let finalDeductibleAmount = deductibleAmount;
+    if (isSplitLimit) {
+      finalDeductible = undefined;
+      finalDeductibleAmount = undefined;
+    }
+    // Sanity: deductibles > $100k are almost certainly misinterpreted data (dates, limits, etc.)
+    if (finalDeductibleAmount != null && finalDeductibleAmount > 100000) {
+      finalDeductible = undefined;
+      finalDeductibleAmount = undefined;
+    }
+
     return {
       code,
       description: finalDescription,
       limit: displayLimit,
       limitAmount: finalLimitAmount,
-      deductible: deductibleStr || undefined,
-      deductibleAmount,
+      deductible: finalDeductible,
+      deductibleAmount: finalDeductibleAmount,
       premium: premium ? premium / 100 : undefined, // IVANS premiums are in cents
     };
   } else {
