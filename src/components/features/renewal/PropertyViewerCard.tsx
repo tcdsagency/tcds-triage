@@ -55,7 +55,6 @@ export default function PropertyViewerCard({ renewalId, lineOfBusiness, address 
   const [error, setError] = useState<string | null>(null);
   const [viewerTab, setViewerTab] = useState<ViewerTab>('aerial');
   const [fullscreen, setFullscreen] = useState<'aerial' | 'street' | null>(null);
-  const [streetImgError, setStreetImgError] = useState(false);
 
   // Overlay toggles
   const [overlayToggles, setOverlayToggles] = useState({
@@ -155,8 +154,8 @@ export default function PropertyViewerCard({ renewalId, lineOfBusiness, address 
   const fullAddress = address ? [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ') : '';
   const encodedAddress = encodeURIComponent(fullAddress);
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  const streetViewImgUrl = fullAddress && apiKey
-    ? `https://maps.googleapis.com/maps/api/streetview?size=800x800&location=${encodedAddress}&key=${apiKey}`
+  const streetViewEmbedUrl = fullAddress && apiKey
+    ? `https://www.google.com/maps/embed/v1/streetview?key=${apiKey}&location=${encodedAddress}&heading=0&pitch=0&fov=90`
     : null;
   const mapEmbedUrl = fullAddress && apiKey
     ? `https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodedAddress}&zoom=18&maptype=satellite`
@@ -191,11 +190,13 @@ export default function PropertyViewerCard({ renewalId, lineOfBusiness, address 
                 surveyDate={data.surveyDate || undefined}
                 overlays={filteredOverlays}
               />
-            ) : streetViewImgUrl && !streetImgError ? (
-              <img
-                src={streetViewImgUrl}
-                alt="Street view fullscreen"
-                className="w-full h-full object-contain"
+            ) : streetViewEmbedUrl ? (
+              <iframe
+                src={streetViewEmbedUrl}
+                className="w-full h-full border-0"
+                allowFullScreen
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400">
@@ -258,13 +259,13 @@ export default function PropertyViewerCard({ renewalId, lineOfBusiness, address 
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
               />
-            ) : streetViewImgUrl && !streetImgError ? (
-              <img
-                src={streetViewImgUrl}
-                alt={`Street view of ${fullAddress}`}
-                className="w-full h-full object-cover"
+            ) : streetViewEmbedUrl ? (
+              <iframe
+                src={streetViewEmbedUrl}
+                className="w-full h-full border-0"
+                allowFullScreen
                 loading="lazy"
-                onError={() => setStreetImgError(true)}
+                referrerPolicy="no-referrer-when-downgrade"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400 dark:text-gray-500">
