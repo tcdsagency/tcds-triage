@@ -220,6 +220,7 @@ export const COVERAGE_DISPLAY_NAMES: Record<string, string> = {
   elmch: 'Electronics Matching Coverage',
   exnon: 'Excluded Non-Owned',
   papls: 'Personal Auto — Personal Liability',
+  passl: 'Passenger Liability',
   cdtcd: 'Collision Deductible Credit',
   sewra: 'Sewer/Water Backup — Rider A',
   serln: 'Service Line Coverage',
