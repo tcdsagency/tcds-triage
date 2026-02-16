@@ -145,6 +145,24 @@ export const BUSINESS_TYPES = [
   { value: 'other', label: 'Other' },
 ];
 
+export const OCCUPANT_COUNT_OPTIONS = [
+  { value: '1', label: '1' },
+  { value: '2', label: '2' },
+  { value: '3', label: '3' },
+  { value: '4', label: '4' },
+  { value: '5', label: '5' },
+  { value: '6+', label: '6+' },
+];
+
+export const BATHROOM_COUNT_OPTIONS = [
+  { value: '0', label: '0' },
+  { value: '1', label: '1' },
+  { value: '2', label: '2' },
+  { value: '3', label: '3' },
+  { value: '4', label: '4' },
+  { value: '5+', label: '5+' },
+];
+
 // Coverage options
 export const LIABILITY_OPTIONS = [
   { value: '30/60', label: '30/60 (State Minimum)', description: '$30k per person / $60k per accident' },

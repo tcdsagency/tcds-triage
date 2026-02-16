@@ -14,6 +14,7 @@ import {
   FormInput,
   FormSelect,
   FormCheckbox,
+  FormDateInput,
   FormSection,
   FormFieldGrid,
 } from '../../fields';
@@ -21,6 +22,8 @@ import {
   YEARS_AT_ADDRESS_OPTIONS,
   PROPERTY_TYPES,
   OCCUPANCY_TYPES,
+  OCCUPANT_COUNT_OPTIONS,
+  BATHROOM_COUNT_OPTIONS,
 } from '../../config/options';
 import { cn } from '@/lib/utils';
 import {
@@ -151,6 +154,14 @@ export function PropertyStep() {
       }
       if (data.poolType) {
         setValue('poolType', data.poolType);
+        fieldsPopulated++;
+      }
+      if (data.fullBathrooms != null) {
+        setValue('fullBathrooms', String(data.fullBathrooms));
+        fieldsPopulated++;
+      }
+      if (data.halfBathrooms != null) {
+        setValue('halfBathrooms', String(data.halfBathrooms));
         fieldsPopulated++;
       }
 
@@ -371,6 +382,33 @@ export function PropertyStep() {
             label="Stories"
             options={STORIES_OPTIONS}
             required
+            placeholder="Select..."
+          />
+        </FormFieldGrid>
+        <FormFieldGrid cols={3}>
+          <FormDateInput
+            name="purchaseDate"
+            label="Purchase Date"
+          />
+          <FormSelect
+            name="numberOfOccupants"
+            label="Number of Occupants"
+            options={OCCUPANT_COUNT_OPTIONS}
+            placeholder="Select..."
+          />
+          <div /> {/* spacer */}
+        </FormFieldGrid>
+        <FormFieldGrid cols={2}>
+          <FormSelect
+            name="fullBathrooms"
+            label="Full Bathrooms"
+            options={BATHROOM_COUNT_OPTIONS}
+            placeholder="Select..."
+          />
+          <FormSelect
+            name="halfBathrooms"
+            label="Half Bathrooms"
+            options={BATHROOM_COUNT_OPTIONS}
             placeholder="Select..."
           />
         </FormFieldGrid>
