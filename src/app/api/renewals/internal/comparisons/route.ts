@@ -39,36 +39,87 @@ export async function POST(request: NextRequest) {
       assignedAgentId = customer?.producerId || null;
     }
 
-    const [comparison] = await db
-      .insert(renewalComparisons)
-      .values({
-        tenantId: body.tenantId,
-        customerId: body.customerId || null,
-        policyId: body.policyId || null,
-        policyNumber: body.policyNumber,
-        carrierName: body.carrierName,
-        lineOfBusiness: body.lineOfBusiness,
-        renewalEffectiveDate: new Date(body.renewalEffectiveDate),
-        renewalExpirationDate: body.renewalExpirationDate ? new Date(body.renewalExpirationDate) : null,
-        currentPremium: body.currentPremium?.toString() || null,
-        renewalPremium: body.renewalPremium?.toString() || null,
-        premiumChangeAmount: premiumChange?.toString() || null,
-        premiumChangePercent: premiumChangePercent != null ? premiumChangePercent.toFixed(2) : null,
-        recommendation: body.recommendation,
-        status: 'waiting_agent_review',
-        renewalSnapshot: body.renewalSnapshot,
-        baselineSnapshot: body.baselineSnapshot,
-        materialChanges: body.materialChanges || [],
-        comparisonSummary: body.comparisonSummary,
-        checkResults: body.checkResults || null,
-        checkSummary: body.checkSummary || null,
-        assignedAgentId,
-      })
-      .onConflictDoNothing()
-      .returning();
+    // Check if a pending_manual_renewal placeholder exists for this policy + effective date.
+    // The check-non-al3 job creates these using HawkSoft carrier names, which may differ
+    // from AL3 carrier names, so match by policyNumber + effectiveDate only.
+    const [existingPlaceholder] = await db
+      .select({ id: renewalComparisons.id, status: renewalComparisons.status })
+      .from(renewalComparisons)
+      .where(
+        and(
+          eq(renewalComparisons.tenantId, body.tenantId),
+          eq(renewalComparisons.policyNumber, body.policyNumber),
+          eq(renewalComparisons.renewalEffectiveDate, new Date(body.renewalEffectiveDate)),
+          eq(renewalComparisons.status, 'pending_manual_renewal')
+        )
+      )
+      .limit(1);
+
+    let comparison;
+
+    if (existingPlaceholder) {
+      // Upgrade the placeholder with full AL3 comparison data
+      const [updated] = await db
+        .update(renewalComparisons)
+        .set({
+          customerId: body.customerId || undefined,
+          policyId: body.policyId || undefined,
+          carrierName: body.carrierName,
+          lineOfBusiness: body.lineOfBusiness,
+          renewalExpirationDate: body.renewalExpirationDate ? new Date(body.renewalExpirationDate) : null,
+          currentPremium: body.currentPremium?.toString() || null,
+          renewalPremium: body.renewalPremium?.toString() || null,
+          premiumChangeAmount: premiumChange?.toString() || null,
+          premiumChangePercent: premiumChangePercent != null ? premiumChangePercent.toFixed(2) : null,
+          recommendation: body.recommendation,
+          status: 'waiting_agent_review',
+          renewalSnapshot: body.renewalSnapshot,
+          baselineSnapshot: body.baselineSnapshot,
+          materialChanges: body.materialChanges || [],
+          comparisonSummary: body.comparisonSummary,
+          checkResults: body.checkResults || null,
+          checkSummary: body.checkSummary || null,
+          renewalSource: 'al3',
+          assignedAgentId: assignedAgentId || undefined,
+        })
+        .where(eq(renewalComparisons.id, existingPlaceholder.id))
+        .returning();
+      comparison = updated;
+    } else {
+      // No placeholder — insert new comparison record
+      const [inserted] = await db
+        .insert(renewalComparisons)
+        .values({
+          tenantId: body.tenantId,
+          customerId: body.customerId || null,
+          policyId: body.policyId || null,
+          policyNumber: body.policyNumber,
+          carrierName: body.carrierName,
+          lineOfBusiness: body.lineOfBusiness,
+          renewalEffectiveDate: new Date(body.renewalEffectiveDate),
+          renewalExpirationDate: body.renewalExpirationDate ? new Date(body.renewalExpirationDate) : null,
+          currentPremium: body.currentPremium?.toString() || null,
+          renewalPremium: body.renewalPremium?.toString() || null,
+          premiumChangeAmount: premiumChange?.toString() || null,
+          premiumChangePercent: premiumChangePercent != null ? premiumChangePercent.toFixed(2) : null,
+          recommendation: body.recommendation,
+          status: 'waiting_agent_review',
+          renewalSnapshot: body.renewalSnapshot,
+          baselineSnapshot: body.baselineSnapshot,
+          materialChanges: body.materialChanges || [],
+          comparisonSummary: body.comparisonSummary,
+          checkResults: body.checkResults || null,
+          checkSummary: body.checkSummary || null,
+          renewalSource: 'al3',
+          assignedAgentId,
+        })
+        .onConflictDoNothing()
+        .returning();
+      comparison = inserted;
+    }
 
     if (!comparison) {
-      // Duplicate detected — look up the existing comparison to return its ID
+      // Duplicate detected (exact match on unique index) — return existing ID
       const [existing] = await db
         .select({ id: renewalComparisons.id })
         .from(renewalComparisons)
@@ -94,7 +145,11 @@ export async function POST(request: NextRequest) {
       tenantId: body.tenantId,
       renewalComparisonId: comparison.id,
       eventType: 'ingested',
-      eventData: { policyNumber: body.policyNumber, carrierName: body.carrierName },
+      eventData: {
+        policyNumber: body.policyNumber,
+        carrierName: body.carrierName,
+        upgradedFromPlaceholder: !!existingPlaceholder,
+      },
       performedBy: 'system',
     });
 
