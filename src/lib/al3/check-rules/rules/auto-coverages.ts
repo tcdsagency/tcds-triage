@@ -173,7 +173,10 @@ export const autoCoverageRules: CheckRuleDefinition[] = [
           (bv.year === renV.year && norm(bv.make) === norm(renV.make))
         );
 
-        const basComp = basV ? findCov(basV.coverages, 'comprehensive') : null;
+        // Check baseline vehicle first, then fall back to policy-level
+        // (HawkSoft stores comp/coll at policy level, not per-vehicle)
+        const basComp = (basV ? findCov(basV.coverages, 'comprehensive') : null)
+          ?? findCov(ctx.baseline.coverages, 'comprehensive');
         const basDed = basComp?.deductibleAmount ?? null;
         const renDed = compCov.deductibleAmount ?? null;
 
@@ -219,7 +222,10 @@ export const autoCoverageRules: CheckRuleDefinition[] = [
           (bv.year === renV.year && norm(bv.make) === norm(renV.make))
         );
 
-        const basColl = basV ? findCov(basV.coverages, 'collision') : null;
+        // Check baseline vehicle first, then fall back to policy-level
+        // (HawkSoft stores comp/coll at policy level, not per-vehicle)
+        const basColl = (basV ? findCov(basV.coverages, 'collision') : null)
+          ?? findCov(ctx.baseline.coverages, 'collision');
         const basDed = basColl?.deductibleAmount ?? null;
         const renDed = collCov.deductibleAmount ?? null;
 
