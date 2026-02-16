@@ -250,6 +250,47 @@ export function formatQuoteSection(params: {
 // Helpers
 // =============================================================================
 
+/** Redact financial PII from transcript text */
+function redactPII(text: string): string {
+  // Credit/debit card numbers: 13-19 digits, optionally separated by spaces or dashes
+  text = text.replace(
+    /\b(\d[ -]?){12,18}\d\b/g,
+    (match) => {
+      const digits = match.replace(/\D/g, '');
+      if (digits.length >= 13 && digits.length <= 19) {
+        return `[CARD ****${digits.slice(-4)}]`;
+      }
+      return match;
+    }
+  );
+
+  // SSN: XXX-XX-XXXX or XXX XX XXXX
+  text = text.replace(
+    /\b(\d{3})[-\s](\d{2})[-\s](\d{4})\b/g,
+    '[SSN REDACTED]'
+  );
+
+  // CVV/security codes: 3-4 digits after contextual keywords
+  text = text.replace(
+    /\b(security code|cvv|cvc|verification)[\s:]*(\d{3,4})\b/gi,
+    '$1 [CVV REDACTED]'
+  );
+
+  // Bank routing numbers: 9 digits after "routing" context
+  text = text.replace(
+    /\b(routing(?:\s+number)?)[\s:]*(\d{9})\b/gi,
+    (_, prefix, digits) => `${prefix} [ROUTING ****${digits.slice(-4)}]`
+  );
+
+  // Bank account numbers: digit sequences after "account" context
+  text = text.replace(
+    /\b(account(?:\s+number)?)[\s:]*(\d{4,17})\b/gi,
+    (_, prefix, digits) => `${prefix} [ACCOUNT ****${digits.slice(-4)}]`
+  );
+
+  return text;
+}
+
 /** Escape HTML special characters */
 function esc(text: string): string {
   return text
@@ -282,6 +323,9 @@ function cleanTranscriptHtml(raw: string): string {
 
   // Clean up excessive blank lines
   text = text.replace(/\n{3,}/g, '\n\n');
+
+  // Redact financial PII before encoding to HTML
+  text = redactPII(text);
 
   text = text.trim();
 
