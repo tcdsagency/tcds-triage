@@ -145,6 +145,8 @@ export const COVERAGE_DISPLAY_NAMES: Record<string, string> = {
   new_home_discount: 'New Home Discount',
   existing_policy_discount: 'Existing Policy Discount',
 
+  extended_coverage: 'Extended Coverage',
+
   // --- CAN Modern ---
   enhanced_coverage: 'Enhanced Coverage',
   burglar_alarm: 'Burglar Alarm Discount',
