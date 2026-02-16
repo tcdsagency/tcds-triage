@@ -438,6 +438,10 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
       const d = seg.data;
       const t = seg.tag.toUpperCase();
 
+      // Skip known date/non-coverage tags (e.g., tag "28" = effective/expiration dates,
+      // tag "33" = date fragments). These should never be treated as limits or deductibles.
+      if (t === '28' || t === '33') continue;
+
       // Premium: digits with trailing +/- (Allstate cents format)
       if (premium === undefined && /^\d{4,}[+-]$/.test(d)) {
         premium = parseAllstatePremium(d);
@@ -461,8 +465,21 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
         continue;
       }
 
+      // Deductible: tag "2E" with zero-padded digits (NatGen/Integon EDIFACT format)
+      // Tag "2E" contains the deductible value, NOT the limit. Must check before fallback limit.
+      if (deductibleAmount === undefined && t === '2E' && /^0{2,}\d{3,}$/.test(d) && d.length <= 8) {
+        const cleaned = d.replace(/^0+/, '') || '0';
+        const val = parseInt(cleaned, 10);
+        if (val > 0) {
+          deductibleAmount = val;
+          deductibleStr = d;
+        }
+        continue;
+      }
+
       // Fallback limit: any segment with leading-zero digits if tag 1E wasn't found
-      if (limitAmount === undefined && /^0{2,}\d{4,}$/.test(d) && d.length <= 10) {
+      // Exclude tag "2E" which is a deductible tag (handled above)
+      if (limitAmount === undefined && t !== '2E' && /^0{2,}\d{4,}$/.test(d) && d.length <= 10) {
         const cleaned = d.replace(/^0+/, '') || '0';
         limitAmount = parseInt(cleaned, 10);
         limitStr = d;
@@ -470,12 +487,12 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
       }
 
       // Deductible: shorter numeric segment after limit is found
-      // Exclude date-like values (YYYYMMDD or truncated dates like 2026030)
+      // Exclude date-like values (YYYYMMDD or truncated dates like 202602)
       // For split-limit coverages (BI, UM), the next number after limit is per-accident limit, not deductible
       if (deductibleAmount === undefined && limitAmount !== undefined && /^\d{4,8}$/.test(d)) {
         const val = parseInt(d, 10);
-        // Filter out values that look like dates (20YYMMDD range)
-        const isDateLike = /^20[2-3]\d[01]\d[0-3]?\d?$/.test(d) && d.length >= 7;
+        // Filter out values that look like dates (20YYMMDD range, including 6-digit truncated)
+        const isDateLike = /^20[2-3]\d[01]\d[0-3]?\d?$/.test(d) && d.length >= 6;
         // For split-limit types (BI, UM), second numeric value is per-accident limit, not deductible
         const splitTypes = new Set(['BI', 'UM', 'UMBI', 'UMISP', 'UIM']);
         const isSplitLimitType = splitTypes.has(code.toUpperCase());
@@ -767,9 +784,24 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
       } else if (groupCode === '5PPH' || groupCode === '6PDR' || groupCode === '6PDA') {
         // Auto-specific record types confirm we're in auto section
         if (inAutoSection) { /* stay in auto section */ }
-      } else if (groupCode === '9BIS' || groupCode === '6CVH') {
-        // Home-specific records reset to home section
+      } else if (groupCode === '6CVH') {
+        // Home coverage records always reset to home section
         inAutoSection = false;
+      } else if (groupCode === '9BIS') {
+        // 9BIS resets to home UNLESS it contains auto LOB indicators
+        // (Allstate embeds auto 9BIS with AUTOP/PAUTO in bundled transactions)
+        if (!line.includes('PAUTO') && !line.includes('AUTOP')) {
+          inAutoSection = false;
+        }
+      }
+
+      // Detect embedded auto section markers (Allstate EDIFACT packs 2TRG/5ISI within other lines)
+      // An embedded 2TRG or 9BIS with auto LOB (PAUTO/AUTOP) signals the start of auto records
+      if (seenHomeRecord && !inAutoSection) {
+        if ((groupCode !== '2TRG' && line.includes('2TRG') && (line.includes('PAUTO') || line.includes('AUTOP'))) ||
+            (groupCode === '9BIS' && (line.includes('PAUTO') || line.includes('AUTOP')))) {
+          inAutoSection = true;
+        }
       }
     }
 
