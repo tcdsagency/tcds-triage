@@ -170,7 +170,11 @@ export interface RenewalCandidateJobData {
   batchId: string;
 }
 
-export const renewalQueue = new Queue<RenewalBatchJobData | RenewalCandidateJobData>('renewal-processing', {
+export interface RenewalCheckJobData {
+  // Empty — uses DEFAULT_TENANT_ID from env
+}
+
+export const renewalQueue = new Queue<RenewalBatchJobData | RenewalCandidateJobData | RenewalCheckJobData>('renewal-processing', {
   connection: redis,
   defaultJobOptions: {
     ...defaultJobOptions,
@@ -249,6 +253,18 @@ export async function initializeScheduledJobs(): Promise<void> {
       }
     );
     logger.info('Scheduled: expiration-notices-daily (9 AM CT)');
+
+    // Non-AL3 Renewal Check - Daily at 6 AM Central
+    // Finds active policies expiring within 45 days with no AL3 baseline
+    await renewalQueue.upsertJobScheduler(
+      'check-non-al3-renewals-daily',
+      { pattern: '0 6 * * *', tz: 'America/Chicago' },
+      {
+        name: 'check-non-al3-renewals',
+        data: {},
+      }
+    );
+    logger.info('Scheduled: check-non-al3-renewals-daily (6 AM CT)');
 
     logger.info('All scheduled jobs initialized');
   } catch (err) {

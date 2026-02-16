@@ -43,6 +43,7 @@ export default function RenewalReviewPage() {
     decidedCount: 0,
     completedCount: 0,
     reshopCount: 0,
+    needsRenewalDocCount: 0,
     totalActive: 0,
     avgPremiumChangePercent: null,
   });
@@ -443,6 +444,21 @@ export default function RenewalReviewPage() {
               setPagination((p) => ({ ...p, page: 1 }));
             }}
           />
+          {stats.needsRenewalDocCount > 0 && (
+            <StatBadge
+              label="Needs Doc"
+              count={stats.needsRenewalDocCount}
+              active={filters.status === 'pending_manual_renewal'}
+              color="purple"
+              onClick={() => {
+                setFilters((f) => ({
+                  ...f,
+                  status: f.status === 'pending_manual_renewal' ? '' : 'pending_manual_renewal',
+                }));
+                setPagination((p) => ({ ...p, page: 1 }));
+              }}
+            />
+          )}
           {stats.avgPremiumChangePercent != null && (
             <div className="ml-auto text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
               Avg change:
@@ -497,6 +513,7 @@ export default function RenewalReviewPage() {
               <option value="pending_ingestion">Pending Ingestion</option>
               <option value="comparison_ready">Comparison Ready</option>
               <option value="waiting_agent_review">Waiting Agent Review</option>
+              <option value="pending_manual_renewal">Needs Renewal Doc</option>
               <option value="agent_reviewed">Agent Reviewed</option>
               <option value="requote_requested">Requote Requested</option>
               <option value="quote_ready">Quote Ready</option>
@@ -752,7 +769,7 @@ function StatBadge({
   label: string;
   count: number;
   active: boolean;
-  color: 'amber' | 'blue' | 'indigo' | 'green' | 'orange';
+  color: 'amber' | 'blue' | 'indigo' | 'green' | 'orange' | 'purple';
   onClick: () => void;
 }) {
   const colors: Record<string, string> = {
@@ -771,6 +788,9 @@ function StatBadge({
     orange: active
       ? 'bg-orange-200 dark:bg-orange-800 ring-2 ring-orange-500'
       : 'bg-orange-100 dark:bg-orange-900/30',
+    purple: active
+      ? 'bg-purple-200 dark:bg-purple-800 ring-2 ring-purple-500'
+      : 'bg-purple-100 dark:bg-purple-900/30',
   };
 
   return (

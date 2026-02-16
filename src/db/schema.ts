@@ -4805,6 +4805,7 @@ export const renewalComparisonStatusEnum = pgEnum('renewal_comparison_status', [
   'quote_ready',
   'completed',
   'cancelled',
+  'pending_manual_renewal',
 ]);
 
 export const renewalAuditEventTypeEnum = pgEnum('renewal_audit_event_type', [
@@ -4899,6 +4900,9 @@ export const renewalComparisons = pgTable('renewal_comparisons', {
 
   // Agent assignment (denormalized from customer.producerId for fast filtering)
   assignedAgentId: uuid('assigned_agent_id').references(() => users.id, { onDelete: 'set null' }),
+
+  // Renewal data source tracking
+  renewalSource: varchar('renewal_source', { length: 20 }), // 'al3' | 'pdf_upload' | 'manual' | 'pending'
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -5016,6 +5020,7 @@ export const renewalBatches = pgTable('renewal_batches', {
   totalCandidatesCreated: integer('total_candidates_created').default(0),
   duplicatesRemoved: integer('duplicates_removed').default(0),
   totalArchivedTransactions: integer('total_archived_transactions').default(0),
+  totalBaselinesStored: integer('total_baselines_stored').default(0),
 
   // Result counts
   candidatesCompleted: integer('candidates_completed').default(0),
@@ -5217,6 +5222,60 @@ export const al3TransactionArchiveRelations = relations(al3TransactionArchive, (
   batch: one(renewalBatches, {
     fields: [al3TransactionArchive.batchId],
     references: [renewalBatches.id],
+  }),
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RENEWAL BASELINES - Prior-term AL3 snapshots for apples-to-apples comparison
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const renewalBaselines = pgTable('renewal_baselines', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+
+  policyNumber: varchar('policy_number', { length: 50 }).notNull(),
+  carrierCode: varchar('carrier_code', { length: 20 }).notNull(),
+  carrierName: varchar('carrier_name', { length: 100 }),
+  lineOfBusiness: varchar('line_of_business', { length: 50 }),
+  insuredName: varchar('insured_name', { length: 200 }),
+
+  effectiveDate: timestamp('effective_date').notNull(),
+  expirationDate: timestamp('expiration_date'),
+
+  snapshot: jsonb('snapshot'),
+  rawAl3Content: text('raw_al3_content'),
+  sourceFileName: varchar('source_file_name', { length: 255 }),
+
+  batchId: uuid('batch_id').references(() => renewalBatches.id, { onDelete: 'set null' }),
+  policyId: uuid('policy_id').references(() => policies.id, { onDelete: 'set null' }),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('renewal_baselines_tenant_idx').on(table.tenantId),
+  index('renewal_baselines_policy_idx').on(table.policyNumber),
+  index('renewal_baselines_carrier_idx').on(table.carrierCode),
+  index('renewal_baselines_effective_idx').on(table.effectiveDate),
+  uniqueIndex('renewal_baselines_dedup_unique').on(table.tenantId, table.carrierCode, table.policyNumber, table.effectiveDate),
+]);
+
+export const renewalBaselinesRelations = relations(renewalBaselines, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [renewalBaselines.tenantId],
+    references: [tenants.id],
+  }),
+  batch: one(renewalBatches, {
+    fields: [renewalBaselines.batchId],
+    references: [renewalBatches.id],
+  }),
+  policy: one(policies, {
+    fields: [renewalBaselines.policyId],
+    references: [policies.id],
+  }),
+  customer: one(customers, {
+    fields: [renewalBaselines.customerId],
+    references: [customers.id],
   }),
 }));
 

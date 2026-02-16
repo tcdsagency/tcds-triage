@@ -39,6 +39,7 @@ export async function GET(
         agentDecisionBy: renewalComparisons.agentDecisionBy,
         agentNotes: renewalComparisons.agentNotes,
         agencyzoomSrId: renewalComparisons.agencyzoomSrId,
+        renewalSource: renewalComparisons.renewalSource,
         renewalSnapshot: renewalComparisons.renewalSnapshot,
         baselineSnapshot: renewalComparisons.baselineSnapshot,
         materialChanges: renewalComparisons.materialChanges,

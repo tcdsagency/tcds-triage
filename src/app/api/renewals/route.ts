@@ -123,6 +123,7 @@ export async function GET(request: NextRequest) {
       agentDecisionBy: renewalComparisons.agentDecisionBy,
       agentNotes: renewalComparisons.agentNotes,
       agencyzoomSrId: renewalComparisons.agencyzoomSrId,
+      renewalSource: renewalComparisons.renewalSource,
       materialChanges: renewalComparisons.materialChanges,
       comparisonSummary: renewalComparisons.comparisonSummary,
       renewalSnapshot: renewalComparisons.renewalSnapshot,
@@ -171,6 +172,7 @@ export async function GET(request: NextRequest) {
       decidedCount: allForStats.filter((r) => r.status === 'agent_reviewed').length,
       completedCount: allForStats.filter((r) => r.status === 'completed').length,
       reshopCount: allForStats.filter((r) => r.recommendation === 'reshop').length,
+      needsRenewalDocCount: allForStats.filter((r) => r.status === 'pending_manual_renewal').length,
       totalActive: allForStats.filter((r) => r.status !== 'completed' && r.status !== 'cancelled').length,
       avgPremiumChangePercent: (() => {
         const withChanges = allForStats.filter((r) => r.premiumChangePercent != null);

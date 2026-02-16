@@ -32,6 +32,7 @@ export interface RenewalComparison {
   agentDecisionBy: string | null;
   agentNotes: string | null;
   agencyzoomSrId: number | null;
+  renewalSource: string | null;
   materialChanges: MaterialChange[];
   comparisonSummary: ComparisonSummary | null;
   checkResults?: CheckResult[];
@@ -88,6 +89,7 @@ export interface RenewalStats {
   decidedCount: number;
   completedCount: number;
   reshopCount: number;
+  needsRenewalDocCount: number;
   totalActive: number;
   avgPremiumChangePercent: number | null;
 }

@@ -99,6 +99,7 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
     handleAddNote,
     handleCheckReview,
     handleDownloadReport,
+    fetchDetail,
     router,
   } = useRenewalDetail(renewalId);
 
@@ -163,6 +164,7 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
           publicData={publicData}
           riskData={riskData}
           verificationSources={verificationSources}
+          onRefresh={fetchDetail}
         />
 
         {/* Right Sidebar */}

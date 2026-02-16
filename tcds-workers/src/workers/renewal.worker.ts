@@ -41,6 +41,9 @@ export function createRenewalWorker(): Worker {
           case 'process-candidate':
             await processCandidate(job.data as RenewalCandidateJobData);
             break;
+          case 'check-non-al3-renewals':
+            await checkNonAL3Renewals();
+            break;
           default:
             logger.warn({ jobName: job.name }, 'Unknown renewal job type');
         }
@@ -124,10 +127,12 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
     // Update batch with file count
     await patchBatch(batchId, { status: 'filtering', totalAl3FilesFound: al3Files.length });
 
-    // Parse each file and partition into renewals vs non-renewals
+    // Parse each file and partition into renewals, baselines, and archived
     let totalTransactions = 0;
-    const allRenewals: Array<{ header: Record<string, unknown>; rawContent: string; _fileName: string }> = [];
-    const allNonRenewals: Array<{ header: Record<string, unknown>; rawContent: string; _fileName: string }> = [];
+    type TaggedTransaction = { header: Record<string, unknown>; rawContent: string; _fileName: string };
+    const allRenewals: TaggedTransaction[] = [];
+    const allBaselines: TaggedTransaction[] = [];
+    const allArchived: TaggedTransaction[] = [];
 
     for (const file of al3Files) {
       // Parse AL3 file
@@ -140,29 +145,33 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
 
       totalTransactions += parseData.transactions.length;
 
-      // Partition into renewals and non-renewals
+      // Partition into renewals, baselines, and archived
       const partitionRes = await internalFetch('/api/renewals/internal/parse', {
         method: 'POST',
-        body: JSON.stringify({ action: 'partition-transactions', transactions: parseData.transactions }),
+        body: JSON.stringify({ action: 'partition-transactions-v2', transactions: parseData.transactions }),
       });
       const partitionData = await partitionRes.json() as {
         success: boolean;
-        unique: any[];
+        renewals: any[];
+        baselines: any[];
+        archived: any[];
         duplicatesRemoved: number;
-        nonRenewals: any[];
       };
       if (!partitionData.success) continue;
 
-      for (const r of partitionData.unique) {
+      for (const r of partitionData.renewals) {
         allRenewals.push({ ...r, _fileName: file.fileName });
       }
-      for (const nr of partitionData.nonRenewals) {
-        allNonRenewals.push({ ...nr, _fileName: file.fileName });
+      for (const b of partitionData.baselines) {
+        allBaselines.push({ ...b, _fileName: file.fileName });
+      }
+      for (const a of partitionData.archived) {
+        allArchived.push({ ...a, _fileName: file.fileName });
       }
     }
 
     // Global dedup across files (renewals only)
-    const deduped = new Map<string, typeof allRenewals[0]>();
+    const deduped = new Map<string, TaggedTransaction>();
     let duplicatesRemoved = 0;
     for (const r of allRenewals) {
       const key = `${r.header?.carrierName || r.header?.carrierCode}|${r.header?.policyNumber}|${r.header?.effectiveDate}`;
@@ -172,21 +181,65 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
         deduped.set(key, r);
       }
     }
-    const uniqueAll = Array.from(deduped.values());
+    const unique = Array.from(deduped.values());
 
-    // Expired renewals are already filtered by the parse API's partition-transactions action.
-    const unique = uniqueAll;
+    // Store baselines via internal API
+    let totalBaselinesStored = 0;
+    if (allBaselines.length > 0) {
+      try {
+        // Build snapshots for each baseline
+        const baselinePayloads: Array<Record<string, unknown>> = [];
+        for (const b of allBaselines) {
+          const snapshotRes = await internalFetch('/api/renewals/internal/parse', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'build-snapshot', transaction: b }),
+          });
+          const snapshotData = await snapshotRes.json() as { success: boolean; snapshot: Record<string, any> };
+          if (!snapshotData.success) continue;
 
-    // Archive non-renewal transactions
+          baselinePayloads.push({
+            policyNumber: (b.header as any)?.policyNumber,
+            carrierCode: (b.header as any)?.carrierCode,
+            carrierName: (b.header as any)?.carrierName,
+            lineOfBusiness: (b.header as any)?.lineOfBusiness,
+            effectiveDate: (b.header as any)?.effectiveDate,
+            expirationDate: (b.header as any)?.expirationDate,
+            insuredName: (b.header as any)?.insuredName,
+            snapshot: snapshotData.snapshot,
+            rawAl3Content: b.rawContent,
+            sourceFileName: b._fileName,
+          });
+        }
+
+        // Send baselines in chunks of 50 to avoid oversized requests
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < baselinePayloads.length; i += CHUNK_SIZE) {
+          const chunk = baselinePayloads.slice(i, i + CHUNK_SIZE);
+          const baselineRes = await internalFetch('/api/renewals/internal/baselines', {
+            method: 'POST',
+            body: JSON.stringify({ tenantId, batchId, baselines: chunk }),
+          });
+          const blData = await baselineRes.json() as { success: boolean; stored: number };
+          if (blData.success) {
+            totalBaselinesStored += blData.stored;
+          }
+          logger.info({ batchId, chunk: Math.floor(i / CHUNK_SIZE) + 1, stored: blData.success ? blData.stored : 0 }, 'Baseline chunk stored');
+        }
+      } catch (err) {
+        logger.warn({ batchId, error: err }, 'Failed to store baseline transactions');
+      }
+    }
+
+    // Archive non-renewal/expired transactions
     let totalArchived = 0;
-    if (allNonRenewals.length > 0) {
+    if (allArchived.length > 0) {
       try {
         const archiveRes = await internalFetch('/api/renewals/internal/archive', {
           method: 'POST',
           body: JSON.stringify({
             tenantId,
             batchId,
-            transactions: allNonRenewals.map((nr) => ({
+            transactions: allArchived.map((nr) => ({
               transactionType: (nr.header as any)?.transactionType,
               policyNumber: (nr.header as any)?.policyNumber,
               carrierCode: (nr.header as any)?.carrierCode,
@@ -214,8 +267,9 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
       totalRenewals: allRenewals.length,
       uniqueRenewals: unique.length,
       duplicatesRemoved,
+      baselinesStored: totalBaselinesStored,
       nonRenewalsArchived: totalArchived,
-    }, 'Renewals filtered and non-renewals archived');
+    }, 'Transactions partitioned: renewals, baselines, archived');
 
     // Update batch stats
     await patchBatch(batchId, {
@@ -225,6 +279,7 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
       duplicatesRemoved,
       totalCandidatesCreated: unique.length,
       totalArchivedTransactions: totalArchived,
+      totalBaselinesStored,
     });
 
     // Create candidate records and queue individual processing
@@ -334,26 +389,56 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
     // Update candidate status and snapshot
     await patchCandidate(candidateId, { status: 'comparing', renewalSnapshot });
 
-    // Use early-captured baseline if available, otherwise fetch fresh
-    // Early capture preserves current term data before HawkSoft syncs update the policy
+    // Baseline lookup priority:
+    // 1. AL3 baseline from renewal_baselines table (prior-term AL3 = best match)
+    // 2. Early-captured HawkSoft baseline (captured at candidate creation)
+    // 3. HawkSoft API fallback (for older candidates without early capture)
     let baselineData: {
       success: boolean;
       snapshot?: Record<string, any>;
       policyId?: string;
       customerId?: string;
-    };
+    } = { success: false };
+    let baselineSource: 'al3_baseline' | 'hawksoft_early' | 'hawksoft_api' | 'none' = 'none';
 
-    if (candidate.baselineSnapshot && candidate.baselineCapturedAt) {
-      // Use early-captured baseline
-      logger.info({ candidateId, capturedAt: candidate.baselineCapturedAt }, 'Using early-captured baseline');
+    // 1. Try AL3 baseline first
+    try {
+      const al3BaselineRes = await internalFetch(
+        `/api/renewals/internal/baselines?tenantId=${tenantId}&carrierCode=${encodeURIComponent(candidate.carrierCode || '')}&policyNumber=${encodeURIComponent(candidate.policyNumber || '')}&beforeDate=${encodeURIComponent(candidate.effectiveDate || '')}`
+      );
+      const al3BaselineData = await al3BaselineRes.json() as {
+        success: boolean;
+        baseline?: { snapshot: Record<string, any>; policyId?: string; customerId?: string };
+      };
+      if (al3BaselineData.success && al3BaselineData.baseline?.snapshot) {
+        logger.info({ candidateId }, 'Using AL3 baseline (prior-term)');
+        baselineData = {
+          success: true,
+          snapshot: al3BaselineData.baseline.snapshot,
+          policyId: al3BaselineData.baseline.policyId || candidate.policyId,
+          customerId: al3BaselineData.baseline.customerId || candidate.customerId,
+        };
+        baselineSource = 'al3_baseline';
+      }
+    } catch (err) {
+      logger.warn({ candidateId, error: err }, 'AL3 baseline lookup failed, falling back');
+    }
+
+    // 2. Fallback: early-captured HawkSoft baseline
+    if (baselineSource === 'none' && candidate.baselineSnapshot && candidate.baselineCapturedAt) {
+      logger.info({ candidateId, capturedAt: candidate.baselineCapturedAt }, 'Using early-captured HawkSoft baseline');
       baselineData = {
         success: true,
         snapshot: candidate.baselineSnapshot,
         policyId: candidate.policyId,
         customerId: candidate.customerId,
       };
-    } else {
-      // Fallback: Fetch HawkSoft baseline via internal API (for older candidates)
+      baselineSource = 'hawksoft_early';
+    }
+
+    // 3. Fallback: HawkSoft API
+    if (baselineSource === 'none') {
+      logger.info({ candidateId }, 'Fetching HawkSoft baseline via API');
       const baselineRes = await internalFetch('/api/renewals/internal/baseline', {
         method: 'POST',
         body: JSON.stringify({
@@ -364,6 +449,9 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
         }),
       });
       baselineData = await baselineRes.json() as typeof baselineData;
+      if (baselineData.success && baselineData.snapshot) {
+        baselineSource = 'hawksoft_api';
+      }
     }
 
     if (!baselineData.success || !baselineData.snapshot) {
@@ -461,8 +549,11 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
         materialChanges: comparisonResult.materialChanges,
         comparisonSummary: {
           ...comparisonResult.summary,
-          baselineStatus: comparisonResult.baselineStatus,
-          baselineStatusReason: comparisonResult.baselineStatusReason,
+          baselineSource,
+          baselineStatus: baselineSource === 'al3_baseline' ? 'prior_term' : comparisonResult.baselineStatus,
+          baselineStatusReason: baselineSource === 'al3_baseline'
+            ? 'Baseline from prior-term AL3 file (apples-to-apples)'
+            : comparisonResult.baselineStatusReason,
         },
         checkResults: compareData.checkEngineResult?.checkResults || null,
         checkSummary: compareData.checkSummary || null,
@@ -502,6 +593,48 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
       );
     }
 
+    throw error;
+  }
+}
+
+// =============================================================================
+// BATCH COMPLETION CHECK
+// =============================================================================
+
+// =============================================================================
+// CHECK NON-AL3 RENEWALS (daily scan for policies without AL3 baselines)
+// =============================================================================
+
+async function checkNonAL3Renewals(): Promise<void> {
+  logger.info('Running non-AL3 renewal check');
+
+  try {
+    const res = await internalFetch('/api/renewals/internal/check-non-al3', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    const data = await res.json() as {
+      success: boolean;
+      created?: number;
+      skippedBaseline?: number;
+      skippedExisting?: number;
+      totalChecked?: number;
+      error?: string;
+    };
+
+    if (!data.success) {
+      throw new Error(data.error || 'check-non-al3 API returned failure');
+    }
+
+    logger.info({
+      created: data.created,
+      skippedBaseline: data.skippedBaseline,
+      skippedExisting: data.skippedExisting,
+      totalChecked: data.totalChecked,
+    }, 'Non-AL3 renewal check complete');
+  } catch (error) {
+    logger.error({ error }, 'Non-AL3 renewal check failed');
     throw error;
   }
 }

@@ -10,6 +10,7 @@ import ClaimsAgingSection from './ClaimsAgingSection';
 import AIAnalysisSection from './AIAnalysisSection';
 import PropertyViewerCard from './PropertyViewerCard';
 import PublicRecordsCard from './PublicRecordsCard';
+import RenewalPdfUpload from './RenewalPdfUpload';
 import type { RenewalComparisonDetail } from './types';
 import type { CheckResult, CheckSummary } from '@/types/check-rules.types';
 import type { MaterialChange, ComparisonSummary, CanonicalClaim } from '@/types/renewal.types';
@@ -31,6 +32,8 @@ interface CenterColumnProps {
   publicData: Record<string, any> | null;
   riskData: Record<string, any> | null;
   verificationSources: { rpr: boolean; propertyApi: boolean; nearmap: boolean; orion180: boolean } | null;
+  // Refresh callback for PDF upload flow
+  onRefresh?: () => void;
 }
 
 export default function CenterColumn({
@@ -49,10 +52,23 @@ export default function CenterColumn({
   publicData,
   riskData,
   verificationSources,
+  onRefresh,
 }: CenterColumnProps) {
+  const isPendingManualRenewal = detail.status === 'pending_manual_renewal';
+
   return (
     <div className="flex-1 min-w-0 overflow-y-auto bg-gray-50 pb-24">
       <div className="p-5 space-y-5 max-w-4xl mx-auto">
+        {/* PDF Upload Section for non-AL3 renewals */}
+        {isPendingManualRenewal && (
+          <RenewalPdfUpload
+            renewalId={renewalId}
+            hasRenewalSnapshot={!!detail.renewalSnapshot}
+            onUploadComplete={() => onRefresh?.()}
+            onComparisonComplete={() => onRefresh?.()}
+          />
+        )}
+
         {/* AI Analysis */}
         <AIAnalysisSection
           comparisonSummary={comparisonSummary}

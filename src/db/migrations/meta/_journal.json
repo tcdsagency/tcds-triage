@@ -78,6 +78,20 @@
       "when": 1771188949374,
       "tag": "0010_hard_celestials",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1771263396357,
+      "tag": "0011_purple_caretaker",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1771284876621,
+      "tag": "0012_serious_grim_reaper",
+      "breakpoints": true
     }
   ]
 }

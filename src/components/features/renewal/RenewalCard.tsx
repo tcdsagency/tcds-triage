@@ -40,7 +40,10 @@ export default function RenewalCard({ renewal, onClick }: RenewalCardProps) {
     reshop: { label: 'Reshop', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', border: 'border-l-red-500' },
     needs_review: { label: 'Review', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', border: 'border-l-amber-500' },
   };
-  const rec = renewal.recommendation ? recBadge[renewal.recommendation] : null;
+  const isPendingManualRenewal = renewal.status === 'pending_manual_renewal';
+  const rec = isPendingManualRenewal
+    ? { label: 'Needs Doc', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', border: 'border-l-purple-500' }
+    : renewal.recommendation ? recBadge[renewal.recommendation] : null;
 
   // Days until renewal
   const daysUntil = renewal.renewalEffectiveDate
