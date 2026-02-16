@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       const address1 = record.address1?.trim() || record.address?.trim();
       const city = record.city?.trim();
       const state = record.state?.trim()?.toUpperCase();
-      const zipCode = record.zipCode?.trim() || record.zip?.trim() || record.zip_code?.trim();
+      const zipCode = record.zipCode?.trim() || record.zipcode?.trim() || record.zip?.trim() || record.zip_code?.trim();
 
       if (!name) {
         results.errors.push(`Row ${rowNum}: Name is required`);
