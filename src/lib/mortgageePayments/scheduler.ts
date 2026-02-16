@@ -396,7 +396,10 @@ export class MortgageePaymentScheduler {
       .where(eq(properties.policyId, mortgagee.policyId))
       .limit(1);
 
-    const zipCode = property?.address?.zip || "";
+    // Address zip may be at top level or nested under street (HawkSoft sync variant)
+    const addr = property?.address as any;
+    const zipCode =
+      addr?.zip || addr?.street?.zip || "";
     const loanNumber = mortgagee.loanNumber || policy?.policyNumber || "";
 
     // Get customer last name for MCI lookup
@@ -434,6 +437,16 @@ export class MortgageePaymentScheduler {
       };
     }
 
+    console.log(
+      `[MortgageeScheduler] Checking ${mortgagee.name}: loan=${loanNumber}, zip=${zipCode}, lastName=${lastName}`
+    );
+
+    if (!zipCode || !lastName) {
+      console.warn(
+        `[MortgageeScheduler] Missing data for ${mortgagee.name}: zip=${zipCode}, lastName=${lastName}`
+      );
+    }
+
     // Create check record
     const [checkRecord] = await db
       .insert(mortgageePaymentChecks)
@@ -468,6 +481,28 @@ export class MortgageePaymentScheduler {
 
       const result = await response.json();
 
+      // Handle microservice validation errors (e.g. {error: "zip_code is required"})
+      if (!response.ok || result.error) {
+        const errMsg = result.error_message || result.error || `HTTP ${response.status}`;
+        console.error(`[MortgageeScheduler] Microservice error for ${mortgagee.name}: ${errMsg}`);
+        await db
+          .update(mortgageePaymentChecks)
+          .set({
+            status: "failed",
+            errorMessage: errMsg,
+            errorCode: result.error_code || `HTTP_${response.status}`,
+            completedAt: new Date(),
+          })
+          .where(eq(mortgageePaymentChecks.id, checkRecord.id));
+
+        return {
+          mortgageeId: mortgagee.id,
+          policyNumber: policy?.policyNumber || "",
+          success: false,
+          error: errMsg,
+        };
+      }
+
       // Update check record
       await db
         .update(mortgageePaymentChecks)
@@ -486,8 +521,8 @@ export class MortgageePaymentScheduler {
           mciReason: result.cancellation_reason,
           paymentScreenshotUrl: result.payment_screenshot_url || null,
           rawResponse: result.raw_data || result,
-          errorMessage: result.error_message,
-          errorCode: result.error_code,
+          errorMessage: result.error_message || result.error || null,
+          errorCode: result.error_code || null,
           completedAt: new Date(),
           durationMs: result.duration_ms,
         })
