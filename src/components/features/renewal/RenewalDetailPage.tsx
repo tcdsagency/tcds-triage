@@ -1,35 +1,19 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, FileDown, Loader2, Phone, Mail, Info } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
-import { useUser } from '@/hooks/useUser';
-import AZStatusBadge from './AZStatusBadge';
-import NotesPanel from './NotesPanel';
-import ReviewProgress from './ReviewProgress';
-import TalkPoints from './TalkPoints';
-import ReasonsForChange from './ReasonsForChange';
-import CoverageComparisonTable from './CoverageComparisonTable';
-import ClaimsAgingSection from './ClaimsAgingSection';
-import DeductiblesSection from './DeductiblesSection';
-import DiscountPills from './DiscountPills';
-import ReviewActionBar from './ReviewActionBar';
-import CrossSellSection from './CrossSellSection';
-import { MortgageePaymentStatus } from '../MortgageePaymentStatus';
-import PremiumChangeSummary from './PremiumChangeSummary';
-import PropertyViewerCard from './PropertyViewerCard';
-import PublicRecordsCard from './PublicRecordsCard';
-import CustomerPoliciesSection from './CustomerPoliciesSection';
-import type { RenewalComparisonDetail, RenewalNote } from './types';
-import type { CheckResult } from '@/types/check-rules.types';
+import React from 'react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { useRenewalDetail } from '@/hooks/useRenewalDetail';
+import StickyHeader from './StickyHeader';
+import FixedBottomBar from './FixedBottomBar';
+import LeftSidebar from './LeftSidebar';
+import CenterColumn from './CenterColumn';
+import RightSidebar from './RightSidebar';
 
 interface RenewalDetailPageProps {
   renewalId: string;
 }
 
-// Error boundary to catch rendering crashes and show a helpful message instead of a blank page
+// Error boundary to catch rendering crashes
 class RenewalErrorBoundary extends React.Component<
   { children: React.ReactNode; renewalId: string },
   { hasError: boolean; error: Error | null }
@@ -85,227 +69,38 @@ export default function RenewalDetailPage({ renewalId }: RenewalDetailPageProps)
   );
 }
 
-type TabId = 'overview' | 'coverage' | 'property';
-
-function isHomeLob(lob: string | null): boolean {
-  const l = (lob || '').toLowerCase();
-  return l.includes('home') || l.includes('dwelling') ||
-    l.includes('ho3') || l.includes('ho5') || l.includes('dp3');
-}
-
 function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
-  const router = useRouter();
-  const { user } = useUser();
-  const userId = user?.id;
-  const userName = user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : undefined;
-
-  const [detail, setDetail] = useState<RenewalComparisonDetail | null>(null);
-  const [notes, setNotes] = useState<RenewalNote[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [notesLoading, setNotesLoading] = useState(false);
-  const [checkResults, setCheckResults] = useState<CheckResult[]>([]);
-  const [verificationLoading, setVerificationLoading] = useState(false);
-  const [mciPaymentData, setMciPaymentData] = useState<any>(null);
-  const [customerPolicies, setCustomerPolicies] = useState<any[]>([]);
-  const [publicData, setPublicData] = useState<Record<string, any> | null>(null);
-  const [riskData, setRiskData] = useState<Record<string, any> | null>(null);
-  const [verificationSources, setVerificationSources] = useState<{ rpr: boolean; propertyApi: boolean; nearmap: boolean; orion180: boolean } | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
-
-  // Fetch full detail
-  const fetchDetail = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/renewals/${renewalId}`);
-      if (!res.ok) {
-        console.error('Detail fetch error:', res.status);
-        return;
-      }
-      const data = await res.json();
-      if (data.success) {
-        setDetail(data.renewal);
-        setCheckResults(Array.isArray(data.renewal.checkResults) ? data.renewal.checkResults : []);
-        if (data.mciPaymentData) setMciPaymentData(data.mciPaymentData);
-      }
-    } catch (err) {
-      console.error('Error fetching renewal detail:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [renewalId]);
-
-  // Fetch notes
-  const fetchNotes = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/renewals/${renewalId}/notes`);
-      if (!res.ok) {
-        console.error('Notes fetch error:', res.status);
-        return;
-      }
-      const data = await res.json();
-      if (data.success) {
-        setNotes(data.notes);
-      }
-    } catch (err) {
-      console.error('Error fetching notes:', err);
-    }
-  }, [renewalId]);
-
-  useEffect(() => {
-    fetchDetail();
-    fetchNotes();
-  }, [fetchDetail, fetchNotes]);
-
-  // Fetch customer policies
-  useEffect(() => {
-    if (!detail?.customerId) return;
-    fetch(`/api/customers/${detail.customerId}/policies`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) setCustomerPolicies(data.policies || []);
-      })
-      .catch(console.error);
-  }, [detail?.customerId]);
-
-  // Property verification (home policies only)
-  useEffect(() => {
-    if (!detail) return;
-    if (!isHomeLob(detail.lineOfBusiness)) return;
-
-    setVerificationLoading(true);
-    fetch(`/api/renewals/${renewalId}/property-verification`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          if (data.verification?.checkResults?.length > 0) {
-            setCheckResults(prev => {
-              const nonPV = prev.filter((r: CheckResult) => !r.ruleId.startsWith('PV-'));
-              return [...nonPV, ...data.verification.checkResults];
-            });
-          }
-          if (data.verification?.publicData) {
-            setPublicData(data.verification.publicData);
-          }
-          if (data.verification?.sources) {
-            setVerificationSources(data.verification.sources);
-          }
-          if (data.verification?.riskData) {
-            setRiskData(data.verification.riskData);
-          }
-        }
-      })
-      .catch(console.error)
-      .finally(() => setVerificationLoading(false));
-  }, [detail, renewalId]);
-
-  // Handle agent decision
-  const handleDecision = async (decision: string, decisionNotes: string) => {
-    try {
-      if (!userId) {
-        toast.error('User profile not loaded — please refresh the page');
-        return;
-      }
-      const res = await fetch(`/api/renewals/${renewalId}/decide`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          decision,
-          notes: decisionNotes,
-          userId,
-          userName,
-        }),
-      });
-      if (!res.ok && res.status !== 409) {
-        toast.error('Failed to record decision');
-        return;
-      }
-      const data = await res.json();
-
-      if (data.success) {
-        toast.success(`Decision recorded: ${decision.replace(/_/g, ' ')}`);
-        await fetchDetail();
-        await fetchNotes();
-      } else if (res.status === 409) {
-        toast.error('Decision already recorded by another agent');
-        await fetchDetail();
-      } else {
-        toast.error(data.error || 'Failed to record decision');
-      }
-    } catch (err) {
-      console.error('Error recording decision:', err);
-      toast.error('Failed to record decision');
-    }
-  };
-
-  // Handle add note
-  const handleAddNote = async (content: string) => {
-    setNotesLoading(true);
-    try {
-      const res = await fetch(`/api/renewals/${renewalId}/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, userId, userName }),
-      });
-      if (!res.ok) {
-        console.error('Note post error:', res.status);
-        toast.error('Failed to save note');
-        return;
-      }
-      const data = await res.json();
-      if (data.success) {
-        await fetchNotes();
-      } else {
-        toast.error(data.error || 'Failed to save note');
-      }
-    } catch (err) {
-      console.error('Error adding note:', err);
-    } finally {
-      setNotesLoading(false);
-    }
-  };
-
-  // Handle check review toggle (optimistic update + PATCH)
-  const handleCheckReview = async (ruleId: string, field: string, reviewed: boolean) => {
-    setCheckResults(prev =>
-      prev.map(r =>
-        r.ruleId === ruleId && r.field === field
-          ? { ...r, reviewed, reviewedBy: reviewed ? (userName || userId || null) : null, reviewedAt: reviewed ? new Date().toISOString() : null }
-          : r
-      )
-    );
-
-    try {
-      const res = await fetch(`/api/renewals/${renewalId}/check-review`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ruleId, reviewed, reviewedBy: userName || userId }),
-      });
-      if (!res.ok) {
-        setCheckResults(prev =>
-          prev.map(r =>
-            r.ruleId === ruleId && r.field === field
-              ? { ...r, reviewed: !reviewed, reviewedBy: null, reviewedAt: null }
-              : r
-          )
-        );
-        toast.error('Failed to update review status');
-      }
-    } catch {
-      setCheckResults(prev =>
-        prev.map(r =>
-          r.ruleId === ruleId && r.field === field
-            ? { ...r, reviewed: !reviewed, reviewedBy: null, reviewedAt: null }
-            : r
-        )
-      );
-      toast.error('Failed to update review status');
-    }
-  };
-
-  // Download PDF report
-  const handleDownloadReport = () => {
-    window.open(`/api/renewals/${renewalId}/report`, '_blank');
-  };
+  const {
+    detail,
+    notes,
+    loading,
+    notesLoading,
+    checkResults,
+    verificationLoading,
+    mciPaymentData,
+    customerPolicies,
+    publicData,
+    riskData,
+    verificationSources,
+    isHome,
+    premiumChange,
+    checkSummary,
+    comparisonSummary,
+    materialChanges,
+    claims,
+    renewalDiscounts,
+    baselineDiscounts,
+    allMortgagees,
+    quotamationUrl,
+    reviewedCount,
+    totalReviewable,
+    reviewProgress,
+    handleDecision,
+    handleAddNote,
+    handleCheckReview,
+    handleDownloadReport,
+    router,
+  } = useRenewalDetail(renewalId);
 
   if (loading) {
     return (
@@ -330,571 +125,75 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
     );
   }
 
-  const current = detail;
-  const premiumChange = current.premiumChangePercent ?? 0;
-  const checkSummary = current.checkSummary ?? null;
-  const comparisonSummary = current.comparisonSummary ?? null;
-  const materialChanges = Array.isArray(current.materialChanges) ? current.materialChanges : [];
-
-  // Review progress
-  const reviewable = checkResults.filter(r => r.severity !== 'unchanged');
-  const reviewedCount = reviewable.filter(r => r.reviewed).length;
-  const reviewProgress = reviewable.length > 0
-    ? Math.round((reviewedCount / reviewable.length) * 100)
-    : 0;
-
-  // Claims from snapshots
-  const claims = detail.renewalSnapshot?.claims || detail.baselineSnapshot?.claims || [];
-  if (detail.renewalSnapshot && !Array.isArray(detail.renewalSnapshot.coverages)) {
-    detail.renewalSnapshot.coverages = [];
-  }
-  if (detail.baselineSnapshot && !Array.isArray(detail.baselineSnapshot.coverages)) {
-    detail.baselineSnapshot.coverages = [];
-  }
-
-  // Discounts
-  const renewalDiscounts = detail.renewalSnapshot?.discounts || [];
-  const baselineDiscounts = detail.baselineSnapshot?.discounts || [];
-
-  // Property context
-  const propertyContext = detail.baselineSnapshot?.propertyContext;
-  const isHome = isHomeLob(current.lineOfBusiness);
-
-  // Build Quotamation URL
-  const quotamationUrl = (() => {
-    const snap = detail.renewalSnapshot;
-    if (!snap?.insuredName) return undefined;
-    const nameParts = snap.insuredName.trim().split(/\s+/);
-    const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || '';
-    const lob = (current.lineOfBusiness || '').toLowerCase().includes('auto') ? 'auto' : 'home';
-    const params = new URLSearchParams();
-    if (firstName) params.set('firstName', firstName);
-    if (lastName) params.set('lastName', lastName);
-    if (snap.insuredAddress) params.set('address', snap.insuredAddress);
-    if (snap.insuredCity) params.set('city', snap.insuredCity);
-    if (snap.insuredState) params.set('state', snap.insuredState);
-    if (snap.insuredZip) params.set('zip', snap.insuredZip);
-    params.set('lob', lob);
-    if (current.carrierName) params.set('currentCarrier', current.carrierName);
-    if (current.renewalPremium) params.set('currentPremium', String(current.renewalPremium));
-    return `https://quote.quotamation.com/direct-quote/TCDSInsuranceAgency?${params.toString()}`;
-  })();
-
-  const premiumColor =
-    premiumChange < 0
-      ? 'text-green-600 dark:text-green-400'
-      : premiumChange <= 5
-        ? 'text-yellow-600 dark:text-yellow-400'
-        : premiumChange <= 15
-          ? 'text-orange-600 dark:text-orange-400'
-          : 'text-red-600 dark:text-red-400';
-
-  const fmtPremium = (val: number | null | undefined) =>
-    val != null ? `$${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '-';
-
-  // Tabs config
-  const tabs: { id: TabId; label: string; hidden?: boolean }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'coverage', label: 'Coverage' },
-    { id: 'property', label: 'Property', hidden: !isHome },
-  ];
-
-  // Mortgagees (deduplicated)
-  const allMortgagees = [...(detail.renewalSnapshot?.mortgagees || []), ...(detail.baselineSnapshot?.mortgagees || [])]
-    .filter((m, i, arr) => arr.findIndex(x => x.name === m.name) === i);
-
   return (
     <div className="-my-6 -mx-4 sm:-mx-6 lg:-mx-8">
-      {/* ==================== STICKY HEADER ==================== */}
-      <div className="sticky top-0 z-30 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-        {/* Back link */}
-        <button
-          onClick={() => router.push('/renewal-review')}
-          className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 mb-3 transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Renewals
-        </button>
+      {/* Sticky Header */}
+      <StickyHeader
+        detail={detail}
+        premiumChange={premiumChange}
+        onBack={() => router.push('/renewal-review')}
+        onDownloadReport={handleDownloadReport}
+      />
 
-        <div className="flex items-start justify-between mb-1">
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
-              {current.customerName || 'Unknown Customer'}
-            </h2>
-            <div className="flex items-center gap-2 mt-1 text-base text-gray-500 dark:text-gray-400">
-              <span>{current.policyNumber}</span>
-              <span className="text-gray-300 dark:text-gray-600">|</span>
-              <span>{current.carrierName || 'Unknown Carrier'}</span>
-              {current.lineOfBusiness && (
-                <>
-                  <span className="text-gray-300 dark:text-gray-600">|</span>
-                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-sm">
-                    {current.lineOfBusiness}
-                  </span>
-                </>
-              )}
-            </div>
-            {/* Customer Contact */}
-            {(current.customerPhone || current.customerEmail) && (
-              <div className="flex items-center gap-4 mt-2 text-sm">
-                {current.customerPhone && (
-                  <a
-                    href={`tel:${current.customerPhone}`}
-                    className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    <Phone className="h-4 w-4" />
-                    {current.customerPhone}
-                  </a>
-                )}
-                {current.customerEmail && (
-                  <a
-                    href={`mailto:${current.customerEmail}`}
-                    className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    <Mail className="h-4 w-4" />
-                    {current.customerEmail}
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+      {/* 3-Column Layout */}
+      <div className="h-[calc(100vh-10rem)] flex flex-col lg:flex-row">
+        {/* Left Sidebar */}
+        <LeftSidebar
+          detail={detail}
+          isHome={isHome}
+          allMortgagees={allMortgagees}
+          mciPaymentData={mciPaymentData}
+          customerPolicies={customerPolicies}
+        />
 
-        {/* Premium flow + AZ Status */}
-        <div className="flex items-center justify-between mt-3">
-          <AZStatusBadge
-            status={current.status}
-            agencyzoomSrId={current.agencyzoomSrId}
-          />
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <span className="text-xs uppercase text-gray-400 block">Current</span>
-              <span className="text-base text-gray-500 dark:text-gray-400">
-                {fmtPremium(current.currentPremium)}
-              </span>
-            </div>
-            <span className="text-gray-400 text-lg">&rarr;</span>
-            <div className="text-right">
-              <span className="text-xs uppercase text-gray-400 block">Renewal</span>
-              <span className={cn('text-xl font-bold', premiumColor)}>
-                {fmtPremium(current.renewalPremium)}
-              </span>
-            </div>
-            {current.premiumChangeAmount != null && (
-              <span className={cn('text-base font-semibold px-2 py-1 rounded-md', premiumColor,
-                premiumChange < 0 ? 'bg-green-50 dark:bg-green-900/20' :
-                premiumChange <= 5 ? 'bg-yellow-50 dark:bg-yellow-900/20' :
-                premiumChange <= 15 ? 'bg-orange-50 dark:bg-orange-900/20' :
-                'bg-red-50 dark:bg-red-900/20'
-              )}>
-                {premiumChange > 0 ? '+' : ''}{premiumChange.toFixed(1)}% ({premiumChange > 0 ? '+' : ''}${Math.abs(current.premiumChangeAmount).toFixed(0)})
-              </span>
-            )}
-          </div>
-        </div>
+        {/* Center Column */}
+        <CenterColumn
+          detail={detail}
+          renewalId={renewalId}
+          checkResults={checkResults}
+          checkSummary={checkSummary}
+          comparisonSummary={comparisonSummary}
+          materialChanges={materialChanges}
+          claims={claims}
+          renewalDiscounts={renewalDiscounts}
+          baselineDiscounts={baselineDiscounts}
+          isHome={isHome}
+          onReviewToggle={handleCheckReview}
+          verificationLoading={verificationLoading}
+          publicData={publicData}
+          riskData={riskData}
+          verificationSources={verificationSources}
+        />
+
+        {/* Right Sidebar */}
+        <RightSidebar
+          checkResults={checkResults}
+          checkSummary={checkSummary}
+          comparisonSummary={comparisonSummary}
+          materialChanges={materialChanges}
+          claims={claims}
+          notes={notes}
+          notesLoading={notesLoading}
+          onAddNote={handleAddNote}
+          customerPolicies={customerPolicies}
+          reviewedCount={reviewedCount}
+          totalReviewable={totalReviewable}
+          detail={detail}
+        />
       </div>
 
-      {/* ==================== BODY — 2-column ==================== */}
-      <div className="h-[calc(100vh-16rem)] flex flex-col lg:flex-row">
-        {/* ============ MAIN CONTENT (flex-1, tabbed) ============ */}
-        <div className="flex-1 min-w-0 flex flex-col bg-gray-50 dark:bg-gray-900">
-          {/* Tab bar */}
-          <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-5">
-            <nav className="flex gap-6" aria-label="Tabs">
-              {tabs.filter(t => !t.hidden).map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    'py-3 text-sm font-medium border-b-2 transition-colors',
-                    activeTab === tab.id
-                      ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
-                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-          </div>
-
-          {/* Tab content — uses hidden/block for scroll position preservation */}
-          <div className="flex-1 overflow-y-auto">
-            {/* ===== Overview Tab ===== */}
-            <div className={activeTab === 'overview' ? 'block p-5 space-y-5' : 'hidden'}>
-              <TalkPoints
-                checkResults={checkResults}
-                materialChanges={materialChanges}
-                comparisonSummary={comparisonSummary}
-              />
-
-              <PremiumChangeSummary
-                checkResults={checkResults}
-                materialChanges={materialChanges}
-                renewalSnapshot={detail.renewalSnapshot ?? null}
-                baselineSnapshot={detail.baselineSnapshot ?? null}
-                premiumChangePercent={current.premiumChangePercent ?? null}
-                premiumChangeAmount={current.premiumChangeAmount ?? null}
-                lineOfBusiness={current.lineOfBusiness ?? null}
-              />
-
-              {/* Baseline status banners */}
-              {!detail.baselineSnapshot && (
-                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 flex items-start gap-2.5">
-                  <Info className="h-4 w-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-sm text-amber-700 dark:text-amber-300">
-                    No baseline policy found — comparison data unavailable. Premium change shown is renewal-only.
-                  </p>
-                </div>
-              )}
-              {comparisonSummary?.baselineStatus === 'current_term' && (
-                <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 flex items-start gap-2.5">
-                  <Info className="h-4 w-4 text-blue-500 dark:text-blue-400 shrink-0 mt-0.5" />
-                  <p className="text-sm text-blue-700 dark:text-blue-300">
-                    Baseline was captured from current term — changes may not reflect prior term differences.
-                  </p>
-                </div>
-              )}
-
-              {checkResults.length > 0 && (
-                <ReasonsForChange
-                  checkResults={checkResults}
-                  checkSummary={checkSummary}
-                  onReviewToggle={handleCheckReview}
-                />
-              )}
-            </div>
-
-            {/* ===== Coverage Tab ===== */}
-            <div className={activeTab === 'coverage' ? 'block p-5 space-y-5' : 'hidden'}>
-              <CoverageComparisonTable
-                renewalSnapshot={detail.renewalSnapshot ?? null}
-                baselineSnapshot={detail.baselineSnapshot ?? null}
-              />
-
-              <DeductiblesSection
-                renewalSnapshot={detail.renewalSnapshot ?? null}
-                baselineSnapshot={detail.baselineSnapshot ?? null}
-              />
-
-              <DiscountPills discounts={renewalDiscounts} baselineDiscounts={baselineDiscounts} />
-
-              {claims.length > 0 && (
-                <ClaimsAgingSection claims={claims} />
-              )}
-
-              <CrossSellSection policies={customerPolicies} />
-            </div>
-
-            {/* ===== Property Tab (home only) ===== */}
-            {isHome && (
-              <div className={activeTab === 'property' ? 'block p-5 space-y-5' : 'hidden'}>
-                <PropertyViewerCard
-                  renewalId={renewalId}
-                  lineOfBusiness={current.lineOfBusiness ?? null}
-                  address={{
-                    street: detail.renewalSnapshot?.insuredAddress,
-                    city: detail.renewalSnapshot?.insuredCity,
-                    state: detail.renewalSnapshot?.insuredState,
-                    zip: detail.renewalSnapshot?.insuredZip,
-                  }}
-                />
-
-                {verificationLoading && (
-                  <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Verifying property against public records...
-                  </div>
-                )}
-
-                <PublicRecordsCard
-                  publicData={publicData}
-                  riskData={riskData}
-                  sources={verificationSources}
-                  lineOfBusiness={current.lineOfBusiness ?? null}
-                />
-
-                {/* Property Details from snapshot */}
-                {propertyContext && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                    <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                      Property Details
-                    </h4>
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm text-gray-700 dark:text-gray-300">
-                      {propertyContext.yearBuilt && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Year Built</span>
-                          <span className="font-medium">{propertyContext.yearBuilt}</span>
-                        </div>
-                      )}
-                      {propertyContext.squareFeet && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Sq Ft</span>
-                          <span className="font-medium">{propertyContext.squareFeet.toLocaleString()}</span>
-                        </div>
-                      )}
-                      {propertyContext.constructionType && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Construction</span>
-                          <span className="font-medium">{propertyContext.constructionType}</span>
-                        </div>
-                      )}
-                      {propertyContext.roofType && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Roof Type</span>
-                          <span className="font-medium">{propertyContext.roofType}</span>
-                        </div>
-                      )}
-                      {propertyContext.roofAge != null && (
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">Roof Age</span>
-                          <span className="font-medium">{propertyContext.roofAge} years</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Mortgagees */}
-                {allMortgagees.length > 0 && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                    <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                      Mortgagees
-                    </h4>
-                    <div className="space-y-2">
-                      {allMortgagees.map((m) => (
-                        <div key={m.name} className="text-sm text-gray-700 dark:text-gray-300">
-                          <div className="flex items-center gap-1.5">
-                            {m.type && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
-                                {m.type.replace('_', ' ')}
-                              </span>
-                            )}
-                            <span className="font-medium">{m.name}</span>
-                          </div>
-                          {m.loanNumber && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                              Loan: {m.loanNumber}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* MCI Payment Status */}
-                {detail.policyId && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                    <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                      MCI Payment
-                    </h4>
-                    {mciPaymentData ? (
-                      <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300 mb-3">
-                        {mciPaymentData.paymentStatus && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Status</span>
-                            <span className={`font-medium px-1.5 py-0.5 rounded text-xs ${
-                              mciPaymentData.paymentStatus === 'current' ? 'bg-green-50 text-green-600' :
-                              mciPaymentData.paymentStatus === 'late' || mciPaymentData.paymentStatus === 'lapsed' ? 'bg-red-50 text-red-600' :
-                              'bg-gray-50 text-gray-600'
-                            }`}>
-                              {mciPaymentData.paymentStatus.replace(/_/g, ' ').toUpperCase()}
-                            </span>
-                          </div>
-                        )}
-                        {mciPaymentData.mciCarrier && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Carrier</span>
-                            <span className="font-medium">{mciPaymentData.mciCarrier}</span>
-                          </div>
-                        )}
-                        {mciPaymentData.premiumAmount != null && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Premium</span>
-                            <span className="font-medium">${mciPaymentData.premiumAmount.toLocaleString()}</span>
-                          </div>
-                        )}
-                        {mciPaymentData.paidThroughDate && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Paid Through</span>
-                            <span className="font-medium">{new Date(mciPaymentData.paidThroughDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                          </div>
-                        )}
-                        {mciPaymentData.mciEffectiveDate && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Effective</span>
-                            <span className="font-medium">{new Date(mciPaymentData.mciEffectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                          </div>
-                        )}
-                        {mciPaymentData.mciExpirationDate && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Expiration</span>
-                            <span className="font-medium">{new Date(mciPaymentData.mciExpirationDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                          </div>
-                        )}
-                        {mciPaymentData.lastCheckedAt && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Last Checked</span>
-                            <span className="text-xs text-gray-400">{new Date(mciPaymentData.lastCheckedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-400 mb-2">No MCI data available</p>
-                    )}
-                    <MortgageePaymentStatus policyId={detail.policyId} onCheckComplete={fetchDetail} />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ============ RIGHT PANEL (380px) ============ */}
-        <div className="lg:w-[380px] lg:shrink-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-4 bg-white dark:bg-gray-800">
-          {/* Review Progress */}
-          <ReviewProgress
-            checkSummary={checkSummary}
-            checkResults={checkResults}
-            materialChangesCount={materialChanges.length}
-          />
-
-          {/* Review Action Bar */}
-          <ReviewActionBar
-            renewalId={renewalId}
-            currentDecision={current.agentDecision}
-            status={current.status}
-            onDecision={handleDecision}
-            reviewProgress={reviewProgress}
-            reviewedCount={reviewedCount}
-            totalReviewable={reviewable.length}
-            materialChangesCount={materialChanges.length}
-            quotamationUrl={quotamationUrl}
-          />
-
-          {/* Agent Decision (if already decided) */}
-          {current.agentDecision && (
-            <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
-              <h4 className="text-xs font-medium text-indigo-500 dark:text-indigo-400 uppercase mb-1">
-                Agent Decision
-              </h4>
-              <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
-                {current.agentDecision.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-              </p>
-              {current.agentDecisionByName && (
-                <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-0.5">
-                  by {current.agentDecisionByName}
-                  {current.agentDecisionAt &&
-                    ` on ${new Date(current.agentDecisionAt).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })}`}
-                </p>
-              )}
-              {current.agentNotes && (
-                <p className="text-sm text-indigo-600 dark:text-indigo-300 mt-2 italic">
-                  &ldquo;{current.agentNotes}&rdquo;
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Notes Panel */}
-          <NotesPanel
-            notes={notes}
-            onAddNote={handleAddNote}
-            loading={notesLoading}
-          />
-
-          {/* Download Report */}
-          <button
-            onClick={handleDownloadReport}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-base"
-          >
-            <FileDown className="h-4 w-4" />
-            Download Report
-          </button>
-
-          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-            {/* Policy Details */}
-            <div className="mb-4">
-              <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                Policy Details
-              </h4>
-              <div className="space-y-1.5 text-sm text-gray-700 dark:text-gray-300">
-                {current.carrierName && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Carrier</span>
-                    <span className="font-medium">{current.carrierName}</span>
-                  </div>
-                )}
-                {current.lineOfBusiness && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">LOB</span>
-                    <span className="font-medium">{current.lineOfBusiness}</span>
-                  </div>
-                )}
-                {current.policyNumber && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Policy #</span>
-                    <span className="font-medium">{current.policyNumber}</span>
-                  </div>
-                )}
-                {current.renewalEffectiveDate && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Effective</span>
-                    <span className="font-medium">
-                      {new Date(current.renewalEffectiveDate).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Customer Policies */}
-            <CustomerPoliciesSection
-              policies={customerPolicies}
-              currentPolicyId={detail.policyId}
-            />
-
-            {/* Mortgagees in right panel for auto policies */}
-            {!isHome && allMortgagees.length > 0 && (
-              <div className="mt-4">
-                <h4 className="text-sm font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">
-                  Mortgagees
-                </h4>
-                <div className="space-y-2">
-                  {allMortgagees.map((m) => (
-                    <div key={m.name} className="text-sm text-gray-700 dark:text-gray-300">
-                      <div className="flex items-center gap-1.5">
-                        {m.type && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
-                            {m.type.replace('_', ' ')}
-                          </span>
-                        )}
-                        <span className="font-medium">{m.name}</span>
-                      </div>
-                      {m.loanNumber && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          Loan: {m.loanNumber}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      {/* Fixed Bottom Bar */}
+      <FixedBottomBar
+        renewalId={renewalId}
+        currentDecision={detail.agentDecision}
+        status={detail.status}
+        onDecision={handleDecision}
+        reviewProgress={reviewProgress}
+        reviewedCount={reviewedCount}
+        totalReviewable={totalReviewable}
+        materialChangesCount={materialChanges.length}
+        quotamationUrl={quotamationUrl}
+      />
     </div>
   );
 }

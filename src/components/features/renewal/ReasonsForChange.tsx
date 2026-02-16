@@ -127,8 +127,13 @@ export default function ReasonsForChange({
                 )}
               </div>
 
-              {/* Badges */}
+              {/* Impact + Badges */}
               <div className="flex items-center gap-2 shrink-0">
+                {result.change && result.change !== 'No change' && (
+                  <span className="text-xs font-medium text-gray-500 tabular-nums">
+                    {result.change}
+                  </span>
+                )}
                 <SeverityBadge severity={result.severity} compact />
                 <CategoryBadge category={result.category} />
               </div>

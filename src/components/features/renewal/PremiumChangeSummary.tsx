@@ -21,6 +21,18 @@ interface PremiumChangeSummaryProps {
   lineOfBusiness: string | null;
 }
 
+function fmtPremium(val: number | null | undefined) {
+  return val != null ? `$${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '-';
+}
+
+function getSeverityColor(pct: number) {
+  if (pct > 20) return { text: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' };
+  if (pct > 10) return { text: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' };
+  if (pct > 0) return { text: 'text-yellow-600', bg: 'bg-yellow-50', border: 'border-yellow-200' };
+  if (pct < 0) return { text: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' };
+  return { text: 'text-gray-600', bg: 'bg-gray-50', border: 'border-gray-200' };
+}
+
 export default function PremiumChangeSummary({
   checkResults,
   materialChanges,
@@ -41,8 +53,8 @@ export default function PremiumChangeSummary({
   );
 
   const pct = premiumChangePercent ?? 0;
+  const severity = getSeverityColor(pct);
 
-  // Border color: green=decrease, red=increase>15%, amber=moderate
   const borderColor =
     pct < 0
       ? 'border-l-green-500'
@@ -54,29 +66,59 @@ export default function PremiumChangeSummary({
 
   const bgColor =
     pct < 0
-      ? 'bg-green-50 dark:bg-green-900/10'
+      ? 'bg-green-50'
       : pct > 15
-        ? 'bg-red-50 dark:bg-red-900/10'
+        ? 'bg-red-50'
         : pct > 0
-          ? 'bg-amber-50 dark:bg-amber-900/10'
-          : 'bg-gray-50 dark:bg-gray-800';
+          ? 'bg-amber-50'
+          : 'bg-gray-50';
 
   const Icon = pct > 0 ? TrendingUp : pct < 0 ? TrendingDown : Minus;
   const iconColor =
     pct < 0
-      ? 'text-green-600 dark:text-green-400'
+      ? 'text-green-600'
       : pct > 15
-        ? 'text-red-600 dark:text-red-400'
+        ? 'text-red-600'
         : pct > 0
-          ? 'text-amber-600 dark:text-amber-400'
+          ? 'text-amber-600'
           : 'text-gray-500';
 
+  const currentPremium = baselineSnapshot?.premium ?? null;
+  const renewalPremium = renewalSnapshot?.premium ?? null;
+
   return (
-    <div className={cn('rounded-lg border border-l-4 p-4', borderColor, bgColor, 'border-gray-200 dark:border-gray-700')}>
+    <div className={cn('rounded-lg border border-l-4 p-4', borderColor, bgColor, 'border-gray-200')}>
+      {/* 3-box premium grid */}
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
+          <span className="text-[10px] uppercase text-gray-400 block mb-1">Prior Premium</span>
+          <span className="text-lg font-bold text-gray-700">{fmtPremium(currentPremium)}</span>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
+          <span className="text-[10px] uppercase text-gray-400 block mb-1">Renewal Premium</span>
+          <span className={cn('text-lg font-bold', severity.text)}>{fmtPremium(renewalPremium)}</span>
+        </div>
+        <div className={cn('rounded-lg border p-3 text-center', severity.bg, severity.border)}>
+          <span className="text-[10px] uppercase text-gray-400 block mb-1">Change</span>
+          <span className={cn('text-lg font-bold', severity.text)}>
+            {premiumChangeAmount != null ? (
+              <>
+                {pct > 0 ? '+' : ''}{pct.toFixed(1)}%
+              </>
+            ) : '-'}
+          </span>
+          {premiumChangeAmount != null && (
+            <span className={cn('block text-xs', severity.text)}>
+              {pct > 0 ? '+' : ''}${Math.abs(premiumChangeAmount).toFixed(0)}
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Summary line */}
       <div className="flex items-center gap-2 mb-2">
         <Icon className={cn('h-4 w-4 shrink-0', iconColor)} />
-        <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
+        <p className="text-sm font-semibold text-gray-900">
           {summaryLine}
         </p>
       </div>
@@ -87,7 +129,7 @@ export default function PremiumChangeSummary({
           <span
             key={`${reason.tag}-${i}`}
             className={cn(
-              'inline-flex items-center gap-1 text-sm font-medium px-2 py-0.5 rounded-full',
+              'inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full',
               REASON_COLORS[reason.color],
             )}
             title={reason.detail || undefined}

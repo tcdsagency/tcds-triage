@@ -1,0 +1,58 @@
+'use client';
+
+import { User, MapPin, Phone, Mail } from 'lucide-react';
+import type { RenewalComparisonDetail } from './types';
+import type { RenewalSnapshot } from '@/types/renewal.types';
+
+interface InsuredCardProps {
+  detail: RenewalComparisonDetail;
+  snapshot: RenewalSnapshot | null;
+}
+
+export default function InsuredCard({ detail, snapshot }: InsuredCardProps) {
+  const name = detail.customerName || snapshot?.insuredName || 'Unknown';
+  const address = [
+    snapshot?.insuredAddress,
+    snapshot?.insuredCity && snapshot?.insuredState
+      ? `${snapshot.insuredCity}, ${snapshot.insuredState} ${snapshot.insuredZip || ''}`
+      : null,
+  ].filter(Boolean).join('\n');
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <h4 className="text-xs font-semibold uppercase text-gray-400 mb-3 flex items-center gap-1.5">
+        <User className="h-3.5 w-3.5" />
+        Insured
+      </h4>
+      <p className="text-sm font-semibold text-gray-900 mb-1" style={{ fontFamily: 'var(--font-heading)' }}>
+        {name}
+      </p>
+      {address && (
+        <div className="flex items-start gap-1.5 text-xs text-gray-500 mb-2">
+          <MapPin className="h-3 w-3 mt-0.5 shrink-0" />
+          <span className="whitespace-pre-line">{address}</span>
+        </div>
+      )}
+      <div className="space-y-1">
+        {detail.customerPhone && (
+          <a
+            href={`tel:${detail.customerPhone}`}
+            className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline"
+          >
+            <Phone className="h-3 w-3" />
+            {detail.customerPhone}
+          </a>
+        )}
+        {detail.customerEmail && (
+          <a
+            href={`mailto:${detail.customerEmail}`}
+            className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline"
+          >
+            <Mail className="h-3 w-3" />
+            {detail.customerEmail}
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}

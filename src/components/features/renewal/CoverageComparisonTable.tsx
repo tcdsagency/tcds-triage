@@ -450,7 +450,7 @@ export default function CoverageComparisonTable({
   renewalSnapshot,
   baselineSnapshot,
 }: CoverageComparisonTableProps) {
-  const [changesOnly, setChangesOnly] = useState(true);
+  const [changesOnly, setChangesOnly] = useState(false);
 
   if (!renewalSnapshot && !baselineSnapshot) return null;
 
