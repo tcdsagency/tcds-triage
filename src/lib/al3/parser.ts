@@ -470,9 +470,22 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
       }
 
       // Deductible: shorter numeric segment after limit is found
+      // Exclude date-like values (YYYYMMDD or truncated dates like 2026030)
+      // For split-limit coverages (BI, UM), the next number after limit is per-accident limit, not deductible
       if (deductibleAmount === undefined && limitAmount !== undefined && /^\d{4,8}$/.test(d)) {
         const val = parseInt(d, 10);
-        if (val > 0 && val !== limitAmount) {
+        // Filter out values that look like dates (20YYMMDD range)
+        const isDateLike = /^20[2-3]\d[01]\d[0-3]?\d?$/.test(d) && d.length >= 7;
+        // For split-limit types (BI, UM), second numeric value is per-accident limit, not deductible
+        const splitTypes = new Set(['BI', 'UM', 'UMBI', 'UMISP', 'UIM']);
+        const isSplitLimitType = splitTypes.has(code.toUpperCase());
+        if (isSplitLimitType && val > 0 && !limitStr?.includes('/')) {
+          // Treat as per-accident portion of split limit
+          limitStr = `${limitAmount}/${val}`;
+          // limitAmount stays as per-person for numeric comparison
+          continue;
+        }
+        if (val > 0 && val !== limitAmount && !isDateLike) {
           deductibleAmount = val;
           deductibleStr = d;
         }
@@ -1414,10 +1427,13 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
     if (!header.lineOfBusiness || header.lineOfBusiness === 'Umbrella' || header.lineOfBusiness === 'Personal Auto') {
       header.lineOfBusiness = 'Homeowners';
     }
-  } else if (uniqueCoverages.length > 0) {
+  } else if (uniqueCoverages.length > 0 || vehicles.length > 0) {
     const autoCodes = new Set(['BI', 'PD', 'COLL', 'COMP', 'UM', 'MEDPM', 'RREIM', 'TL', 'EXTCV']);
+    // Check both policy-level and vehicle-level coverages for auto codes
     const hasAutoCode = uniqueCoverages.some(c =>
       autoCodes.has(c.code.toUpperCase()) || autoCodes.has(c.description?.toUpperCase() || '')
+    ) || vehicles.some(v =>
+      v.coverages.some(c => autoCodes.has(c.code.toUpperCase()) || autoCodes.has(c.description?.toUpperCase() || ''))
     );
     if (hasAutoCode) {
       header.lineOfBusiness = 'Personal Auto';
@@ -1549,6 +1565,17 @@ function parseTransactionHeader(line: string): AL3TransactionHeader {
     }
   }
 
+  // Last resort: carrier code → carrier name fallback
+  // Some carriers (e.g., National General) don't put their name in the 2TRG
+  if (!header.carrierName && header.carrierCode) {
+    const CARRIER_CODE_FALLBACKS: Record<string, string> = {
+      '98': 'National General',
+    };
+    if (CARRIER_CODE_FALLBACKS[header.carrierCode]) {
+      header.carrierName = CARRIER_CODE_FALLBACKS[header.carrierCode];
+    }
+  }
+
   // Fallback: extract effective date via regex if position-based failed
   if (!header.effectiveDate) {
     // Look for YYYYMMDD dates in the line (2025-2027 range)
@@ -1633,8 +1660,11 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
     let displayLimit = limitStr || undefined;
     let finalLimitAmount = limitAmount;
     const upperCode = code.toUpperCase();
+    // Strip date suffix and whitespace from code for split limit detection
+    // e.g., "BI   260308" → "BI", "UM   260308" → "UM"
+    const baseCode = upperCode.replace(/[\s_]*\d{4,6}$/, '').trim();
     const splitLimitCodes = ['BI', 'UM', 'UMBI', 'UMISP', 'UIM'];
-    const isSplitLimit = splitLimitCodes.includes(upperCode);
+    const isSplitLimit = splitLimitCodes.includes(baseCode);
     if (isSplitLimit && limitStr && limitStr.length >= 7) {
       const rawLimit = limitStr.replace(/[^0-9]/g, '');
       if (rawLimit.length >= 7) {
@@ -1644,6 +1674,7 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
         const perAccident = parseInt(perAccidentPrefix + rawLimit2, 10);
         if (perPerson > 0) {
           displayLimit = perAccident > 0 ? `${perPerson}/${perAccident}` : `${perPerson}`;
+          finalLimitAmount = perPerson; // Use per-person amount for numeric comparison
         }
       }
     }
@@ -1655,7 +1686,7 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
     //   - Value divisible by 1000 with daily rate 20-100: daily*1000 encoding
     //   - Value < 200: raw daily amount
     //   - Value >= 200 but not fitting patterns: leave as-is (comparison will flag)
-    if ((upperCode === 'RREIM' || upperCode === 'RENT') && limitAmount) {
+    if ((baseCode === 'RREIM' || baseCode === 'RENT') && limitAmount) {
       if (limitAmount >= 1000 && limitAmount % 1000 === 0) {
         const daily = limitAmount / 1000;
         // Only apply heuristic for reasonable daily rates ($20-$100)
@@ -1676,7 +1707,7 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
     }
 
     // Clean non-split limit strings: strip leading zeros for readable display
-    if (displayLimit && !isSplitLimit && !(upperCode === 'RREIM' || upperCode === 'RENT')) {
+    if (displayLimit && !isSplitLimit && !(baseCode === 'RREIM' || baseCode === 'RENT')) {
       const numericOnly = displayLimit.replace(/[^0-9]/g, '');
       if (numericOnly.length > 0 && /^0+\d/.test(numericOnly)) {
         const cleaned = numericOnly.replace(/^0+/, '') || '0';

@@ -389,6 +389,10 @@ function compareCoverages(
     }
   }
 
+  // Sanity threshold: changes > 1000% are almost certainly parsing errors
+  // (e.g., split limits parsed as single numbers, dates in deductible fields)
+  const SANITY_CHANGE_PERCENT = 1000;
+
   // Compare matching coverages
   for (const [type, renewal] of renewalByType) {
     const baseline = baselineByType.get(type);
@@ -402,8 +406,13 @@ function compareCoverages(
         : 0;
 
       if (limitChange !== 0) {
+        // Sanity check: absurd % changes are likely parsing errors
+        const isLikelyParseError = Math.abs(limitChangePercent) > SANITY_CHANGE_PERCENT;
+
         let severity: ChangeSeverity;
-        if (limitChange < 0 && Math.abs(limitChangePercent) > thresholds.coverageLimitReductionPercent) {
+        if (isLikelyParseError) {
+          severity = 'non_material'; // Downgrade to non-material — don't alarm the agent
+        } else if (limitChange < 0 && Math.abs(limitChangePercent) > thresholds.coverageLimitReductionPercent) {
           severity = 'material_negative';
         } else if (limitChange > 0) {
           severity = 'material_positive';
@@ -413,14 +422,16 @@ function compareCoverages(
 
         changes.push({
           field: `coverage.${type}.limit`,
-          category: 'coverage_limit',
+          category: isLikelyParseError ? 'likely_parsing_error' : 'coverage_limit',
           classification: severity,
           oldValue: baseline.limitAmount,
           newValue: renewal.limitAmount,
           changeAmount: limitChange,
           changePercent: Math.round(limitChangePercent * 100) / 100,
           severity,
-          description: `${renewal.description || type} limit ${limitChange > 0 ? 'increased' : 'decreased'} by ${Math.abs(limitChangePercent).toFixed(1)}%`,
+          description: isLikelyParseError
+            ? `⚠ ${renewal.description || type} limit change (${Math.abs(limitChangePercent).toFixed(0)}%) likely a parsing error`
+            : `${renewal.description || type} limit ${limitChange > 0 ? 'increased' : 'decreased'} by ${Math.abs(limitChangePercent).toFixed(1)}%`,
         });
       }
     }
@@ -433,8 +444,13 @@ function compareCoverages(
         : 0;
 
       if (dedChange !== 0) {
+        // Sanity check: absurd % changes are likely parsing errors
+        const isLikelyParseError = Math.abs(dedChangePercent) > SANITY_CHANGE_PERCENT;
+
         let severity: ChangeSeverity;
-        if (dedChange > 0 && dedChangePercent > thresholds.deductibleIncreasePercent) {
+        if (isLikelyParseError) {
+          severity = 'non_material';
+        } else if (dedChange > 0 && dedChangePercent > thresholds.deductibleIncreasePercent) {
           severity = 'material_negative';
         } else if (dedChange < 0) {
           severity = 'material_positive';
@@ -444,14 +460,16 @@ function compareCoverages(
 
         changes.push({
           field: `coverage.${type}.deductible`,
-          category: 'deductible',
+          category: isLikelyParseError ? 'likely_parsing_error' : 'deductible',
           classification: severity,
           oldValue: baseline.deductibleAmount,
           newValue: renewal.deductibleAmount,
           changeAmount: dedChange,
           changePercent: Math.round(dedChangePercent * 100) / 100,
           severity,
-          description: `${renewal.description || type} deductible ${dedChange > 0 ? 'increased' : 'decreased'} by ${Math.abs(dedChangePercent).toFixed(1)}%`,
+          description: isLikelyParseError
+            ? `⚠ ${renewal.description || type} deductible change (${Math.abs(dedChangePercent).toFixed(0)}%) likely a parsing error`
+            : `${renewal.description || type} deductible ${dedChange > 0 ? 'increased' : 'decreased'} by ${Math.abs(dedChangePercent).toFixed(1)}%`,
         });
       }
     }

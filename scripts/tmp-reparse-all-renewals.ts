@@ -20,6 +20,7 @@ async function run() {
   const { parseAL3File } = await import('../src/lib/al3/parser');
   const { buildRenewalSnapshot } = await import('../src/lib/al3/snapshot-builder');
   const { compareSnapshots } = await import('../src/lib/al3/comparison-engine');
+  const { runCheckEngine, buildCheckSummary } = await import('../src/lib/al3/check-rules/check-engine');
 
   // Query ALL candidates that have raw AL3 content
   const candidates = await db.select().from(renewalCandidates)
@@ -51,6 +52,7 @@ async function run() {
       const snapshot = buildRenewalSnapshot(tx);
       const renewalSnapshot = { ...snapshot, sourceFileName: c.al3FileName } as any;
       const newCarrierName = tx.header.carrierName || c.carrierName;
+      const newLob = tx.header.lineOfBusiness || c.lineOfBusiness;
 
       // Compare old vs new coverage types
       const oldSnapshot = c.renewalSnapshot as any;
@@ -81,11 +83,13 @@ async function run() {
       if (oldTypes.size !== newTypes.size) changes.push(`types: ${oldTypes.size}→${newTypes.size}`);
       if (hasDwelling && !hadDwelling) changes.push('DWELLING NOW FOUND');
       if (c.carrierName !== newCarrierName) changes.push(`carrier: ${c.carrierName}→${newCarrierName}`);
+      if (c.lineOfBusiness !== newLob) changes.push(`LOB: ${c.lineOfBusiness}→${newLob}`);
 
       // Update the candidate record
       await db.update(renewalCandidates)
         .set({
           carrierName: newCarrierName,
+          lineOfBusiness: newLob,
           renewalSnapshot: renewalSnapshot,
         })
         .where(eq(renewalCandidates.id, c.id));
@@ -105,9 +109,20 @@ async function run() {
           c.effectiveDate?.toISOString()
         );
 
+        // Re-run check engine
+        const checkEngineResult = runCheckEngine(
+          renewalSnapshot,
+          baseline,
+          comparison,
+          newLob || '',
+          newCarrierName || ''
+        );
+        const checkSummary = buildCheckSummary(checkEngineResult);
+
         await db.update(renewalComparisons)
           .set({
             carrierName: newCarrierName,
+            lineOfBusiness: newLob,
             renewalSnapshot: renewalSnapshot,
             renewalPremium: snapshot.premium?.toString() || null,
             materialChanges: comparison.materialChanges as any,
@@ -115,6 +130,8 @@ async function run() {
             recommendation: comparison.recommendation,
             premiumChangeAmount: comparison.summary?.premiumChangeAmount?.toString() || null,
             premiumChangePercent: comparison.summary?.premiumChangePercent?.toString() || null,
+            checkResults: checkEngineResult.checkResults as any,
+            checkSummary: checkSummary as any,
           })
           .where(eq(renewalComparisons.id, c.comparisonId));
 

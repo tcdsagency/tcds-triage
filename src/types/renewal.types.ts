@@ -287,6 +287,7 @@ export type ChangeCategory =
   | 'mortgagee_added'
   | 'mortgagee_removed'
   | 'property'
+  | 'likely_parsing_error'
   | 'other';
 
 /**
