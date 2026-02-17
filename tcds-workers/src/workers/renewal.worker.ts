@@ -306,7 +306,7 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
         if (result.success && result.candidateId) {
           // Queue individual candidate processing
           const { renewalQueue } = await import('../queues');
-          await renewalQueue.add('process-candidate', {
+          await (renewalQueue as import('bullmq').Queue).add('process-candidate', {
             candidateId: result.candidateId,
             tenantId,
             batchId,

@@ -183,7 +183,6 @@ export const renewalQueue = new Queue<RenewalBatchJobData | RenewalCandidateJobD
       type: 'exponential' as const,
       delay: 10000, // Start at 10s
     },
-    timeout: 120000, // 2-minute job timeout — prevents worker hang on stalled API calls
   },
 });
 
@@ -257,7 +256,7 @@ export async function initializeScheduledJobs(): Promise<void> {
 
     // Non-AL3 Renewal Check - Daily at 6 AM Central
     // Finds active policies expiring within 45 days with no AL3 baseline
-    await renewalQueue.upsertJobScheduler(
+    await (renewalQueue as Queue).upsertJobScheduler(
       'check-non-al3-renewals-daily',
       { pattern: '0 6 * * *', tz: 'America/Chicago' },
       {
