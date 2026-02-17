@@ -16,99 +16,40 @@ export async function POST(request: NextRequest) {
     const client = getCoverTreeClient();
 
     switch (action) {
+      case 'getAutocompleteAddress': {
+        const { search } = params;
+        if (!search) {
+          return NextResponse.json({ success: true, addresses: [] });
+        }
+        const addresses = await client.getAutocompleteAddress(search);
+        return NextResponse.json({ success: true, addresses });
+      }
+
       case 'canOperateInState': {
         const { state } = params;
         if (!state) {
           return NextResponse.json({ success: false, error: 'Missing state' }, { status: 400 });
         }
-        const canOperate = await client.canOperateInState(state);
-        return NextResponse.json({ success: true, canOperate });
+        const result = await client.canOperateInState(state);
+        return NextResponse.json({ success: true, canOperate: result === 'Yes' });
+      }
+
+      case 'validateEmail': {
+        const { emailAddress } = params;
+        if (!emailAddress) {
+          return NextResponse.json({ success: false, error: 'Missing emailAddress' }, { status: 400 });
+        }
+        const isValid = await client.validateEmail(emailAddress);
+        return NextResponse.json({ success: true, isValid });
       }
 
       case 'getDynamicQuestions': {
-        const { state, effectiveDate, policyUsage } = params;
-        if (!state || !effectiveDate || !policyUsage) {
-          return NextResponse.json(
-            { success: false, error: 'Missing state, effectiveDate, or policyUsage' },
-            { status: 400 }
-          );
+        const { state } = params;
+        if (!state) {
+          return NextResponse.json({ success: false, error: 'Missing state' }, { status: 400 });
         }
-        const questions = await client.getDynamicQuestions(state, effectiveDate, policyUsage);
+        const questions = await client.getDynamicQuestions(state);
         return NextResponse.json({ success: true, questions });
-      }
-
-      case 'createQuote': {
-        const { policyInput, policyholderInput } = params;
-        if (!policyInput || !policyholderInput) {
-          return NextResponse.json(
-            { success: false, error: 'Missing policyInput or policyholderInput' },
-            { status: 400 }
-          );
-        }
-        const result = await client.createQuote(policyInput, policyholderInput);
-        return NextResponse.json({ success: true, ...result });
-      }
-
-      case 'selectPlan': {
-        const { quoteLocator } = params;
-        if (!quoteLocator) {
-          return NextResponse.json({ success: false, error: 'Missing quoteLocator' }, { status: 400 });
-        }
-        const result = await client.selectPlan(quoteLocator);
-        return NextResponse.json({ success: true, ...result });
-      }
-
-      case 'saveExtraCoverages': {
-        const { policyLocator, policyLevel, unitLevel } = params;
-        if (!policyLocator) {
-          return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
-        }
-        await client.saveExtraCoverages(
-          policyLocator,
-          policyLevel || {},
-          unitLevel || {}
-        );
-        return NextResponse.json({ success: true });
-      }
-
-      case 'updateUnderwritingAnswers': {
-        const { policyLocator, policyLevelUW, unitLevelUW } = params;
-        if (!policyLocator) {
-          return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
-        }
-        await client.updateUnderwritingAnswers(
-          policyLocator,
-          policyLevelUW || {},
-          unitLevelUW || {}
-        );
-        return NextResponse.json({ success: true });
-      }
-
-      case 'checkPriorClaims': {
-        const { policyLocator } = params;
-        if (!policyLocator) {
-          return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
-        }
-        const claimsResult = await client.checkPriorClaims(policyLocator);
-        return NextResponse.json({
-          success: true,
-          hasClaims: claimsResult.hasClaims,
-          canBind: claimsResult.canBind,
-          message: claimsResult.message,
-        });
-      }
-
-      case 'initiatePurchase': {
-        const { policyLocator } = params;
-        if (!policyLocator) {
-          return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
-        }
-        const purchaseResult = await client.initiatePurchase(policyLocator);
-        return NextResponse.json({
-          success: true,
-          policyNumber: purchaseResult.policyNumber,
-          message: purchaseResult.message,
-        });
       }
 
       case 'getManufacturers': {
@@ -120,6 +61,30 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, manufacturers });
       }
 
+      case 'createQuote': {
+        const { input, policyLocator } = params;
+        if (!input) {
+          return NextResponse.json(
+            { success: false, error: 'Missing input (CreateQuoteInput)' },
+            { status: 400 }
+          );
+        }
+        const result = await client.createQuote(input, policyLocator);
+        return NextResponse.json({ success: true, result });
+      }
+
+      case 'selectQuote': {
+        const { policyLocator, quoteLocator } = params;
+        if (!policyLocator || !quoteLocator) {
+          return NextResponse.json(
+            { success: false, error: 'Missing policyLocator or quoteLocator' },
+            { status: 400 }
+          );
+        }
+        const result = await client.selectQuote(policyLocator, quoteLocator);
+        return NextResponse.json({ success: true, result });
+      }
+
       case 'getExtraCoveragePrices': {
         const { policyLocator } = params;
         if (!policyLocator) {
@@ -127,6 +92,63 @@ export async function POST(request: NextRequest) {
         }
         const coverages = await client.getExtraCoveragePrices(policyLocator);
         return NextResponse.json({ success: true, coverages });
+      }
+
+      case 'saveExtraCoverages': {
+        const { policyLocator, input } = params;
+        if (!policyLocator) {
+          return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
+        }
+        const result = await client.saveExtraCoverages(policyLocator, input || {});
+        return NextResponse.json({ success: true, result });
+      }
+
+      case 'updateUnderwritingAnswers': {
+        const { policyLocator, input } = params;
+        if (!policyLocator) {
+          return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
+        }
+        const result = await client.updateUnderwritingAnswers(policyLocator, input || {});
+        return NextResponse.json({ success: true, result });
+      }
+
+      case 'checkAndAddPriorClaim': {
+        const { policyLocator, address } = params;
+        if (!policyLocator || !address) {
+          return NextResponse.json(
+            { success: false, error: 'Missing policyLocator or address' },
+            { status: 400 }
+          );
+        }
+        const result = await client.checkAndAddPriorClaim(policyLocator, address);
+        return NextResponse.json({ success: true, result });
+      }
+
+      case 'getPolicy': {
+        const { policyLocator } = params;
+        if (!policyLocator) {
+          return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
+        }
+        const policy = await client.getPolicy(policyLocator);
+        return NextResponse.json({ success: true, policy });
+      }
+
+      case 'getQuoteDocuments': {
+        const { policyLocator, paymentSchedule } = params;
+        if (!policyLocator) {
+          return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
+        }
+        const documents = await client.getQuoteDocuments(policyLocator, paymentSchedule || 'FullPay');
+        return NextResponse.json({ success: true, documents });
+      }
+
+      case 'search': {
+        const { query } = params;
+        if (!query) {
+          return NextResponse.json({ success: true, results: [] });
+        }
+        const results = await client.search(query);
+        return NextResponse.json({ success: true, results });
       }
 
       default:

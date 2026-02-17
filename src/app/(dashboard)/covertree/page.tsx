@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   TreePine,
   Search,
@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   X,
   Link2,
+  FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +36,7 @@ import CustomerSearchModal from '@/components/features/CustomerSearchModal';
 interface FormData {
   // Policyholder
   firstName: string;
+  middleName: string;
   lastName: string;
   email: string;
   phone: string;
@@ -48,28 +50,59 @@ interface FormData {
   propertyCity: string;
   propertyState: string;
   propertyZip: string;
+  propertyCounty: string;
   sameAsMailing: boolean;
-  // Property details
+  // Construction
   homeType: string;
   manufacturer: string;
   modelYear: string;
   totalSquareFootage: string;
   roofShape: string;
-  roofYear: string;
   homeFixtures: string;
   location: string;
-  purchaseDate: string;
   // Policy
   effectiveDate: string;
   policyUsage: string;
+  isNewPurchase: string;
+  purchaseDate: string;
   priorInsurance: string;
+  priorCarrierName: string;
+  priorPolicyExpirationDate: string;
+  // UW answers
+  burglarAlarm: string;
+  hasFireHydrantWithin1000Feet: boolean;
+  hasFireStationWithin5Miles: boolean;
+  hasSmokersInHome: boolean;
+  hasTrampolineOnPremises: boolean;
+  hasPoolOnPremises: boolean;
+  hasAnimalOrPetOnPremises: boolean;
+  hasBusinessOnPremises: boolean;
+  hasOpenOrKnownCodeViolation: boolean;
+  hasUncorrectedFireOrBuildingCodeViolation: boolean;
+  isInForeclosure: boolean;
+  hasOpenInsuranceClaim: boolean;
+  hasAnimalOrPetCausedInjury: boolean;
+  hasAnimalOrPetIsRestrictedBreed: boolean;
+  hasWoodBurningStove: boolean;
+  hasKnobAndTubeWiring: boolean;
+  isHitchedOrOnWheels: boolean;
+  isInFloodZone: boolean;
+  hasAluminumWiring: boolean;
+  hasFederalPacificElectricalPanel: boolean;
+  hasPolybutylenePiping: boolean;
+  hasGalvanizedPlumbing: boolean;
+  hasZinscoElectricalPanel: boolean;
+  hasSumpPump: boolean;
+  hasBackupGenerator: boolean;
 }
 
-interface Plan {
-  locator: string;
-  name: string;
-  premium: number;
-  coverages: Array<{ name: string; limit?: number; deductible?: number; premium?: number }>;
+interface Offer {
+  quoteLocator: string;
+  plan: string;
+  pricing: { grossPremium: number; totalDue: number; fees?: Array<{ name: string; amount: number }> };
+  quote: Record<string, any>;
+  homeCoverageDescription?: string;
+  yourBelongingsDescription?: string;
 }
 
 interface ExtraCoverage {
@@ -81,6 +114,7 @@ interface ExtraCoverage {
 
 const INITIAL_FORM: FormData = {
   firstName: '',
+  middleName: '',
   lastName: '',
   email: '',
   phone: '',
@@ -93,59 +127,110 @@ const INITIAL_FORM: FormData = {
   propertyCity: '',
   propertyState: '',
   propertyZip: '',
+  propertyCounty: '',
   sameAsMailing: true,
   homeType: '',
   manufacturer: '',
   modelYear: '',
   totalSquareFootage: '',
   roofShape: '',
-  roofYear: '',
   homeFixtures: '',
   location: '',
-  purchaseDate: '',
   effectiveDate: '',
   policyUsage: '',
+  isNewPurchase: '',
+  purchaseDate: '',
   priorInsurance: '',
+  priorCarrierName: '',
+  priorPolicyExpirationDate: '',
+  burglarAlarm: 'None',
+  hasFireHydrantWithin1000Feet: true,
+  hasFireStationWithin5Miles: true,
+  hasSmokersInHome: false,
+  hasTrampolineOnPremises: false,
+  hasPoolOnPremises: false,
+  hasAnimalOrPetOnPremises: false,
+  hasBusinessOnPremises: false,
+  hasOpenOrKnownCodeViolation: false,
+  hasUncorrectedFireOrBuildingCodeViolation: false,
+  isInForeclosure: false,
+  hasOpenInsuranceClaim: false,
+  hasAnimalOrPetCausedInjury: false,
+  hasAnimalOrPetIsRestrictedBreed: false,
+  hasWoodBurningStove: false,
+  hasKnobAndTubeWiring: false,
+  isHitchedOrOnWheels: false,
+  isInFloodZone: false,
+  hasAluminumWiring: false,
+  hasFederalPacificElectricalPanel: false,
+  hasPolybutylenePiping: false,
+  hasGalvanizedPlumbing: false,
+  hasZinscoElectricalPanel: false,
+  hasSumpPump: false,
+  hasBackupGenerator: false,
 };
 
+// Steps: UW is part of the quote creation (step 1), not a separate step
 const STEPS = [
   { label: 'Customer & Property', icon: User },
+  { label: 'Underwriting', icon: ClipboardCheck },
   { label: 'Plan Selection', icon: Shield },
   { label: 'Extra Coverages', icon: Home },
-  { label: 'Underwriting', icon: ClipboardCheck },
   { label: 'Review & Bind', icon: CheckCircle },
 ];
 
+// Correct CoverTree enum values
 const HOME_TYPES = [
   { value: 'SingleWide', label: 'Single Wide' },
   { value: 'DoubleWide', label: 'Double Wide' },
   { value: 'TripleWide', label: 'Triple Wide' },
+  { value: 'ParkModel', label: 'Park Model' },
+  { value: 'TinyHome', label: 'Tiny Home' },
+  { value: 'ADU', label: 'ADU' },
+  { value: 'StationaryTravelTrailer', label: 'Stationary Travel Trailer' },
 ];
 
 const ROOF_SHAPES = [
-  { value: 'Flat', label: 'Flat' },
   { value: 'Gable', label: 'Gable' },
   { value: 'Hip', label: 'Hip' },
+  { value: 'Flat', label: 'Flat' },
   { value: 'Gambrel', label: 'Gambrel' },
+  { value: 'Mansard', label: 'Mansard' },
   { value: 'Shed', label: 'Shed' },
 ];
 
 const HOME_FIXTURES = [
-  { value: 'Anchored', label: 'Anchored' },
-  { value: 'Permanent', label: 'Permanent Foundation' },
-  { value: 'Blocks', label: 'On Blocks' },
+  { value: 'Standard', label: 'Standard' },
+  { value: 'AFewExtras', label: 'A Few Extras' },
+  { value: 'HighEnd', label: 'High End' },
 ];
 
 const LOCATIONS = [
-  { value: 'Park', label: 'Mobile Home Park' },
-  { value: 'PrivateLand', label: 'Private Land' },
+  { value: 'OwnLand', label: 'Own Land' },
+  { value: 'MobileHomePark', label: 'Mobile Home Park' },
   { value: 'RentedLand', label: 'Rented Land' },
 ];
 
 const POLICY_USAGE = [
-  { value: 'Owner', label: 'Owner Occupied' },
+  { value: 'MainResidence', label: 'Main Residence' },
+  { value: 'SecondaryResidence', label: 'Secondary Residence' },
+  { value: 'SeasonalResidence', label: 'Seasonal Residence' },
   { value: 'Landlord', label: 'Landlord' },
-  { value: 'Tenant', label: 'Tenant' },
+  { value: 'Vacant', label: 'Vacant' },
+];
+
+const PURCHASE_DATES = [
+  { value: 'InBuyingProcess', label: 'Currently Buying' },
+  { value: 'LessThan1Year', label: 'Less Than 1 Year' },
+  { value: '1To3Years', label: '1-3 Years' },
+  { value: '3To5Years', label: '3-5 Years' },
+  { value: 'MoreThan5Years', label: 'More Than 5 Years' },
+];
+
+const BURGLAR_ALARM = [
+  { value: 'None', label: 'None' },
+  { value: 'Local', label: 'Local' },
+  { value: 'Central', label: 'Central' },
 ];
 
 const US_STATES = [
@@ -154,6 +239,21 @@ const US_STATES = [
   'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
   'VA','WA','WV','WI','WY',
 ];
+
+// Coverage display labels
+const COVERAGE_LABELS: Record<string, string> = {
+  homeCoverage: 'Home Coverage',
+  lossOfUse: 'Loss of Use',
+  personalLiability: 'Personal Liability',
+  medicalPaymentToOther: 'Medical Payments to Others',
+  otherStructures: 'Other Structures',
+  premisesLiability: 'Premises Liability',
+  standardDeductible: 'Standard Deductible',
+  windHailDeductible: 'Wind/Hail Deductible',
+  yourBelongings: 'Your Belongings',
+  waterDamage: 'Water Damage',
+  waterDamageDeductible: 'Water Damage Deductible',
+};
 
 // =============================================================================
 // HELPER: API call
@@ -183,7 +283,7 @@ function ManufacturerInput({
   value: string;
   onChange: (val: string) => void;
 }) {
-  const [suggestions, setSuggestions] = useState<Array<{ id: string; name: string }>>([]);
+  const [suggestions, setSuggestions] = useState<Array<{ value: string }>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -227,15 +327,89 @@ function ManufacturerInput({
         <div className="absolute z-10 mt-1 w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
           {suggestions.map((m) => (
             <button
-              key={m.id}
+              key={m.value}
               type="button"
               className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
               onMouseDown={() => {
-                onChange(m.name);
+                onChange(m.value);
                 setShowSuggestions(false);
               }}
             >
-              {m.name}
+              {m.value}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// ADDRESS AUTOCOMPLETE
+// =============================================================================
+
+function AddressAutocomplete({
+  value,
+  onChange,
+  onSelect,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  onSelect: (addr: { streetAddress: string; city: string; state: string; zipCode: string; county: string }) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<Array<{ streetAddress: string; city: string; state: string; zipCode: string; county: string }>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  const searchAddresses = useCallback(async (search: string) => {
+    if (search.length < 4) {
+      setSuggestions([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await coverTreeApi('getAutocompleteAddress', { search });
+      setSuggestions(data.addresses || []);
+    } catch {
+      setSuggestions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleChange = (val: string) => {
+    onChange(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => searchAddresses(val), 300);
+    setShowSuggestions(true);
+  };
+
+  return (
+    <div className="relative">
+      <Input
+        value={value}
+        onChange={(e) => handleChange(e.target.value)}
+        onFocus={() => value.length >= 4 && setShowSuggestions(true)}
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+        placeholder="Start typing address..."
+      />
+      {loading && (
+        <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-gray-400" />
+      )}
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute z-10 mt-1 w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
+          {suggestions.map((addr, i) => (
+            <button
+              key={i}
+              type="button"
+              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+              onMouseDown={() => {
+                onSelect(addr);
+                setShowSuggestions(false);
+              }}
+            >
+              {addr.streetAddress}, {addr.city}, {addr.state} {addr.zipCode}
             </button>
           ))}
         </div>
@@ -259,50 +433,28 @@ export default function CoverTreePage() {
   const [linkedCustomer, setLinkedCustomer] = useState<{ id: string; name: string } | null>(null);
   const searchedNameRef = useRef<string>('');
 
-  // Step 2: Plans
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [quoteLocator, setQuoteLocator] = useState<string | null>(null);
+  // Step 2: Plans from quote creation
+  const [offers, setOffers] = useState<Offer[]>([]);
   const [policyLocator, setPolicyLocator] = useState<string | null>(null);
-  const [selectedPlanName, setSelectedPlanName] = useState<string | null>(null);
 
   // Step 3: Extra coverages
   const [extraCoverages, setExtraCoverages] = useState<ExtraCoverage[]>([]);
   const [selectedExtras, setSelectedExtras] = useState<Record<string, boolean>>({});
 
-  // Step 4: UW questions
-  const [uwAnswers, setUwAnswers] = useState<Record<string, boolean>>({
-    hasFireExtinguisher: false,
-    hasSmokeDetectors: true,
-    hasDeadbolts: false,
-    hasFireAlarm: false,
-    hasBurglarAlarm: false,
-    hasSprinklerSystem: false,
-    hasSwimmingPool: false,
-    hasTrampoline: false,
-    hasDog: false,
-    hasExoticPet: false,
-    hasBusiness: false,
-    hasClaimsLast5Years: false,
-    hasCancelledPolicy: false,
-    hasConviction: false,
-    isForeclosure: false,
-    hasStructuralDamage: false,
-    hasWoodStove: false,
-  });
-
-  // Step 5: Bind result
-  const [bindResult, setBindResult] = useState<{
-    success: boolean;
-    policyNumber?: string;
-    message?: string;
+  // Step 4: Final policy data after bind
+  const [finalPolicy, setFinalPolicy] = useState<any>(null);
+  const [quoteDocuments, setQuoteDocuments] = useState<{
+    binderDocumentUrl?: string;
+    applicationDocumentUrl?: string;
+    quoteProposalUrl?: string;
   } | null>(null);
 
   // ---------------------------------------------------------------------------
   // Form update helper
   // ---------------------------------------------------------------------------
-  const updateForm = (field: keyof FormData, value: string | boolean) => {
+  const updateForm = useCallback((field: keyof FormData, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [field]: value }));
-  };
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Customer search
@@ -318,33 +470,37 @@ export default function CoverTreePage() {
   }, [form.firstName, form.lastName]);
 
   const handleCustomerSelect = useCallback((customer: any) => {
-    if (customer.firstName) updateForm('firstName', customer.firstName);
-    if (customer.lastName) updateForm('lastName', customer.lastName);
-    if (customer.phone) updateForm('phone', customer.phone);
-    if (customer.email) updateForm('email', customer.email || '');
+    setForm((prev) => {
+      const updated = { ...prev };
+      if (customer.firstName) updated.firstName = customer.firstName;
+      if (customer.lastName) updated.lastName = customer.lastName;
+      if (customer.phone) updated.phone = customer.phone;
+      if (customer.email) updated.email = customer.email || '';
 
-    // Address
-    const addr = customer.address;
-    if (addr) {
-      const parsed = typeof addr === 'string' ? parseAddressString(addr) : addr;
-      if (parsed.street) updateForm('mailingStreet', parsed.street);
-      if (parsed.city) updateForm('mailingCity', parsed.city);
-      if (parsed.state) updateForm('mailingState', parsed.state);
-      if (parsed.zip) updateForm('mailingZip', parsed.zip);
-    }
+      const addr = customer.address;
+      if (addr) {
+        const parsed = typeof addr === 'string' ? parseAddressString(addr) : addr;
+        if (parsed.street) updated.mailingStreet = parsed.street;
+        if (parsed.city) updated.mailingCity = parsed.city;
+        if (parsed.state) updated.mailingState = parsed.state;
+        if (parsed.zip) updated.mailingZip = parsed.zip;
+      }
 
-    // Try to get DOB from drivers on policies
-    if (customer.policies) {
-      for (const p of customer.policies) {
-        if (p.drivers) {
-          const primary = p.drivers.find((d: any) => d.relationship === 'Insured' || d.relationship === 'Named Insured');
-          if (primary?.dateOfBirth) {
-            updateForm('dateOfBirth', primary.dateOfBirth.slice(0, 10));
-            break;
+      // Try to get DOB from drivers on policies
+      if (customer.policies) {
+        for (const p of customer.policies) {
+          if (p.drivers) {
+            const primary = p.drivers.find((d: any) => d.relationship === 'Insured' || d.relationship === 'Named Insured');
+            if (primary?.dateOfBirth) {
+              updated.dateOfBirth = primary.dateOfBirth.slice(0, 10);
+              break;
+            }
           }
         }
       }
-    }
+
+      return updated;
+    });
 
     setLinkedCustomer({
       id: customer.id,
@@ -354,7 +510,7 @@ export default function CoverTreePage() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Step 1: Create Quote
+  // Step 1→2: Create Quote (submits property + policyholder + UW in one call)
   // ---------------------------------------------------------------------------
   const handleCreateQuote = async () => {
     setError(null);
@@ -364,70 +520,83 @@ export default function CoverTreePage() {
       const propCity = form.sameAsMailing ? form.mailingCity : form.propertyCity;
       const propState = form.sameAsMailing ? form.mailingState : form.propertyState;
       const propZip = form.sameAsMailing ? form.mailingZip : form.propertyZip;
+      const propCounty = form.sameAsMailing ? '' : form.propertyCounty;
 
-      const data = await coverTreeApi('createQuote', {
-        policyInput: {
-          effectiveDate: form.effectiveDate,
-          state: propState,
-          policyUsage: form.policyUsage,
-          propertyAddress: {
-            street: propStreet,
-            city: propCity,
-            state: propState,
-            zip: propZip,
-          },
-          homeType: form.homeType,
-          manufacturer: form.manufacturer,
-          modelYear: parseInt(form.modelYear),
-          totalSquareFootage: parseInt(form.totalSquareFootage),
-          roofShape: form.roofShape,
-          roofYear: parseInt(form.roofYear),
-          homeFixtures: form.homeFixtures,
-          location: form.location,
-          purchaseDate: form.purchaseDate,
-          priorInsurance: form.priorInsurance === 'yes',
-        },
-        policyholderInput: {
+      const input = {
+        effectiveDate: form.effectiveDate,
+        policyUsage: form.policyUsage,
+        isNewPurchase: form.isNewPurchase === 'yes',
+        purchaseDate: form.purchaseDate,
+        priorInsurance: form.priorInsurance,
+        ...(form.priorInsurance === 'Yes' && form.priorCarrierName ? { priorCarrierName: form.priorCarrierName } : {}),
+        ...(form.priorInsurance === 'Yes' && form.priorPolicyExpirationDate ? { priorPolicyExpirationDate: form.priorPolicyExpirationDate } : {}),
+        policyholder: {
           firstName: form.firstName,
+          ...(form.middleName ? { middleName: form.middleName } : {}),
           lastName: form.lastName,
-          email: form.email,
-          phone: form.phone,
+          emailAddress: form.email,
+          primaryContactNumber: form.phone.replace(/\D/g, ''),
+          type: 'Person',
           dateOfBirth: form.dateOfBirth,
           mailingAddress: {
-            street: form.mailingStreet,
+            streetAddress: form.mailingStreet,
             city: form.mailingCity,
             state: form.mailingState,
-            zip: form.mailingZip,
+            zipCode: form.mailingZip,
           },
         },
-      });
+        unit: {
+          address: {
+            streetAddress: propStreet,
+            city: propCity,
+            state: propState,
+            zipCode: propZip,
+            ...(propCounty ? { county: propCounty } : {}),
+            countryCode: 'US',
+          },
+          construction: {
+            homeType: form.homeType,
+            manufacturerName: form.manufacturer,
+            homeFixtures: form.homeFixtures,
+            roofShape: form.roofShape,
+            totalSquareFootage: parseInt(form.totalSquareFootage),
+            modelYear: parseInt(form.modelYear),
+            location: form.location,
+          },
+        },
+        underwritingAnswers: {
+          burglarAlarm: form.burglarAlarm,
+          hasFireHydrantWithin1000Feet: form.hasFireHydrantWithin1000Feet,
+          hasFireStationWithin5Miles: form.hasFireStationWithin5Miles,
+          hasSmokersInHome: form.hasSmokersInHome,
+          hasTrampolineOnPremises: form.hasTrampolineOnPremises,
+          hasPoolOnPremises: form.hasPoolOnPremises,
+          hasAnimalOrPetOnPremises: form.hasAnimalOrPetOnPremises,
+          hasBusinessOnPremises: form.hasBusinessOnPremises,
+          hasOpenOrKnownCodeViolation: form.hasOpenOrKnownCodeViolation,
+          hasUncorrectedFireOrBuildingCodeViolation: form.hasUncorrectedFireOrBuildingCodeViolation,
+          isInForeclosure: form.isInForeclosure,
+          hasOpenInsuranceClaim: form.hasOpenInsuranceClaim,
+          hasAnimalOrPetCausedInjury: form.hasAnimalOrPetCausedInjury,
+          hasAnimalOrPetIsRestrictedBreed: form.hasAnimalOrPetIsRestrictedBreed,
+          hasWoodBurningStove: form.hasWoodBurningStove,
+          hasKnobAndTubeWiring: form.hasKnobAndTubeWiring,
+          isHitchedOrOnWheels: form.isHitchedOrOnWheels,
+          isInFloodZone: form.isInFloodZone,
+          hasAluminumWiring: form.hasAluminumWiring,
+          hasFederalPacificElectricalPanel: form.hasFederalPacificElectricalPanel,
+          hasPolybutylenePiping: form.hasPolybutylenePiping,
+          hasGalvanizedPlumbing: form.hasGalvanizedPlumbing,
+          hasZinscoElectricalPanel: form.hasZinscoElectricalPanel,
+          hasSumpPump: form.hasSumpPump,
+          hasBackupGenerator: form.hasBackupGenerator,
+        },
+      };
 
-      setPlans(data.plans || []);
-      setQuoteLocator(data.quoteLocator);
-      setPolicyLocator(data.policyLocator);
-      setStep(1);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // Step 2: Select Plan
-  // ---------------------------------------------------------------------------
-  const handleSelectPlan = async (planLocator: string, planName: string) => {
-    setError(null);
-    setLoading(true);
-    try {
-      await coverTreeApi('selectPlan', { quoteLocator: planLocator });
-      setSelectedPlanName(planName);
-
-      // Load extra coverages
-      if (policyLocator) {
-        const pricesData = await coverTreeApi('getExtraCoveragePrices', { policyLocator });
-        setExtraCoverages(pricesData.coverages || []);
-      }
+      const data = await coverTreeApi('createQuote', { input });
+      const result = data.result;
+      setOffers(result.offers || []);
+      setPolicyLocator(result.policyLocator);
       setStep(2);
     } catch (err: any) {
       setError(err.message);
@@ -437,18 +606,18 @@ export default function CoverTreePage() {
   };
 
   // ---------------------------------------------------------------------------
-  // Step 3: Save Extra Coverages
+  // Step 2→3: Select Plan
   // ---------------------------------------------------------------------------
-  const handleSaveExtras = async () => {
+  const handleSelectPlan = async (quoteLocator: string) => {
     if (!policyLocator) return;
     setError(null);
     setLoading(true);
     try {
-      await coverTreeApi('saveExtraCoverages', {
-        policyLocator,
-        policyLevel: selectedExtras,
-        unitLevel: {},
-      });
+      await coverTreeApi('selectQuote', { policyLocator, quoteLocator });
+
+      // Load extra coverages
+      const pricesData = await coverTreeApi('getExtraCoveragePrices', { policyLocator });
+      setExtraCoverages(pricesData.coverages || []);
       setStep(3);
     } catch (err: any) {
       setError(err.message);
@@ -458,44 +627,47 @@ export default function CoverTreePage() {
   };
 
   // ---------------------------------------------------------------------------
-  // Step 4: Save UW Answers
+  // Step 3→4: Save Extra Coverages
   // ---------------------------------------------------------------------------
-  const handleSaveUW = async () => {
+  const handleSaveExtras = async () => {
     if (!policyLocator) return;
     setError(null);
     setLoading(true);
     try {
-      await coverTreeApi('updateUnderwritingAnswers', {
+      await coverTreeApi('saveExtraCoverages', {
         policyLocator,
-        policyLevelUW: uwAnswers,
-        unitLevelUW: {},
+        input: selectedExtras,
       });
-      setStep(4);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  // ---------------------------------------------------------------------------
-  // Step 5: Bind
-  // ---------------------------------------------------------------------------
-  const handleBind = async () => {
-    if (!policyLocator) return;
-    setError(null);
-    setLoading(true);
-    try {
-      // Check prior claims first
-      const claimsData = await coverTreeApi('checkPriorClaims', { policyLocator });
-      if (!claimsData.canBind) {
-        setError(claimsData.message || 'Cannot bind: prior claims issue detected.');
-        setLoading(false);
-        return;
+      // Run prior claims check
+      const propStreet = form.sameAsMailing ? form.mailingStreet : form.propertyStreet;
+      const propCity = form.sameAsMailing ? form.mailingCity : form.propertyCity;
+      const propState = form.sameAsMailing ? form.mailingState : form.propertyState;
+      const propZip = form.sameAsMailing ? form.mailingZip : form.propertyZip;
+
+      await coverTreeApi('checkAndAddPriorClaim', {
+        policyLocator,
+        address: {
+          streetAddress: propStreet,
+          city: propCity,
+          state: propState,
+          zipCode: propZip,
+        },
+      });
+
+      // Fetch final policy data for review
+      const policyData = await coverTreeApi('getPolicy', { policyLocator });
+      setFinalPolicy(policyData.policy);
+
+      // Fetch quote documents
+      try {
+        const docsData = await coverTreeApi('getQuoteDocuments', { policyLocator });
+        setQuoteDocuments(docsData.documents);
+      } catch {
+        // Documents may not be available yet
       }
-      // Initiate purchase
-      const result = await coverTreeApi('initiatePurchase', { policyLocator });
-      setBindResult(result);
+
+      setStep(4);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -506,6 +678,10 @@ export default function CoverTreePage() {
   // ---------------------------------------------------------------------------
   // RENDER
   // ---------------------------------------------------------------------------
+
+  const selectedOffer = offers.find(
+    (o) => o.quoteLocator === finalPolicy?.selectedQuoteLocator
+  );
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
@@ -569,7 +745,7 @@ export default function CoverTreePage() {
       )}
 
       {/* ================================================================== */}
-      {/* STEP 1: Customer & Property Info */}
+      {/* STEP 0: Customer & Property Info */}
       {/* ================================================================== */}
       {step === 0 && (
         <div className="space-y-6">
@@ -594,12 +770,19 @@ export default function CoverTreePage() {
 
           {/* Policyholder Info */}
           <Section title="Policyholder Information">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Field label="First Name" required>
                 <Input
                   value={form.firstName}
                   onChange={(e) => updateForm('firstName', e.target.value)}
                   placeholder="First name"
+                />
+              </Field>
+              <Field label="Middle Name">
+                <Input
+                  value={form.middleName}
+                  onChange={(e) => updateForm('middleName', e.target.value)}
+                  placeholder="Middle"
                 />
               </Field>
               <Field label="Last Name" required>
@@ -610,6 +793,8 @@ export default function CoverTreePage() {
                   placeholder="Last name"
                 />
               </Field>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
               <Field label="Email" required>
                 <Input
                   type="email"
@@ -657,27 +842,15 @@ export default function CoverTreePage() {
               </Field>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="State" required>
-                  <Select
-                    value={form.mailingState}
-                    onValueChange={(v) => updateForm('mailingState', v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="State" />
-                    </SelectTrigger>
+                  <Select value={form.mailingState} onValueChange={(v) => updateForm('mailingState', v)}>
+                    <SelectTrigger><SelectValue placeholder="State" /></SelectTrigger>
                     <SelectContent>
-                      {US_STATES.map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
+                      {US_STATES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
                 <Field label="ZIP" required>
-                  <Input
-                    value={form.mailingZip}
-                    onChange={(e) => updateForm('mailingZip', e.target.value)}
-                    placeholder="12345"
-                    maxLength={5}
-                  />
+                  <Input value={form.mailingZip} onChange={(e) => updateForm('mailingZip', e.target.value)} placeholder="12345" maxLength={5} />
                 </Field>
               </div>
             </div>
@@ -697,146 +870,91 @@ export default function CoverTreePage() {
               </label>
             </div>
             {!form.sameAsMailing && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2">
-                  <Field label="Street Address" required>
-                    <Input
-                      value={form.propertyStreet}
-                      onChange={(e) => updateForm('propertyStreet', e.target.value)}
-                      placeholder="123 Main St"
-                    />
-                  </Field>
-                </div>
-                <Field label="City" required>
-                  <Input
-                    value={form.propertyCity}
-                    onChange={(e) => updateForm('propertyCity', e.target.value)}
-                    placeholder="City"
+              <div className="space-y-4">
+                <Field label="Search Address">
+                  <AddressAutocomplete
+                    value={form.propertyStreet}
+                    onChange={(v) => updateForm('propertyStreet', v)}
+                    onSelect={(addr) => {
+                      setForm((prev) => ({
+                        ...prev,
+                        propertyStreet: addr.streetAddress,
+                        propertyCity: addr.city,
+                        propertyState: addr.state,
+                        propertyZip: addr.zipCode,
+                        propertyCounty: addr.county,
+                      }));
+                    }}
                   />
                 </Field>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="State" required>
-                    <Select
-                      value={form.propertyState}
-                      onValueChange={(v) => updateForm('propertyState', v)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="State" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {US_STATES.map((s) => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field label="City" required>
+                    <Input value={form.propertyCity} onChange={(e) => updateForm('propertyCity', e.target.value)} placeholder="City" />
                   </Field>
-                  <Field label="ZIP" required>
-                    <Input
-                      value={form.propertyZip}
-                      onChange={(e) => updateForm('propertyZip', e.target.value)}
-                      placeholder="12345"
-                      maxLength={5}
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="State" required>
+                      <Select value={form.propertyState} onValueChange={(v) => updateForm('propertyState', v)}>
+                        <SelectTrigger><SelectValue placeholder="State" /></SelectTrigger>
+                        <SelectContent>
+                          {US_STATES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="ZIP" required>
+                      <Input value={form.propertyZip} onChange={(e) => updateForm('propertyZip', e.target.value)} placeholder="12345" maxLength={5} />
+                    </Field>
+                  </div>
+                  <Field label="County">
+                    <Input value={form.propertyCounty} onChange={(e) => updateForm('propertyCounty', e.target.value)} placeholder="County" />
                   </Field>
                 </div>
               </div>
             )}
           </Section>
 
-          {/* Property Details */}
-          <Section title="Property Details">
+          {/* Construction Details */}
+          <Section title="Construction Details">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Home Type" required>
                 <Select value={form.homeType} onValueChange={(v) => updateForm('homeType', v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>
-                    {HOME_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                    ))}
+                    {HOME_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>
               <Field label="Manufacturer" required>
-                <ManufacturerInput
-                  value={form.manufacturer}
-                  onChange={(v) => updateForm('manufacturer', v)}
-                />
+                <ManufacturerInput value={form.manufacturer} onChange={(v) => updateForm('manufacturer', v)} />
               </Field>
               <Field label="Model Year" required>
-                <Input
-                  type="number"
-                  value={form.modelYear}
-                  onChange={(e) => updateForm('modelYear', e.target.value)}
-                  placeholder="2020"
-                  min={1950}
-                  max={new Date().getFullYear() + 1}
-                />
+                <Input type="number" value={form.modelYear} onChange={(e) => updateForm('modelYear', e.target.value)} placeholder="2020" min={1950} max={new Date().getFullYear() + 1} />
               </Field>
               <Field label="Total Square Footage" required>
-                <Input
-                  type="number"
-                  value={form.totalSquareFootage}
-                  onChange={(e) => updateForm('totalSquareFootage', e.target.value)}
-                  placeholder="1200"
-                />
+                <Input type="number" value={form.totalSquareFootage} onChange={(e) => updateForm('totalSquareFootage', e.target.value)} placeholder="1200" />
               </Field>
               <Field label="Roof Shape" required>
                 <Select value={form.roofShape} onValueChange={(v) => updateForm('roofShape', v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select shape" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select shape" /></SelectTrigger>
                   <SelectContent>
-                    {ROOF_SHAPES.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                    ))}
+                    {ROOF_SHAPES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Roof Year" required>
-                <Input
-                  type="number"
-                  value={form.roofYear}
-                  onChange={(e) => updateForm('roofYear', e.target.value)}
-                  placeholder="2020"
-                  min={1950}
-                  max={new Date().getFullYear()}
-                />
-              </Field>
               <Field label="Home Fixtures" required>
-                <Select
-                  value={form.homeFixtures}
-                  onValueChange={(v) => updateForm('homeFixtures', v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
+                <Select value={form.homeFixtures} onValueChange={(v) => updateForm('homeFixtures', v)}>
+                  <SelectTrigger><SelectValue placeholder="Select level" /></SelectTrigger>
                   <SelectContent>
-                    {HOME_FIXTURES.map((f) => (
-                      <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-                    ))}
+                    {HOME_FIXTURES.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>
               <Field label="Location" required>
                 <Select value={form.location} onValueChange={(v) => updateForm('location', v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select location" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
                   <SelectContent>
-                    {LOCATIONS.map((l) => (
-                      <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
-                    ))}
+                    {LOCATIONS.map((l) => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              </Field>
-              <Field label="Purchase Date" required>
-                <Input
-                  type="date"
-                  value={form.purchaseDate}
-                  onChange={(e) => updateForm('purchaseDate', e.target.value)}
-                />
               </Field>
             </div>
           </Section>
@@ -845,54 +963,146 @@ export default function CoverTreePage() {
           <Section title="Policy Details">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Effective Date" required>
-                <Input
-                  type="date"
-                  value={form.effectiveDate}
-                  onChange={(e) => updateForm('effectiveDate', e.target.value)}
-                />
+                <Input type="date" value={form.effectiveDate} onChange={(e) => updateForm('effectiveDate', e.target.value)} />
               </Field>
               <Field label="Policy Usage" required>
-                <Select
-                  value={form.policyUsage}
-                  onValueChange={(v) => updateForm('policyUsage', v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select usage" />
-                  </SelectTrigger>
+                <Select value={form.policyUsage} onValueChange={(v) => updateForm('policyUsage', v)}>
+                  <SelectTrigger><SelectValue placeholder="Select usage" /></SelectTrigger>
                   <SelectContent>
-                    {POLICY_USAGE.map((u) => (
-                      <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
-                    ))}
+                    {POLICY_USAGE.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Prior Insurance" required>
-                <Select
-                  value={form.priorInsurance}
-                  onValueChange={(v) => updateForm('priorInsurance', v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
+              <Field label="New Purchase?" required>
+                <Select value={form.isNewPurchase} onValueChange={(v) => updateForm('isNewPurchase', v)}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="yes">Yes</SelectItem>
                     <SelectItem value="no">No</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
+              <Field label="Purchase Date" required>
+                <Select value={form.purchaseDate} onValueChange={(v) => updateForm('purchaseDate', v)}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>
+                    {PURCHASE_DATES.map((d) => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Prior Insurance" required>
+                <Select value={form.priorInsurance} onValueChange={(v) => updateForm('priorInsurance', v)}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Yes">Yes</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              {form.priorInsurance === 'Yes' && (
+                <>
+                  <Field label="Prior Carrier Name">
+                    <Input value={form.priorCarrierName} onChange={(e) => updateForm('priorCarrierName', e.target.value)} placeholder="Carrier name" />
+                  </Field>
+                  <Field label="Prior Policy Expiration">
+                    <Input type="date" value={form.priorPolicyExpirationDate} onChange={(e) => updateForm('priorPolicyExpirationDate', e.target.value)} />
+                  </Field>
+                </>
+              )}
             </div>
           </Section>
 
-          {/* Customer Search Button */}
-          <div className="flex items-center gap-3 mb-2">
+          {/* Customer Search + Next */}
+          <div className="flex items-center justify-between pt-4">
             <Button variant="outline" size="sm" onClick={() => setSearchModalOpen(true)}>
               <Search className="h-4 w-4 mr-2" />
               Search Customer
             </Button>
+            <Button onClick={() => setStep(1)}>
+              <ChevronRight className="h-4 w-4 mr-2" />
+              Continue to Underwriting
+            </Button>
           </div>
+        </div>
+      )}
 
-          {/* Submit */}
-          <div className="flex justify-end pt-4">
+      {/* ================================================================== */}
+      {/* STEP 1: Underwriting Questions */}
+      {/* ================================================================== */}
+      {step === 1 && (
+        <div className="space-y-6">
+          <UWSection
+            title="Alarm & Safety"
+            questions={[
+              { key: 'hasFireHydrantWithin1000Feet', label: 'Fire hydrant within 1,000 feet?' },
+              { key: 'hasFireStationWithin5Miles', label: 'Fire station within 5 miles?' },
+              { key: 'hasSmokersInHome', label: 'Any smokers in the home?' },
+            ]}
+            answers={form}
+            onChange={(key, val) => updateForm(key as keyof FormData, val)}
+          />
+
+          <Section title="Burglar Alarm">
+            <Field label="Burglar Alarm Type">
+              <Select value={form.burglarAlarm} onValueChange={(v) => updateForm('burglarAlarm', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {BURGLAR_ALARM.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+          </Section>
+
+          <UWSection
+            title="Property Features & Risks"
+            questions={[
+              { key: 'hasTrampolineOnPremises', label: 'Trampoline on premises?' },
+              { key: 'hasPoolOnPremises', label: 'Swimming pool on premises?' },
+              { key: 'hasAnimalOrPetOnPremises', label: 'Any animals or pets on premises?' },
+              { key: 'hasAnimalOrPetCausedInjury', label: 'Has any animal/pet caused injury?' },
+              { key: 'hasAnimalOrPetIsRestrictedBreed', label: 'Any restricted breed animals?' },
+              { key: 'hasBusinessOnPremises', label: 'Any business conducted on premises?' },
+              { key: 'hasWoodBurningStove', label: 'Wood burning stove?' },
+              { key: 'isHitchedOrOnWheels', label: 'Is the home hitched or on wheels?' },
+              { key: 'hasSumpPump', label: 'Sump pump installed?' },
+              { key: 'hasBackupGenerator', label: 'Backup generator?' },
+            ]}
+            answers={form}
+            onChange={(key, val) => updateForm(key as keyof FormData, val)}
+          />
+
+          <UWSection
+            title="Electrical & Plumbing"
+            questions={[
+              { key: 'hasKnobAndTubeWiring', label: 'Knob and tube wiring?' },
+              { key: 'hasAluminumWiring', label: 'Aluminum wiring?' },
+              { key: 'hasFederalPacificElectricalPanel', label: 'Federal Pacific electrical panel?' },
+              { key: 'hasZinscoElectricalPanel', label: 'Zinsco electrical panel?' },
+              { key: 'hasPolybutylenePiping', label: 'Polybutylene piping?' },
+              { key: 'hasGalvanizedPlumbing', label: 'Galvanized plumbing?' },
+            ]}
+            answers={form}
+            onChange={(key, val) => updateForm(key as keyof FormData, val)}
+          />
+
+          <UWSection
+            title="Claims & Violations"
+            questions={[
+              { key: 'hasOpenOrKnownCodeViolation', label: 'Any open or known code violations?' },
+              { key: 'hasUncorrectedFireOrBuildingCodeViolation', label: 'Uncorrected fire/building code violations?' },
+              { key: 'isInForeclosure', label: 'Property in foreclosure?' },
+              { key: 'hasOpenInsuranceClaim', label: 'Any open insurance claims?' },
+              { key: 'isInFloodZone', label: 'Property in a flood zone?' },
+            ]}
+            answers={form}
+            onChange={(key, val) => updateForm(key as keyof FormData, val)}
+          />
+
+          <div className="flex justify-between pt-4">
+            <Button variant="outline" onClick={() => setStep(0)}>
+              <ChevronLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
             <Button onClick={handleCreateQuote} disabled={loading}>
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -908,20 +1118,18 @@ export default function CoverTreePage() {
       {/* ================================================================== */}
       {/* STEP 2: Plan Selection */}
       {/* ================================================================== */}
-      {step === 1 && (
+      {step === 2 && (
         <div className="space-y-6">
           <Section title="Available Plans">
-            {plans.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                No plans available for this property.
-              </p>
+            {offers.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">No plans available for this property.</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {plans.map((plan) => {
-                  const isPopular = plan.name === 'Gold';
+                {offers.map((offer) => {
+                  const isPopular = offer.plan === 'Gold';
                   return (
                     <div
-                      key={plan.locator}
+                      key={offer.quoteLocator}
                       className={cn(
                         'relative rounded-lg border p-6 flex flex-col',
                         isPopular
@@ -935,38 +1143,38 @@ export default function CoverTreePage() {
                         </div>
                       )}
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                        {plan.name}
+                        {offer.plan}
                       </h3>
                       <p className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
-                        ${plan.premium.toLocaleString()}
+                        ${offer.pricing.grossPremium.toLocaleString()}
                         <span className="text-sm font-normal text-gray-500">/yr</span>
                       </p>
+                      {offer.pricing.totalDue !== offer.pricing.grossPremium && (
+                        <p className="text-sm text-gray-500 mb-2">
+                          Total due: ${offer.pricing.totalDue.toLocaleString()}
+                        </p>
+                      )}
                       <div className="mt-4 flex-1 space-y-2">
-                        {plan.coverages.map((c, ci) => (
-                          <div
-                            key={ci}
-                            className="flex justify-between text-sm text-gray-600 dark:text-gray-300"
-                          >
-                            <span>{c.name}</span>
-                            {c.limit != null && (
+                        {Object.entries(offer.quote).map(([key, val]) => {
+                          if (val == null) return null;
+                          const label = COVERAGE_LABELS[key] || key;
+                          return (
+                            <div key={key} className="flex justify-between text-sm text-gray-600 dark:text-gray-300">
+                              <span>{label}</span>
                               <span className="font-medium">
-                                ${c.limit.toLocaleString()}
+                                {typeof val === 'number' ? `$${val.toLocaleString()}` : String(val)}
                               </span>
-                            )}
-                          </div>
-                        ))}
+                            </div>
+                          );
+                        })}
                       </div>
                       <Button
                         className="mt-6 w-full"
                         variant={isPopular ? 'default' : 'outline'}
-                        onClick={() => handleSelectPlan(plan.locator, plan.name)}
+                        onClick={() => handleSelectPlan(offer.quoteLocator)}
                         disabled={loading}
                       >
-                        {loading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          `Select ${plan.name}`
-                        )}
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : `Select ${offer.plan}`}
                       </Button>
                     </div>
                   );
@@ -976,7 +1184,7 @@ export default function CoverTreePage() {
           </Section>
 
           <div className="flex justify-start pt-4">
-            <Button variant="outline" onClick={() => setStep(0)}>
+            <Button variant="outline" onClick={() => setStep(1)}>
               <ChevronLeft className="h-4 w-4 mr-2" />
               Back
             </Button>
@@ -987,13 +1195,11 @@ export default function CoverTreePage() {
       {/* ================================================================== */}
       {/* STEP 3: Extra Coverages */}
       {/* ================================================================== */}
-      {step === 2 && (
+      {step === 3 && (
         <div className="space-y-6">
           <Section title="Optional Coverages">
             {extraCoverages.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                No optional coverages available.
-              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">No optional coverages available.</p>
             ) : (
               <div className="space-y-3">
                 {extraCoverages.map((cov) => (
@@ -1008,43 +1214,19 @@ export default function CoverTreePage() {
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          {cov.name}
-                        </span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">{cov.name}</span>
                         <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
                           +${cov.price.toLocaleString()}/yr
                         </span>
                       </div>
                       {cov.description && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {cov.description}
-                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{cov.description}</p>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={selectedExtras[cov.key] || false}
-                      onClick={() =>
-                        setSelectedExtras((prev) => ({
-                          ...prev,
-                          [cov.key]: !prev[cov.key],
-                        }))
-                      }
-                      className={cn(
-                        'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                        selectedExtras[cov.key]
-                          ? 'bg-emerald-500'
-                          : 'bg-gray-200 dark:bg-gray-600'
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'inline-block h-4 w-4 rounded-full bg-white transition-transform',
-                          selectedExtras[cov.key] ? 'translate-x-6' : 'translate-x-1'
-                        )}
-                      />
-                    </button>
+                    <ToggleSwitch
+                      checked={selectedExtras[cov.key] || false}
+                      onChange={() => setSelectedExtras((prev) => ({ ...prev, [cov.key]: !prev[cov.key] }))}
+                    />
                   </div>
                 ))}
               </div>
@@ -1052,79 +1234,12 @@ export default function CoverTreePage() {
           </Section>
 
           <div className="flex justify-between pt-4">
-            <Button variant="outline" onClick={() => setStep(1)}>
-              <ChevronLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-            <Button onClick={handleSaveExtras} disabled={loading}>
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <ChevronRight className="h-4 w-4 mr-2" />
-              )}
-              Continue
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================== */}
-      {/* STEP 4: Underwriting Questions */}
-      {/* ================================================================== */}
-      {step === 3 && (
-        <div className="space-y-6">
-          <UWSection
-            title="Safety Features"
-            questions={[
-              { key: 'hasFireExtinguisher', label: 'Fire extinguisher on premises?' },
-              { key: 'hasSmokeDetectors', label: 'Working smoke detectors installed?' },
-              { key: 'hasDeadbolts', label: 'Deadbolt locks on exterior doors?' },
-              { key: 'hasFireAlarm', label: 'Fire alarm system?' },
-              { key: 'hasBurglarAlarm', label: 'Burglar alarm system?' },
-              { key: 'hasSprinklerSystem', label: 'Sprinkler system?' },
-            ]}
-            answers={uwAnswers}
-            onChange={(key, val) => setUwAnswers((prev) => ({ ...prev, [key]: val }))}
-          />
-
-          <UWSection
-            title="Property Features & Risks"
-            questions={[
-              { key: 'hasSwimmingPool', label: 'Swimming pool on property?' },
-              { key: 'hasTrampoline', label: 'Trampoline on property?' },
-              { key: 'hasDog', label: 'Any dogs on premises?' },
-              { key: 'hasExoticPet', label: 'Any exotic pets?' },
-              { key: 'hasBusiness', label: 'Any business conducted on premises?' },
-              { key: 'hasWoodStove', label: 'Wood burning stove or fireplace?' },
-              { key: 'hasStructuralDamage', label: 'Any existing structural damage?' },
-            ]}
-            answers={uwAnswers}
-            onChange={(key, val) => setUwAnswers((prev) => ({ ...prev, [key]: val }))}
-          />
-
-          <UWSection
-            title="Claims & History"
-            questions={[
-              { key: 'hasClaimsLast5Years', label: 'Any claims in the last 5 years?' },
-              { key: 'hasCancelledPolicy', label: 'Any cancelled or non-renewed policies?' },
-              { key: 'hasConviction', label: 'Any criminal convictions?' },
-              { key: 'isForeclosure', label: 'Property in foreclosure?' },
-            ]}
-            answers={uwAnswers}
-            onChange={(key, val) => setUwAnswers((prev) => ({ ...prev, [key]: val }))}
-          />
-
-          <div className="flex justify-between pt-4">
             <Button variant="outline" onClick={() => setStep(2)}>
               <ChevronLeft className="h-4 w-4 mr-2" />
               Back
             </Button>
-            <Button onClick={handleSaveUW} disabled={loading}>
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <ChevronRight className="h-4 w-4 mr-2" />
-              )}
+            <Button onClick={handleSaveExtras} disabled={loading}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ChevronRight className="h-4 w-4 mr-2" />}
               Continue to Review
             </Button>
           </div>
@@ -1132,137 +1247,124 @@ export default function CoverTreePage() {
       )}
 
       {/* ================================================================== */}
-      {/* STEP 5: Review & Bind */}
+      {/* STEP 4: Review & Documents */}
       {/* ================================================================== */}
       {step === 4 && (
         <div className="space-y-6">
-          {bindResult ? (
-            // Success state
-            <div className="text-center py-12">
-              <CheckCircle className="h-16 w-16 text-emerald-500 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                Policy Bound Successfully
-              </h2>
-              {bindResult.policyNumber && (
-                <p className="text-lg text-gray-600 dark:text-gray-300 mb-2">
-                  Policy #: <span className="font-semibold">{bindResult.policyNumber}</span>
-                </p>
-              )}
-              {bindResult.message && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                  {bindResult.message}
-                </p>
-              )}
-              <Button
-                onClick={() => {
-                  setStep(0);
-                  setForm(INITIAL_FORM);
-                  setPlans([]);
-                  setQuoteLocator(null);
-                  setPolicyLocator(null);
-                  setSelectedPlanName(null);
-                  setExtraCoverages([]);
-                  setSelectedExtras({});
-                  setUwAnswers({
-                    hasFireExtinguisher: false,
-                    hasSmokeDetectors: true,
-                    hasDeadbolts: false,
-                    hasFireAlarm: false,
-                    hasBurglarAlarm: false,
-                    hasSprinklerSystem: false,
-                    hasSwimmingPool: false,
-                    hasTrampoline: false,
-                    hasDog: false,
-                    hasExoticPet: false,
-                    hasBusiness: false,
-                    hasClaimsLast5Years: false,
-                    hasCancelledPolicy: false,
-                    hasConviction: false,
-                    isForeclosure: false,
-                    hasStructuralDamage: false,
-                    hasWoodStove: false,
-                  });
-                  setBindResult(null);
-                  setLinkedCustomer(null);
-                  searchedNameRef.current = '';
-                }}
-              >
-                Start New Quote
-              </Button>
-            </div>
-          ) : (
-            // Review state
+          {finalPolicy && (
             <>
-              <Section title="Policyholder">
-                <ReviewGrid
-                  items={[
-                    ['Name', `${form.firstName} ${form.lastName}`],
-                    ['Email', form.email],
-                    ['Phone', form.phone],
-                    ['DOB', form.dateOfBirth],
-                    ['Address', `${form.mailingStreet}, ${form.mailingCity}, ${form.mailingState} ${form.mailingZip}`],
-                  ]}
-                />
-              </Section>
+              {/* Status */}
+              <div className="text-center py-8">
+                <CheckCircle className="h-16 w-16 text-emerald-500 mx-auto mb-4" />
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  Quote Created Successfully
+                </h2>
+                <p className="text-gray-500 dark:text-gray-400">
+                  Policy Locator: <span className="font-mono font-semibold">{finalPolicy.policyLocator}</span>
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Status: <span className="font-medium">{finalPolicy.status}</span>
+                  {' '} | Step: <span className="font-medium">{finalPolicy.step}</span>
+                </p>
+              </div>
 
-              <Section title="Property">
-                <ReviewGrid
-                  items={[
-                    ['Address', form.sameAsMailing
-                      ? `${form.mailingStreet}, ${form.mailingCity}, ${form.mailingState} ${form.mailingZip}`
-                      : `${form.propertyStreet}, ${form.propertyCity}, ${form.propertyState} ${form.propertyZip}`],
-                    ['Home Type', HOME_TYPES.find((t) => t.value === form.homeType)?.label || form.homeType],
-                    ['Manufacturer', form.manufacturer],
-                    ['Year', form.modelYear],
-                    ['Sq Ft', form.totalSquareFootage],
-                    ['Roof', `${ROOF_SHAPES.find((s) => s.value === form.roofShape)?.label || form.roofShape}, ${form.roofYear}`],
-                    ['Fixtures', HOME_FIXTURES.find((f) => f.value === form.homeFixtures)?.label || form.homeFixtures],
-                    ['Location', LOCATIONS.find((l) => l.value === form.location)?.label || form.location],
-                  ]}
-                />
-              </Section>
-
-              <Section title="Policy">
-                <ReviewGrid
-                  items={[
-                    ['Effective Date', form.effectiveDate],
-                    ['Usage', POLICY_USAGE.find((u) => u.value === form.policyUsage)?.label || form.policyUsage],
-                    ['Prior Insurance', form.priorInsurance === 'yes' ? 'Yes' : 'No'],
-                    ['Selected Plan', selectedPlanName || 'N/A'],
-                  ]}
-                />
-              </Section>
-
-              {Object.values(selectedExtras).some(Boolean) && (
-                <Section title="Extra Coverages">
-                  <div className="space-y-1">
-                    {extraCoverages
-                      .filter((c) => selectedExtras[c.key])
-                      .map((c) => (
-                        <div
-                          key={c.key}
-                          className="flex justify-between text-sm text-gray-700 dark:text-gray-300"
-                        >
-                          <span>{c.name}</span>
-                          <span className="font-medium">+${c.price.toLocaleString()}/yr</span>
-                        </div>
-                      ))}
+              {/* Pricing */}
+              {(finalPolicy.selectedQuotePricing || selectedOffer) && (
+                <Section title="Selected Plan Pricing">
+                  <div className="text-center">
+                    <p className="text-4xl font-bold text-gray-900 dark:text-white">
+                      ${(finalPolicy.selectedQuotePricing?.grossPremium || selectedOffer?.pricing.grossPremium || 0).toLocaleString()}
+                      <span className="text-base font-normal text-gray-500">/yr</span>
+                    </p>
+                    {finalPolicy.selectedQuotePricing?.totalDue && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        Total due: ${finalPolicy.selectedQuotePricing.totalDue.toLocaleString()}
+                      </p>
+                    )}
                   </div>
                 </Section>
               )}
 
-              <div className="flex justify-between pt-4">
-                <Button variant="outline" onClick={() => setStep(3)}>
-                  <ChevronLeft className="h-4 w-4 mr-2" />
-                  Back
-                </Button>
-                <Button onClick={handleBind} disabled={loading}>
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <Shield className="h-4 w-4 mr-2" />
-                  )}
-                  Bind Policy
+              {/* Summary */}
+              <Section title="Policyholder">
+                <ReviewGrid
+                  items={[
+                    ['Name', `${finalPolicy.policyholder?.firstName || ''} ${finalPolicy.policyholder?.lastName || ''}`],
+                    ['Email', finalPolicy.policyholder?.emailAddress || ''],
+                    ['Phone', finalPolicy.policyholder?.primaryContactNumber || ''],
+                    ['DOB', finalPolicy.insuredDateOfBirth || ''],
+                  ]}
+                />
+              </Section>
+
+              {finalPolicy.units?.[0] && (
+                <Section title="Property">
+                  <ReviewGrid
+                    items={[
+                      ['Address', `${finalPolicy.units[0].address?.streetAddress || ''}, ${finalPolicy.units[0].address?.city || ''}, ${finalPolicy.units[0].address?.state || ''} ${finalPolicy.units[0].address?.zipCode || ''}`],
+                      ['Plan', finalPolicy.units[0].selectedPlan || ''],
+                      ['Home Type', HOME_TYPES.find((t) => t.value === finalPolicy.units[0].construction?.homeType)?.label || finalPolicy.units[0].construction?.homeType || ''],
+                      ['Manufacturer', finalPolicy.units[0].construction?.manufacturerName || ''],
+                      ['Year', String(finalPolicy.units[0].construction?.modelYear || '')],
+                      ['Sq Ft', String(finalPolicy.units[0].construction?.totalSquareFootage || '')],
+                    ]}
+                  />
+                </Section>
+              )}
+
+              {/* Documents */}
+              {quoteDocuments && (
+                <Section title="Documents">
+                  <div className="space-y-2">
+                    {quoteDocuments.quoteProposalUrl && (
+                      <a href={quoteDocuments.quoteProposalUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                        <FileText className="h-4 w-4" /> Quote Proposal
+                      </a>
+                    )}
+                    {quoteDocuments.binderDocumentUrl && (
+                      <a href={quoteDocuments.binderDocumentUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                        <FileText className="h-4 w-4" /> Insurance Binder
+                      </a>
+                    )}
+                    {quoteDocuments.applicationDocumentUrl && (
+                      <a href={quoteDocuments.applicationDocumentUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                        <FileText className="h-4 w-4" /> Application
+                      </a>
+                    )}
+                  </div>
+                </Section>
+              )}
+
+              {/* UW Notes */}
+              {finalPolicy.underwritingNotes && finalPolicy.underwritingNotes.length > 0 && (
+                <Section title="Underwriting Notes">
+                  <ul className="space-y-1">
+                    {finalPolicy.underwritingNotes.map((note: string, i: number) => (
+                      <li key={i} className="text-sm text-gray-700 dark:text-gray-300">{note}</li>
+                    ))}
+                  </ul>
+                </Section>
+              )}
+
+              <div className="flex justify-center pt-4">
+                <Button
+                  onClick={() => {
+                    setStep(0);
+                    setForm(INITIAL_FORM);
+                    setOffers([]);
+                    setPolicyLocator(null);
+                    setExtraCoverages([]);
+                    setSelectedExtras({});
+                    setFinalPolicy(null);
+                    setQuoteDocuments(null);
+                    setLinkedCustomer(null);
+                    searchedNameRef.current = '';
+                  }}
+                >
+                  Start New Quote
                 </Button>
               </div>
             </>
@@ -1290,13 +1392,7 @@ export default function CoverTreePage() {
 // SUB-COMPONENTS
 // =============================================================================
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
       <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-4">{title}</h2>
@@ -1305,15 +1401,7 @@ function Section({
   );
 }
 
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
+function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1325,6 +1413,26 @@ function Field({
   );
 }
 
+function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      className={cn(
+        'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+        checked ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-gray-600'
+      )}
+    >
+      <span className={cn(
+        'inline-block h-4 w-4 rounded-full bg-white transition-transform',
+        checked ? 'translate-x-6' : 'translate-x-1'
+      )} />
+    </button>
+  );
+}
+
 function UWSection({
   title,
   questions,
@@ -1333,37 +1441,19 @@ function UWSection({
 }: {
   title: string;
   questions: Array<{ key: string; label: string }>;
-  answers: Record<string, boolean>;
+  answers: Record<string, any>;
   onChange: (key: string, value: boolean) => void;
 }) {
   return (
     <Section title={title}>
       <div className="space-y-3">
         {questions.map((q) => (
-          <div
-            key={q.key}
-            className="flex items-center justify-between py-2"
-          >
+          <div key={q.key} className="flex items-center justify-between py-2">
             <span className="text-sm text-gray-700 dark:text-gray-300">{q.label}</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={answers[q.key] || false}
-              onClick={() => onChange(q.key, !answers[q.key])}
-              className={cn(
-                'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                answers[q.key]
-                  ? 'bg-emerald-500'
-                  : 'bg-gray-200 dark:bg-gray-600'
-              )}
-            >
-              <span
-                className={cn(
-                  'inline-block h-4 w-4 rounded-full bg-white transition-transform',
-                  answers[q.key] ? 'translate-x-6' : 'translate-x-1'
-                )}
-              />
-            </button>
+            <ToggleSwitch
+              checked={answers[q.key] || false}
+              onChange={() => onChange(q.key, !answers[q.key])}
+            />
           </div>
         ))}
       </div>
@@ -1388,31 +1478,15 @@ function ReviewGrid({ items }: { items: [string, string][] }) {
 // HELPERS
 // =============================================================================
 
-function parseAddressString(addr: string): {
-  street: string;
-  city: string;
-  state: string;
-  zip: string;
-} {
-  // Try to parse "123 Main St, City, ST 12345" format
+function parseAddressString(addr: string): { street: string; city: string; state: string; zip: string } {
   const parts = addr.split(',').map((s) => s.trim());
   if (parts.length >= 3) {
     const stateZip = parts[parts.length - 1].split(/\s+/);
-    return {
-      street: parts[0],
-      city: parts[1],
-      state: stateZip[0] || '',
-      zip: stateZip[1] || '',
-    };
+    return { street: parts[0], city: parts[1], state: stateZip[0] || '', zip: stateZip[1] || '' };
   }
   if (parts.length === 2) {
     const stateZip = parts[1].split(/\s+/);
-    return {
-      street: parts[0],
-      city: '',
-      state: stateZip[0] || '',
-      zip: stateZip[1] || '',
-    };
+    return { street: parts[0], city: '', state: stateZip[0] || '', zip: stateZip[1] || '' };
   }
   return { street: addr, city: '', state: '', zip: '' };
 }

@@ -1,20 +1,15 @@
 // CoverTree API Client
 // GraphQL client for quoting mobile/manufactured home insurance via CoverTree's AppSync API
-
-import {
-  CognitoIdentityProviderClient,
-  InitiateAuthCommand,
-} from '@aws-sdk/client-cognito-identity-provider';
+// Auth: Cognito REFRESH_TOKEN_AUTH flow (federated OIDC — no username/password)
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
 export interface CoverTreeConfig {
-  cognitoUsername: string;
-  cognitoPassword: string;
-  cognitoUserPoolId: string;
+  refreshToken: string;
   cognitoClientId: string;
+  cognitoRegion: string;
   graphqlEndpoint: string;
 }
 
@@ -23,18 +18,37 @@ interface CachedToken {
   expiresAt: number; // epoch ms
 }
 
-export interface CoverTreePlan {
-  locator: string;
-  name: string; // Silver, Gold, Platinum
-  premium: number;
-  coverages: CoverTreeCoverage[];
+export interface CoverTreeOffer {
+  quoteLocator: string;
+  plan: string; // Silver, Gold, Platinum
+  pricing: {
+    grossPremium: number;
+    totalDue: number;
+    fees?: Array<{ name: string; amount: number }>;
+    commissions?: Array<{ amount: number; recipient: string }>;
+  };
+  quote: {
+    homeCoverage?: number;
+    lossOfUse?: number;
+    personalLiability?: number;
+    medicalPaymentToOther?: number;
+    otherStructures?: number;
+    premisesLiability?: number;
+    standardDeductible?: number;
+    windHailDeductible?: number;
+    yourBelongings?: number;
+    waterDamage?: number;
+    waterDamageDeductible?: number;
+  };
+  homeCoverageDescription?: string;
+  yourBelongingsDescription?: string;
 }
 
-export interface CoverTreeCoverage {
-  name: string;
-  limit?: number;
-  deductible?: number;
-  premium?: number;
+export interface CoverTreeQuoteResult {
+  policyLocator: string;
+  step: string;
+  selectedQuoteLocator: string;
+  offers: CoverTreeOffer[];
 }
 
 export interface CoverTreeExtraCoverage {
@@ -44,58 +58,150 @@ export interface CoverTreeExtraCoverage {
   description?: string;
 }
 
-export interface CoverTreeQuoteResult {
-  quoteLocator: string;
-  policyLocator: string;
-  plans: CoverTreePlan[];
-}
-
-export interface CoverTreeManufacturer {
-  id: string;
-  name: string;
-}
-
 export interface CoverTreeDynamicQuestion {
-  key: string;
-  label: string;
-  type: string;
-  options?: string[];
-  required?: boolean;
+  questionId: string;
+  questionText: string;
+  answerType: string;
+  answerOptions?: string[];
+  defaultAnswer?: string;
 }
 
-export interface PolicyInput {
-  effectiveDate: string;
-  state: string;
-  policyUsage: string; // Owner, Landlord, Tenant
-  propertyAddress: {
-    street: string;
-    city: string;
-    state: string;
-    zip: string;
+export interface CoverTreePolicy {
+  policyLocator: string;
+  status: string;
+  step: string;
+  productTypeName?: string;
+  selectedQuoteLocator?: string;
+  mainUnitType?: string;
+  paymentScheduleName?: string;
+  startDate?: string;
+  endDate?: string;
+  insuredDateOfBirth?: string;
+  policyholder?: {
+    firstName: string;
+    lastName: string;
+    emailAddress: string;
+    primaryContactNumber?: string;
+    policyholderLocator: string;
+    mailingAddress?: {
+      streetAddress: string;
+      city: string;
+      state: string;
+      zipCode: string;
+    };
   };
-  homeType: string; // SingleWide, DoubleWide, TripleWide
-  manufacturer: string;
-  modelYear: number;
-  totalSquareFootage: number;
-  roofShape: string;
-  roofYear: number;
-  homeFixtures: string;
-  location: string;
-  purchaseDate: string;
-  priorInsurance: boolean;
+  units?: Array<{
+    unitId: string;
+    selectedPlan?: string;
+    address?: {
+      streetAddress: string;
+      city: string;
+      state: string;
+      zipCode: string;
+      county?: string;
+    };
+    construction?: {
+      homeType: string;
+      manufacturerName: string;
+      homeFixtures: string;
+      roofShape: string;
+      totalSquareFootage: number;
+      modelYear: number;
+    };
+    pricing?: {
+      grossPremium: number;
+      totalDue: number;
+    };
+  }>;
+  offers?: CoverTreeOffer[];
+  selectedQuotePricing?: {
+    grossPremium: number;
+    totalDue: number;
+  };
+  documents?: Array<{
+    url: string;
+    type: string;
+    fileName: string;
+    displayName: string;
+  }>;
+  agencyInformation?: {
+    agentId: string;
+    agentName: string;
+    agencyId: string;
+    agencyName: string;
+  };
+  underwritingNotes?: string[];
 }
 
-export interface PolicyholderInput {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  dateOfBirth: string;
-  mailingAddress: {
-    street: string;
-    city: string;
-    state: string;
-    zip: string;
+/** Input for CreateOrUpdateBasicPolicyDetailsWithHolder */
+export interface CreateQuoteInput {
+  effectiveDate: string;
+  policyUsage: string; // MainResidence, SecondaryResidence, SeasonalResidence, Landlord, Vacant
+  isNewPurchase: boolean;
+  purchaseDate: string; // InBuyingProcess, LessThan1Year, 1To3Years, 3To5Years, MoreThan5Years
+  priorInsurance: string; // Yes, No
+  priorCarrierName?: string;
+  priorPolicyExpirationDate?: string;
+  policyholder: {
+    firstName: string;
+    middleName?: string;
+    lastName: string;
+    emailAddress: string;
+    primaryContactNumber: string;
+    type: string; // Person
+    dateOfBirth: string;
+    mailingAddress: {
+      streetAddress: string;
+      city: string;
+      state: string;
+      zipCode: string;
+    };
+  };
+  unit: {
+    address: {
+      streetAddress: string;
+      city: string;
+      state: string;
+      zipCode: string;
+      county?: string;
+      countryCode?: string;
+    };
+    construction: {
+      homeType: string; // SingleWide, DoubleWide, TripleWide, ParkModel, TinyHome, ADU, StationaryTravelTrailer
+      manufacturerName: string;
+      homeFixtures: string; // Standard, AFewExtras, HighEnd
+      roofShape: string; // Gable, Hip, Flat, Gambrel, Mansard, Shed
+      totalSquareFootage: number;
+      modelYear: number;
+      location: string; // OwnLand, MobileHomePark, RentedLand
+    };
+  };
+  underwritingAnswers: {
+    burglarAlarm: string; // None, Local, Central
+    hasFireHydrantWithin1000Feet: boolean;
+    hasFireStationWithin5Miles: boolean;
+    hasSmokersInHome: boolean;
+    hasTrampolineOnPremises: boolean;
+    hasPoolOnPremises: boolean;
+    hasAnimalOrPetOnPremises: boolean;
+    hasBusinessOnPremises: boolean;
+    hasOpenOrKnownCodeViolation: boolean;
+    hasUncorrectedFireOrBuildingCodeViolation: boolean;
+    isInForeclosure: boolean;
+    hasOpenInsuranceClaim: boolean;
+    hasAnimalOrPetCausedInjury: boolean;
+    hasAnimalOrPetIsRestrictedBreed: boolean;
+    hasWoodBurningStove: boolean;
+    hasKnobAndTubeWiring: boolean;
+    isHitchedOrOnWheels: boolean;
+    isInFloodZone: boolean;
+    hasAluminumWiring: boolean;
+    hasFederalPacificElectricalPanel: boolean;
+    hasPolybutylenePiping: boolean;
+    hasGalvanizedPlumbing: boolean;
+    hasZinscoElectricalPanel: boolean;
+    hasSumpPump: boolean;
+    hasBackupGenerator: boolean;
   };
 }
 
@@ -105,45 +211,52 @@ export interface PolicyholderInput {
 
 export class CoverTreeClient {
   private config: CoverTreeConfig;
-  private cognitoClient: CognitoIdentityProviderClient;
   private cachedToken: CachedToken | null = null;
 
   constructor(config: CoverTreeConfig) {
     this.config = config;
-    // Extract region from user pool ID (e.g., us-east-1_lSBEsBjKs -> us-east-1)
-    const region = config.cognitoUserPoolId.split('_')[0];
-    this.cognitoClient = new CognitoIdentityProviderClient({ region });
   }
 
   // ---------------------------------------------------------------------------
-  // Authentication
+  // Authentication — REFRESH_TOKEN_AUTH flow
   // ---------------------------------------------------------------------------
 
-  private async authenticateWithCognito(): Promise<string> {
-    // Return cached token if still valid (with 60s buffer)
-    if (this.cachedToken && this.cachedToken.expiresAt > Date.now() + 60_000) {
+  private async refreshTokens(): Promise<string> {
+    // Return cached token if still valid (5-minute buffer)
+    if (this.cachedToken && this.cachedToken.expiresAt > Date.now()) {
       return this.cachedToken.idToken;
     }
 
-    const command = new InitiateAuthCommand({
-      AuthFlow: 'USER_PASSWORD_AUTH',
-      ClientId: this.config.cognitoClientId,
-      AuthParameters: {
-        USERNAME: this.config.cognitoUsername,
-        PASSWORD: this.config.cognitoPassword,
+    const url = `https://cognito-idp.${this.config.cognitoRegion}.amazonaws.com/`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
       },
+      body: JSON.stringify({
+        AuthFlow: 'REFRESH_TOKEN_AUTH',
+        ClientId: this.config.cognitoClientId,
+        AuthParameters: {
+          REFRESH_TOKEN: this.config.refreshToken,
+        },
+      }),
     });
 
-    const response = await this.cognitoClient.send(command);
+    const data = await response.json();
 
-    if (!response.AuthenticationResult?.IdToken) {
-      throw new Error('CoverTree Cognito auth failed: no IdToken returned');
+    if (!data.AuthenticationResult?.IdToken) {
+      const msg = data.message || 'Unknown error';
+      throw new Error(
+        `CoverTree token refresh failed: ${msg}. The refresh token may have expired (30-day lifetime).`
+      );
     }
 
-    const expiresIn = response.AuthenticationResult.ExpiresIn || 3600;
+    const expiresIn = data.AuthenticationResult.ExpiresIn || 3600;
     this.cachedToken = {
-      idToken: response.AuthenticationResult.IdToken,
-      expiresAt: Date.now() + expiresIn * 1000,
+      idToken: data.AuthenticationResult.IdToken,
+      // 5-minute buffer before expiry
+      expiresAt: Date.now() + (expiresIn - 300) * 1000,
     };
 
     return this.cachedToken.idToken;
@@ -154,18 +267,20 @@ export class CoverTreeClient {
   // ---------------------------------------------------------------------------
 
   private async graphqlRequest<T = any>(
+    operationName: string,
     query: string,
     variables: Record<string, any> = {}
   ): Promise<T> {
-    const token = await this.authenticateWithCognito();
+    const token = await this.refreshTokens();
 
     const response = await fetch(this.config.graphqlEndpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
+        'accept': '*/*',
+        'content-type': 'application/json',
+        'authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ query, variables }),
+      body: JSON.stringify({ operationName, query, variables }),
     });
 
     if (!response.ok) {
@@ -184,210 +299,313 @@ export class CoverTreeClient {
   }
 
   // ---------------------------------------------------------------------------
-  // Public Methods
+  // Quoting Flow
   // ---------------------------------------------------------------------------
+
+  /**
+   * Address autocomplete as user types
+   */
+  async getAutocompleteAddress(search: string): Promise<Array<{
+    streetAddress: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    county: string;
+  }>> {
+    const data = await this.graphqlRequest(
+      'GetAutocompleteAddress',
+      `query GetAutocompleteAddress($search: String!) {
+        getAutocompleteAddress(search: $search) {
+          streetAddress city state zipCode county
+        }
+      }`,
+      { search }
+    );
+    return data.getAutocompleteAddress || [];
+  }
+
+  /**
+   * Geocode an address
+   */
+  async geoCodeAddress(address: {
+    streetAddress: string;
+    city: string;
+    state: string;
+    zipCode: string;
+  }): Promise<{ latitude: number; longitude: number }> {
+    const data = await this.graphqlRequest(
+      'GeoCodeAddress',
+      `query GeoCodeAddress($address: GeoCodeInput!) {
+        geoCodeAddress(address: $address) { latitude longitude }
+      }`,
+      { address }
+    );
+    return data.geoCodeAddress;
+  }
 
   /**
    * Check if CoverTree can operate in a given state
    */
-  async canOperateInState(state: string): Promise<boolean> {
-    const data = await this.graphqlRequest<any>(
+  async canOperateInState(state: string): Promise<string> {
+    const data = await this.graphqlRequest(
+      'CanOperateInState',
       `query CanOperateInState($state: String!) {
-        canOperateInState(state: $state) {
-          canOperate
-          message
-        }
+        canOperateInState(state: $state)
       }`,
       { state }
     );
-    return data.canOperateInState?.canOperate ?? false;
+    return data.canOperateInState; // Returns "Yes" or "No"
   }
 
   /**
-   * Get dynamic questions for a state/effectiveDate/policyUsage combo
+   * Validate an email address
    */
-  async getDynamicQuestions(
-    state: string,
-    effectiveDate: string,
-    policyUsage: string
-  ): Promise<CoverTreeDynamicQuestion[]> {
-    const data = await this.graphqlRequest<any>(
-      `query GetDynamicQuestions($state: String!, $effectiveDate: String!, $policyUsage: String!) {
-        getDynamicQuestions(state: $state, effectiveDate: $effectiveDate, policyUsage: $policyUsage) {
-          key
-          label
-          type
-          options
-          required
+  async validateEmail(emailAddress: string): Promise<boolean> {
+    const data = await this.graphqlRequest(
+      'ValidateEmail',
+      `query ValidateEmail($emailAddress: AWSEmail!) {
+        validateEmail(emailAddress: $emailAddress) { isValid }
+      }`,
+      { emailAddress }
+    );
+    return data.validateEmail?.isValid ?? false;
+  }
+
+  /**
+   * Get state-specific dynamic questions
+   */
+  async getDynamicQuestions(state: string): Promise<CoverTreeDynamicQuestion[]> {
+    const data = await this.graphqlRequest(
+      'GetDynamicQuestions',
+      `query GetDynamicQuestions($state: String!) {
+        getDynamicQuestions(state: $state) {
+          questionId questionText answerType answerOptions defaultAnswer
         }
       }`,
-      { state, effectiveDate, policyUsage }
+      { state }
     );
     return data.getDynamicQuestions || [];
   }
 
   /**
-   * Step 2: Create a quote with policy and policyholder info
-   */
-  async createQuote(
-    policyInput: PolicyInput,
-    policyholderInput: PolicyholderInput
-  ): Promise<CoverTreeQuoteResult> {
-    const data = await this.graphqlRequest<any>(
-      `mutation CreateQuote($policyInput: PolicyInput!, $policyholderInput: PolicyholderInput!) {
-        createQuote(policyInput: $policyInput, policyholderInput: $policyholderInput) {
-          quoteLocator
-          policyLocator
-          plans {
-            locator
-            name
-            premium
-            coverages {
-              name
-              limit
-              deductible
-              premium
-            }
-          }
-        }
-      }`,
-      { policyInput, policyholderInput }
-    );
-    return data.createQuote;
-  }
-
-  /**
-   * Step 3: Select a plan from the returned options
-   */
-  async selectPlan(quoteLocator: string): Promise<{ policyLocator: string; selectedPlan: string }> {
-    const data = await this.graphqlRequest<any>(
-      `mutation SelectPlan($quoteLocator: String!) {
-        selectPlan(quoteLocator: $quoteLocator) {
-          policyLocator
-          selectedPlan
-        }
-      }`,
-      { quoteLocator }
-    );
-    return data.selectPlan;
-  }
-
-  /**
-   * Step 4: Save extra/optional coverages
-   */
-  async saveExtraCoverages(
-    policyLocator: string,
-    policyLevel: Record<string, boolean>,
-    unitLevel: Record<string, boolean>
-  ): Promise<{ success: boolean }> {
-    const data = await this.graphqlRequest<any>(
-      `mutation SaveExtraCoverages($policyLocator: String!, $policyLevel: AWSJSON!, $unitLevel: AWSJSON!) {
-        saveExtraCoverages(policyLocator: $policyLocator, policyLevel: $policyLevel, unitLevel: $unitLevel) {
-          success
-        }
-      }`,
-      {
-        policyLocator,
-        policyLevel: JSON.stringify(policyLevel),
-        unitLevel: JSON.stringify(unitLevel),
-      }
-    );
-    return data.saveExtraCoverages;
-  }
-
-  /**
-   * Step 5: Update underwriting answers
-   */
-  async updateUnderwritingAnswers(
-    policyLocator: string,
-    policyLevelUW: Record<string, boolean>,
-    unitLevelUW: Record<string, boolean>
-  ): Promise<{ success: boolean }> {
-    const data = await this.graphqlRequest<any>(
-      `mutation UpdateUnderwritingAnswers($policyLocator: String!, $policyLevelUW: AWSJSON!, $unitLevelUW: AWSJSON!) {
-        updateUnderwritingAnswers(policyLocator: $policyLocator, policyLevelUW: $policyLevelUW, unitLevelUW: $unitLevelUW) {
-          success
-        }
-      }`,
-      {
-        policyLocator,
-        policyLevelUW: JSON.stringify(policyLevelUW),
-        unitLevelUW: JSON.stringify(unitLevelUW),
-      }
-    );
-    return data.updateUnderwritingAnswers;
-  }
-
-  /**
-   * Step 6a: Check prior claims before binding
-   */
-  async checkPriorClaims(policyLocator: string): Promise<{ hasClaims: boolean; canBind: boolean; message?: string }> {
-    const data = await this.graphqlRequest<any>(
-      `mutation CheckPriorClaims($policyLocator: String!) {
-        checkPriorClaims(policyLocator: $policyLocator) {
-          hasClaims
-          canBind
-          message
-        }
-      }`,
-      { policyLocator }
-    );
-    return data.checkPriorClaims;
-  }
-
-  /**
-   * Step 6b: Initiate purchase (bind policy)
-   */
-  async initiatePurchase(policyLocator: string): Promise<{
-    success: boolean;
-    policyNumber?: string;
-    message?: string;
-  }> {
-    const data = await this.graphqlRequest<any>(
-      `mutation InitiatePurchase($policyLocator: String!) {
-        initiatePurchase(policyLocator: $policyLocator) {
-          success
-          policyNumber
-          message
-        }
-      }`,
-      { policyLocator }
-    );
-    return data.initiatePurchase;
-  }
-
-  /**
    * Search manufacturers for autocomplete
+   * Note: Uses the getParameters resolver with type=Manufacturer
    */
-  async getManufacturers(search: string): Promise<CoverTreeManufacturer[]> {
-    const data = await this.graphqlRequest<any>(
+  async getManufacturers(search: string): Promise<Array<{ value: string }>> {
+    const data = await this.graphqlRequest(
+      'GetManufacturers',
       `query GetManufacturers($search: String!) {
-        getManufacturers(search: $search) {
-          id
-          name
-        }
+        getParameters(type: Manufacturer, search: $search) { value }
       }`,
       { search }
     );
-    return data.getManufacturers || [];
+    return data.getParameters || [];
+  }
+
+  /**
+   * Core quote creation — CreateOrUpdateBasicPolicyDetailsWithHolder
+   * Accepts all property details, policyholder info, and UW answers in one call.
+   * Returns three plan offers (Silver, Gold, Platinum) with pricing.
+   */
+  async createQuote(
+    input: CreateQuoteInput,
+    policyLocator?: string
+  ): Promise<CoverTreeQuoteResult> {
+    const data = await this.graphqlRequest(
+      'CreateOrUpdateBasicPolicyDetailsWithHolder',
+      `mutation CreateOrUpdateBasicPolicyDetailsWithHolder($policyLocator: ID, $input: CreateOrUpdatePolicyInput!) {
+        createOrUpdateBasicPolicyDetailsWithHolder(policyLocator: $policyLocator, input: $input) {
+          policyLocator step selectedQuoteLocator
+          offers {
+            quoteLocator plan
+            pricing { grossPremium totalDue fees { name amount } commissions { amount recipient } }
+            quote { homeCoverage lossOfUse personalLiability medicalPaymentToOther otherStructures premisesLiability standardDeductible windHailDeductible yourBelongings waterDamage waterDamageDeductible }
+            homeCoverageDescription yourBelongingsDescription
+          }
+        }
+      }`,
+      { policyLocator: policyLocator || null, input }
+    );
+    return data.createOrUpdateBasicPolicyDetailsWithHolder;
+  }
+
+  /**
+   * Select a plan tier (Silver, Gold, or Platinum) after quotes are generated
+   */
+  async selectQuote(
+    policyLocator: string,
+    quoteLocator: string
+  ): Promise<{ policyLocator: string; step: string; selectedQuoteLocator: string }> {
+    const data = await this.graphqlRequest(
+      'SelectQuote',
+      `mutation SelectQuote($policyLocator: ID!, $quoteLocator: ID!) {
+        selectQuote(policyLocator: $policyLocator, quoteLocator: $quoteLocator) {
+          policyLocator step selectedQuoteLocator
+        }
+      }`,
+      { policyLocator, quoteLocator }
+    );
+    return data.selectQuote;
   }
 
   /**
    * Get extra coverage prices for a policy
    */
   async getExtraCoveragePrices(policyLocator: string): Promise<CoverTreeExtraCoverage[]> {
-    const data = await this.graphqlRequest<any>(
-      `query GetExtraCoveragePrices($policyLocator: String!) {
-        getExtraCoveragePrices(policyLocator: $policyLocator) {
-          name
-          key
-          price
-          description
+    const data = await this.graphqlRequest(
+      'GetExtraCoveragesPrices',
+      `query GetExtraCoveragesPrices($policyLocator: ID!) {
+        getExtraCoveragesPrices(policyLocator: $policyLocator) {
+          name key price description
         }
       }`,
       { policyLocator }
     );
-    return data.getExtraCoveragePrices || [];
+    return data.getExtraCoveragesPrices || [];
+  }
+
+  /**
+   * Save extra/optional coverages
+   */
+  async saveExtraCoverages(
+    policyLocator: string,
+    input: Record<string, any>
+  ): Promise<{ policyLocator: string; step: string }> {
+    const data = await this.graphqlRequest(
+      'SaveExtraCoverages',
+      `mutation SaveExtraCoverages($policyLocator: ID!, $input: SaveExtraCoveragesInput!) {
+        saveExtraCoverages(policyLocator: $policyLocator, input: $input) {
+          policyLocator step
+        }
+      }`,
+      { policyLocator, input }
+    );
+    return data.saveExtraCoverages;
+  }
+
+  /**
+   * Update underwriting answers after initial submission
+   */
+  async updateUnderwritingAnswers(
+    policyLocator: string,
+    input: Record<string, any>
+  ): Promise<{ policyLocator: string; step: string }> {
+    const data = await this.graphqlRequest(
+      'UpdateUnderwritingAnswers',
+      `mutation UpdateUnderwritingAnswers($policyLocator: ID!, $input: UpdateUnderwritingAnswersInput!) {
+        updateUnderwritingAnswers(policyLocator: $policyLocator, input: $input) {
+          policyLocator step
+        }
+      }`,
+      { policyLocator, input }
+    );
+    return data.updateUnderwritingAnswers;
+  }
+
+  /**
+   * Run prior claims check for the property
+   */
+  async checkAndAddPriorClaim(
+    policyLocator: string,
+    address: { streetAddress: string; city: string; state: string; zipCode: string }
+  ): Promise<{ policyLocator: string; step: string }> {
+    const data = await this.graphqlRequest(
+      'CheckAndAddPriorClaim',
+      `mutation CheckAndAddPriorClaim($policyLocator: ID!, $address: PriorClaimAddressInput!) {
+        checkAndAddPriorClaim(policyLocator: $policyLocator, address: $address) {
+          policyLocator step
+        }
+      }`,
+      { policyLocator, address }
+    );
+    return data.checkAndAddPriorClaim;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Policy Retrieval
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get full policy details
+   */
+  async getPolicy(policyLocator: string): Promise<CoverTreePolicy> {
+    const data = await this.graphqlRequest(
+      'GetPolicy',
+      `query GetPolicy($policyLocator: ID!) {
+        getPolicy(policyLocator: $policyLocator) {
+          policyLocator status step productTypeName selectedQuoteLocator mainUnitType paymentScheduleName startDate endDate insuredDateOfBirth isEsigned
+          policyholder { firstName lastName middleName emailAddress primaryContactNumber policyholderLocator type mailingAddress { streetAddress city zipCode state county } }
+          priorInsuranceDetails { priorInsurance priorCarrierName priorPolicyExpirationDate }
+          units { unitId exposureLocator selectedPlan address { streetAddress city zipCode state county } construction { homeType manufacturerName homeFixtures roofShape totalSquareFootage modelYear } pricing { grossPremium totalDue fees { name amount } } }
+          offers { quoteLocator plan pricing { grossPremium totalDue fees { name amount } } quote { homeCoverage lossOfUse personalLiability medicalPaymentToOther otherStructures premisesLiability standardDeductible windHailDeductible yourBelongings waterDamageDeductible waterDamage } homeCoverageDescription yourBelongingsDescription }
+          selectedQuotePricing { grossPremium totalDue fees { name amount } }
+          documents { url type fileName documentLocator displayName createdTimestamp }
+          agencyInformation { agentId agencyName agencyId agentName }
+          underwritingNotes
+        }
+      }`,
+      { policyLocator }
+    );
+    return data.getPolicy;
+  }
+
+  /**
+   * Search policies by name, address, or policy number
+   */
+  async search(query: string): Promise<Array<{
+    policyLocator: string;
+    status: string;
+    productTypeName: string | null;
+  }>> {
+    const data = await this.graphqlRequest(
+      'Search',
+      `query Search($query: String!) {
+        search(query: $query) { policyLocator status productTypeName }
+      }`,
+      { query }
+    );
+    return data.search || [];
+  }
+
+  /**
+   * Get quote documents (binder, application, proposal)
+   */
+  async getQuoteDocuments(
+    policyLocator: string,
+    paymentSchedule: 'FullPay' | 'MonthlyPay' = 'FullPay'
+  ): Promise<{
+    binderDocumentUrl: string;
+    applicationDocumentUrl: string;
+    quoteProposalUrl: string;
+  }> {
+    const data = await this.graphqlRequest(
+      'GetQuoteDocuments',
+      `query GetQuoteDocuments($policyLocator: ID!, $paymentSchedule: PaymentSchedule!) {
+        getQuoteDocuments(policyLocator: $policyLocator, paymentSchedule: $paymentSchedule) {
+          binderDocumentUrl applicationDocumentUrl quoteProposalUrl
+        }
+      }`,
+      { policyLocator, paymentSchedule }
+    );
+    return data.getQuoteDocuments;
+  }
+
+  /**
+   * Get overview metrics for the agency dashboard
+   */
+  async getOverviewMetrics(): Promise<{
+    quotesAmount: number;
+    policiesAmount: number;
+    premium: number;
+    quoteToBindRatioPercent: number;
+  }> {
+    const data = await this.graphqlRequest(
+      'GetOverviewMetrics',
+      `query GetOverviewMetrics {
+        getOverviewMetrics { metrics { quotesAmount policiesAmount premium quoteToBindRatioPercent } }
+      }`
+    );
+    return data.getOverviewMetrics?.metrics;
   }
 }
 
@@ -399,21 +617,23 @@ let coverTreeClient: CoverTreeClient | null = null;
 
 export function getCoverTreeClient(): CoverTreeClient {
   if (!coverTreeClient) {
-    const cognitoUsername = process.env.COVERTREE_COGNITO_USERNAME;
-    const cognitoPassword = process.env.COVERTREE_COGNITO_PASSWORD;
-    const cognitoUserPoolId = process.env.COVERTREE_COGNITO_USER_POOL_ID;
-    const cognitoClientId = process.env.COVERTREE_COGNITO_CLIENT_ID;
-    const graphqlEndpoint = process.env.COVERTREE_GRAPHQL_ENDPOINT;
+    const refreshToken = process.env.COVERTREE_REFRESH_TOKEN;
+    const cognitoClientId = process.env.COVERTREE_COGNITO_CLIENT_ID || 't8fv2i5uq3teuc0vjjb0pcqf9';
+    const cognitoRegion = process.env.COVERTREE_COGNITO_REGION || 'us-east-1';
+    const graphqlEndpoint = process.env.COVERTREE_GRAPHQL_ENDPOINT ||
+      'https://fjyrjhbjiffbteohp5y75vt6qm.appsync-api.us-east-1.amazonaws.com/graphql';
 
-    if (!cognitoUsername || !cognitoPassword || !cognitoUserPoolId || !cognitoClientId || !graphqlEndpoint) {
-      throw new Error('CoverTree credentials not configured. Check COVERTREE_* environment variables.');
+    if (!refreshToken) {
+      throw new Error(
+        'CoverTree refresh token not configured. Set COVERTREE_REFRESH_TOKEN environment variable. ' +
+        'This token is obtained from the CoverTree/First Connect portal and lasts ~30 days.'
+      );
     }
 
     coverTreeClient = new CoverTreeClient({
-      cognitoUsername,
-      cognitoPassword,
-      cognitoUserPoolId,
+      refreshToken,
       cognitoClientId,
+      cognitoRegion,
       graphqlEndpoint,
     });
   }
