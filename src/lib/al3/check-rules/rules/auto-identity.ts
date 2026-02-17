@@ -4,7 +4,7 @@
  */
 
 import type { CheckRuleDefinition } from '@/types/check-rules.types';
-import { makeCheck, strDiffers } from '../helpers';
+import { makeCheck, strDiffers, norm } from '../helpers';
 
 export const autoIdentityRules: CheckRuleDefinition[] = [
   {
@@ -134,6 +134,80 @@ export const autoIdentityRules: CheckRuleDefinition[] = [
         message: hasCarrier ? `Carrier: ${carrier}` : 'Carrier name missing',
         agentAction: hasCarrier ? 'No action needed' : 'STOP: Cannot process without carrier',
         checkType: 'existence',
+        category: 'Identity',
+        isBlocking: true,
+      });
+    },
+  },
+  {
+    ruleId: 'A-005',
+    name: 'Insured Address',
+    description: 'Verify insured address matches between terms (BLOCKING)',
+    checkType: 'value_change',
+    category: 'Identity',
+    phase: 1,
+    isBlocking: true,
+    lob: 'auto',
+    evaluate: (ctx) => {
+      const renAddr = [ctx.renewal.insuredAddress, ctx.renewal.insuredCity, ctx.renewal.insuredState, ctx.renewal.insuredZip]
+        .filter(Boolean).join(', ') || null;
+      const basAddr = (ctx.baseline as any).insuredAddress
+        ? [(ctx.baseline as any).insuredAddress, (ctx.baseline as any).insuredCity, (ctx.baseline as any).insuredState, (ctx.baseline as any).insuredZip]
+            .filter(Boolean).join(', ')
+        : null;
+
+      if (!renAddr && !basAddr) return null;
+      if (!renAddr || !basAddr) {
+        return makeCheck('A-005', {
+          field: 'Insured Address',
+          previousValue: basAddr,
+          renewalValue: renAddr,
+          change: !basAddr ? 'Baseline address not available' : 'Renewal address not available',
+          severity: 'info',
+          message: !basAddr
+            ? `Address from renewal: ${renAddr} (no baseline to compare)`
+            : 'Renewal has no address — cannot verify',
+          agentAction: 'Address comparison unavailable — verify manually',
+          checkType: 'value_change',
+          category: 'Identity',
+          isBlocking: false,
+        });
+      }
+
+      // Compare zip codes as a quick mismatch indicator
+      const renZip = (ctx.renewal.insuredZip || '').trim().slice(0, 5);
+      const basZip = ((ctx.baseline as any).insuredZip || '').trim().slice(0, 5);
+      const zipChanged = renZip && basZip && renZip !== basZip;
+      const fullChanged = norm(renAddr) !== norm(basAddr);
+
+      if (!fullChanged) {
+        return makeCheck('A-005', {
+          field: 'Insured Address',
+          previousValue: basAddr,
+          renewalValue: renAddr,
+          change: 'No change',
+          severity: 'unchanged',
+          message: 'Insured address matches',
+          agentAction: 'No action needed',
+          checkType: 'value_change',
+          category: 'Identity',
+          isBlocking: true,
+        });
+      }
+
+      return makeCheck('A-005', {
+        field: 'Insured Address',
+        previousValue: basAddr,
+        renewalValue: renAddr,
+        change: 'Changed',
+        severity: zipChanged ? 'critical' : 'warning',
+        message: zipChanged
+          ? 'Insured address AND zip code changed — may be wrong policy match'
+          : 'Insured address changed — verify correct policy',
+        agentAction: zipChanged
+          ? 'STOP: Address zip code changed — verify this renewal matches the correct insured'
+          : 'Address changed — confirm with customer, may affect rate territory',
+        checkType: 'value_change',
         category: 'Identity',
         isBlocking: true,
       });

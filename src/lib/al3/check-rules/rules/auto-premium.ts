@@ -268,4 +268,54 @@ export const autoPremiumRules: CheckRuleDefinition[] = [
       });
     },
   },
+  {
+    ruleId: 'A-045',
+    name: 'Required Coverages',
+    description: 'Verify all state-required auto coverages are present',
+    checkType: 'existence',
+    category: 'Premium',
+    phase: 5,
+    isBlocking: false,
+    lob: 'auto',
+    evaluate: (ctx) => {
+      // BI and PD are required in all states; check policy-level + vehicle-level
+      const allCovs = [
+        ...ctx.renewal.coverages,
+        ...ctx.renewal.vehicles.flatMap(v => v.coverages),
+      ];
+      const expectedCovs = ['bodily_injury', 'property_damage'];
+      const missing = expectedCovs.filter(type =>
+        !allCovs.some(c => c.type === type && c.limitAmount != null && c.limitAmount > 0)
+      );
+
+      if (missing.length === 0) {
+        return makeCheck('A-045', {
+          field: 'Required Coverages',
+          previousValue: null,
+          renewalValue: `${allCovs.length} coverages`,
+          change: 'All present',
+          severity: 'unchanged',
+          message: 'All required auto coverages present (BI, PD)',
+          agentAction: 'No action needed',
+          checkType: 'existence',
+          category: 'Premium',
+          isBlocking: false,
+        });
+      }
+
+      const labels = missing.map(m => m === 'bodily_injury' ? 'Bodily Injury' : 'Property Damage');
+      return makeCheck('A-045', {
+        field: 'Required Coverages',
+        previousValue: null,
+        renewalValue: `Missing: ${labels.join(', ')}`,
+        change: `Missing ${missing.length} coverage(s)`,
+        severity: 'warning',
+        message: `Required coverage(s) missing: ${labels.join(', ')}`,
+        agentAction: `Verify missing coverages: ${labels.join(', ')} — may be parsing issue or state-minimum gap`,
+        checkType: 'existence',
+        category: 'Premium',
+        isBlocking: false,
+      });
+    },
+  },
 ];

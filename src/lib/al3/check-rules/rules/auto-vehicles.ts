@@ -264,4 +264,71 @@ export const autoVehicleRules: CheckRuleDefinition[] = [
       return results.length > 0 ? results : null;
     },
   },
+  {
+    ruleId: 'A-016',
+    name: 'Lienholder Change',
+    description: 'Detect lienholder added or removed between terms',
+    checkType: 'value_change',
+    category: 'Vehicles',
+    phase: 6,
+    isBlocking: false,
+    lob: 'auto',
+    evaluate: (ctx) => {
+      const { matched } = matchVehicles(ctx.baseline.vehicles, ctx.renewal.vehicles);
+      const results: CheckResult[] = [];
+
+      for (const [basV, renV] of matched) {
+        const basLien = basV.lienholder?.trim() || null;
+        const renLien = renV.lienholder?.trim() || null;
+
+        if (!basLien && !renLien) continue;
+        if (norm(basLien) === norm(renLien)) continue;
+
+        const label = vehicleLabel(renV);
+
+        if (basLien && !renLien) {
+          results.push(makeCheck('A-016', {
+            field: `Lienholder: ${label}`,
+            previousValue: basLien,
+            renewalValue: null,
+            change: `Removed: ${basLien}`,
+            severity: 'warning',
+            message: `Lienholder removed from ${label}: was ${basLien}`,
+            agentAction: 'Lienholder removed — confirm vehicle is paid off or verify with customer',
+            checkType: 'value_change',
+            category: 'Vehicles',
+            isBlocking: false,
+          }));
+        } else if (!basLien && renLien) {
+          results.push(makeCheck('A-016', {
+            field: `Lienholder: ${label}`,
+            previousValue: null,
+            renewalValue: renLien,
+            change: `Added: ${renLien}`,
+            severity: 'info',
+            message: `Lienholder added to ${label}: ${renLien}`,
+            agentAction: 'New lienholder — verify comp/collision coverages meet requirements',
+            checkType: 'value_change',
+            category: 'Vehicles',
+            isBlocking: false,
+          }));
+        } else {
+          results.push(makeCheck('A-016', {
+            field: `Lienholder: ${label}`,
+            previousValue: basLien,
+            renewalValue: renLien,
+            change: `Changed: ${basLien} → ${renLien}`,
+            severity: 'info',
+            message: `Lienholder changed on ${label}: ${basLien} → ${renLien}`,
+            agentAction: 'Lienholder changed — may indicate refinance, verify details',
+            checkType: 'value_change',
+            category: 'Vehicles',
+            isBlocking: false,
+          }));
+        }
+      }
+
+      return results.length > 0 ? results : null;
+    },
+  },
 ];
