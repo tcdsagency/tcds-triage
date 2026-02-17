@@ -751,6 +751,61 @@ export function splitAL3Records(content: string): string[] {
     pos += recordLength;
   }
 
+  // Post-processing: rescue embedded 6CVA/6CVH records that were swallowed by container
+  // records with inflated stated lengths (e.g., NatGen 9AOI/6PVH/5VEH records whose lengths
+  // encompass subsequent coverage records, causing BI/PD to be skipped).
+  // Rescued records must be inserted at their correct position (sorted by raw offset)
+  // so they appear within the right transaction boundary (before 3MTG).
+  if (records.length > 0) {
+    // Build a map of record → raw position for existing records
+    const recordPositions = new Map<string, number>();
+    let scanPos = 0;
+    const capturedPositions = new Set<number>();
+    for (const rec of records) {
+      const foundAt = raw.indexOf(rec, scanPos);
+      if (foundAt !== -1) {
+        recordPositions.set(rec, foundAt);
+        capturedPositions.add(foundAt);
+        scanPos = foundAt + 1;
+      }
+    }
+
+    // Scan for 6CVA/6CVH headers that weren't captured
+    const rescued: { pos: number; record: string }[] = [];
+    const coverageCodes = ['6CVA', '6CVH'];
+    for (const code of coverageCodes) {
+      let searchPos = 0;
+      while ((searchPos = raw.indexOf(code, searchPos)) !== -1) {
+        if (!capturedPositions.has(searchPos)) {
+          const lenStr = raw.substring(searchPos + 4, searchPos + 7).trim();
+          const len = parseInt(lenStr, 10);
+          if (!isNaN(len) && len >= 7 && len <= 500) {
+            const embedded = raw.substring(searchPos, searchPos + Math.min(len, raw.length - searchPos));
+            if (embedded.length >= 7) {
+              rescued.push({ pos: searchPos, record: embedded });
+            }
+          }
+        }
+        searchPos += 4;
+      }
+    }
+
+    if (rescued.length > 0) {
+      // Merge rescued records into the correct positions
+      // Build array of { pos, record } for all records, then sort by position
+      const allWithPos: { pos: number; record: string }[] = records.map(r => ({
+        pos: recordPositions.get(r) ?? 0,
+        record: r,
+      }));
+      allWithPos.push(...rescued);
+      allWithPos.sort((a, b) => a.pos - b.pos);
+      records.length = 0;
+      for (const item of allWithPos) {
+        records.push(item.record);
+      }
+    }
+  }
+
   return records.length > 0 ? records : lines;
 }
 
