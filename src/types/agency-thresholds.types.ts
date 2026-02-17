@@ -10,7 +10,7 @@ import type { ComparisonThresholds } from './renewal.types';
 export interface AgencyThresholds extends ComparisonThresholds {
   // Premium severity tiers
   premiumIncreaseCritical: number;    // 25%
-  premiumIncreaseWarning: number;     // 15%
+  premiumIncreaseWarning: number;     // 10%
   premiumIncreaseInfo: number;        // 5%
 
   // Homeowners coverage ratios (relative to Coverage A)
@@ -34,7 +34,7 @@ export const DEFAULT_AGENCY_THRESHOLDS: AgencyThresholds = {
 
   // Premium severity tiers
   premiumIncreaseCritical: 25,
-  premiumIncreaseWarning: 15,
+  premiumIncreaseWarning: 10,
   premiumIncreaseInfo: 5,
 
   // Homeowners coverage ratios

@@ -46,6 +46,12 @@ export const autoPremiumRules: CheckRuleDefinition[] = [
         if (absPct >= ctx.thresholds.premiumIncreaseCritical) severity = 'critical';
         else if (absPct >= ctx.thresholds.premiumIncreaseWarning) severity = 'warning';
         else if (absPct >= ctx.thresholds.premiumIncreaseInfo) severity = 'info';
+
+        // Dollar-amount floor: if increase exceeds the comparison engine's
+        // dollar threshold, severity should be at least warning
+        if (diff >= ctx.thresholds.premiumIncreaseAmount && severity === 'info') {
+          severity = 'warning';
+        }
       } else if (diff < 0) {
         severity = 'info';
       }
@@ -62,7 +68,7 @@ export const autoPremiumRules: CheckRuleDefinition[] = [
         agentAction: severity === 'critical'
           ? 'Premium increase exceeds 25% — reshop immediately'
           : severity === 'warning'
-          ? 'Premium increase 15-25% — consider reshopping'
+          ? 'Premium increase 10-25% — consider reshopping'
           : 'No action needed',
         checkType: 'threshold',
         category: 'Premium',

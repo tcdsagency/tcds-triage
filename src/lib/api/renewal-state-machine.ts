@@ -21,7 +21,7 @@ import { addToRetryQueue } from './retry-queue';
 const VALID_TRANSITIONS: Record<RenewalCanonicalStage, RenewalCanonicalStage[]> = {
   policy_pending_review: ['waiting_agent_review', 'completed'],
   waiting_agent_review: ['contact_customer', 'requote_requested', 'completed'],
-  contact_customer: ['unable_to_contact', 'waiting_customer', 'completed'],
+  contact_customer: ['unable_to_contact', 'waiting_customer', 'requote_requested', 'completed'],
   unable_to_contact: ['contact_customer', 'completed'],
   requote_requested: ['quote_ready_ezl', 'completed'],
   quote_ready_ezl: ['waiting_customer', 'contact_customer', 'completed'],
