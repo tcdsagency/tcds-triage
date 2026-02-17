@@ -26,6 +26,7 @@ export async function PATCH(
     if (body.candidatesCompleted != null) updateData.candidatesCompleted = body.candidatesCompleted;
     if (body.candidatesFailed != null) updateData.candidatesFailed = body.candidatesFailed;
     if (body.candidatesSkipped != null) updateData.candidatesSkipped = body.candidatesSkipped;
+    if (body.totalBaselinesStored != null) updateData.totalBaselinesStored = body.totalBaselinesStored;
     if (body.errorMessage) updateData.errorMessage = body.errorMessage;
     if (body.processingStartedAt) updateData.processingStartedAt = new Date(body.processingStartedAt);
     if (body.processingCompletedAt) updateData.processingCompletedAt = new Date(body.processingCompletedAt);

@@ -87,6 +87,49 @@ export function partitionTransactions(
 }
 
 /**
+ * Partition transactions into renewals, baselines, and archived.
+ * - Renewals: renewal type AND effective > today
+ * - Baselines: renewal type AND effective ≤ today AND expiration ≥ today
+ * - Archived: non-renewal types OR expiration < today
+ */
+export function partitionTransactionsV2(
+  transactions: AL3ParsedTransaction[],
+  carrierRenewalTypes?: string[],
+  defaults: string[] = DEFAULT_RENEWAL_TRANSACTION_TYPES
+): { renewals: AL3ParsedTransaction[]; baselines: AL3ParsedTransaction[]; archived: AL3ParsedTransaction[] } {
+  const renewalTypes = new Set(
+    (carrierRenewalTypes && carrierRenewalTypes.length > 0 ? carrierRenewalTypes : defaults)
+      .map((t) => t.toUpperCase())
+  );
+
+  const today = new Date().toISOString().split('T')[0];
+  const renewals: AL3ParsedTransaction[] = [];
+  const baselines: AL3ParsedTransaction[] = [];
+  const archived: AL3ParsedTransaction[] = [];
+
+  for (const t of transactions) {
+    const isRenewalType = renewalTypes.has(t.header.transactionType.toUpperCase());
+    const effDate = t.header.effectiveDate?.split('T')[0];
+    const expDate = t.header.expirationDate?.split('T')[0];
+
+    if (!isRenewalType) {
+      archived.push(t);
+    } else if (expDate && expDate < today) {
+      // Expired — archive it
+      archived.push(t);
+    } else if (effDate && effDate <= today) {
+      // Effective ≤ today AND not expired → baseline (current in-term)
+      baselines.push(t);
+    } else {
+      // Effective > today → renewal (future term)
+      renewals.push(t);
+    }
+  }
+
+  return { renewals, baselines, archived };
+}
+
+/**
  * Deduplicate renewals by carrier+policy+effectiveDate.
  * Keeps the most recent (last in file order, which is typically most recent).
  */

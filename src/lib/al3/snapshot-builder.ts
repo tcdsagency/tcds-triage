@@ -71,6 +71,20 @@ function mapAL3InterestType(code?: string): CanonicalMortgagee['type'] {
 }
 
 /**
+ * Clean driver name — strip leading single-character prefix (C/P/F) + extra whitespace.
+ * Some carriers embed a role prefix: C=Customer, P=Primary, F=First-named.
+ */
+function cleanDriverName(name?: string): string | undefined {
+  if (!name) return undefined;
+  // Strip leading single letter followed by whitespace (e.g., "CBrad Cornelius" → "Brad Cornelius",
+  // "P        Kenneth Gooden" → "Kenneth Gooden", "F Vincent Barber" → "Vincent Barber")
+  let cleaned = name.replace(/^[A-Z]\s+/, '').replace(/^[CPF](?=[A-Z][a-z])/, '');
+  // Collapse multiple spaces
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  return cleaned || undefined;
+}
+
+/**
  * Build a canonical RenewalSnapshot from a parsed AL3 transaction.
  */
 export function buildRenewalSnapshot(
@@ -80,6 +94,7 @@ export function buildRenewalSnapshot(
   // Normalize coverages — re-parse limitAmount/deductibleAmount with split-limit awareness
   // parseSplitLimit returns undefined for 0 values (AL3 "00" filler fields)
   const coverages: CanonicalCoverage[] = transaction.coverages.map((cov) => ({
+    code: cov.code || undefined,
     type: normalizeCoverageType(cov.code, carrierOverrides),
     description: cov.description || cov.code,
     limit: cov.limit,
@@ -97,6 +112,7 @@ export function buildRenewalSnapshot(
     model: veh.model,
     usage: veh.usage,
     coverages: veh.coverages.map((cov) => ({
+      code: cov.code || undefined,
       type: normalizeCoverageType(cov.code, carrierOverrides),
       description: cov.description || cov.code,
       limit: cov.limit,
@@ -107,9 +123,9 @@ export function buildRenewalSnapshot(
     })),
   }));
 
-  // Normalize drivers
+  // Normalize drivers — clean name prefixes (some carriers prefix with "C" or "P" + spaces)
   const drivers: CanonicalDriver[] = transaction.drivers.map((drv) => ({
-    name: drv.name,
+    name: cleanDriverName(drv.name),
     dateOfBirth: drv.dateOfBirth,
     licenseNumber: drv.licenseNumber,
     licenseState: drv.licenseState,

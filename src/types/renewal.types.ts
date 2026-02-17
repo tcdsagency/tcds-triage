@@ -122,7 +122,8 @@ export interface AL3Mortgagee {
  * Normalized coverage (carrier-agnostic).
  */
 export interface CanonicalCoverage {
-  type: string; // e.g., 'bodily_injury', 'property_damage', 'collision'
+  code?: string; // Original carrier coverage code (e.g., 'BI', 'PD', 'DWELL')
+  type: string; // Normalized canonical type (e.g., 'bodily_injury', 'property_damage', 'dwelling')
   description: string;
   limit?: string;
   limitAmount?: number;

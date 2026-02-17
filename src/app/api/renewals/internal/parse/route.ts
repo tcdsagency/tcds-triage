@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractAL3FilesFromZip } from '@/lib/al3/zip-extractor';
 import { parseAL3File } from '@/lib/al3/parser';
-import { filterRenewalTransactions, deduplicateRenewals, partitionTransactions } from '@/lib/al3/filter';
+import { filterRenewalTransactions, deduplicateRenewals, partitionTransactions, partitionTransactionsV2 } from '@/lib/al3/filter';
 import { buildRenewalSnapshot } from '@/lib/al3/snapshot-builder';
 
 export async function POST(request: NextRequest) {
@@ -60,6 +60,20 @@ export async function POST(request: NextRequest) {
 
         console.log(`[Parse] partition-transactions — total=${body.transactions.length} renewals=${renewals.length} unique=${unique.length} duplicatesRemoved=${duplicatesRemoved} expiredSkipped=${expiredSkipped} nonRenewals=${nonRenewals.length}`);
         return NextResponse.json({ success: true, unique, duplicatesRemoved, nonRenewals });
+      }
+
+      case 'partition-transactions-v2': {
+        const { renewals: v2Renewals, baselines: v2Baselines, archived: v2Archived } = partitionTransactionsV2(body.transactions);
+        const { unique: v2Deduped, duplicatesRemoved: v2DuplicatesRemoved } = deduplicateRenewals(v2Renewals);
+
+        console.log(`[Parse] partition-transactions-v2 — total=${body.transactions.length} renewals=${v2Deduped.length} baselines=${v2Baselines.length} archived=${v2Archived.length} duplicatesRemoved=${v2DuplicatesRemoved}`);
+        return NextResponse.json({
+          success: true,
+          renewals: v2Deduped,
+          baselines: v2Baselines,
+          archived: v2Archived,
+          duplicatesRemoved: v2DuplicatesRemoved,
+        });
       }
 
       case 'build-snapshot': {
