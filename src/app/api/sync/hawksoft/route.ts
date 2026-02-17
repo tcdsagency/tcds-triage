@@ -322,6 +322,7 @@ export async function POST(request: Request) {
                           })),
                           savedAt: new Date().toISOString(),
                         };
+                        policyData.priorTermCapturedAt = new Date();
                         log(`Prior-term snapshot saved for ${policy.policyNumber} (${oldEff} → ${newEff})`);
                       }
                     }

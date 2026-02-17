@@ -10,6 +10,11 @@
  * Data ownership: READ ONLY - HawkSoft is the source of truth for policies
  */
 
+import { CircuitBreaker } from './circuit-breaker';
+
+// Module-level circuit breaker for HawkSoft API
+const hawksoftBreaker = new CircuitBreaker('HawkSoft', 5, 60_000);
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -270,45 +275,47 @@ export class HawkSoftAPI {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    // Add version param to all requests
-    const separator = endpoint.includes('?') ? '&' : '?';
-    const url = `${this.baseUrl}${endpoint}${separator}version=3.0`;
+    return hawksoftBreaker.execute(async () => {
+      // Add version param to all requests
+      const separator = endpoint.includes('?') ? '&' : '?';
+      const url = `${this.baseUrl}${endpoint}${separator}version=3.0`;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30-second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30-second timeout
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': this.authHeader,
-          ...options.headers,
-        },
-      });
-    } catch (error) {
-      clearTimeout(timeoutId);
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`HawkSoft API timeout after 30s: ${endpoint}`);
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': this.authHeader,
+            ...options.headers,
+          },
+        });
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error(`HawkSoft API timeout after 30s: ${endpoint}`);
+        }
+        throw error;
       }
-      throw error;
-    }
 
-    clearTimeout(timeoutId);
+      clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`HawkSoft API error: ${response.status} ${error}`);
-    }
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`HawkSoft API error: ${response.status} ${error}`);
+      }
 
-    // Handle 204 No Content
-    if (response.status === 204) {
-      return [] as T;
-    }
+      // Handle 204 No Content
+      if (response.status === 204) {
+        return [] as T;
+      }
 
-    return response.json();
+      return response.json();
+    });
   }
 
   // --------------------------------------------------------------------------

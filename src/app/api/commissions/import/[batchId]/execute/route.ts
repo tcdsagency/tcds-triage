@@ -8,8 +8,10 @@ import {
   commissionImportErrors,
   commissionFieldMappings,
   commissionTransactions,
+  commissionPolicies,
+  policies,
 } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, like } from "drizzle-orm";
 import { parseCurrency, parseDate, parsePercentage } from "@/lib/commissions/csv-parser";
 import { generateDedupeHash } from "@/lib/commissions/dedup";
 import { getReportingMonth } from "@/lib/commissions/month-utils";
@@ -199,6 +201,89 @@ export async function POST(
           dedupeHash,
           notes: agentParts.length > 0 ? agentParts.join(" | ") : null,
         });
+
+        // Find or create commission policy and attempt central policy matching
+        const policyNum = mapped.policyNumber as string;
+        const [existingCommPolicy] = await db
+          .select({ id: commissionPolicies.id, centralPolicyId: commissionPolicies.centralPolicyId })
+          .from(commissionPolicies)
+          .where(
+            and(
+              eq(commissionPolicies.tenantId, tenantId),
+              eq(commissionPolicies.policyNumber, policyNum)
+            )
+          )
+          .limit(1);
+
+        if (!existingCommPolicy) {
+          // Try to match to a central policy by policy number (exact or LIKE with suffix)
+          let centralPolicyId: string | null = null;
+          let matchStatus: 'unmatched' | 'matched' = 'unmatched';
+
+          const [centralMatch] = await db
+            .select({ id: policies.id })
+            .from(policies)
+            .where(
+              and(
+                eq(policies.tenantId, tenantId),
+                eq(policies.policyNumber, policyNum)
+              )
+            )
+            .limit(1);
+
+          if (centralMatch) {
+            centralPolicyId = centralMatch.id;
+            matchStatus = 'matched';
+          } else {
+            // Try LIKE match (suffix-based: "POL123" → "POL123-%")
+            const [suffixMatch] = await db
+              .select({ id: policies.id })
+              .from(policies)
+              .where(
+                and(
+                  eq(policies.tenantId, tenantId),
+                  like(policies.policyNumber, `${policyNum}-%`)
+                )
+              )
+              .limit(1);
+
+            if (suffixMatch) {
+              centralPolicyId = suffixMatch.id;
+              matchStatus = 'matched';
+            }
+          }
+
+          await db.insert(commissionPolicies).values({
+            tenantId,
+            policyNumber: policyNum,
+            carrierId: batch.carrierId || null,
+            carrierName: (mapped.carrierName as string) || null,
+            insuredName: (mapped.insuredName as string) || null,
+            lineOfBusiness: (mapped.lineOfBusiness as string) || null,
+            effectiveDate: (mapped.effectiveDate as string) || null,
+            centralPolicyId,
+            matchStatus,
+          }).onConflictDoNothing();
+        } else if (!existingCommPolicy.centralPolicyId) {
+          // Existing commission policy without a central link — try to match now
+          const [centralMatch] = await db
+            .select({ id: policies.id })
+            .from(policies)
+            .where(
+              and(
+                eq(policies.tenantId, tenantId),
+                eq(policies.policyNumber, policyNum)
+              )
+            )
+            .limit(1);
+
+          if (centralMatch) {
+            await db
+              .update(commissionPolicies)
+              .set({ centralPolicyId: centralMatch.id, matchStatus: 'matched', updatedAt: new Date() })
+              .where(eq(commissionPolicies.id, existingCommPolicy.id));
+          }
+        }
 
         importedRows++;
       } catch (rowError: any) {

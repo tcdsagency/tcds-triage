@@ -13,6 +13,28 @@ const CRON_SECRET = process.env.CRON_SECRET;
 
 export const maxDuration = 300; // 5 minute timeout
 
+/**
+ * Retry a sync step up to `maxRetries` times with exponential backoff.
+ */
+async function withRetry<T>(
+  name: string,
+  fn: () => Promise<T>,
+  logs: string[],
+  maxRetries = 2
+): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (attempt === maxRetries) throw e;
+      const delayMs = 5000 * (attempt + 1);
+      logs.push(`${name} failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delayMs / 1000}s: ${e}`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error('unreachable');
+}
+
 export async function GET(request: NextRequest) {
   // Verify authorization
   if (CRON_SECRET) {
@@ -40,15 +62,17 @@ export async function GET(request: NextRequest) {
     // 1. Sync customers from AgencyZoom
     logs.push('Syncing customers from AgencyZoom...');
     try {
-      const customerRes = await fetch(`${getBaseUrl(request)}/api/sync/customers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!customerRes.ok) {
-        const errText = await customerRes.text().catch(() => customerRes.statusText);
-        throw new Error(`HTTP ${customerRes.status}: ${errText}`);
-      }
-      results.customers = await customerRes.json();
+      results.customers = await withRetry('Customer sync', async () => {
+        const customerRes = await fetch(`${getBaseUrl(request)}/api/sync/customers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (!customerRes.ok) {
+          const errText = await customerRes.text().catch(() => customerRes.statusText);
+          throw new Error(`HTTP ${customerRes.status}: ${errText}`);
+        }
+        return customerRes.json();
+      }, logs);
       if (results.customers.success === false) {
         logs.push(`Customer sync returned failure: ${results.customers.error || 'unknown'}`);
         failedSteps++;
@@ -64,15 +88,17 @@ export async function GET(request: NextRequest) {
     // 2. Sync policies from HawkSoft (incremental — only changed since last sync)
     logs.push('Syncing policies from HawkSoft (incremental)...');
     try {
-      const hawksoftRes = await fetch(`${getBaseUrl(request)}/api/sync/hawksoft?mode=incremental`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!hawksoftRes.ok) {
-        const errText = await hawksoftRes.text().catch(() => hawksoftRes.statusText);
-        throw new Error(`HTTP ${hawksoftRes.status}: ${errText}`);
-      }
-      const hsResult = await hawksoftRes.json();
+      const hsResult = await withRetry('HawkSoft sync', async () => {
+        const hawksoftRes = await fetch(`${getBaseUrl(request)}/api/sync/hawksoft?mode=incremental`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (!hawksoftRes.ok) {
+          const errText = await hawksoftRes.text().catch(() => hawksoftRes.statusText);
+          throw new Error(`HTTP ${hawksoftRes.status}: ${errText}`);
+        }
+        return hawksoftRes.json();
+      }, logs);
       results.hawksoft = hsResult;
       if (hsResult.success === false) {
         logs.push(`HawkSoft sync returned failure: ${hsResult.error || 'unknown'}`);
@@ -89,15 +115,17 @@ export async function GET(request: NextRequest) {
     // 3. Sync leads from AgencyZoom
     logs.push('Syncing leads from AgencyZoom...');
     try {
-      const leadsRes = await fetch(`${getBaseUrl(request)}/api/sync/leads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!leadsRes.ok) {
-        const errText = await leadsRes.text().catch(() => leadsRes.statusText);
-        throw new Error(`HTTP ${leadsRes.status}: ${errText}`);
-      }
-      results.leads = await leadsRes.json();
+      results.leads = await withRetry('Lead sync', async () => {
+        const leadsRes = await fetch(`${getBaseUrl(request)}/api/sync/leads`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (!leadsRes.ok) {
+          const errText = await leadsRes.text().catch(() => leadsRes.statusText);
+          throw new Error(`HTTP ${leadsRes.status}: ${errText}`);
+        }
+        return leadsRes.json();
+      }, logs);
       if (results.leads.success === false) {
         logs.push(`Lead sync returned failure: ${results.leads.error || 'unknown'}`);
         failedSteps++;
@@ -113,22 +141,24 @@ export async function GET(request: NextRequest) {
     // 4. Sync Donna AI data (customer insights)
     logs.push('Syncing Donna AI insights...');
     try {
-      const donnaRes = await fetch(`${getBaseUrl(request)}/api/sync/donna`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-internal-call': 'true',
-        },
-        body: JSON.stringify({
-          batchSize: 25,
-          staleThresholdHours: 24,
-        }),
-      });
-      if (!donnaRes.ok) {
-        const errText = await donnaRes.text().catch(() => donnaRes.statusText);
-        throw new Error(`HTTP ${donnaRes.status}: ${errText}`);
-      }
-      results.donna = await donnaRes.json();
+      results.donna = await withRetry('Donna sync', async () => {
+        const donnaRes = await fetch(`${getBaseUrl(request)}/api/sync/donna`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-internal-call': 'true',
+          },
+          body: JSON.stringify({
+            batchSize: 25,
+            staleThresholdHours: 24,
+          }),
+        });
+        if (!donnaRes.ok) {
+          const errText = await donnaRes.text().catch(() => donnaRes.statusText);
+          throw new Error(`HTTP ${donnaRes.status}: ${errText}`);
+        }
+        return donnaRes.json();
+      }, logs);
       logs.push(`Donna AI: ${results.donna.synced || 0} synced, ${results.donna.notFound || 0} not found`);
     } catch (e) {
       logs.push(`Donna sync error: ${e}`);
@@ -139,16 +169,18 @@ export async function GET(request: NextRequest) {
     // 5. Sync DOB data from HawkSoft (for birthday cards feature)
     logs.push('Syncing date of birth data...');
     try {
-      const dobRes = await fetch(`${getBaseUrl(request)}/api/sync/dob`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 500 }), // Process up to 500 new customers per night
-      });
-      if (!dobRes.ok) {
-        const errText = await dobRes.text().catch(() => dobRes.statusText);
-        throw new Error(`HTTP ${dobRes.status}: ${errText}`);
-      }
-      results.dob = await dobRes.json();
+      results.dob = await withRetry('DOB sync', async () => {
+        const dobRes = await fetch(`${getBaseUrl(request)}/api/sync/dob`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 500 }),
+        });
+        if (!dobRes.ok) {
+          const errText = await dobRes.text().catch(() => dobRes.statusText);
+          throw new Error(`HTTP ${dobRes.status}: ${errText}`);
+        }
+        return dobRes.json();
+      }, logs);
       logs.push(`DOB: ${results.dob.results?.synced || 0} synced from HawkSoft`);
     } catch (e) {
       logs.push(`DOB sync error: ${e}`);

@@ -10,6 +10,10 @@
  */
 
 import { z } from 'zod';
+import { CircuitBreaker } from './circuit-breaker';
+
+// Module-level circuit breaker for AgencyZoom API
+const agencyzoomBreaker = new CircuitBreaker('AgencyZoom', 5, 60_000);
 
 // ============================================================================
 // TYPES
@@ -289,37 +293,39 @@ export class AgencyZoomClient {
     options: RequestInit = {},
     timeoutMs: number = 15000
   ): Promise<T> {
-    const token = await this.getToken();
+    return agencyzoomBreaker.execute(async () => {
+      const token = await this.getToken();
 
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      // Create abort controller for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        ...options,
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          ...options.headers,
-        },
-      });
+      try {
+        const response = await fetch(`${this.baseUrl}${endpoint}`, {
+          ...options,
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            ...options.headers,
+          },
+        });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`AgencyZoom API error: ${response.status} ${error}`);
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`AgencyZoom API error: ${response.status} ${error}`);
+        }
+
+        return response.json();
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error(`AgencyZoom API timeout after ${timeoutMs}ms: ${endpoint}`);
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
       }
-
-      return response.json();
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`AgencyZoom API timeout after ${timeoutMs}ms: ${endpoint}`);
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    });
   }
 
   // --------------------------------------------------------------------------

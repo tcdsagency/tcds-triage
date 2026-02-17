@@ -445,6 +445,19 @@ export async function buildBaselineSnapshot(
   // If stale and we have a prior-term snapshot, use it
   if (stale && (policy as any).priorTermSnapshot) {
     console.log(`[Baseline] Using prior-term snapshot for ${policyNumber} (local data is stale)`);
+
+    // Warn if prior-term snapshot is older than 48 hours
+    const capturedAt = (policy as any).priorTermCapturedAt as Date | null;
+    if (capturedAt) {
+      const ageMs = Date.now() - capturedAt.getTime();
+      const ageHours = ageMs / (1000 * 60 * 60);
+      if (ageHours > 48) {
+        console.warn(`[Baseline] WARNING: Prior-term snapshot for ${policyNumber} is ${ageHours.toFixed(0)}h old (captured ${capturedAt.toISOString()})`);
+      }
+    } else {
+      console.warn(`[Baseline] WARNING: Prior-term snapshot for ${policyNumber} has no capturedAt timestamp`);
+    }
+
     const snapshot = reconstructFromPriorTerm(
       (policy as any).priorTermSnapshot,
       propertyContext,

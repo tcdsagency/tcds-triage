@@ -2,9 +2,10 @@
 // POST - Upload and parse a commission CSV file
 
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
 import { db } from "@/db";
 import { commissionImportBatches } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { parseCSV } from "@/lib/commissions/csv-parser";
 import { requireAdmin } from "@/lib/commissions/auth";
 
@@ -21,6 +22,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "fileName and csvText are required" },
         { status: 400 }
+      );
+    }
+
+    // Compute SHA-256 hash of CSV content for file-level dedup
+    const fileHash = createHash("sha256").update(csvText).digest("hex");
+
+    // Check for existing batch with same file content
+    const [existingBatch] = await db
+      .select({ id: commissionImportBatches.id })
+      .from(commissionImportBatches)
+      .where(
+        and(
+          eq(commissionImportBatches.tenantId, tenantId),
+          eq(commissionImportBatches.fileHash, fileHash)
+        )
+      )
+      .limit(1);
+
+    if (existingBatch) {
+      return NextResponse.json(
+        {
+          error: "This CSV file has already been imported",
+          existingBatchId: existingBatch.id,
+        },
+        { status: 409 }
       );
     }
 
@@ -42,6 +68,7 @@ export async function POST(request: NextRequest) {
         fileName,
         status: "parsing",
         carrierId: carrierId || null,
+        fileHash,
         rawData: records,
         parsedHeaders: headers,
         totalRows: records.length,

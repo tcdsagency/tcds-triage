@@ -7,6 +7,7 @@
 
 import { Worker } from 'bullmq';
 import { logger } from '../logger';
+import { getSupabaseClient } from '../db';
 import { createTranscriptWorker } from './transcript.worker';
 import { createCustomerSyncWorker } from './customer-sync.worker';
 import { createRiskMonitorWorker } from './risk-monitor.worker';
@@ -59,6 +60,30 @@ export async function initializeWorkers(): Promise<void> {
         error: err.message,
         stack: err.stack,
       });
+
+      // Record exhausted jobs (all retries used) to dead_letter_jobs table
+      if (job && job.attemptsMade >= (job.opts?.attempts ?? 1)) {
+        const supabase = getSupabaseClient();
+        (supabase
+          .from('dead_letter_jobs') as any)
+          .insert({
+            queue_name: worker.name,
+            job_id: String(job.id),
+            job_name: job.name,
+            job_data: job.data,
+            error: err.message,
+            stack: err.stack,
+            attempts_made: job.attemptsMade,
+            failed_at: new Date().toISOString(),
+          })
+          .then(({ error: insertErr }: { error: any }) => {
+            if (insertErr) {
+              logger.error({ event: 'dead_letter_insert_failed', jobId: job.id, error: insertErr.message });
+            } else {
+              logger.info({ event: 'dead_letter_recorded', worker: worker.name, jobId: job.id });
+            }
+          });
+      }
     });
 
     // Log worker errors (connection issues, etc.)
