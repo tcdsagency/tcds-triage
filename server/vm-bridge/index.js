@@ -1296,17 +1296,64 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Force reconnect 3CX WebSocket
+app.post('/api/reconnect-3cx', authenticateRequest, async (req, res) => {
+  console.log('[HTTP] 3CX reconnect requested');
+
+  // Close existing connection if any
+  if (threecxWs) {
+    try { threecxWs.removeAllListeners(); threecxWs.close(); } catch (e) {}
+    threecxWs = null;
+  }
+  threecxConnected = false;
+  threecxReconnectAttempts = 0;
+  threecxAccessToken = null;
+
+  // Reconnect
+  try {
+    await connectThreeCxWebSocket();
+    // Give it a moment to connect
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    res.json({
+      success: true,
+      connected: threecxConnected,
+      message: threecxConnected ? '3CX WebSocket reconnected' : '3CX reconnection initiated (may take a few seconds)',
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Start transcription (HTTP-initiated - kept for compatibility)
 app.post('/api/transcription/start', authenticateRequest, async (req, res) => {
   const { sessionId, extension, callId, threecxCallId, callDirection } = req.body;
 
-  console.log(`[HTTP] Start transcription: session=${sessionId} ext=${extension}`);
+  console.log(`[HTTP] Start transcription: session=${sessionId} ext=${extension} 3cx=${callId || threecxCallId}`);
 
-  // Check for existing session
+  // Check for existing session by sessionId (exact match)
   const existingById = sessionManager.getSession(sessionId);
   if (existingById) {
-    console.log(`[HTTP] Session ${sessionId} already exists`);
+    console.log(`[HTTP] Session ${sessionId} already exists (by sessionId)`);
     return res.json({ success: true, status: 'already_active', sessionId });
+  }
+
+  // Check for existing session by 3CX call ID + extension (catches auto-transcription sessions)
+  const threeCxId = callId || threecxCallId;
+  if (threeCxId) {
+    const existingBy3cx = sessionManager.getSessionByThreeCxCallId(threeCxId, extension);
+    if (existingBy3cx && existingBy3cx.callState !== 'completed' && existingBy3cx.callState !== 'missed') {
+      console.log(`[HTTP] Session already exists via auto-transcription: ${existingBy3cx.sessionId} (3cx=${threeCxId}, ext=${extension})`);
+      return res.json({ success: true, status: 'already_active', sessionId: existingBy3cx.sessionId });
+    }
+  }
+
+  // Check for existing active session by agent extension (last resort - any active session on this ext)
+  if (extension) {
+    const existingByExt = sessionManager.getSessionByAgentExtension(extension);
+    if (existingByExt && existingByExt.callState !== 'completed' && existingByExt.callState !== 'missed') {
+      console.log(`[HTTP] Active session already exists for ext ${extension}: ${existingByExt.sessionId}`);
+      return res.json({ success: true, status: 'already_active', sessionId: existingByExt.sessionId });
+    }
   }
 
   try {
