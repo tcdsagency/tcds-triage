@@ -92,6 +92,13 @@
       "when": 1771284876621,
       "tag": "0012_serious_grim_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1771293648387,
+      "tag": "0013_broken_rictor",
+      "breakpoints": true
     }
   ]
 }

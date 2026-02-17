@@ -251,7 +251,7 @@ export function formatQuoteSection(params: {
 // =============================================================================
 
 /** Redact financial PII from transcript text */
-function redactPII(text: string): string {
+export function redactPII(text: string): string {
   // Credit/debit card numbers: 13-19 digits, optionally separated by spaces or dashes
   text = text.replace(
     /\b(\d[ -]?){12,18}\d\b/g,

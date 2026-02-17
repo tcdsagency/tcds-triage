@@ -127,6 +127,7 @@ const customerNav = [
 
 // Agent Tools & Resources section
 const toolsNav = [
+  { name: 'AI Assistant', href: '/assistant', icon: Sparkles },
   { name: 'Quotes', href: '/quotes', icon: FileText },
   { name: 'Quote Extractor', href: '/quote-extractor', icon: FileSearch },
   { name: 'Policy Creator', href: '/policy-creator', icon: FilePlus2 },

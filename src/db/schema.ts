@@ -6049,3 +6049,68 @@ export const sentWeatherAlertsRelations = relations(sentWeatherAlerts, ({ one })
   subscription: one(weatherAlertSubscriptions, { fields: [sentWeatherAlerts.subscriptionId], references: [weatherAlertSubscriptions.id] }),
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// AI ASSISTANT - Chat sessions, messages, and uploaded documents
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const assistantModeEnum = pgEnum('assistant_mode', ['general', 'document']);
+
+export const assistantSessions = pgTable('assistant_sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  title: text('title').default('New Chat'),
+  mode: assistantModeEnum('mode').notNull().default('general'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('assistant_sessions_tenant_idx').on(table.tenantId),
+  userIdx: index('assistant_sessions_user_idx').on(table.userId),
+}));
+
+export const assistantMessageRoleEnum = pgEnum('assistant_message_role', ['user', 'assistant']);
+
+export const assistantMessages = pgTable('assistant_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionId: uuid('session_id').notNull().references(() => assistantSessions.id, { onDelete: 'cascade' }),
+  role: assistantMessageRoleEnum('role').notNull(),
+  content: text('content').notNull(),
+  documentIds: jsonb('document_ids').$type<string[]>(),
+  citations: jsonb('citations').$type<{ documentId: string; documentName: string; chunkIndex: number; excerpt: string }[]>(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  sessionIdx: index('assistant_messages_session_idx').on(table.sessionId),
+}));
+
+export const assistantDocumentStatusEnum = pgEnum('assistant_document_status', ['processing', 'ready', 'error']);
+
+export const assistantDocuments = pgTable('assistant_documents', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  filename: text('filename').notNull(),
+  fileType: text('file_type').notNull(),
+  fileSize: integer('file_size').notNull(),
+  chunkCount: integer('chunk_count').default(0),
+  status: assistantDocumentStatusEnum('status').notNull().default('processing'),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  tenantIdx: index('assistant_documents_tenant_idx').on(table.tenantId),
+  statusIdx: index('assistant_documents_status_idx').on(table.status),
+}));
+
+// Relations
+export const assistantSessionsRelations = relations(assistantSessions, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [assistantSessions.tenantId], references: [tenants.id] }),
+  messages: many(assistantMessages),
+}));
+
+export const assistantMessagesRelations = relations(assistantMessages, ({ one }) => ({
+  session: one(assistantSessions, { fields: [assistantMessages.sessionId], references: [assistantSessions.id] }),
+}));
+
+export const assistantDocumentsRelations = relations(assistantDocuments, ({ one }) => ({
+  tenant: one(tenants, { fields: [assistantDocuments.tenantId], references: [tenants.id] }),
+}));
+
