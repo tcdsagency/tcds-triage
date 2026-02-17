@@ -1,13 +1,12 @@
 /**
- * Supabase Realtime Hook for Live Transcript Subscription
+ * Live Transcript Polling Hook
  *
- * Subscribes to live_transcript_segments table filtered by call_id
- * and provides real-time updates as new segments arrive.
+ * Polls the transcript segment API for new segments every 2 seconds.
+ * Replaces the previous Supabase Realtime subscription which required
+ * publication + RLS configuration that was never set up.
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import type { RealtimeChannel } from '@supabase/supabase-js';
+import { useEffect, useState, useRef, useCallback } from 'react';
 
 // =============================================================================
 // TYPES
@@ -35,12 +34,13 @@ export interface UseSupabaseRealtimeReturn {
   connectionState: 'connecting' | 'connected' | 'disconnected' | 'error';
 }
 
+const POLL_INTERVAL_MS = 2000;
+
 // =============================================================================
-// HELPER: Transform database row to TranscriptSegment
+// HELPER: Transform API row to TranscriptSegment
 // =============================================================================
 
 function transformSegment(row: any): TranscriptSegment {
-  // Map 'customer' speaker to 'caller' for UI consistency
   let speaker: 'agent' | 'caller' | 'unknown' = 'unknown';
   if (row.speaker === 'agent') {
     speaker = 'agent';
@@ -54,8 +54,8 @@ function transformSegment(row: any): TranscriptSegment {
     speaker,
     timestamp: new Date(row.timestamp || row.created_at || Date.now()),
     confidence: row.confidence ?? 1.0,
-    isFinal: row.is_final ?? true,
-    sequenceNumber: row.sequence_number ?? 0,
+    isFinal: row.isFinal ?? row.is_final ?? true,
+    sequenceNumber: row.sequenceNumber ?? row.sequence_number ?? 0,
   };
 }
 
@@ -70,124 +70,122 @@ export function useSupabaseRealtime({
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
+  const [connectionState, setConnectionState] = useState<
+    'connecting' | 'connected' | 'disconnected' | 'error'
+  >('disconnected');
 
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const supabaseRef = useRef(createClient());
+  const highWaterRef = useRef(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const failCountRef = useRef(0);
 
-  // Fetch initial segments on mount
-  const fetchInitialSegments = useCallback(async () => {
+  const poll = useCallback(async () => {
     if (!callId) return;
 
     try {
-      const { data, error: fetchError } = await supabaseRef.current
-        .from('live_transcript_segments')
-        .select('*')
-        .eq('call_id', callId)
-        .order('sequence_number', { ascending: true });
+      const after = highWaterRef.current;
+      const res = await fetch(
+        `/api/calls/${callId}/transcript/segment?after=${after}`
+      );
 
-      if (fetchError) {
-        console.error('[useSupabaseRealtime] Initial fetch error:', fetchError);
-        setError(new Error(fetchError.message));
-        return;
+      if (!res.ok) {
+        throw new Error(`Poll failed: ${res.status}`);
       }
 
-      if (data && data.length > 0) {
-        const transformed = data.map(transformSegment);
-        setSegments(transformed);
-        console.log(`[useSupabaseRealtime] Loaded ${transformed.length} initial segments`);
+      const data = await res.json();
+      if (!data.success) return;
+
+      const newSegments: TranscriptSegment[] = (data.segments || []).map(transformSegment);
+
+      if (newSegments.length > 0) {
+        setSegments((prev) => {
+          const existingIds = new Set(prev.map((s) => s.id));
+          const deduped = newSegments.filter((s) => !existingIds.has(s.id));
+          if (deduped.length === 0) return prev;
+          return [...prev, ...deduped].sort(
+            (a, b) => a.sequenceNumber - b.sequenceNumber
+          );
+        });
+
+        const maxSeq = Math.max(...newSegments.map((s) => s.sequenceNumber));
+        if (maxSeq > highWaterRef.current) {
+          highWaterRef.current = maxSeq;
+        }
+      }
+
+      // Mark connected on first successful poll
+      failCountRef.current = 0;
+      if (!isConnected) {
+        setIsConnected(true);
+        setConnectionState('connected');
+        setError(null);
       }
     } catch (err) {
-      console.error('[useSupabaseRealtime] Error fetching initial segments:', err);
-      setError(err instanceof Error ? err : new Error('Failed to fetch segments'));
+      failCountRef.current++;
+      console.error('[LiveTranscript] Poll error:', err);
+      // Only mark as error after 3 consecutive failures
+      if (failCountRef.current >= 3) {
+        setError(err instanceof Error ? err : new Error('Poll failed'));
+        setConnectionState('error');
+        setIsConnected(false);
+      }
     }
-  }, [callId]);
+  }, [callId, isConnected]);
 
-  // Subscribe to realtime updates
   useEffect(() => {
     if (!enabled || !callId) {
       setConnectionState('disconnected');
+      setIsConnected(false);
       return;
     }
 
-    const supabase = supabaseRef.current;
+    // Reset state for new call
+    setSegments([]);
+    highWaterRef.current = 0;
+    failCountRef.current = 0;
     setConnectionState('connecting');
+    setError(null);
 
-    // Fetch initial data
-    fetchInitialSegments();
+    // Initial fetch (no after filter — get all existing segments)
+    const initialFetch = async () => {
+      try {
+        const res = await fetch(
+          `/api/calls/${callId}/transcript/segment`
+        );
+        if (!res.ok) throw new Error(`Initial fetch failed: ${res.status}`);
 
-    // Create realtime channel
-    const channelName = `transcript:${callId}`;
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'live_transcript_segments',
-          filter: `call_id=eq.${callId}`,
-        },
-        (payload) => {
-          console.log('[useSupabaseRealtime] New segment:', payload.new);
-          const newSegment = transformSegment(payload.new);
-
-          setSegments((prev) => {
-            // Deduplicate by ID
-            if (prev.some((s) => s.id === newSegment.id)) {
-              return prev;
-            }
-            // Insert in sequence order
-            const updated = [...prev, newSegment].sort(
-              (a, b) => a.sequenceNumber - b.sequenceNumber
-            );
-            return updated;
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'live_transcript_segments',
-          filter: `call_id=eq.${callId}`,
-        },
-        (payload) => {
-          console.log('[useSupabaseRealtime] Segment updated:', payload.new);
-          const updatedSegment = transformSegment(payload.new);
-
-          setSegments((prev) =>
-            prev.map((s) => (s.id === updatedSegment.id ? updatedSegment : s))
+        const data = await res.json();
+        if (data.success && data.segments?.length > 0) {
+          const transformed = data.segments.map(transformSegment);
+          setSegments(transformed);
+          highWaterRef.current = Math.max(
+            ...transformed.map((s: TranscriptSegment) => s.sequenceNumber)
           );
+          console.log(`[LiveTranscript] Loaded ${transformed.length} initial segments`);
         }
-      )
-      .subscribe((status) => {
-        console.log(`[useSupabaseRealtime] Channel ${channelName} status:`, status);
 
-        if (status === 'SUBSCRIBED') {
-          setIsConnected(true);
-          setConnectionState('connected');
-          setError(null);
-        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-          setIsConnected(false);
-          setConnectionState(status === 'CHANNEL_ERROR' ? 'error' : 'disconnected');
-        }
-      });
+        setIsConnected(true);
+        setConnectionState('connected');
+      } catch (err) {
+        console.error('[LiveTranscript] Initial fetch error:', err);
+        setError(err instanceof Error ? err : new Error('Initial fetch failed'));
+        setConnectionState('error');
+      }
+    };
 
-    channelRef.current = channel;
+    initialFetch();
 
-    // Cleanup on unmount or callId change
+    // Start polling
+    intervalRef.current = setInterval(poll, POLL_INTERVAL_MS);
+
     return () => {
-      console.log(`[useSupabaseRealtime] Unsubscribing from ${channelName}`);
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
       setIsConnected(false);
       setConnectionState('disconnected');
     };
-  }, [callId, enabled, fetchInitialSegments]);
+  }, [callId, enabled, poll]);
 
   return {
     segments,
