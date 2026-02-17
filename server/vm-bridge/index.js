@@ -1031,8 +1031,33 @@ function handleThreeCxEvent(raw) {
     const entity = event.entity || event.Entity || '';
     const attachedData = event.attached_data || event.AttachedData;
 
-    // If no attached data, fetch participant details via WebSocket request
+    // If no attached data, extract extension from entity path and fetch details in background
     if (!attachedData && entity.includes('/participants/')) {
+      // Extract extension directly from path: /callcontrol/{ext}/participants/{id}
+      const pathParts = entity.split('/').filter(Boolean);
+      const extension = pathParts[1];
+      const participantId = pathParts[3];
+
+      // Fire event immediately from path info (don't wait for 403-prone detail fetch)
+      if (extension && autoTranscriptionExtensions.has(extension)) {
+        const minimalParsed = {
+          type: eventType === 0 ? 'answered' : 'ended',
+          extension,
+          callId: participantId || `path-${Date.now()}`,
+          callerNumber: null,
+          callerName: null,
+          did: null,
+          direction: 'inbound',
+          timestamp: Date.now(),
+        };
+        console.log(`[3CX WS] ${minimalParsed.type} (from path): ext=${extension} participant=${participantId}`);
+
+        if (process.env.AUTO_TRANSCRIPTION_ENABLED === 'true') {
+          handleAutoTranscription(minimalParsed);
+        }
+      }
+
+      // Still try to fetch details for richer data (may 403, that's ok)
       fetchParticipantDetails(entity);
       return;
     }
@@ -1120,6 +1145,7 @@ function parseThreeCxEvent(event) {
     callerNumber: participant.party_caller_id || participant.PartyCallerId,
     callerName: participant.party_caller_name || participant.PartyCallerName,
     did: partyDid,
+    partyDn: participant.party_dn || participant.PartyDn || null,
     direction,
     timestamp: Date.now(),
   };
@@ -1135,23 +1161,36 @@ async function handleAutoTranscription(event) {
   const { type, extension, callId, callerNumber, direction } = event;
 
   // Only process monitored extensions
-  if (!autoTranscriptionExtensions.has(extension)) return;
+  // If event is for a barge extension (2xx), check if party_dn is a monitored agent extension
+  let targetExtension = extension;
+  if (!autoTranscriptionExtensions.has(extension) && event.partyDn && autoTranscriptionExtensions.has(event.partyDn)) {
+    console.log(`[AutoTx] Barge ext=${extension} → agent ext=${event.partyDn}`);
+    targetExtension = event.partyDn;
+  }
+  if (!autoTranscriptionExtensions.has(targetExtension)) return;
 
   if (type === 'answered') {
     // Check if already have a session - Fix #3: pass extension for precise matching
-    const existing = sessionManager.getSessionByThreeCxCallId(callId, extension);
+    const existing = sessionManager.getSessionByThreeCxCallId(callId, targetExtension);
     if (existing) {
-      console.log(`[AutoTx] Session already exists for callId=${callId} ext=${extension}`);
+      console.log(`[AutoTx] Session already exists for callId=${callId} ext=${targetExtension}`);
       return;
     }
 
-    console.log(`[AutoTx] Starting transcription for ext=${extension} callId=${callId}`);
+    // Also check by extension (catches barge-triggered sessions)
+    const existingByExt = sessionManager.getSessionByAgentExtension(targetExtension);
+    if (existingByExt && existingByExt.callState !== 'completed' && existingByExt.callState !== 'missed') {
+      console.log(`[AutoTx] Active session already exists for ext=${targetExtension}: ${existingByExt.sessionId}`);
+      return;
+    }
+
+    console.log(`[AutoTx] Starting transcription for ext=${targetExtension} callId=${callId}`);
 
     try {
       // Create session
       const session = sessionManager.createSession({
         threeCxCallId: callId,
-        agentExtension: extension,
+        agentExtension: targetExtension,
         fromNumber: callerNumber,
         direction,
         source: 'websocket',
@@ -1163,9 +1202,9 @@ async function handleAutoTranscription(event) {
       const token = await getVoipToolsToken();
 
       // Find VoIPTools call ID
-      const voipCallId = await getVoipToolsCallId(token, extension);
+      const voipCallId = await getVoipToolsCallId(token, targetExtension);
       if (!voipCallId) {
-        console.error(`[AutoTx] No VoIPTools call for ext=${extension}`);
+        console.error(`[AutoTx] No VoIPTools call for ext=${targetExtension}`);
         sessionManager.transitionMediaState(session, 'failed');
         notifyVercel('transcription_failed', { sessionId: session.sessionId, reason: 'no_voiptools_call' });
         return;
@@ -1230,7 +1269,7 @@ async function handleAutoTranscription(event) {
     }
   } else if (type === 'ended') {
     // Fix #3: Pass extension to lookup for more precise matching
-    const session = sessionManager.getSessionByThreeCxCallId(callId, extension);
+    const session = sessionManager.getSessionByThreeCxCallId(callId, targetExtension);
     if (session && session.source === 'websocket') {
       console.log(`[AutoTx] Call ended: ${session.sessionId}`);
       // Note: Actual cleanup happens in dialog destroy handler
