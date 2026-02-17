@@ -743,11 +743,27 @@ srf.invite((req, res) => {
   console.log(`[INVITE] Received for extension ${extension}`);
 
   // Find session by monitoring extension
-  const session = sessionManager.getSessionByMonitoringExtension(extension);
+  let session = sessionManager.getSessionByMonitoringExtension(extension);
 
   if (!session) {
-    console.warn(`[INVITE] No session found for monitoring extension ${extension}`);
-    return res.send(480); // Temporarily Unavailable - safer than 404
+    // No pre-existing session — 3CX auto-barged this extension into a call.
+    // Accept the INVITE and auto-create a session so we can capture audio.
+    if (VIRTUAL_EXTENSIONS.includes(extension)) {
+      console.log(`[INVITE] Auto-creating session for 3CX barge on ext=${extension}`);
+      const autoSession = sessionManager.createSession({
+        agentExtension: extension, // Will be updated when 3CX event reveals the real agent ext
+        monitoringExtension: extension,
+        direction: 'inbound',
+        source: 'sip-auto',
+      });
+      sessionManager.transitionCallState(autoSession, 'in_progress');
+      sessionManager.setMonitoringExtension(autoSession, extension);
+      // Fall through to normal INVITE handling with this new session
+      session = autoSession;
+    } else {
+      console.warn(`[INVITE] No session found for monitoring extension ${extension}`);
+      return res.send(480); // Temporarily Unavailable - safer than 404
+    }
   }
 
   console.log(`[INVITE] Matched session ${session.sessionId}`);
@@ -1187,6 +1203,28 @@ async function handleAutoTranscription(event) {
     console.log(`[AutoTx] Starting transcription for ext=${targetExtension} callId=${callId}`);
 
     try {
+      // If triggered by a barge event, check if the barge extension already has an active session
+      // that we can adopt (3CX auto-barged before our Listen2)
+      if (extension !== targetExtension) {
+        const bargeSession = sessionManager.getSessionByMonitoringExtension(extension) ||
+                             sessionManager.getSessionByAgentExtension(extension);
+        if (bargeSession && (bargeSession.mediaState === 'streaming' || bargeSession.source === 'sip-auto')) {
+          // Adopt this session — update it to point to the real agent extension
+          console.log(`[AutoTx] Adopting barge session ${bargeSession.sessionId} (ext=${extension}, media=${bargeSession.mediaState}) for agent ext=${targetExtension}`);
+          bargeSession.agentExtension = targetExtension;
+          bargeSession.threeCxCallId = callId;
+          if (callerNumber) bargeSession.fromNumber = callerNumber;
+          // Notify Vercel about this call
+          notifyVercel('transcription_started', {
+            sessionId: bargeSession.sessionId,
+            extension: targetExtension,
+            direction: bargeSession.direction,
+            externalNumber: bargeSession.externalNumber || callerNumber,
+          });
+          return;
+        }
+      }
+
       // Create session
       const session = sessionManager.createSession({
         threeCxCallId: callId,
@@ -1206,14 +1244,30 @@ async function handleAutoTranscription(event) {
       if (!voipCallId) {
         console.error(`[AutoTx] No VoIPTools call for ext=${targetExtension}`);
         sessionManager.transitionMediaState(session, 'failed');
-        notifyVercel('transcription_failed', { sessionId: session.sessionId, reason: 'no_voiptools_call' });
+        sessionManager.transitionCallState(session, 'completed');
+        sessionManager.finalize(session);
+        notifyVercel('call_ended', {
+          sessionId: session.sessionId,
+          threeCxCallId: session.threeCxCallId,
+          externalNumber: session.externalNumber,
+          direction: session.direction,
+          duration: session.getDuration(),
+          segments: 0,
+        });
         return;
       }
 
       session.voipToolsCallId = voipCallId;
 
-      // Select virtual extension
-      const monitoringExt = selectVirtualExtension();
+      // Select virtual extension — prefer the barge extension that triggered this if it's available
+      let monitoringExt;
+      if (extension !== targetExtension && VIRTUAL_EXTENSIONS.includes(extension)) {
+        // Use the barge extension that 3CX already assigned
+        monitoringExt = extension;
+        console.log(`[Virtual Ext] Reusing barge ext: ${monitoringExt}`);
+      } else {
+        monitoringExt = selectVirtualExtension();
+      }
       sessionManager.setMonitoringExtension(session, monitoringExt);
 
       // Call Listen2 - get fresh token (may have been refreshed during getVoipToolsCallId retry)
@@ -1273,8 +1327,10 @@ async function handleAutoTranscription(event) {
         console.error(`[AutoTx] Listen2 returned false for ext=${monitoringExt}`);
         sessionManager.markExtensionBusy(monitoringExt);
         sessionManager.transitionMediaState(session, 'failed');
-        notifyVercel('transcription_failed', { sessionId: session.sessionId, reason: 'listen2_failed' });
-        // Also send call_ended so Vercel can complete the call record
+        sessionManager.transitionCallState(session, 'completed');
+        sessionManager.finalize(session);
+        // Send call_ended (not transcription_failed) — it passes more data for call lookup
+        // and avoids duplicate transcript jobs from both handlers firing
         notifyVercel('call_ended', {
           sessionId: session.sessionId,
           threeCxCallId: session.threeCxCallId,
@@ -1286,6 +1342,21 @@ async function handleAutoTranscription(event) {
       }
     } catch (err) {
       console.error(`[AutoTx] Error:`, err.message);
+      // Clean up the session if it was created before the error
+      const failedSession = sessionManager.getSessionByThreeCxCallId(callId, targetExtension);
+      if (failedSession && failedSession.callState !== 'completed') {
+        sessionManager.transitionMediaState(failedSession, 'failed');
+        sessionManager.transitionCallState(failedSession, 'completed');
+        sessionManager.finalize(failedSession);
+        notifyVercel('call_ended', {
+          sessionId: failedSession.sessionId,
+          threeCxCallId: failedSession.threeCxCallId,
+          externalNumber: failedSession.externalNumber,
+          direction: failedSession.direction,
+          duration: failedSession.getDuration(),
+          segments: 0,
+        });
+      }
     }
   } else if (type === 'ended') {
     // Fix #3: Pass extension to lookup for more precise matching
