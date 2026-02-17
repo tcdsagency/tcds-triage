@@ -213,6 +213,7 @@ export class MortgageePaymentScheduler {
     let lapsedFound = 0;
     let errors = 0;
     let stoppedReason: string | undefined;
+    let runError: string | undefined;
 
     // Load settings
     this.settings = await this.loadSettings();
@@ -318,6 +319,18 @@ export class MortgageePaymentScheduler {
         // Update today's check count
         await this.incrementChecksToday();
 
+        // Update activity log incrementally so progress is visible
+        await db
+          .update(mortgageePaymentActivityLog)
+          .set({
+            policiesChecked,
+            latePaymentsFound,
+            lapsedFound,
+            errorsEncountered: errors,
+            durationMs: Date.now() - startTime,
+          })
+          .where(eq(mortgageePaymentActivityLog.id, logRecord.id));
+
         // Delay between checks
         if (this.settings.delayBetweenChecksMs > 0) {
           await new Promise((r) =>
@@ -325,54 +338,39 @@ export class MortgageePaymentScheduler {
           );
         }
       }
-
-      // Update activity log
-      await db
-        .update(mortgageePaymentActivityLog)
-        .set({
-          status: "completed",
-          completedAt: new Date(),
-          durationMs: Date.now() - startTime,
-          policiesChecked,
-          latePaymentsFound,
-          lapsedFound,
-          errorsEncountered: errors,
-        })
-        .where(eq(mortgageePaymentActivityLog.id, logRecord.id));
-
-      // Update settings with last run info
-      await db
-        .update(mortgageePaymentSettings)
-        .set({
-          lastSchedulerRunAt: new Date(startTime),
-          lastSchedulerCompletedAt: new Date(),
-          schedulerRunCount: sql`${mortgageePaymentSettings.schedulerRunCount} + 1`,
-        })
-        .where(eq(mortgageePaymentSettings.tenantId, this.tenantId));
     } catch (error: any) {
       console.error("[MortgageeScheduler] Run error:", error);
-
-      await db
-        .update(mortgageePaymentActivityLog)
-        .set({
-          status: "failed",
-          completedAt: new Date(),
-          durationMs: Date.now() - startTime,
-          policiesChecked,
-          latePaymentsFound,
-          lapsedFound,
-          errorsEncountered: errors + 1,
-          errorMessage: error.message,
-        })
-        .where(eq(mortgageePaymentActivityLog.id, logRecord.id));
-
-      await db
-        .update(mortgageePaymentSettings)
-        .set({
-          lastSchedulerError: error.message,
-        })
-        .where(eq(mortgageePaymentSettings.tenantId, this.tenantId));
+      runError = error.message;
     } finally {
+      // Always update activity log to completed/failed — even on timeout
+      try {
+        await db
+          .update(mortgageePaymentActivityLog)
+          .set({
+            status: runError ? "failed" : "completed",
+            completedAt: new Date(),
+            durationMs: Date.now() - startTime,
+            policiesChecked,
+            latePaymentsFound,
+            lapsedFound,
+            errorsEncountered: errors + (runError ? 1 : 0),
+            errorMessage: runError || null,
+          })
+          .where(eq(mortgageePaymentActivityLog.id, logRecord.id));
+
+        await db
+          .update(mortgageePaymentSettings)
+          .set({
+            lastSchedulerRunAt: new Date(startTime),
+            lastSchedulerCompletedAt: new Date(),
+            schedulerRunCount: sql`${mortgageePaymentSettings.schedulerRunCount} + 1`,
+            ...(runError ? { lastSchedulerError: runError } : {}),
+          })
+          .where(eq(mortgageePaymentSettings.tenantId, this.tenantId));
+      } catch (finalErr) {
+        console.error("[MortgageeScheduler] Failed to update activity log:", finalErr);
+      }
+
       this.isRunning = false;
       this.currentRunId = null;
       this.currentLogId = null;
