@@ -96,7 +96,8 @@ export async function POST(
       renewalSnapshot,
       baselineSnapshot,
       undefined,
-      comparison.renewalEffectiveDate?.toISOString()
+      comparison.renewalEffectiveDate?.toISOString(),
+      comparison.lineOfBusiness || undefined
     );
 
     // Run check engine

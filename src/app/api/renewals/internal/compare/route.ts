@@ -25,7 +25,8 @@ export async function POST(request: NextRequest) {
       body.renewalSnapshot,
       body.baselineSnapshot,
       body.thresholds,
-      body.renewalEffectiveDate
+      body.renewalEffectiveDate,
+      body.lineOfBusiness || undefined
     );
 
     // Run check engine as post-processing layer

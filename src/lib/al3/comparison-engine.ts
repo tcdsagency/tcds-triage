@@ -29,6 +29,29 @@ import { analyzeReasons } from '@/lib/renewal-reasons';
 // =============================================================================
 
 /**
+ * Build a coverage map, preferring the entry with the most data when duplicates exist.
+ * If two entries share the same type, keep the one with a limitAmount (or the higher one).
+ */
+function buildCoverageMap(coverages: CanonicalCoverage[]): Map<string, CanonicalCoverage> {
+  const map = new Map<string, CanonicalCoverage>();
+  for (const c of coverages) {
+    if (!c.type) continue;
+    const existing = map.get(c.type);
+    if (!existing) {
+      map.set(c.type, c);
+    } else {
+      // Prefer the entry with a limitAmount, or the higher limit
+      const existingLimit = existing.limitAmount ?? 0;
+      const newLimit = c.limitAmount ?? 0;
+      if (newLimit > existingLimit) {
+        map.set(c.type, c);
+      }
+    }
+  }
+  return map;
+}
+
+/**
  * Collect POLICY-LEVEL coverages (excluding vehicle-specific ones like Comp, Coll).
  * For auto policies, HawkSoft may return coverages at the policy level while
  * AL3 puts them at the vehicle level. This flattens policy-level coverages only,
@@ -147,7 +170,8 @@ export function compareSnapshots(
   renewal: RenewalSnapshot,
   baseline: BaselineSnapshot,
   thresholds: ComparisonThresholds = DEFAULT_COMPARISON_THRESHOLDS,
-  renewalEffectiveDate?: string // ISO date string (YYYY-MM-DD)
+  renewalEffectiveDate?: string, // ISO date string (YYYY-MM-DD)
+  lineOfBusiness?: string
 ): ComparisonResult {
   const allChanges: MaterialChange[] = [];
 
@@ -215,7 +239,7 @@ export function compareSnapshots(
   const nonMaterialChanges = allChanges.filter((c) => c.severity === 'non_material');
 
   // Generate summary
-  const summary = buildSummary(renewal, baseline, materialChanges, nonMaterialChanges);
+  const summary = buildSummary(renewal, baseline, materialChanges, nonMaterialChanges, lineOfBusiness);
 
   // Generate recommendation
   const recommendation = generateRecommendation(materialChanges, renewal, thresholds, baselineStatus);
@@ -244,14 +268,7 @@ function detectStaleBaseline(
 ): { baselineStatus: 'prior_term' | 'current_term' | 'unknown'; baselineStatusReason?: string } {
   // If we don't have baseline policy dates, we can't determine
   if (!baseline.policyEffectiveDate) {
-    // Fallback: if premiums are exactly equal, it's suspicious
-    if (baseline.premium != null && renewalPremium != null && baseline.premium === renewalPremium) {
-      return {
-        baselineStatus: 'current_term',
-        baselineStatusReason: 'Baseline premium equals renewal premium - prior term data may be unavailable',
-      };
-    }
-    return { baselineStatus: 'unknown' };
+      return { baselineStatus: 'unknown' };
   }
 
   // Compare baseline effective date with renewal effective date
@@ -288,8 +305,10 @@ function comparePremium(
     : 0;
 
   let severity: ChangeSeverity;
-  if (changeAmount < 0) {
-    severity = 'material_positive'; // Decrease is positive
+  if (changeAmount < 0 && (Math.abs(changePercent) >= 0.5 || Math.abs(changeAmount) >= 5)) {
+    severity = 'material_positive'; // Meaningful decrease is positive
+  } else if (changeAmount < 0) {
+    severity = 'non_material'; // Trivial decrease
   } else if (
     changePercent > thresholds.premiumIncreasePercent ||
     changeAmount > thresholds.premiumIncreaseAmount
@@ -335,8 +354,9 @@ function compareCoverages(
 ): MaterialChange[] {
   const changes: MaterialChange[] = [];
 
-  const renewalByType = new Map(renewalCoverages.map((c) => [c.type, c]));
-  const baselineByType = new Map(baselineCoverages.map((c) => [c.type, c]));
+  // Build maps preferring entries with the most data (highest limit) when duplicates exist
+  const renewalByType = buildCoverageMap(renewalCoverages);
+  const baselineByType = buildCoverageMap(baselineCoverages);
 
   // Detect likely parsing gaps for homeowners: if renewal has Cov B/C/D/E but
   // not Cov A (dwelling) or Cov F (medical_payments), the carrier's AL3 probably
@@ -487,6 +507,58 @@ function compareCoverages(
 // VEHICLE COMPARISON
 // =============================================================================
 
+function normalizeVehicleKey(v: CanonicalVehicle): string {
+  return [v.year, (v.make || '').toLowerCase().trim(), (v.model || '').toLowerCase().trim()]
+    .filter(Boolean).join('|');
+}
+
+function matchVehiclePairs(
+  renewalVehicles: CanonicalVehicle[],
+  baselineVehicles: CanonicalVehicle[]
+): { matched: [CanonicalVehicle, CanonicalVehicle][]; added: CanonicalVehicle[]; removed: CanonicalVehicle[] } {
+  const matched: [CanonicalVehicle, CanonicalVehicle][] = [];
+  const usedRen = new Set<number>();
+  const usedBas = new Set<number>();
+
+  // Pass 1: Match by VIN
+  for (let bi = 0; bi < baselineVehicles.length; bi++) {
+    const bv = baselineVehicles[bi];
+    if (!bv.vin) continue;
+    for (let ri = 0; ri < renewalVehicles.length; ri++) {
+      if (usedRen.has(ri)) continue;
+      const rv = renewalVehicles[ri];
+      if (rv.vin && rv.vin.toLowerCase().trim() === bv.vin.toLowerCase().trim()) {
+        matched.push([bv, rv]);
+        usedBas.add(bi);
+        usedRen.add(ri);
+        break;
+      }
+    }
+  }
+
+  // Pass 2: Match by year/make/model
+  for (let bi = 0; bi < baselineVehicles.length; bi++) {
+    if (usedBas.has(bi)) continue;
+    const bv = baselineVehicles[bi];
+    const bKey = normalizeVehicleKey(bv);
+    if (!bKey) continue;
+    for (let ri = 0; ri < renewalVehicles.length; ri++) {
+      if (usedRen.has(ri)) continue;
+      const rv = renewalVehicles[ri];
+      if (normalizeVehicleKey(rv) === bKey) {
+        matched.push([bv, rv]);
+        usedBas.add(bi);
+        usedRen.add(ri);
+        break;
+      }
+    }
+  }
+
+  const removed = baselineVehicles.filter((_, i) => !usedBas.has(i));
+  const added = renewalVehicles.filter((_, i) => !usedRen.has(i));
+  return { matched, added, removed };
+}
+
 function compareVehicles(
   renewalVehicles: CanonicalVehicle[],
   baselineVehicles: CanonicalVehicle[],
@@ -494,54 +566,44 @@ function compareVehicles(
 ): MaterialChange[] {
   const changes: MaterialChange[] = [];
 
-  // Match by VIN first, then by year/make/model
-  const renewalByVin = new Map(
-    renewalVehicles.filter((v) => v.vin).map((v) => [v.vin!, v])
-  );
-  const baselineByVin = new Map(
-    baselineVehicles.filter((v) => v.vin).map((v) => [v.vin!, v])
-  );
+  const { matched, added, removed } = matchVehiclePairs(renewalVehicles, baselineVehicles);
 
-  // Check for removed vehicles
-  for (const [vin, baseline] of baselineByVin) {
-    if (!renewalByVin.has(vin)) {
-      const desc = `${baseline.year || ''} ${baseline.make || ''} ${baseline.model || ''}`.trim();
-      changes.push({
-        field: `vehicle.${vin}`,
-        category: 'vehicle_removed',
-        classification: 'material_negative',
-        oldValue: desc || vin,
-        newValue: null,
-        severity: 'material_negative',
-        description: `Vehicle removed: ${desc || vin}`,
-      });
-    }
+  // Report removed vehicles
+  for (const baseline of removed) {
+    const desc = `${baseline.year || ''} ${baseline.make || ''} ${baseline.model || ''}`.trim();
+    const key = baseline.vin || desc || 'unknown';
+    changes.push({
+      field: `vehicle.${key}`,
+      category: 'vehicle_removed',
+      classification: 'material_negative',
+      oldValue: desc || key,
+      newValue: null,
+      severity: 'material_negative',
+      description: `Vehicle removed: ${desc || key}`,
+    });
   }
 
-  // Check for added vehicles
-  for (const [vin, renewal] of renewalByVin) {
-    if (!baselineByVin.has(vin)) {
-      const desc = `${renewal.year || ''} ${renewal.make || ''} ${renewal.model || ''}`.trim();
-      changes.push({
-        field: `vehicle.${vin}`,
-        category: 'vehicle_added',
-        classification: 'material_positive',
-        oldValue: null,
-        newValue: desc || vin,
-        severity: 'material_positive',
-        description: `Vehicle added: ${desc || vin}`,
-      });
-    }
+  // Report added vehicles
+  for (const renewal of added) {
+    const desc = `${renewal.year || ''} ${renewal.make || ''} ${renewal.model || ''}`.trim();
+    const key = renewal.vin || desc || 'unknown';
+    changes.push({
+      field: `vehicle.${key}`,
+      category: 'vehicle_added',
+      classification: 'material_positive',
+      oldValue: null,
+      newValue: desc || key,
+      severity: 'material_positive',
+      description: `Vehicle added: ${desc || key}`,
+    });
   }
 
   // Compare coverages within matched vehicles
   // Note: Coverage presence/absence is handled by compareVehicleLevelCoverages at aggregate level
   // Here we only compare deductibles/limits for coverages that exist on BOTH vehicle records
-  for (const [vin, renewalVeh] of renewalByVin) {
-    const baselineVeh = baselineByVin.get(vin);
-    if (!baselineVeh) continue;
-
+  for (const [baselineVeh, renewalVeh] of matched) {
     const vehDesc = `${renewalVeh.year || ''} ${renewalVeh.make || ''} ${renewalVeh.model || ''}`.trim();
+    const vehKey = renewalVeh.vin || vehDesc || 'unknown';
 
     // Get vehicle-level coverages only
     const renewalCovs = (renewalVeh.coverages || []).filter(c => VEHICLE_LEVEL_COVERAGE_TYPES.has(c.type));
@@ -573,7 +635,7 @@ function compareVehicles(
           }
 
           changes.push({
-            field: `vehicle.${vin}.coverage.${type}.deductible`,
+            field: `vehicle.${vehKey}.coverage.${type}.deductible`,
             category: 'deductible',
             classification: severity,
             oldValue: baseline.deductibleAmount,
@@ -604,7 +666,7 @@ function compareVehicles(
           }
 
           changes.push({
-            field: `vehicle.${vin}.coverage.${type}.limit`,
+            field: `vehicle.${vehKey}.coverage.${type}.limit`,
             category: 'coverage_limit',
             classification: severity,
             oldValue: baseline.limitAmount,
@@ -650,13 +712,19 @@ function compareDrivers(
 ): MaterialChange[] {
   const changes: MaterialChange[] = [];
 
-  // Build maps using normalized names for matching
-  const renewalByNormalized = new Map(
-    renewalDrivers.filter((d) => d.name).map((d) => [normalizeDriverName(d.name!), d])
-  );
-  const baselineByNormalized = new Map(
-    baselineDrivers.filter((d) => d.name).map((d) => [normalizeDriverName(d.name!), d])
-  );
+  // Build maps using normalized names for matching (group duplicates, keep first)
+  const renewalByNormalized = new Map<string, import('@/types/renewal.types').CanonicalDriver>();
+  for (const d of renewalDrivers) {
+    if (!d.name) continue;
+    const key = normalizeDriverName(d.name);
+    if (!renewalByNormalized.has(key)) renewalByNormalized.set(key, d);
+  }
+  const baselineByNormalized = new Map<string, import('@/types/renewal.types').CanonicalDriver>();
+  for (const d of baselineDrivers) {
+    if (!d.name) continue;
+    const key = normalizeDriverName(d.name);
+    if (!baselineByNormalized.has(key)) baselineByNormalized.set(key, d);
+  }
 
   for (const [normalizedName, baseline] of baselineByNormalized) {
     if (!renewalByNormalized.has(normalizedName)) {
@@ -797,22 +865,22 @@ function compareEndorsements(
 // CLAIM COMPARISON
 // =============================================================================
 
+function claimKey(c: CanonicalClaim): string {
+  if (c.claimNumber) return c.claimNumber.toUpperCase().trim();
+  return `${(c.claimDate || '')}|${(c.claimType || '')}`.toLowerCase().trim();
+}
+
 function compareClaims(
   renewalClaims: CanonicalClaim[],
   baselineClaims: CanonicalClaim[]
 ): MaterialChange[] {
   const changes: MaterialChange[] = [];
 
-  const baselineClaimNumbers = new Set(
-    baselineClaims
-      .filter((c) => c.claimNumber)
-      .map((c) => c.claimNumber!.toUpperCase())
-  );
+  const baselineKeys = new Set(baselineClaims.map(claimKey));
 
   // New claims in renewal that aren't in baseline
   for (const claim of renewalClaims) {
-    const key = claim.claimNumber?.toUpperCase();
-    if (key && baselineClaimNumbers.has(key)) continue;
+    if (baselineKeys.has(claimKey(claim))) continue;
 
     const datePart = claim.claimDate ? ` on ${claim.claimDate}` : '';
     const amountPart = claim.amount != null ? ` — $${claim.amount.toLocaleString()}` : '';
@@ -928,33 +996,11 @@ function flagPropertyConcerns(
     }
   }
 
-  // Check dwelling coverage (COV_A/dwelling) for RCE changes
-  const renewalDwelling = renewal.coverages.find((c) => c.type === 'dwelling');
-  const baselineDwelling = baseline.coverages.find((c) => c.type === 'dwelling');
-  if (
-    renewalDwelling?.limitAmount != null &&
-    baselineDwelling?.limitAmount != null &&
-    renewalDwelling.limitAmount !== baselineDwelling.limitAmount
-  ) {
-    changes.push({
-      field: 'property.rce',
-      category: 'property',
-      classification:
-        renewalDwelling.limitAmount < baselineDwelling.limitAmount
-          ? 'material_negative'
-          : 'non_material',
-      oldValue: baselineDwelling.limitAmount,
-      newValue: renewalDwelling.limitAmount,
-      changeAmount: renewalDwelling.limitAmount - baselineDwelling.limitAmount,
-      severity:
-        renewalDwelling.limitAmount < baselineDwelling.limitAmount
-          ? 'material_negative'
-          : 'non_material',
-      description: `Replacement Cost Estimate changed: $${baselineDwelling.limitAmount.toLocaleString()} → $${renewalDwelling.limitAmount.toLocaleString()}`,
-    });
-  }
+  // Dwelling limit comparison is already handled by compareCoverages — skip here to avoid duplicates
 
   // Check for valuation method change (Replacement Cost → ACV)
+  const renewalDwelling = renewal.coverages.find((c) => c.type === 'dwelling');
+  const baselineDwelling = baseline.coverages.find((c) => c.type === 'dwelling');
   // Prefer explicit valuationTypeCode, fall back to description parsing
   const baselineDesc = baselineDwelling?.description?.toLowerCase() || '';
   const renewalDesc = renewalDwelling?.description?.toLowerCase() || '';
@@ -991,7 +1037,8 @@ function buildSummary(
   renewal: RenewalSnapshot,
   baseline: BaselineSnapshot,
   materialChanges: MaterialChange[],
-  nonMaterialChanges: MaterialChange[]
+  nonMaterialChanges: MaterialChange[],
+  lineOfBusiness?: string
 ): ComparisonSummary {
   const premiumChange = materialChanges.find((c) => c.category === 'premium') ||
     nonMaterialChanges.find((c) => c.category === 'premium');
@@ -1007,7 +1054,7 @@ function buildSummary(
   const materialPositiveCount = materialChanges.filter((c) => c.severity === 'material_positive').length;
 
   // Build descriptive headline using reason analysis
-  const reasons = analyzeReasons(materialChanges, [], null, null, premiumChange?.changePercent ?? null, null);
+  const reasons = analyzeReasons(materialChanges, [], renewal, baseline, premiumChange?.changePercent ?? null, lineOfBusiness || null);
   const topReasonTags = reasons
     .filter(r => r.tag !== 'Rate Increase' && r.tag !== 'Rate Decrease' && r.tag !== 'Rate Adjustment')
     .slice(0, 2)
@@ -1090,7 +1137,7 @@ function generateRecommendation(
   );
   const majorCoverageTypes = ['bodily_injury', 'property_damage', 'dwelling', 'personal_liability'];
   const hasMajorCoverageRemoval = coverageRemovals.some((c) =>
-    majorCoverageTypes.some((t) => c.description?.toLowerCase().includes(t.replace('_', ' ')))
+    majorCoverageTypes.some((t) => c.field === `coverage.${t}`)
   );
 
   // If major coverage removed AND premium stayed same/decreased, that's suspicious
