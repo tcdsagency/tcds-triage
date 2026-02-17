@@ -55,6 +55,8 @@ export function runCheckEngine(
   const allResults: CheckResult[] = [];
   let pipelineHalted = false;
   let haltPhase: number | null = null;
+  let skippedCount = 0;
+  let evaluatedCount = 0;
 
   // Execute phases 1-7 with blocking gates
   for (let phase = 1; phase <= 7; phase++) {
@@ -74,9 +76,13 @@ export function runCheckEngine(
 
     const phaseRules = getRulesForPhase(applicableRules, phase);
     for (const rule of phaseRules) {
+      evaluatedCount++;
       try {
         const result = rule.evaluate(ctx);
-        if (result == null) continue;
+        if (result == null) {
+          skippedCount++;
+          continue;
+        }
 
         if (Array.isArray(result)) {
           allResults.push(...result);
@@ -104,6 +110,29 @@ export function runCheckEngine(
         });
       }
     }
+  }
+
+  // Add skip-count meta-check if a significant portion of rules were skipped
+  const skipPercent = evaluatedCount > 0 ? Math.round((skippedCount / evaluatedCount) * 100) : 0;
+  if (skippedCount > 0) {
+    allResults.push({
+      ruleId: 'META-001',
+      field: 'Rule Coverage',
+      previousValue: evaluatedCount,
+      renewalValue: evaluatedCount - skippedCount,
+      change: `${skippedCount} skipped (${skipPercent}%)`,
+      severity: skipPercent >= 50 ? 'warning' : 'info',
+      message: `${skippedCount} of ${evaluatedCount} rules skipped due to missing data (${skipPercent}%)`,
+      agentAction: skipPercent >= 50
+        ? 'Over half of rules skipped — snapshot may be incomplete, verify data quality'
+        : 'Some rules skipped due to missing data — normal for partial snapshots',
+      reviewed: false,
+      reviewedBy: null,
+      reviewedAt: null,
+      checkType: 'existence',
+      category: 'Meta',
+      isBlocking: false,
+    });
   }
 
   // Compute summary

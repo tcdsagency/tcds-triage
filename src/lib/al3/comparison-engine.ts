@@ -197,12 +197,16 @@ export function compareSnapshots(
   // Flag property concerns (homeowners)
   allChanges.push(...flagPropertyConcerns(renewal, baseline));
 
-  // When baseline is stale (current_term), downgrade all changes to non-material
-  // since we're comparing the same term data and differences are unreliable
+  // When baseline is stale (current_term), downgrade coverage/detail changes
+  // to non-material since same-term comparisons are unreliable for those.
+  // Preserve premium changes — a premium difference is meaningful even with
+  // a stale baseline (e.g. mid-term endorsement vs renewal offer).
   if (baselineStatus === 'current_term') {
     for (const change of allChanges) {
-      change.severity = 'non_material';
-      change.classification = 'non_material';
+      if (change.category !== 'premium') {
+        change.severity = 'non_material';
+        change.classification = 'non_material';
+      }
     }
   }
 

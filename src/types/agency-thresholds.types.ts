@@ -21,7 +21,7 @@ export interface AgencyThresholds extends ComparisonThresholds {
   covAReplacementDrift: number;       // 5% — Coverage A vs replacement cost drift
 
   // Premium math tolerances
-  premiumMathToleranceHome: number;   // $1
+  premiumMathToleranceHome: number;   // $5
   premiumMathToleranceAuto: number;   // $2
 }
 
@@ -45,6 +45,6 @@ export const DEFAULT_AGENCY_THRESHOLDS: AgencyThresholds = {
   covAReplacementDrift: 5,
 
   // Premium math tolerances
-  premiumMathToleranceHome: 1,
+  premiumMathToleranceHome: 5,
   premiumMathToleranceAuto: 2,
 };
