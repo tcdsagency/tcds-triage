@@ -4,7 +4,7 @@
  */
 
 import type { CheckRuleDefinition } from '@/types/check-rules.types';
-import { makeCheck, strDiffers } from '../helpers';
+import { makeCheck, strDiffers, norm } from '../helpers';
 
 export const homeIdentityRules: CheckRuleDefinition[] = [
   {
@@ -115,15 +115,39 @@ export const homeIdentityRules: CheckRuleDefinition[] = [
           isBlocking: false, // Not blocking when we can't compare
         });
       }
-      const changed = strDiffers(renAddr, basAddr);
+      // Compare zip codes first as a reliable mismatch indicator
+      const renZip = (ctx.renewal.insuredZip || '').trim().slice(0, 5);
+      const basZip = ((ctx.baseline as any).insuredZip || '').trim().slice(0, 5);
+      const zipChanged = renZip && basZip && renZip !== basZip;
+      const fullChanged = norm(renAddr) !== norm(basAddr);
+
+      if (!fullChanged) {
+        return makeCheck('H-003', {
+          field: 'Property Address',
+          previousValue: basAddr,
+          renewalValue: renAddr,
+          change: 'No change',
+          severity: 'unchanged',
+          message: 'Property address matches',
+          agentAction: 'No action needed',
+          checkType: 'value_change',
+          category: 'Identity',
+          isBlocking: false,
+        });
+      }
+
       return makeCheck('H-003', {
         field: 'Property Address',
         previousValue: basAddr,
         renewalValue: renAddr,
-        change: changed ? `Changed` : 'No change',
-        severity: changed ? 'critical' : 'unchanged',
-        message: changed ? 'Property address changed — may be wrong policy match' : 'Property address matches',
-        agentAction: changed ? 'STOP: Verify this renewal matches the correct property' : 'No action needed',
+        change: 'Changed',
+        severity: zipChanged ? 'critical' : 'warning',
+        message: zipChanged
+          ? 'Property address AND zip code changed — may be wrong policy match'
+          : 'Property address changed (same zip) — may be formatting difference, verify',
+        agentAction: zipChanged
+          ? 'STOP: Address zip code changed — verify this renewal matches the correct property'
+          : 'Address text changed but same zip — likely formatting, confirm correct property',
         checkType: 'value_change',
         category: 'Identity',
         isBlocking: true,

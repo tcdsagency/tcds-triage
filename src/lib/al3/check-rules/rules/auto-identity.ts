@@ -191,7 +191,7 @@ export const autoIdentityRules: CheckRuleDefinition[] = [
           agentAction: 'No action needed',
           checkType: 'value_change',
           category: 'Identity',
-          isBlocking: true,
+          isBlocking: false,
         });
       }
 

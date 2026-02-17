@@ -17,20 +17,14 @@ function makeAutoCovCheck(
   covType: string,
   ctx: CheckRuleContext
 ): CheckResult | null {
-  // Check policy-level coverages
+  // Check policy-level coverages first, then fall back to vehicle-level
   const basCov = findCov(ctx.baseline.coverages, covType);
   const renCov = findCov(ctx.renewal.coverages, covType);
+  const basVehCov = !basCov ? ctx.baseline.vehicles.flatMap(v => v.coverages).find(c => c.type === covType) : undefined;
+  const renVehCov = !renCov ? ctx.renewal.vehicles.flatMap(v => v.coverages).find(c => c.type === covType) : undefined;
 
-  // Also check vehicle-level coverages if not at policy level
-  if (!basCov && !renCov) {
-    // Try to find in vehicle coverages
-    const basVehCov = ctx.baseline.vehicles.flatMap(v => v.coverages).find(c => c.type === covType);
-    const renVehCov = ctx.renewal.vehicles.flatMap(v => v.coverages).find(c => c.type === covType);
-    if (!basVehCov && !renVehCov) return null;
-  }
-
-  const basLimit = basCov?.limitAmount ?? null;
-  const renLimit = renCov?.limitAmount ?? null;
+  const basLimit = basCov?.limitAmount ?? basVehCov?.limitAmount ?? null;
+  const renLimit = renCov?.limitAmount ?? renVehCov?.limitAmount ?? null;
 
   if (basLimit == null && renLimit == null) return null;
 

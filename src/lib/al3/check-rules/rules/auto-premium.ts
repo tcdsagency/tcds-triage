@@ -241,24 +241,37 @@ export const autoPremiumRules: CheckRuleDefinition[] = [
     isBlocking: false,
     lob: 'auto',
     evaluate: (ctx) => {
-      // Look for claims/violations that might be causing surcharges
+      // Compare claims by claim number/date to detect actual additions/removals
       const claims = ctx.renewal.claims || [];
       const basClaims = ctx.baseline.claims || [];
-      const newClaims = claims.length - basClaims.length;
 
       if (claims.length === 0 && basClaims.length === 0) return null;
+
+      // Build identifier sets for proper diff (claimNumber preferred, fall back to date+type)
+      const claimKey = (c: { claimNumber?: string; claimDate?: string; claimType?: string }) =>
+        (c.claimNumber || `${c.claimDate || ''}|${c.claimType || ''}`).toLowerCase().trim();
+      const basKeys = new Set(basClaims.map(claimKey));
+      const renKeys = new Set(claims.map(claimKey));
+      const added = claims.filter(c => !basKeys.has(claimKey(c)));
+      const removed = basClaims.filter(c => !renKeys.has(claimKey(c)));
+
+      const parts: string[] = [];
+      if (added.length > 0) parts.push(`${added.length} new claim(s)`);
+      if (removed.length > 0) parts.push(`${removed.length} claim(s) aged off`);
 
       return makeCheck('A-044', {
         field: 'Claims/Violations',
         previousValue: basClaims.length,
         renewalValue: claims.length,
-        change: newClaims === 0 ? 'No change' : `${newClaims > 0 ? '+' : ''}${newClaims} claim(s)`,
-        severity: newClaims > 0 ? 'warning' : claims.length > 0 ? 'info' : 'unchanged',
-        message: newClaims > 0
-          ? `${newClaims} new claim(s)/violation(s) — may cause surcharge`
+        change: parts.length > 0 ? parts.join('; ') : 'No change',
+        severity: added.length > 0 ? 'warning' : claims.length > 0 ? 'info' : 'unchanged',
+        message: added.length > 0
+          ? `${added.length} new claim(s)/violation(s) — may cause surcharge`
           : `${claims.length} claim(s) on file`,
-        agentAction: newClaims > 0
+        agentAction: added.length > 0
           ? 'New claims detected — check surcharge impact and aging timeline'
+          : removed.length > 0
+          ? 'Claim(s) aged off — may reduce premium, verify with carrier'
           : claims.length > 0
           ? 'Review claim aging — some may be falling off soon'
           : 'No action needed',

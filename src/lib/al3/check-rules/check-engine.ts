@@ -165,12 +165,20 @@ export function runCheckEngine(
 
 /**
  * Check if a specific phase produced any critical blocking results.
+ *
+ * Note: CheckResult does not carry a phase field, so we match by ruleId prefix.
+ * Phase 1 blocking rules: H-003/H-004/H-006, A-003/A-004/A-005
+ * Phase 5 blocking rules: H-032, A-042
  */
+const PHASE_BLOCKING_RULES: Record<number, Set<string>> = {
+  1: new Set(['H-003', 'H-004', 'H-006', 'A-003', 'A-004', 'A-005']),
+  5: new Set(['H-032', 'A-042']),
+};
+
 function hasCriticalBlockers(results: CheckResult[], phase: number): boolean {
-  // We need to check results from rules in the given phase that are blocking + critical
-  // Since results don't carry phase info directly, we check isBlocking + severity
-  // Phase 1 rules are all isBlocking, Phase 5 rules H-032/A-042 are isBlocking
-  return results.some(r => r.isBlocking && r.severity === 'critical');
+  const phaseRuleIds = PHASE_BLOCKING_RULES[phase];
+  if (!phaseRuleIds) return false;
+  return results.some(r => r.isBlocking && r.severity === 'critical' && phaseRuleIds.has(r.ruleId));
 }
 
 /**
