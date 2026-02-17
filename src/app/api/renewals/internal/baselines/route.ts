@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { renewalBaselines, policies } from '@/db/schema';
 import { eq, and, lt, desc } from 'drizzle-orm';
-import { normalizeHawkSoftCoverages } from '@/lib/al3/baseline-builder';
+import { normalizeHawkSoftCoverages, findLocalPolicy } from '@/lib/al3/baseline-builder';
 import { DISCOUNT_COVERAGE_TYPES, RATING_FACTOR_TYPES } from '@/lib/al3/constants';
 
 export async function POST(request: NextRequest) {
@@ -41,20 +41,10 @@ export async function POST(request: NextRequest) {
     let errors = 0;
     for (const b of baselines) {
       try {
-        // Look up policyId/customerId by policy number
+        // Look up policyId/customerId by policy number (with suffix fallback)
         let policyLink = policyCache.get(b.policyNumber);
         if (policyLink === undefined) {
-          const [match] = await db
-            .select({ id: policies.id, customerId: policies.customerId })
-            .from(policies)
-            .where(
-              and(
-                eq(policies.tenantId, tenantId),
-                eq(policies.policyNumber, b.policyNumber)
-              )
-            )
-            .limit(1);
-          policyLink = match ? { policyId: match.id, customerId: match.customerId } : null;
+          policyLink = await findLocalPolicy(tenantId, b.policyNumber);
           policyCache.set(b.policyNumber, policyLink);
         }
 

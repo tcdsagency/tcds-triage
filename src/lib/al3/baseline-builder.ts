@@ -107,6 +107,29 @@ export async function findLocalPolicy(
     }
   }
 
+  // Reverse: AL3 has base number, HawkSoft stores with suffix (e.g., "POL123" → "POL123-1")
+  if (!hasTermSuffix(policyNumber)) {
+    const [suffixMatch] = await db
+      .select({
+        id: policies.id,
+        customerId: policies.customerId,
+        policyNumber: policies.policyNumber,
+      })
+      .from(policies)
+      .where(
+        and(
+          eq(policies.tenantId, tenantId),
+          like(policies.policyNumber, `${policyNumber}-%`)
+        )
+      )
+      .limit(1);
+
+    if (suffixMatch) {
+      console.log(`[Baseline] Reverse matched "${policyNumber}" → existing policy "${suffixMatch.policyNumber}"`);
+      return { policyId: suffixMatch.id, customerId: suffixMatch.customerId };
+    }
+  }
+
   return null;
 }
 
