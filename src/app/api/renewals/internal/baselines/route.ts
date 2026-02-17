@@ -6,8 +6,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { renewalBaselines, policies } from '@/db/schema';
-import { eq, and, lt, desc } from 'drizzle-orm';
-import { normalizeHawkSoftCoverages, findLocalPolicy } from '@/lib/al3/baseline-builder';
+import { eq, and, lt, or, like, desc } from 'drizzle-orm';
+import { normalizeHawkSoftCoverages, findLocalPolicy, stripTermSuffix, hasTermSuffix } from '@/lib/al3/baseline-builder';
 import { DISCOUNT_COVERAGE_TYPES, RATING_FACTOR_TYPES } from '@/lib/al3/constants';
 
 export async function POST(request: NextRequest) {
@@ -130,7 +130,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const result = await db
+    // Try exact match first
+    let result = await db
       .select()
       .from(renewalBaselines)
       .where(
@@ -143,6 +144,27 @@ export async function GET(request: NextRequest) {
       )
       .orderBy(desc(renewalBaselines.effectiveDate))
       .limit(1);
+
+    // If exact match fails and policy has a term suffix, try matching by base number
+    if (result.length === 0) {
+      const baseNumber = stripTermSuffix(policyNumber);
+      result = await db
+        .select()
+        .from(renewalBaselines)
+        .where(
+          and(
+            eq(renewalBaselines.tenantId, tenantId),
+            eq(renewalBaselines.carrierCode, carrierCode),
+            or(
+              eq(renewalBaselines.policyNumber, baseNumber),
+              like(renewalBaselines.policyNumber, `${baseNumber}-%`)
+            ),
+            lt(renewalBaselines.effectiveDate, new Date(beforeDate))
+          )
+        )
+        .orderBy(desc(renewalBaselines.effectiveDate))
+        .limit(1);
+    }
 
     if (result.length === 0) {
       return NextResponse.json({ success: false, baseline: null });

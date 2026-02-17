@@ -7,7 +7,7 @@
 
 import { db } from '@/db';
 import { policies, vehicles, drivers, customers, properties, policyNotices, mortgagees as mortgageesTable } from '@/db/schema';
-import { eq, and, like, or, sql } from 'drizzle-orm';
+import { eq, and, like, or, sql, desc } from 'drizzle-orm';
 import type {
   BaselineSnapshot,
   CanonicalCoverage,
@@ -75,6 +75,7 @@ export async function findLocalPolicy(
         eq(policies.policyNumber, policyNumber)
       )
     )
+    .orderBy(desc(policies.effectiveDate))
     .limit(1);
 
   if (exactMatch) {
@@ -86,6 +87,7 @@ export async function findLocalPolicy(
     const baseNumber = stripTermSuffix(policyNumber);
     console.log(`[Baseline] Exact match failed for "${policyNumber}", trying base number "${baseNumber}"`);
 
+    // Try exact base match first, then dash-separated suffix match
     const [baseMatch] = await db
       .select({
         id: policies.id,
@@ -96,9 +98,13 @@ export async function findLocalPolicy(
       .where(
         and(
           eq(policies.tenantId, tenantId),
-          like(policies.policyNumber, `${baseNumber}%`)
+          or(
+            eq(policies.policyNumber, baseNumber),
+            like(policies.policyNumber, `${baseNumber}-%`)
+          )
         )
       )
+      .orderBy(desc(policies.effectiveDate))
       .limit(1);
 
     if (baseMatch) {
@@ -122,6 +128,7 @@ export async function findLocalPolicy(
           like(policies.policyNumber, `${policyNumber}-%`)
         )
       )
+      .orderBy(desc(policies.effectiveDate))
       .limit(1);
 
     if (suffixMatch) {
@@ -466,6 +473,50 @@ export async function buildBaselineSnapshot(
     return { snapshot, policyId: localPolicy.policyId, customerId: localPolicy.customerId };
   }
 
+  // If stale but no prior-term snapshot, local data is already overwritten with renewal term —
+  // force HawkSoft API fetch for all categories (don't use stale local data as baseline)
+  if (stale) {
+    console.warn(`[Baseline] Local data for ${policyNumber} is stale (already renewal term) and no prior-term snapshot exists — forcing HawkSoft API fetch`);
+    const hsData = await fetchHawkSoftPolicyData(localPolicy.customerId, policyNumber);
+    if (!hsData) {
+      console.warn(`[Baseline] HawkSoft API also failed for stale policy ${policyNumber} — returning null (no usable baseline)`);
+      return null;
+    }
+
+    // Partition coverages vs discounts
+    const realCoverages: CanonicalCoverage[] = [];
+    const discountCoverages: CanonicalDiscount[] = [];
+    for (const cov of hsData.coverages) {
+      if (DISCOUNT_COVERAGE_TYPES.has(cov.type)) {
+        discountCoverages.push({ code: cov.type, description: cov.description || cov.type, amount: cov.premium });
+      } else {
+        realCoverages.push(cov);
+      }
+    }
+
+    const allCoveragePremiums = realCoverages.filter(c => c.premium != null).map(c => c.premium!);
+    const apiPremium = allCoveragePremiums.length > 0
+      ? allCoveragePremiums.reduce((sum, p) => sum + p, 0)
+      : undefined;
+
+    const snapshot: BaselineSnapshot = {
+      premium: apiPremium,
+      coverages: realCoverages,
+      vehicles: hsData.vehicles,
+      drivers: hsData.drivers,
+      endorsements: [],
+      discounts: discountCoverages,
+      claims,
+      mortgagees: baselineMortgagees,
+      propertyContext,
+      policyEffectiveDate: policy.effectiveDate?.toISOString().split('T')[0],
+      policyExpirationDate: policy.expirationDate?.toISOString().split('T')[0],
+      fetchedAt: new Date().toISOString(),
+      fetchSource: 'hawksoft_api',
+    };
+    return { snapshot, policyId: localPolicy.policyId, customerId: localPolicy.customerId };
+  }
+
   // Fetch vehicles and drivers from local DB
   let policyVehicles = await db
     .select()
@@ -528,11 +579,21 @@ export async function buildBaselineSnapshot(
   const baselinePremium = calculatedPremium ?? (policy.premium ? parseFloat(policy.premium) : undefined);
 
   // Build snapshot — use HawkSoft API data if local was empty
+  const finalVehicles = policyVehicles.length > 0 ? normalizeHawkSoftVehicles(policyVehicles) : hsVehicles;
+  const finalDrivers = policyDrivers.length > 0 ? normalizeHawkSoftDrivers(policyDrivers) : hsDrivers;
+
+  // Validate that the baseline has meaningful content — empty baselines cause
+  // false "coverage removed" findings in comparison engine
+  if (realCoverages.length === 0 && finalVehicles.length === 0 && baselinePremium == null) {
+    console.warn(`[Baseline] Empty baseline for ${policyNumber} — no coverages, no vehicles, no premium. Returning null.`);
+    return null;
+  }
+
   const snapshot: BaselineSnapshot = {
     premium: baselinePremium,
     coverages: realCoverages,
-    vehicles: policyVehicles.length > 0 ? normalizeHawkSoftVehicles(policyVehicles) : hsVehicles,
-    drivers: policyDrivers.length > 0 ? normalizeHawkSoftDrivers(policyDrivers) : hsDrivers,
+    vehicles: finalVehicles,
+    drivers: finalDrivers,
     endorsements: [],
     discounts: discountCoverages,
     claims,
