@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { renewalBaselines, policies } from '@/db/schema';
 import { eq, and, lt, desc } from 'drizzle-orm';
+import { normalizeHawkSoftCoverages } from '@/lib/al3/baseline-builder';
+import { DISCOUNT_COVERAGE_TYPES, RATING_FACTOR_TYPES } from '@/lib/al3/constants';
 
 export async function POST(request: NextRequest) {
   try {
@@ -56,6 +58,16 @@ export async function POST(request: NextRequest) {
           policyCache.set(b.policyNumber, policyLink);
         }
 
+        // Enrich snapshot with HawkSoft coverages if key coverages are missing
+        let enrichedSnapshot = b.snapshot;
+        if (policyLink) {
+          enrichedSnapshot = await enrichSnapshotFromHawkSoft(
+            policyLink.policyId,
+            b.snapshot,
+            b.lineOfBusiness
+          );
+        }
+
         await db
           .insert(renewalBaselines)
           .values({
@@ -67,7 +79,7 @@ export async function POST(request: NextRequest) {
             insuredName: b.insuredName || null,
             effectiveDate: new Date(b.effectiveDate),
             expirationDate: b.expirationDate ? new Date(b.expirationDate) : null,
-            snapshot: b.snapshot,
+            snapshot: enrichedSnapshot,
             rawAl3Content: b.rawAl3Content || null,
             sourceFileName: b.sourceFileName || null,
             batchId: batchId || null,
@@ -86,7 +98,7 @@ export async function POST(request: NextRequest) {
               lineOfBusiness: b.lineOfBusiness || null,
               insuredName: b.insuredName || null,
               expirationDate: b.expirationDate ? new Date(b.expirationDate) : null,
-              snapshot: b.snapshot,
+              snapshot: enrichedSnapshot,
               rawAl3Content: b.rawAl3Content || null,
               sourceFileName: b.sourceFileName || null,
               batchId: batchId || null,
@@ -162,4 +174,90 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// =============================================================================
+// HAWKSOFT ENRICHMENT
+// =============================================================================
+
+const HOME_KEY_COVERAGES = ['dwelling', 'personal_liability'];
+const AUTO_KEY_COVERAGES = ['bodily_injury'];
+
+/**
+ * Enrich a baseline snapshot with missing coverages from HawkSoft policy data.
+ * Lightweight — single DB query, no API calls.
+ */
+async function enrichSnapshotFromHawkSoft(
+  policyId: string,
+  snapshot: Record<string, unknown>,
+  lineOfBusiness?: string | null
+): Promise<Record<string, unknown>> {
+  const coverages = (snapshot.coverages || []) as Array<{ type: string; limitAmount?: number; [k: string]: unknown }>;
+  if (!Array.isArray(coverages)) return snapshot;
+
+  const lob = (lineOfBusiness || '').toLowerCase();
+  const isHome = lob.includes('home') || lob.includes('dwelling') || lob.includes('fire');
+  const isAuto = lob.includes('auto') && !lob.includes('home');
+
+  // Determine which key coverages are missing
+  const keyCoverages = isHome ? HOME_KEY_COVERAGES : isAuto ? AUTO_KEY_COVERAGES : [...HOME_KEY_COVERAGES, ...AUTO_KEY_COVERAGES];
+  const existingTypes = new Set(coverages.map((c) => c.type));
+  const missingKeys = keyCoverages.filter((k) => {
+    const existing = coverages.find((c) => c.type === k && c.limitAmount && c.limitAmount > 0);
+    return !existing;
+  });
+
+  if (missingKeys.length === 0) return snapshot;
+
+  // Look up HawkSoft coverages from policies table
+  const [policy] = await db
+    .select({ coverages: policies.coverages })
+    .from(policies)
+    .where(eq(policies.id, policyId))
+    .limit(1);
+
+  if (!policy?.coverages || !Array.isArray(policy.coverages) || policy.coverages.length === 0) {
+    return snapshot;
+  }
+
+  const hsCoverages = normalizeHawkSoftCoverages(policy.coverages as any);
+  const realHsCoverages = hsCoverages.filter(
+    (c) => !DISCOUNT_COVERAGE_TYPES.has(c.type) && !RATING_FACTOR_TYPES.has(c.type)
+  );
+
+  const newCoverages: any[] = [];
+  let modified = false;
+
+  for (const missing of missingKeys) {
+    const hsCov = realHsCoverages.find(
+      (c) => c.type === missing && c.limitAmount && c.limitAmount > 0
+    );
+    if (!hsCov) continue;
+
+    if (!existingTypes.has(missing)) {
+      newCoverages.push({ ...hsCov, enrichedFromHawksoft: true });
+    } else {
+      // Update in-place: coverage exists but has no valid limit
+      for (const existing of coverages) {
+        if (existing.type === missing && (!existing.limitAmount || existing.limitAmount <= 0)) {
+          existing.limitAmount = hsCov.limitAmount;
+          existing.limit = hsCov.limit || String(hsCov.limitAmount);
+          (existing as any).enrichedFromHawksoft = true;
+          if (hsCov.deductibleAmount && !existing.deductibleAmount) {
+            existing.deductibleAmount = hsCov.deductibleAmount as number;
+            existing.deductible = hsCov.deductible as string;
+          }
+          modified = true;
+        }
+      }
+    }
+  }
+
+  if (newCoverages.length === 0 && !modified) return snapshot;
+
+  return {
+    ...snapshot,
+    coverages: [...coverages, ...newCoverages],
+    enrichedFromHawksoft: true,
+  };
 }

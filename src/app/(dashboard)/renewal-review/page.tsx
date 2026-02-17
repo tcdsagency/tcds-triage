@@ -2,12 +2,30 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { RefreshCw, Search, Car, Home, Building2, Layers, Upload, FileArchive, X, User, Users } from 'lucide-react';
+import { RefreshCw, Search, Car, Home, Building2, Layers, Upload, FileArchive, X, User, Users, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useUser } from '@/hooks/useUser';
 import RenewalCard from '@/components/features/renewal/RenewalCard';
 import type { RenewalComparison, RenewalsListResponse, RenewalStats } from '@/components/features/renewal/types';
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+function formatTimeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
 
 // =============================================================================
 // COMPONENT
@@ -75,6 +93,27 @@ export default function RenewalReviewPage() {
 
   // Sort
   const [sortBy, setSortBy] = useState('renewalDate');
+
+  // Last IVANS batch status
+  const [lastBatch, setLastBatch] = useState<{
+    status: string;
+    processingCompletedAt: string | null;
+    createdAt: string;
+    originalFileName: string;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/renewals/batches')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.batches?.length > 0) {
+          // Find most recent completed batch
+          const completed = data.batches.find((b: any) => b.status === 'completed');
+          setLastBatch(completed || data.batches[0]);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Debounced search
   const [searchInput, setSearchInput] = useState('');
@@ -235,7 +274,26 @@ export default function RenewalReviewPage() {
               Review and action renewal offers from IVANS
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* Last IVANS Download Status */}
+            {lastBatch && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mr-1">
+                {lastBatch.status === 'completed' ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                ) : lastBatch.status === 'failed' ? (
+                  <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                ) : (
+                  <Clock className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
+                )}
+                <span>
+                  IVANS: {lastBatch.status === 'completed' && lastBatch.processingCompletedAt
+                    ? formatTimeAgo(new Date(lastBatch.processingCompletedAt))
+                    : lastBatch.status === 'failed'
+                    ? 'Last batch failed'
+                    : `${lastBatch.status}...`}
+                </span>
+              </div>
+            )}
             {/* My / All Renewals Toggle */}
             <div className="flex items-center rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
               <button

@@ -108,6 +108,11 @@ export function partitionTransactionsV2(
   const archived: AL3ParsedTransaction[] = [];
 
   for (const t of transactions) {
+    // Detect umbrella policies by ALU prefix in policy number
+    if (t.header.policyNumber?.toUpperCase().startsWith('ALU') && !t.header.lineOfBusiness) {
+      t.header.lineOfBusiness = 'Umbrella';
+    }
+
     const isRenewalType = renewalTypes.has(t.header.transactionType.toUpperCase());
     const effDate = t.header.effectiveDate?.split('T')[0];
     const expDate = t.header.expirationDate?.split('T')[0];
