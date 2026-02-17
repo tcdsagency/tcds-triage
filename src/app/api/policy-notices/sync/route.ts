@@ -326,7 +326,7 @@ export async function POST(request: NextRequest) {
           description: notice.description,
           documentUrl: notice.documentUrl,
           documentFileName: notice.documentFileName,
-          amountDue: notice.amountDue ? parseFloat(notice.amountDue.replace(/[^0-9.-]/g, '')) || null : null,
+          amountDue: notice.amountDue ? notice.amountDue.replace(/[^0-9.-]/g, '') || null : null,
           dueDate: notice.dueDate,
           gracePeriodEnd: notice.gracePeriodEnd,
           claimNumber: notice.claimNumber,
