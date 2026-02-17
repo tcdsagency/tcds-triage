@@ -298,17 +298,25 @@ async function startTranscription(callId: string, extension: string, threecxCall
     const session = await vmBridge.startTranscription(callId, extension, threecxCallId);
 
     if (session) {
-      console.log(`[3CX Webhook] Transcription started successfully:`, JSON.stringify(session, null, 2));
-      // Save VM Bridge session ID and mark transcription as active
+      const vmSessionId = session.sessionId;
+      const isExisting = (session as any).status === 'already_active';
+
+      if (isExisting) {
+        console.log(`[3CX Webhook] Auto-transcription already active, linking existing session ${vmSessionId} to call ${callId}`);
+      } else {
+        console.log(`[3CX Webhook] Transcription started successfully: ${vmSessionId}`);
+      }
+
+      // Save VM Bridge session ID (whether new or existing) and mark transcription as active
       await db
         .update(calls)
         .set({
-          vmSessionId: session.sessionId,
+          vmSessionId,
           transcriptionStatus: "active",
           updatedAt: new Date(),
         })
         .where(eq(calls.id, callId));
-      console.log(`[3CX Webhook] Saved vmSessionId ${session.sessionId} to call ${callId}`);
+      console.log(`[3CX Webhook] Saved vmSessionId ${vmSessionId} to call ${callId}`);
     } else {
       console.warn(`[3CX Webhook] Transcription start returned null - check VM Bridge logs`);
     }

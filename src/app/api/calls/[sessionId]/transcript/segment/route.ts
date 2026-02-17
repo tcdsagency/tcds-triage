@@ -90,7 +90,7 @@ function detectSentiment(text: string): 'positive' | 'neutral' | 'negative' {
 // Session Resolution - Find call by various ID formats
 // =============================================================================
 
-async function resolveCallId(sessionId: string): Promise<string | null> {
+async function resolveCallId(sessionId: string, agentExtension?: string): Promise<string | null> {
   const isValidUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
   // 1. Try as direct UUID (call.id)
@@ -142,15 +142,36 @@ async function resolveCallId(sessionId: string): Promise<string | null> {
     }
   }
 
-  // 5. sess_ without vmSessionId match - find most recent active call (fallback)
+  // 5. sess_ without vmSessionId match - find active call by extension or most recent (fallback)
   if (sessionId.startsWith('sess_')) {
-    console.log(`[Transcript] VM Bridge session ${sessionId} not linked, finding active call...`);
-    const [call] = await db
-      .select({ id: calls.id, status: calls.status })
-      .from(calls)
-      .where(sql`${calls.status} IN ('in_progress', 'ringing')`)
-      .orderBy(sql`${calls.startedAt} DESC`)
-      .limit(1);
+    console.log(`[Transcript] VM Bridge session ${sessionId} not linked, finding active call (ext=${agentExtension || 'unknown'})...`);
+
+    let call: { id: string; status: string | null } | undefined;
+
+    // 5a. If we have an agent extension, find the active call for THAT specific extension
+    if (agentExtension) {
+      [call] = await db
+        .select({ id: calls.id, status: calls.status })
+        .from(calls)
+        .where(sql`${calls.extension} = ${agentExtension} AND ${calls.status} IN ('in_progress', 'ringing')`)
+        .orderBy(sql`${calls.startedAt} DESC`)
+        .limit(1);
+
+      if (call) {
+        console.log(`[Transcript] Found active call for ext=${agentExtension}: ${call.id}`);
+      }
+    }
+
+    // 5b. Fallback to most recent active call (only if no extension match)
+    if (!call) {
+      [call] = await db
+        .select({ id: calls.id, status: calls.status })
+        .from(calls)
+        .where(sql`${calls.status} IN ('in_progress', 'ringing')`)
+        .orderBy(sql`${calls.startedAt} DESC`)
+        .limit(1);
+    }
+
     if (call) {
       // Link this session to the call for future lookups
       await db
@@ -269,6 +290,7 @@ interface SegmentRequest {
   callId?: string;
   isFinal?: boolean;
   timestamp?: string;
+  agentExtension?: string;
 }
 
 export async function POST(
@@ -295,7 +317,7 @@ export async function POST(
     }
 
     // Resolve session ID to call UUID using proper chain
-    const callId = await resolveCallId(sessionId);
+    const callId = await resolveCallId(sessionId, body.agentExtension);
 
     if (!callId) {
       console.warn(`[Transcript] Call not found for sessionId: ${sessionId}`);
