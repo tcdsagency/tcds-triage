@@ -576,6 +576,103 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
 }
 
 /**
+ * Parse embedded 6CVH sub-records from non-EDIFACT lines using positional field extraction.
+ * NatGen/Foremost packs multiple 6CVH records into 6HRU lines without 0xFA delimiters.
+ * Uses DDT-standard field positions (1-based → 0-based offsets):
+ *   Coverage code:  pos 30, 5 chars
+ *   Premium:        pos 60, 12 chars (cents with +/- sign)
+ *   Limit 1:        pos 102, 8 chars (zero-padded)
+ *   Deductible 1:   pos 110, 5 chars (zero-padded)
+ *   Description:    pos 156, 54 chars
+ */
+function parsePositional6CVHCoverages(line: string): AL3Coverage[] {
+  const results: AL3Coverage[] = [];
+  let searchIdx = 0;
+
+  while ((searchIdx = line.indexOf('6CVH', searchIdx)) !== -1) {
+    // Verify this is a record header: "6CVH" followed by 3-digit length
+    const lenStr = line.substring(searchIdx + 4, searchIdx + 7);
+    if (!/^\d{3}$/.test(lenStr)) {
+      searchIdx += 4;
+      continue;
+    }
+
+    const recLen = parseInt(lenStr, 10);
+    if (recLen < 100 || searchIdx + recLen > line.length + 50) {
+      // Record too short or extends past end — skip
+      searchIdx += 7;
+      continue;
+    }
+
+    const record = line.substring(searchIdx, searchIdx + Math.min(recLen, line.length - searchIdx));
+
+    // Extract fields using DDT positions (converted from 1-based to 0-based)
+    const code = record.substring(30, 35).replace(/[^\x20-\x7E]/g, '').trim();
+    if (!code) {
+      searchIdx += 7;
+      continue;
+    }
+
+    // Premium at pos 60, 12 chars — Allstate cents format (digits with +/- sign)
+    const premiumRaw = record.substring(60, 72).replace(/[^\x20-\x7E]/g, '').trim();
+    let premium: number | undefined;
+    if (/^\d{4,}[+-]$/.test(premiumRaw)) {
+      premium = parseAllstatePremium(premiumRaw);
+    }
+
+    // Limit at pos 102, 8 chars — zero-padded dollars
+    const limitRaw = record.substring(102, 110).replace(/[^\x20-\x7E]/g, '').trim();
+    let limitAmount: number | undefined;
+    let limitStr: string | undefined;
+    if (/^\d{3,8}$/.test(limitRaw)) {
+      const val = parseInt(limitRaw.replace(/^0+/, '') || '0', 10);
+      if (val > 0) {
+        limitAmount = val;
+        limitStr = String(val);
+      }
+    }
+
+    // Deductible at pos 110, 5 chars — zero-padded dollars
+    const dedRaw = record.substring(110, 115).replace(/[^\x20-\x7E]/g, '').trim();
+    let deductibleAmount: number | undefined;
+    let deductibleStr: string | undefined;
+    if (/^\d{3,5}$/.test(dedRaw)) {
+      const val = parseInt(dedRaw.replace(/^0+/, '') || '0', 10);
+      if (val >= 50 && val <= 100000) {
+        deductibleAmount = val;
+        deductibleStr = String(val);
+      }
+    }
+
+    // Description at pos 156, 54 chars
+    let description = code;
+    if (record.length > 156) {
+      const descRaw = record.substring(156, 210).replace(/[^\x20-\x7E]/g, ' ').trim();
+      if (descRaw.length > 2 && /[a-zA-Z]{3,}/.test(descRaw)) {
+        description = descRaw;
+      }
+    }
+
+    // Only push if we got meaningful data
+    if (premium || limitAmount || deductibleAmount || (description && description !== code)) {
+      results.push({
+        code,
+        description,
+        limit: limitStr,
+        limitAmount,
+        deductible: deductibleStr,
+        deductibleAmount,
+        premium,
+      });
+    }
+
+    searchIdx += Math.max(recLen, 7);
+  }
+
+  return results;
+}
+
+/**
  * Identify the group code of an AL3 record line.
  */
 function getGroupCode(line: string): string {
@@ -1463,6 +1560,11 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
             const cvhList = parseEDIFACTHomeCoverages(line);
             coverages.push(...cvhList);
           }
+        } else if ((gc === '6HRU' || gc === '6FRU') && !isEDIFACTFormat(line) && line.includes('6CVH')) {
+          // Non-EDIFACT 6HRU/6FRU: NatGen/Foremost embed 6CVH sub-records using positional fields
+          // (no 0xFA delimiters). Extract coverages using DDT-standard field positions.
+          const cvhList = parsePositional6CVHCoverages(line);
+          coverages.push(...cvhList);
         } else if (gc === '5REP' && isEDIFACTFormat(line) && line.includes('6CVH')) {
           // 5REP: Replacement cost/property report — some carriers (CAN STRATEGIC)
           // embed the first coverage sub-records (DWELL, OS, PP) inside this line.
@@ -1709,7 +1811,12 @@ function parseCoverage(line: string): AL3Coverage | null {
  */
 function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverage | null {
   const fields = type === 'vehicle' ? CVA_FIELDS : CVH_FIELDS;
-  const code = extractField(line, fields.COVERAGE_CODE);
+  let code = extractField(line, fields.COVERAGE_CODE);
+  if (!code) return null;
+
+  // Strip trailing date patterns from coverage codes (NatGen 312-byte records pack the
+  // 6-digit effective date immediately after the 5-char coverage code, e.g., "DWELL250717").
+  code = code.replace(/\d{6,8}$/, '').trim();
   if (!code) return null;
 
   if (type === 'vehicle') {
@@ -1866,26 +1973,21 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
     let deductibleAmount: number | undefined;
     let deductibleStr: string | undefined;
 
-    if (hasPremiumSign) {
-      // Watercraft format: primary is premium, secondary is limit
-      const premiumRaw = primaryStr.replace(/[+-]$/, '');
-      premium = parseAL3Number(premiumRaw);
-      if (premium) premium = premium / 100;
-      limitAmount = parseAL3Number(secondaryStr);
-      limitStr = secondaryStr || undefined;
-    } else if (isSafecoHome) {
-      // SAFECO 6CVH240 format:
+    if (isSafecoHome) {
+      // SAFECO/NatGen 6CVH format: premium-in-cents at pos 60, limit at pos 102+.
       //   Position 60-71: premium in cents (e.g., "00000203900" = $2,039.00)
       //   Position 102+: limit (8 digits) + deductible (up to 5 digits)
       //     e.g., "0029830001000" → limit=$298,300, ded=$1,000
       //     e.g., "00300000" → limit=$300,000 (no deductible)
-      //   (Position 90-101 is blank in SAFECO format)
-      const primaryAmount = parseAL3Number(primaryStr);
+      //   (Position 90-101 is blank in this format)
+      // NatGen 312-byte records have +/- on the premium; SAFECO 240-byte may not.
+      const premiumRaw = primaryStr.replace(/[+-]$/, '');
+      const primaryAmount = parseAL3Number(premiumRaw);
       if (primaryAmount) {
         premium = primaryAmount / 100; // cents to dollars
       }
 
-      // Extract secondary data from SAFECO-specific position 102+
+      // Extract limit + deductible from position 102+
       const safecoSecondary = line.length > 102 ? line.substring(102, 115).trim() : '';
       if (safecoSecondary.length > 0) {
         const secDigits = safecoSecondary.replace(/[^0-9]/g, '');
@@ -1913,6 +2015,13 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
           }
         }
       }
+    } else if (hasPremiumSign) {
+      // Watercraft format: primary is premium, secondary is limit
+      const premiumRaw = primaryStr.replace(/[+-]$/, '');
+      premium = parseAL3Number(premiumRaw);
+      if (premium) premium = premium / 100;
+      limitAmount = parseAL3Number(secondaryStr);
+      limitStr = secondaryStr || undefined;
     } else {
       // Home format: primary is limit
       limitAmount = parseAL3Number(primaryStr);
@@ -1938,16 +2047,19 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       const eightDigitMatches = [...dataSection.matchAll(eightDigitPattern)];
 
       if (eightDigitMatches.length > 0) {
-        // First 8-digit number is the limit
-        const rawLimit = eightDigitMatches[0][1];
-        const parsedLimit = parseInt(rawLimit.replace(/^0+/, '') || '0', 10);
+        // First 8-digit number that isn't a date (YYYYMMDD) is the limit
+        // Filter out date-like values in 1990-2039 range
+        const isDateLike = (s: string) => /^(19[89]\d|20[0-3]\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(s);
+        const limitMatch = eightDigitMatches.find(m => !isDateLike(m[1]));
+        const rawLimit = limitMatch?.[1];
+        const parsedLimit = rawLimit ? parseInt(rawLimit.replace(/^0+/, '') || '0', 10) : 0;
         if (parsedLimit > 0) {
           limitAmount = parsedLimit;
           limitStr = String(parsedLimit);
         }
 
         // Check if there's a deductible immediately after the limit (5-7 digits pattern)
-        const limitEndPos = (eightDigitMatches[0].index ?? 0) + 8;
+        const limitEndPos = (limitMatch?.index ?? 0) + 8;
         const afterLimit = dataSection.substring(limitEndPos, limitEndPos + 10);
         const dedMatch = afterLimit.match(/^(\d{4,7})/);
         if (dedMatch) {
