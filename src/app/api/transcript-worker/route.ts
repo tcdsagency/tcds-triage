@@ -705,7 +705,7 @@ async function createAutoTicketForPollCall(params: {
       .limit(1);
 
     const features = tenantData?.features as Record<string, unknown> | undefined;
-    if (features?.autoCreateServiceTickets !== true) {
+    if (features?.autoCreateServiceTickets === false) {
       console.log(`[TranscriptWorker] Auto-ticket feature not enabled, skipping`);
       return;
     }

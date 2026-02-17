@@ -318,6 +318,7 @@ export const tenants = pgTable('tenants', {
     trainingSystem: boolean;
     riskMonitor: boolean;
     reviewAutoSend: boolean; // When false, review requests require manual approval
+    autoCreateServiceTickets: boolean; // Auto-create service tickets for inbound calls
   }>().default({
     aiAssistant: true,
     voiceTranscription: true,
@@ -326,6 +327,7 @@ export const tenants = pgTable('tenants', {
     trainingSystem: true,
     riskMonitor: false,
     reviewAutoSend: true, // Default: auto-send enabled
+    autoCreateServiceTickets: true, // Default: auto-create enabled
   }),
   
   // AI Customization
@@ -569,6 +571,7 @@ export const policies = pgTable('policies', {
   // Prior-term snapshot — preserved when effectiveDate changes during sync
   // so baseline builder can use prior-term data if HawkSoft already has new-term data
   priorTermSnapshot: jsonb('prior_term_snapshot'),
+  priorTermCapturedAt: timestamp('prior_term_captured_at'),
 
   // Policy-level agent assignment (from HawkSoft Agent1/Agent2/Agent3 fields)
   agent1: varchar('agent1', { length: 50 }),  // Primary writing agent
@@ -5502,12 +5505,16 @@ export const commissionImportBatches = pgTable('commission_import_batches', {
 
   importedByUserId: uuid('imported_by_user_id').references(() => users.id, { onDelete: 'set null' }),
 
+  // SHA-256 hash of CSV content for file-level dedup
+  fileHash: varchar('file_hash', { length: 64 }),
+
   startedAt: timestamp('started_at'),
   completedAt: timestamp('completed_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => [
   index('commission_import_batches_tenant_idx').on(table.tenantId),
   index('commission_import_batches_status_idx').on(table.status),
+  uniqueIndex('commission_import_batches_file_hash_idx').on(table.tenantId, table.fileHash),
 ]);
 
 // 7. Commission Import Errors - Per-row import errors
@@ -5525,6 +5532,12 @@ export const commissionImportErrors = pgTable('commission_import_errors', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => [
   index('commission_import_errors_batch_idx').on(table.batchId),
+]);
+
+export const commissionMatchStatusEnum = pgEnum('commission_match_status', [
+  'unmatched',
+  'matched',
+  'manual',
 ]);
 
 // 8. Commission Policies - Policy records
@@ -5547,6 +5560,7 @@ export const commissionPolicies = pgTable('commission_policies', {
 
   // Link to central policy table for cross-referencing
   centralPolicyId: uuid('central_policy_id').references(() => policies.id, { onDelete: 'set null' }),
+  matchStatus: commissionMatchStatusEnum('match_status').default('unmatched').notNull(),
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -5556,6 +5570,7 @@ export const commissionPolicies = pgTable('commission_policies', {
   index('commission_policies_carrier_idx').on(table.carrierId),
   index('commission_policies_agent_idx').on(table.primaryAgentId),
   index('commission_policies_central_policy_idx').on(table.centralPolicyId),
+  index('commission_policies_match_status_idx').on(table.matchStatus),
 ]);
 
 // 9. Commission Transactions - Agency-level commission records
@@ -6118,6 +6133,28 @@ export const assistantDocuments = pgTable('assistant_documents', {
   tenantIdx: index('assistant_documents_tenant_idx').on(table.tenantId),
   statusIdx: index('assistant_documents_status_idx').on(table.status),
 }));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DEAD LETTER JOBS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const deadLetterJobs = pgTable('dead_letter_jobs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id'),
+  queueName: varchar('queue_name', { length: 100 }).notNull(),
+  jobId: varchar('job_id', { length: 200 }).notNull(),
+  jobName: varchar('job_name', { length: 200 }),
+  jobData: jsonb('job_data'),
+  error: text('error'),
+  stack: text('stack'),
+  attemptsMade: integer('attempts_made'),
+  failedAt: timestamp('failed_at').defaultNow().notNull(),
+  resolvedAt: timestamp('resolved_at'),
+  resolution: text('resolution'),
+}, (table) => [
+  index('dead_letter_jobs_queue_idx').on(table.queueName),
+  index('dead_letter_jobs_failed_at_idx').on(table.failedAt),
+]);
 
 // Relations
 export const assistantSessionsRelations = relations(assistantSessions, ({ one, many }) => ({

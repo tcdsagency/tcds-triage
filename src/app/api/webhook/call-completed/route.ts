@@ -2094,7 +2094,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             .limit(1);
 
           const features = tenantData?.features as Record<string, unknown> | undefined;
-          const autoCreateEnabled = features?.autoCreateServiceTickets === true;
+          const autoCreateEnabled = features?.autoCreateServiceTickets !== false;
 
           if (autoCreateEnabled) {
             console.log(`[Call-Completed] 🎫 Auto-ticket feature enabled, checking phone: ${phoneForLookup}`);
