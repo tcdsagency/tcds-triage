@@ -1,7 +1,7 @@
 /**
  * Check Engine — 7-Phase Executor
  * ================================
- * Post-processing layer that runs 71 formal check rules against
+ * Post-processing layer that runs 77 formal check rules against
  * renewal/baseline snapshots and the existing comparison result.
  *
  * Execution phases:

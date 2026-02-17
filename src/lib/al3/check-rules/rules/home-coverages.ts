@@ -191,7 +191,7 @@ export const homeCoverageRules: CheckRuleDefinition[] = [
           ? `Coverage B/A ratio drifted ${drift.toFixed(1)}% (threshold: ${ctx.thresholds.covBRatioDrift}%)`
           : `Coverage B/A ratio: ${renRatio.toFixed(1)}% — within tolerance`,
         agentAction: driftExceeded
-          ? 'Review Other Structures limit — ratio to dwelling changed'
+          ? 'Review Other Structures limit — ratio to dwelling changed. If policy form changed (e.g. HO-3 → HO-5), ratio change may be expected.'
           : 'No action needed',
         checkType: 'ratio',
         category: 'Coverages',
@@ -228,7 +228,7 @@ export const homeCoverageRules: CheckRuleDefinition[] = [
           : `Coverage C/A ratio ${ratio.toFixed(1)}% is outside expected range (${ctx.thresholds.covCRatioMin}-${ctx.thresholds.covCRatioMax}%)`,
         agentAction: inRange
           ? 'No action needed'
-          : 'Personal Property limit may be too high or too low relative to dwelling — review with customer',
+          : 'Personal Property limit may be too high or too low relative to dwelling — review with customer. If policy form changed (e.g. HO-3 → HO-5), ratio change may be expected.',
         checkType: 'ratio',
         category: 'Coverages',
         isBlocking: false,

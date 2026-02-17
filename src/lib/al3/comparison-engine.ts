@@ -765,16 +765,26 @@ function compareEndorsements(
     }
   }
 
+  // Keywords that indicate a negative endorsement (exclusion, coverage restriction)
+  const NEGATIVE_ENDORSEMENT_KEYWORDS = [
+    'exclusion', 'limitation', 'restrict', 'actual cash value', 'acv roof',
+    'cosmetic damage', 'wind excl', 'animal liability', 'trampoline',
+    'mold excl', 'water damage excl', 'breed',
+  ];
+
   // Added endorsements — flag for agent review (can be positive or negative)
   for (const [code, renewal] of renewalByCode) {
     if (!baselineByCode.has(code)) {
+      const desc = (renewal.description || code).toLowerCase();
+      const isNegative = NEGATIVE_ENDORSEMENT_KEYWORDS.some(kw => desc.includes(kw));
+
       changes.push({
         field: `endorsement.${code}`,
         category: 'endorsement_added',
-        classification: 'non_material',
+        classification: isNegative ? 'material_negative' : 'non_material',
         oldValue: null,
         newValue: renewal.description || code,
-        severity: 'non_material',
+        severity: isNegative ? 'material_negative' : 'non_material',
         description: `Endorsement added: ${renewal.description || code}`,
       });
     }

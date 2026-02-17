@@ -1,10 +1,16 @@
 /**
- * Home Endorsement Rules (H-050 to H-057)
+ * Home Endorsement Rules (H-050 to H-058)
  * Phase 7 — Endorsements, discounts, mortgagee
  */
 
 import type { CheckRuleDefinition, CheckResult } from '@/types/check-rules.types';
 import { makeCheck } from '../helpers';
+
+const NEGATIVE_ENDORSEMENT_KEYWORDS = [
+  'exclusion', 'limitation', 'restrict', 'actual cash value', 'acv roof',
+  'cosmetic damage', 'wind excl', 'animal liability', 'trampoline',
+  'mold excl', 'water damage excl', 'breed',
+];
 
 export const homeEndorsementRules: CheckRuleDefinition[] = [
   {
@@ -22,20 +28,25 @@ export const homeEndorsementRules: CheckRuleDefinition[] = [
 
       if (added.length === 0) return null;
 
-      return added.map(e =>
-        makeCheck('H-050', {
+      return added.map(e => {
+        const desc = (e.description || e.code).toLowerCase();
+        const isNegative = NEGATIVE_ENDORSEMENT_KEYWORDS.some(kw => desc.includes(kw));
+
+        return makeCheck('H-050', {
           field: `Endorsement: ${e.code}`,
           previousValue: null,
           renewalValue: e.description || e.code,
           change: `Added: ${e.description || e.code}`,
-          severity: 'added',
+          severity: isNegative ? 'warning' : 'added',
           message: `Endorsement added: ${e.description || e.code}`,
-          agentAction: 'Review new endorsement — confirm it is expected',
+          agentAction: isNegative
+            ? 'Negative endorsement added — may restrict coverage, review with customer'
+            : 'Review new endorsement — confirm it is expected',
           checkType: 'existence',
           category: 'Endorsements',
           isBlocking: false,
-        })
-      );
+        });
+      });
     },
   },
   {

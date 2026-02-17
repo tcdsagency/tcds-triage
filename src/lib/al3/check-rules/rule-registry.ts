@@ -26,7 +26,7 @@ import { autoEndorsementRules } from './rules/auto-endorsements';
  * All rules in one flat array.
  */
 export const ALL_RULES: CheckRuleDefinition[] = [
-  // Home rules (H-001 to H-057)
+  // Home rules (H-001 to H-058)
   ...homeIdentityRules,
   ...homeCoverageRules,
   ...homeDeductibleRules,

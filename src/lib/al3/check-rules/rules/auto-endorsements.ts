@@ -1,10 +1,16 @@
 /**
- * Auto Endorsement Rules (A-050 to A-052)
+ * Auto Endorsement Rules (A-050 to A-053)
  * Phase 7 — Endorsements and forms
  */
 
 import type { CheckRuleDefinition, CheckResult } from '@/types/check-rules.types';
 import { makeCheck } from '../helpers';
+
+const NEGATIVE_ENDORSEMENT_KEYWORDS = [
+  'exclusion', 'limitation', 'restrict', 'actual cash value', 'acv roof',
+  'cosmetic damage', 'wind excl', 'animal liability', 'trampoline',
+  'mold excl', 'water damage excl', 'breed',
+];
 
 export const autoEndorsementRules: CheckRuleDefinition[] = [
   {
@@ -22,20 +28,25 @@ export const autoEndorsementRules: CheckRuleDefinition[] = [
 
       if (added.length === 0) return null;
 
-      return added.map(e =>
-        makeCheck('A-050', {
+      return added.map(e => {
+        const desc = (e.description || e.code).toLowerCase();
+        const isNegative = NEGATIVE_ENDORSEMENT_KEYWORDS.some(kw => desc.includes(kw));
+
+        return makeCheck('A-050', {
           field: `Endorsement: ${e.code}`,
           previousValue: null,
           renewalValue: e.description || e.code,
           change: `Added: ${e.description || e.code}`,
-          severity: 'added',
+          severity: isNegative ? 'warning' : 'added',
           message: `Endorsement added: ${e.description || e.code}`,
-          agentAction: 'Review new endorsement',
+          agentAction: isNegative
+            ? 'Negative endorsement added — may restrict coverage, review with customer'
+            : 'Review new endorsement',
           checkType: 'existence',
           category: 'Endorsements',
           isBlocking: false,
-        })
-      );
+        });
+      });
     },
   },
   {
