@@ -14,6 +14,7 @@ interface FormInputProps {
   autoFocus?: boolean;
   disabled?: boolean;
   className?: string;
+  onBlur?: () => void;
 }
 
 export function FormInput({
@@ -25,6 +26,7 @@ export function FormInput({
   autoFocus,
   disabled,
   className,
+  onBlur: onBlurProp,
 }: FormInputProps) {
   const { control, formState: { errors } } = useFormContext();
 
@@ -40,6 +42,10 @@ export function FormInput({
         render={({ field }) => (
           <input
             {...field}
+            onBlur={(e) => {
+              field.onBlur();
+              onBlurProp?.();
+            }}
             id={name}
             type={type}
             placeholder={placeholder}

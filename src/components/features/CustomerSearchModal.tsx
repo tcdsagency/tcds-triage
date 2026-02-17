@@ -25,6 +25,7 @@ interface CustomerSearchModalProps {
   onClose: () => void;
   onSelect: (customer: Customer) => void;
   initialPhone?: string;
+  initialQuery?: string;
   title?: string;
 }
 
@@ -45,6 +46,7 @@ export default function CustomerSearchModal({
   onClose,
   onSelect,
   initialPhone,
+  initialQuery,
   title = 'Find Customer Match',
 }: CustomerSearchModalProps) {
   const [search, setSearch] = useState('');
@@ -52,12 +54,16 @@ export default function CustomerSearchModal({
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
-  // Pre-populate search with phone if provided (normalized without +1 prefix)
+  // Pre-populate search with phone or query if provided
   useEffect(() => {
-    if (isOpen && initialPhone && !search) {
-      setSearch(normalizePhone(initialPhone));
+    if (isOpen && !search) {
+      if (initialQuery) {
+        setSearch(initialQuery);
+      } else if (initialPhone) {
+        setSearch(normalizePhone(initialPhone));
+      }
     }
-  }, [isOpen, initialPhone]);
+  }, [isOpen, initialPhone, initialQuery]);
 
   const searchCustomers = useCallback(
     debounce(async (query: string) => {
@@ -258,7 +264,7 @@ export default function CustomerSearchModal({
         {/* Footer */}
         <div className="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
           <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-            Select a customer to match this item
+            Select a customer to link to this quote
           </p>
         </div>
       </div>

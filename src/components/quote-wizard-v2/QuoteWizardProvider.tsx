@@ -35,6 +35,8 @@ interface QuoteWizardContextType {
   isSaving: boolean;
   isSubmitting: boolean;
   lastSaved: Date | null;
+  customerId: string | null;
+  setCustomerId: (id: string | null) => void;
 }
 
 const QuoteWizardContext = createContext<QuoteWizardContextType | null>(null);
@@ -73,6 +75,7 @@ export function QuoteWizardProvider({
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
   const watchedValues = watch();
 
@@ -229,6 +232,7 @@ export function QuoteWizardProvider({
         body: JSON.stringify({
           type: quoteType,
           status: 'draft',
+          customerId,
           quoteData: formData,
         }),
       });
@@ -240,7 +244,7 @@ export function QuoteWizardProvider({
     } finally {
       setIsSaving(false);
     }
-  }, [getValues, quoteType]);
+  }, [getValues, quoteType, customerId]);
 
   // =============================================================================
   // SUBMIT
@@ -259,6 +263,7 @@ export function QuoteWizardProvider({
             type: quoteType,
             status: 'submitted',
             callId,
+            customerId,
             contactInfo: {
               firstName: formData.firstName,
               lastName: formData.lastName,
@@ -316,7 +321,7 @@ export function QuoteWizardProvider({
     } finally {
       setIsSubmitting(false);
     }
-  }, [eligibility.result?.status, getValues, handleSubmit, quoteType, router, steps, storageKey, callId]);
+  }, [eligibility.result?.status, getValues, handleSubmit, quoteType, router, steps, storageKey, callId, customerId]);
 
   // =============================================================================
   // RESET
@@ -350,6 +355,8 @@ export function QuoteWizardProvider({
     isSaving,
     isSubmitting,
     lastSaved,
+    customerId,
+    setCustomerId,
   };
 
   return (

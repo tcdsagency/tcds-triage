@@ -22,12 +22,14 @@ interface ContactFieldsProps {
   showLicense?: boolean;
   showSpouse?: boolean;
   showAddress?: boolean;
+  onLastNameBlur?: () => void;
 }
 
 export function ContactFields({
   showLicense,
   showSpouse,
   showAddress,
+  onLastNameBlur,
 }: ContactFieldsProps) {
   const { watch } = useFormContext();
   const maritalStatus = watch('maritalStatus');
@@ -38,7 +40,7 @@ export function ContactFields({
       <FormSection title="Personal Information" icon={User}>
         <FormFieldGrid cols={2}>
           <FormInput name="firstName" label="First Name" required autoFocus />
-          <FormInput name="lastName" label="Last Name" required />
+          <FormInput name="lastName" label="Last Name" required onBlur={onLastNameBlur} />
         </FormFieldGrid>
         <FormFieldGrid cols={3}>
           <FormDateInput name="dob" label="Date of Birth" required />
