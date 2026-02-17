@@ -81,6 +81,9 @@ export const TRANSACTION_TYPES = {
  */
 export const DEFAULT_RENEWAL_TRANSACTION_TYPES = ['RWL', 'RWQ', 'RNW'];
 
+// LOB codes that indicate cancellation notices — should be archived, not stored as baselines
+export const CANCELLATION_LOB_CODES = new Set(['XLCBN']);
+
 // =============================================================================
 // LINE OF BUSINESS CODES
 // =============================================================================
@@ -256,7 +259,7 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'FRVAL': 'functional_replacement_value',
   'FRV': 'functional_replacement_value',
   'FVREP': 'functional_replacement_value',
-  'BIPUN': 'bodily_injury_punitive',
+  'BIPUN': 'bodily_injury',
   'GPL': 'personal_liability',
   'LUSE': 'loss_of_use',
   'EAP': 'extended_away_from_premises',
@@ -396,7 +399,7 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'EXTPE': 'extended_perils',
   'FLPAY': 'full_payment_discount',
   'GHPPD': 'group_home_property_damage',
-  'ILMC': 'illinois_medical_coverage',
+  'ILMC': 'personal_liability',
   'LIFED': 'life_discount',
   'MERIT': 'merit_discount',
   'RCC': 'replacement_cost_contents',

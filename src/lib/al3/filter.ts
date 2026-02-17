@@ -5,7 +5,7 @@
  */
 
 import type { AL3ParsedTransaction, AL3TransactionHeader } from '@/types/renewal.types';
-import { DEFAULT_RENEWAL_TRANSACTION_TYPES, TRG_FIELDS, LOB_CODES } from './constants';
+import { DEFAULT_RENEWAL_TRANSACTION_TYPES, TRG_FIELDS, LOB_CODES, CANCELLATION_LOB_CODES } from './constants';
 import { parseAL3Date, splitAL3Records } from './parser';
 
 /**
@@ -111,6 +111,13 @@ export function partitionTransactionsV2(
     // Detect umbrella policies by ALU prefix in policy number
     if (t.header.policyNumber?.toUpperCase().startsWith('ALU') && !t.header.lineOfBusiness) {
       t.header.lineOfBusiness = 'Umbrella';
+    }
+
+    // Archive cancellation notices — they have no coverage data
+    const lobRaw = t.header.lineOfBusiness?.toUpperCase();
+    if (lobRaw && CANCELLATION_LOB_CODES.has(lobRaw)) {
+      archived.push(t);
+      continue;
     }
 
     const isRenewalType = renewalTypes.has(t.header.transactionType.toUpperCase());
