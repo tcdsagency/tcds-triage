@@ -395,9 +395,27 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
         // Prefer webhook direction (enhanced with AI detection) over MSSQL direction,
         // since MSSQL's determineDirection() is unreliable (CallerExt field is inconsistent)
         const callDirection = callDetails?.direction || direction || "inbound";
+
+        // Use MSSQL callerNumber as fallback when call record has "Unknown" from 3CX WebSocket
+        const mssqlCallerNumber = transcript.callerNumber && transcript.callerNumber !== "Unknown"
+          ? transcript.callerNumber : null;
         const customerPhone = callDirection === "inbound"
-          ? (callDetails?.externalNumber || callDetails?.fromNumber || job.callerNumber)
+          ? (callDetails?.externalNumber || (callDetails?.fromNumber !== "Unknown" ? callDetails?.fromNumber : null) || mssqlCallerNumber || job.callerNumber)
           : (callDetails?.externalNumber || callDetails?.toNumber);
+
+        // If we discovered the real phone from MSSQL, update the call record
+        if (mssqlCallerNumber && job.callId) {
+          const fromIsUnknown = !callDetails?.fromNumber || callDetails.fromNumber === "Unknown";
+          const extIsUnknown = !callDetails?.externalNumber || callDetails.externalNumber === "Unknown";
+          if (fromIsUnknown || extIsUnknown) {
+            await db.update(calls).set({
+              ...(fromIsUnknown ? { fromNumber: mssqlCallerNumber } : {}),
+              ...(extIsUnknown ? { externalNumber: mssqlCallerNumber } : {}),
+              updatedAt: new Date(),
+            }).where(eq(calls.id, job.callId));
+            console.log(`[TranscriptWorker] Updated call ${job.callId} from_number/external_number from MSSQL: ${mssqlCallerNumber}`);
+          }
+        }
 
         // Use upsert to create if not exists, update if exists
         await db
@@ -429,6 +447,7 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
               status: "pending_review",
               summary: aiResult.summary,
               customerName: aiResult.customerName,
+              customerPhone: customerPhone || null,
               policyNumbers: aiResult.policyNumbers,
               insuranceType: aiResult.insuranceType,
               requestType: aiResult.requestType,
