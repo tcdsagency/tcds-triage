@@ -16,12 +16,12 @@ export async function POST(request: NextRequest) {
     const client = getCoverTreeClient();
 
     switch (action) {
-      case 'getAutocompleteAddress': {
-        const { search } = params;
-        if (!search) {
+      case 'getAutocompleteAddresses': {
+        const { searchText } = params;
+        if (!searchText) {
           return NextResponse.json({ success: true, addresses: [] });
         }
-        const addresses = await client.getAutocompleteAddress(search);
+        const addresses = await client.getAutocompleteAddresses(searchText);
         return NextResponse.json({ success: true, addresses });
       }
 
@@ -35,20 +35,20 @@ export async function POST(request: NextRequest) {
       }
 
       case 'validateEmail': {
-        const { emailAddress } = params;
-        if (!emailAddress) {
-          return NextResponse.json({ success: false, error: 'Missing emailAddress' }, { status: 400 });
+        const { email } = params;
+        if (!email) {
+          return NextResponse.json({ success: false, error: 'Missing email' }, { status: 400 });
         }
-        const isValid = await client.validateEmail(emailAddress);
-        return NextResponse.json({ success: true, isValid });
+        const deliverability = await client.validateEmail(email);
+        return NextResponse.json({ success: true, deliverability });
       }
 
       case 'getDynamicQuestions': {
-        const { state } = params;
-        if (!state) {
-          return NextResponse.json({ success: false, error: 'Missing state' }, { status: 400 });
+        const { state, policyUsage, effectiveDate } = params;
+        if (!state || !policyUsage || !effectiveDate) {
+          return NextResponse.json({ success: false, error: 'Missing state, policyUsage, or effectiveDate' }, { status: 400 });
         }
-        const questions = await client.getDynamicQuestions(state);
+        const questions = await client.getDynamicQuestions(state, policyUsage, effectiveDate);
         return NextResponse.json({ success: true, questions });
       }
 
@@ -90,25 +90,33 @@ export async function POST(request: NextRequest) {
         if (!policyLocator) {
           return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
         }
-        const coverages = await client.getExtraCoveragePrices(policyLocator);
-        return NextResponse.json({ success: true, coverages });
+        const prices = await client.getExtraCoveragePrices(policyLocator);
+        return NextResponse.json({ success: true, prices });
       }
 
       case 'saveExtraCoverages': {
-        const { policyLocator, input } = params;
+        const { policyLocator, policyLevelExtraCoverages, unitLevelExtraCoverages } = params;
         if (!policyLocator) {
           return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
         }
-        const result = await client.saveExtraCoverages(policyLocator, input || {});
+        const result = await client.saveExtraCoverages(
+          policyLocator,
+          policyLevelExtraCoverages || {},
+          unitLevelExtraCoverages || []
+        );
         return NextResponse.json({ success: true, result });
       }
 
       case 'updateUnderwritingAnswers': {
-        const { policyLocator, input } = params;
+        const { policyLocator, policyLevelUW, unitLevelUW } = params;
         if (!policyLocator) {
           return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
         }
-        const result = await client.updateUnderwritingAnswers(policyLocator, input || {});
+        const result = await client.updateUnderwritingAnswers(
+          policyLocator,
+          policyLevelUW || {},
+          unitLevelUW || []
+        );
         return NextResponse.json({ success: true, result });
       }
 
@@ -121,6 +129,26 @@ export async function POST(request: NextRequest) {
           );
         }
         const result = await client.checkAndAddPriorClaim(policyLocator, address);
+        return NextResponse.json({ success: true, result });
+      }
+
+      case 'fetchUWDecision': {
+        const { policyLocator } = params;
+        if (!policyLocator) {
+          return NextResponse.json({ success: false, error: 'Missing policyLocator' }, { status: 400 });
+        }
+        const decision = await client.fetchUWDecisionAndGeneratePaymentPlans(policyLocator);
+        return NextResponse.json({ success: true, decision });
+      }
+
+      case 'initiatePurchase': {
+        const { policyLocator, paymentSchedule, signResponsibilityChecked, lenderDetails, additionalInterests } = params;
+        if (!policyLocator || !paymentSchedule) {
+          return NextResponse.json({ success: false, error: 'Missing policyLocator or paymentSchedule' }, { status: 400 });
+        }
+        const result = await client.initiatePolicyPurchase(
+          policyLocator, paymentSchedule, signResponsibilityChecked, lenderDetails, additionalInterests
+        );
         return NextResponse.json({ success: true, result });
       }
 

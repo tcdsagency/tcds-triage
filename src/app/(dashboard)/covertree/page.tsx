@@ -105,12 +105,8 @@ interface Offer {
   yourBelongingsDescription?: string;
 }
 
-interface ExtraCoverage {
-  name: string;
-  key: string;
-  price: number;
-  description?: string;
-}
+// Extra coverage prices: key -> price (null if unavailable)
+type ExtraCoveragePrices = Record<string, number | null>;
 
 const INITIAL_FORM: FormData = {
   firstName: '',
@@ -212,10 +208,9 @@ const LOCATIONS = [
 ];
 
 const POLICY_USAGE = [
-  { value: 'MainResidence', label: 'Main Residence' },
-  { value: 'SecondaryResidence', label: 'Secondary Residence' },
-  { value: 'SeasonalResidence', label: 'Seasonal Residence' },
-  { value: 'Landlord', label: 'Landlord' },
+  { value: 'Owner', label: 'Owner (Main Residence)' },
+  { value: 'Seasonal', label: 'Seasonal Residence' },
+  { value: 'Tenant', label: 'Tenant' },
   { value: 'Vacant', label: 'Vacant' },
 ];
 
@@ -255,6 +250,28 @@ const COVERAGE_LABELS: Record<string, string> = {
   waterDamageDeductible: 'Water Damage Deductible',
 };
 
+// Extra coverage display labels
+const EXTRA_COVERAGE_LABELS: Record<string, string> = {
+  debrisRemoval: 'Debris Removal',
+  earthquake: 'Earthquake',
+  enhancedCoverage: 'Enhanced Coverage',
+  equipmentBreakdown: 'Equipment Breakdown',
+  identityFraud: 'Identity Fraud',
+  incidentalFarming: 'Incidental Farming',
+  increasedReplacementCost: 'Increased Replacement Cost',
+  moldCoverage: 'Mold Coverage',
+  ordinanceOrLaw: 'Ordinance or Law',
+  personalInjury: 'Personal Injury',
+  refrigeratedProducts: 'Refrigerated Products',
+  serviceLine: 'Service Line',
+  sinkhole: 'Sinkhole',
+  specialComputerCoverage: 'Special Computer Coverage',
+  specialPersonalProperty: 'Special Personal Property',
+  vacationRental: 'Vacation Rental',
+  waterBackup: 'Water Backup',
+  windstormExteriorPaint: 'Windstorm Exterior Paint',
+};
+
 // =============================================================================
 // HELPER: API call
 // =============================================================================
@@ -283,7 +300,7 @@ function ManufacturerInput({
   value: string;
   onChange: (val: string) => void;
 }) {
-  const [suggestions, setSuggestions] = useState<Array<{ value: string }>>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -325,17 +342,17 @@ function ManufacturerInput({
       )}
       {showSuggestions && suggestions.length > 0 && (
         <div className="absolute z-10 mt-1 w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
-          {suggestions.map((m) => (
+          {suggestions.map((name) => (
             <button
-              key={m.value}
+              key={name}
               type="button"
               className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
               onMouseDown={() => {
-                onChange(m.value);
+                onChange(name);
                 setShowSuggestions(false);
               }}
             >
-              {m.value}
+              {name}
             </button>
           ))}
         </div>
@@ -348,6 +365,21 @@ function ManufacturerInput({
 // ADDRESS AUTOCOMPLETE
 // =============================================================================
 
+interface AutocompleteResult {
+  address: {
+    addressLastLine: string;
+    addressNumber: string;
+    country: string;
+    formattedAddress: string;
+    mainAddressLine: string;
+    postCode: string;
+    state: string;
+    streetName: string;
+    city: string;
+  };
+  units: Array<{ formattedUnitAddress: string; lotUnit: string }>;
+}
+
 function AddressAutocomplete({
   value,
   onChange,
@@ -357,19 +389,19 @@ function AddressAutocomplete({
   onChange: (val: string) => void;
   onSelect: (addr: { streetAddress: string; city: string; state: string; zipCode: string; county: string }) => void;
 }) {
-  const [suggestions, setSuggestions] = useState<Array<{ streetAddress: string; city: string; state: string; zipCode: string; county: string }>>([]);
+  const [suggestions, setSuggestions] = useState<AutocompleteResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
-  const searchAddresses = useCallback(async (search: string) => {
-    if (search.length < 4) {
+  const searchAddresses = useCallback(async (searchText: string) => {
+    if (searchText.length < 4) {
       setSuggestions([]);
       return;
     }
     setLoading(true);
     try {
-      const data = await coverTreeApi('getAutocompleteAddress', { search });
+      const data = await coverTreeApi('getAutocompleteAddresses', { searchText });
       setSuggestions(data.addresses || []);
     } catch {
       setSuggestions([]);
@@ -399,17 +431,23 @@ function AddressAutocomplete({
       )}
       {showSuggestions && suggestions.length > 0 && (
         <div className="absolute z-10 mt-1 w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto">
-          {suggestions.map((addr, i) => (
+          {suggestions.map((result, i) => (
             <button
               key={i}
               type="button"
               className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
               onMouseDown={() => {
-                onSelect(addr);
+                onSelect({
+                  streetAddress: result.address.mainAddressLine,
+                  city: result.address.city,
+                  state: result.address.state,
+                  zipCode: result.address.postCode,
+                  county: '',
+                });
                 setShowSuggestions(false);
               }}
             >
-              {addr.streetAddress}, {addr.city}, {addr.state} {addr.zipCode}
+              {result.address.formattedAddress}
             </button>
           ))}
         </div>
@@ -437,8 +475,8 @@ export default function CoverTreePage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [policyLocator, setPolicyLocator] = useState<string | null>(null);
 
-  // Step 3: Extra coverages
-  const [extraCoverages, setExtraCoverages] = useState<ExtraCoverage[]>([]);
+  // Step 3: Extra coverages (prices object from API)
+  const [extraCoveragePrices, setExtraCoveragePrices] = useState<ExtraCoveragePrices>({});
   const [selectedExtras, setSelectedExtras] = useState<Record<string, boolean>>({});
 
   // Step 4: Final policy data after bind
@@ -615,9 +653,9 @@ export default function CoverTreePage() {
     try {
       await coverTreeApi('selectQuote', { policyLocator, quoteLocator });
 
-      // Load extra coverages
+      // Load extra coverage prices
       const pricesData = await coverTreeApi('getExtraCoveragePrices', { policyLocator });
-      setExtraCoverages(pricesData.coverages || []);
+      setExtraCoveragePrices(pricesData.prices || {});
       setStep(3);
     } catch (err: any) {
       setError(err.message);
@@ -636,7 +674,8 @@ export default function CoverTreePage() {
     try {
       await coverTreeApi('saveExtraCoverages', {
         policyLocator,
-        input: selectedExtras,
+        policyLevelExtraCoverages: selectedExtras,
+        unitLevelExtraCoverages: [],
       });
 
       // Run prior claims check
@@ -1198,34 +1237,35 @@ export default function CoverTreePage() {
       {step === 3 && (
         <div className="space-y-6">
           <Section title="Optional Coverages">
-            {extraCoverages.length === 0 ? (
+            {Object.keys(extraCoveragePrices).length === 0 ? (
               <p className="text-sm text-gray-500 dark:text-gray-400">No optional coverages available.</p>
             ) : (
               <div className="space-y-3">
-                {extraCoverages.map((cov) => (
+                {Object.entries(extraCoveragePrices)
+                  .filter(([, price]) => price != null)
+                  .map(([key, price]) => (
                   <div
-                    key={cov.key}
+                    key={key}
                     className={cn(
                       'flex items-center justify-between p-4 rounded-lg border transition-colors',
-                      selectedExtras[cov.key]
+                      selectedExtras[key]
                         ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-600'
                         : 'border-gray-200 dark:border-gray-700'
                     )}
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">{cov.name}</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {EXTRA_COVERAGE_LABELS[key] || key}
+                        </span>
                         <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                          +${cov.price.toLocaleString()}/yr
+                          +${(price as number).toLocaleString()}/yr
                         </span>
                       </div>
-                      {cov.description && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{cov.description}</p>
-                      )}
                     </div>
                     <ToggleSwitch
-                      checked={selectedExtras[cov.key] || false}
-                      onChange={() => setSelectedExtras((prev) => ({ ...prev, [cov.key]: !prev[cov.key] }))}
+                      checked={selectedExtras[key] || false}
+                      onChange={() => setSelectedExtras((prev) => ({ ...prev, [key]: !prev[key] }))}
                     />
                   </div>
                 ))}
@@ -1356,7 +1396,7 @@ export default function CoverTreePage() {
                     setForm(INITIAL_FORM);
                     setOffers([]);
                     setPolicyLocator(null);
-                    setExtraCoverages([]);
+                    setExtraCoveragePrices({});
                     setSelectedExtras({});
                     setFinalPolicy(null);
                     setQuoteDocuments(null);

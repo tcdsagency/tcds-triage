@@ -51,19 +51,54 @@ export interface CoverTreeQuoteResult {
   offers: CoverTreeOffer[];
 }
 
-export interface CoverTreeExtraCoverage {
-  name: string;
-  key: string;
-  price: number;
-  description?: string;
+export interface CoverTreeExtraCoveragePrices {
+  [key: string]: number | null; // coverage name -> price (null if unavailable)
 }
 
-export interface CoverTreeDynamicQuestion {
-  questionId: string;
-  questionText: string;
-  answerType: string;
-  answerOptions?: string[];
-  defaultAnswer?: string;
+export interface CoverTreeBasicPolicyQuestion {
+  fieldName: string;
+  label: string;
+  tooltip: string;
+}
+
+export interface CoverTreePriorClaimsQuestion {
+  label: string;
+  fieldName: string;
+  type: string;
+  options: string[];
+  visibleOnPickedOptions: string[];
+}
+
+export interface CoverTreeDynamicQuestions {
+  basicPolicyQuestions: CoverTreeBasicPolicyQuestion[];
+  priorClaimsQuestions: CoverTreePriorClaimsQuestion[];
+}
+
+export interface CoverTreeAutocompleteAddress {
+  address: {
+    addressLastLine: string;
+    addressNumber: string;
+    country: string;
+    formattedAddress: string;
+    mainAddressLine: string;
+    postCode: string;
+    state: string;
+    streetName: string;
+    city: string;
+  };
+  units: Array<{
+    formattedUnitAddress: string;
+    lotUnit: string;
+  }>;
+}
+
+export interface CoverTreeUWDecision {
+  forceAgentSignResponsibility: boolean;
+  underwritingDecision: {
+    status: string;
+    reasons?: string[];
+  };
+  paymentPlans: any; // payment plan structure
 }
 
 export interface CoverTreePolicy {
@@ -136,7 +171,7 @@ export interface CoverTreePolicy {
 /** Input for CreateOrUpdateBasicPolicyDetailsWithHolder */
 export interface CreateQuoteInput {
   effectiveDate: string;
-  policyUsage: string; // MainResidence, SecondaryResidence, SeasonalResidence, Landlord, Vacant
+  policyUsage: string; // Owner, Vacant, Seasonal, Tenant
   isNewPurchase: boolean;
   purchaseDate: string; // InBuyingProcess, LessThan1Year, 1To3Years, 3To5Years, MoreThan5Years
   priorInsurance: string; // Yes, No
@@ -305,23 +340,20 @@ export class CoverTreeClient {
   /**
    * Address autocomplete as user types
    */
-  async getAutocompleteAddress(search: string): Promise<Array<{
-    streetAddress: string;
-    city: string;
-    state: string;
-    zipCode: string;
-    county: string;
-  }>> {
+  async getAutocompleteAddresses(searchText: string): Promise<CoverTreeAutocompleteAddress[]> {
     const data = await this.graphqlRequest(
-      'GetAutocompleteAddress',
-      `query GetAutocompleteAddress($search: String!) {
-        getAutocompleteAddress(search: $search) {
-          streetAddress city state zipCode county
+      'GetAutocompleteAddresses',
+      `query GetAutocompleteAddresses($searchText: String!) {
+        getAutocompleteAddresses(searchText: $searchText) {
+          address {
+            addressLastLine addressNumber country formattedAddress mainAddressLine postCode state streetName city
+          }
+          units { formattedUnitAddress lotUnit }
         }
       }`,
-      { search }
+      { searchText }
     );
-    return data.getAutocompleteAddress || [];
+    return data.getAutocompleteAddresses || [];
   }
 
   /**
@@ -359,43 +391,50 @@ export class CoverTreeClient {
 
   /**
    * Validate an email address
+   * Returns deliverability status: "DELIVERABLE", "UNDELIVERABLE", etc.
    */
-  async validateEmail(emailAddress: string): Promise<boolean> {
+  async validateEmail(email: string): Promise<string> {
     const data = await this.graphqlRequest(
       'ValidateEmail',
-      `query ValidateEmail($emailAddress: AWSEmail!) {
-        validateEmail(emailAddress: $emailAddress) { isValid }
+      `query ValidateEmail($email: AWSEmail!) {
+        validateEmail(email: $email) { deliverability }
       }`,
-      { emailAddress }
+      { email }
     );
-    return data.validateEmail?.isValid ?? false;
+    return data.validateEmail?.deliverability ?? 'UNKNOWN';
   }
 
   /**
    * Get state-specific dynamic questions
    */
-  async getDynamicQuestions(state: string): Promise<CoverTreeDynamicQuestion[]> {
+  async getDynamicQuestions(
+    state: string,
+    policyUsage: string,
+    effectiveDate: string
+  ): Promise<CoverTreeDynamicQuestions> {
     const data = await this.graphqlRequest(
       'GetDynamicQuestions',
-      `query GetDynamicQuestions($state: String!) {
-        getDynamicQuestions(state: $state) {
-          questionId questionText answerType answerOptions defaultAnswer
+      `query GetDynamicQuestions($state: String!, $policyUsage: PolicyUsage!, $effectiveDate: AWSDate!) {
+        getDynamicQuestions(state: $state, policyUsage: $policyUsage, effectiveDate: $effectiveDate) {
+          basicPolicyQuestions { fieldName label tooltip }
+          priorClaimsQuestions { label fieldName type options visibleOnPickedOptions }
         }
       }`,
-      { state }
+      { state, policyUsage, effectiveDate }
     );
-    return data.getDynamicQuestions || [];
+    return data.getDynamicQuestions || { basicPolicyQuestions: [], priorClaimsQuestions: [] };
   }
 
   /**
    * Search manufacturers for autocomplete
    * Note: Uses the getParameters resolver with type=Manufacturer
+   * Returns a plain string array of manufacturer names
    */
-  async getManufacturers(search: string): Promise<Array<{ value: string }>> {
+  async getManufacturers(search: string): Promise<string[]> {
     const data = await this.graphqlRequest(
       'GetManufacturers',
       `query GetManufacturers($search: String!) {
-        getParameters(type: Manufacturer, search: $search) { value }
+        getParameters(type: Manufacturer, search: $search)
       }`,
       { search }
     );
@@ -450,18 +489,25 @@ export class CoverTreeClient {
 
   /**
    * Get extra coverage prices for a policy
+   * Returns a prices object where keys are coverage names and values are prices
    */
-  async getExtraCoveragePrices(policyLocator: string): Promise<CoverTreeExtraCoverage[]> {
+  async getExtraCoveragePrices(policyLocator: string): Promise<CoverTreeExtraCoveragePrices> {
     const data = await this.graphqlRequest(
       'GetExtraCoveragesPrices',
       `query GetExtraCoveragesPrices($policyLocator: ID!) {
-        getExtraCoveragesPrices(policyLocator: $policyLocator) {
-          name key price description
+        getExtraCoveragePrices(policyLocator: $policyLocator) {
+          prices {
+            debrisRemoval earthquake enhancedCoverage equipmentBreakdown
+            identityFraud incidentalFarming increasedReplacementCost
+            moldCoverage ordinanceOrLaw personalInjury refrigeratedProducts
+            serviceLine sinkhole specialComputerCoverage specialPersonalProperty
+            vacationRental waterBackup windstormExteriorPaint
+          }
         }
       }`,
       { policyLocator }
     );
-    return data.getExtraCoveragesPrices || [];
+    return data.getExtraCoveragePrices?.prices || {};
   }
 
   /**
@@ -469,16 +515,17 @@ export class CoverTreeClient {
    */
   async saveExtraCoverages(
     policyLocator: string,
-    input: Record<string, any>
+    policyLevelExtraCoverages: Record<string, boolean>,
+    unitLevelExtraCoverages: Array<Record<string, any>> = []
   ): Promise<{ policyLocator: string; step: string }> {
     const data = await this.graphqlRequest(
       'SaveExtraCoverages',
-      `mutation SaveExtraCoverages($policyLocator: ID!, $input: SaveExtraCoveragesInput!) {
-        saveExtraCoverages(policyLocator: $policyLocator, input: $input) {
+      `mutation SaveExtraCoverages($policyLocator: ID!, $policyLevelExtraCoverages: SavePolicyLevelExtraCoveragesInput!, $unitLevelExtraCoverages: [SaveUnitLevelExtraCoveragesInput!]!) {
+        saveExtraCoverages(policyLocator: $policyLocator, policyLevelExtraCoverages: $policyLevelExtraCoverages, unitLevelExtraCoverages: $unitLevelExtraCoverages) {
           policyLocator step
         }
       }`,
-      { policyLocator, input }
+      { policyLocator, policyLevelExtraCoverages, unitLevelExtraCoverages }
     );
     return data.saveExtraCoverages;
   }
@@ -488,16 +535,17 @@ export class CoverTreeClient {
    */
   async updateUnderwritingAnswers(
     policyLocator: string,
-    input: Record<string, any>
+    policyLevelUW: Record<string, any>,
+    unitLevelUW: Array<Record<string, any>> = []
   ): Promise<{ policyLocator: string; step: string }> {
     const data = await this.graphqlRequest(
       'UpdateUnderwritingAnswers',
-      `mutation UpdateUnderwritingAnswers($policyLocator: ID!, $input: UpdateUnderwritingAnswersInput!) {
-        updateUnderwritingAnswers(policyLocator: $policyLocator, input: $input) {
+      `mutation UpdateUnderwritingAnswers($policyLocator: ID!, $policyLevelUW: UnderwritingPolicyAnswersInput!, $unitLevelUW: [UnderwritingUnitAnswersInput!]!) {
+        updateUnderwritingAnswers(policyLocator: $policyLocator, policyLevelUW: $policyLevelUW, unitLevelUW: $unitLevelUW) {
           policyLocator step
         }
       }`,
-      { policyLocator, input }
+      { policyLocator, policyLevelUW, unitLevelUW }
     );
     return data.updateUnderwritingAnswers;
   }
@@ -519,6 +567,47 @@ export class CoverTreeClient {
       { policyLocator, address }
     );
     return data.checkAndAddPriorClaim;
+  }
+
+  /**
+   * Fetch UW decision and generate payment plans
+   * Called after UW answers are submitted to check approval and get payment options
+   */
+  async fetchUWDecisionAndGeneratePaymentPlans(policyLocator: string): Promise<CoverTreeUWDecision> {
+    const data = await this.graphqlRequest(
+      'FetchUWDecisionAndGeneratePaymentPlans',
+      `query FetchUWDecisionAndGeneratePaymentPlans($policyLocator: ID!) {
+        fetchUWDecisionAndGeneratePaymentPlans(policyLocator: $policyLocator) {
+          forceAgentSignResponsibility
+          underwritingDecision { status reasons }
+          paymentPlans
+        }
+      }`,
+      { policyLocator }
+    );
+    return data.fetchUWDecisionAndGeneratePaymentPlans;
+  }
+
+  /**
+   * Initiate policy purchase — returns Stripe client secret for payment
+   */
+  async initiatePolicyPurchase(
+    policyLocator: string,
+    paymentSchedule: 'FullPay' | 'MonthlyPay',
+    signResponsibilityChecked?: boolean,
+    lenderDetails?: Record<string, any>,
+    additionalInterests?: Array<Record<string, any>>
+  ): Promise<{ clientSecret: string; succeeded: boolean }> {
+    const data = await this.graphqlRequest(
+      'InitiatePolicyPurchase',
+      `mutation InitiatePolicyPurchase($policyLocator: ID!, $paymentSchedule: PaymentSchedule!, $lenderDetails: LenderDetailsInput, $signResponsibilityChecked: Boolean, $additionalInterests: [AdditionalInterestInput!]) {
+        initiatePolicyPurchase(policyLocator: $policyLocator, paymentSchedule: $paymentSchedule, lenderDetails: $lenderDetails, signResponsibilityChecked: $signResponsibilityChecked, additionalInterests: $additionalInterests) {
+          clientSecret succeeded
+        }
+      }`,
+      { policyLocator, paymentSchedule, signResponsibilityChecked, lenderDetails, additionalInterests }
+    );
+    return data.initiatePolicyPurchase;
   }
 
   // ---------------------------------------------------------------------------
