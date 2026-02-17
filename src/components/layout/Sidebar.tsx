@@ -42,6 +42,7 @@ import {
   FilePlus2,
   DollarSign,
   CloudLightning,
+  TreePine,
 } from 'lucide-react';
 
 // Map routes to feature permission keys (must match keys in feature-permissions.ts)
@@ -69,6 +70,7 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   '/gaya-extractor': 'gayaExtractor',
   '/canopy-connect': 'canopyConnect',
   '/travelers-application': 'travelersApplication',
+  '/covertree': 'covertree',
   '/commissions': 'commissions',
   // Advanced
   '/competitive-intel': 'competitiveIntel',
@@ -132,6 +134,7 @@ const toolsNav = [
   { name: 'Coverage Guide', href: '/coverage-demo', icon: BookOpen },
   { name: 'Canopy Connect', href: '/canopy-connect', icon: Link2 },
   { name: 'Travelers App', href: '/travelers-application', icon: Plane },
+  { name: 'CoverTree', href: '/covertree', icon: TreePine },
   { name: 'Phone Lookup', href: '/phone-lookup', icon: Phone },
   { name: 'Properties', href: '/properties', icon: Home },
   { name: 'Invoice', href: '/invoice', icon: Receipt },

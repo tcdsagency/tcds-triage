@@ -181,6 +181,14 @@ export const FEATURES: FeatureConfig[] = [
     route: '/travelers-application',
   },
   {
+    key: 'covertree',
+    label: 'CoverTree',
+    description: 'Quote mobile/manufactured home insurance via CoverTree',
+    category: 'tools',
+    defaultEnabled: true,
+    route: '/covertree',
+  },
+  {
     key: 'phoneLookup',
     label: 'Phone Lookup',
     description: 'Lookup phone number details via Trestle IQ',
