@@ -1,5 +1,5 @@
 /**
- * Home Identity Rules (H-001 to H-008)
+ * Home Identity Rules (H-001 to H-007)
  * Phase 1 (blocking) + Phase 2 (identity)
  */
 
@@ -246,31 +246,6 @@ export const homeIdentityRules: CheckRuleDefinition[] = [
         severity: form ? 'info' : 'info',
         message: form ? `Policy form: ${form}` : 'Policy form could not be determined',
         agentAction: 'Informational — verify form matches AMS',
-        checkType: 'existence',
-        category: 'Identity',
-        isBlocking: false,
-      });
-    },
-  },
-  {
-    ruleId: 'H-008',
-    name: 'Agent/Producer Code',
-    description: 'Verify agent code is present',
-    checkType: 'existence',
-    category: 'Identity',
-    phase: 2,
-    isBlocking: false,
-    lob: 'home',
-    evaluate: (ctx) => {
-      // Agent code is not typically on snapshots — this is informational
-      return makeCheck('H-008', {
-        field: 'Agent Code',
-        previousValue: null,
-        renewalValue: null,
-        change: 'N/A',
-        severity: 'info',
-        message: 'Agent/producer code verified via IVANS routing',
-        agentAction: 'No action needed',
         checkType: 'existence',
         category: 'Identity',
         isBlocking: false,

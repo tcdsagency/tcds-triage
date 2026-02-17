@@ -80,19 +80,4 @@ export const autoEndorsementRules: CheckRuleDefinition[] = [
       );
     },
   },
-  {
-    ruleId: 'A-052',
-    name: 'Policy Forms',
-    description: 'Note any changes to auto policy forms',
-    checkType: 'existence',
-    category: 'Endorsements',
-    phase: 7,
-    isBlocking: false,
-    lob: 'auto',
-    evaluate: () => {
-      // Auto form changes typically come through as endorsement changes
-      // This is a placeholder that defers to A-050/A-051
-      return null;
-    },
-  },
 ];

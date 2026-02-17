@@ -176,7 +176,23 @@ export const homeCoverageRules: CheckRuleDefinition[] = [
 
       const renRatio = (renB / renA) * 100;
       const basRatio = basA && basB ? (basB / basA) * 100 : null;
-      const drift = basRatio != null ? Math.abs(renRatio - basRatio) : 0;
+
+      if (basRatio == null) {
+        return makeCheck('H-016', {
+          field: 'Cov B/A Ratio',
+          previousValue: null,
+          renewalValue: `${renRatio.toFixed(1)}%`,
+          change: `${renRatio.toFixed(1)}%`,
+          severity: 'info',
+          message: `Coverage B/A ratio: ${renRatio.toFixed(1)}% — baseline missing, ratio comparison skipped`,
+          agentAction: 'Baseline Cov B or A unavailable — cannot compare ratio drift',
+          checkType: 'ratio',
+          category: 'Coverages',
+          isBlocking: false,
+        });
+      }
+
+      const drift = Math.abs(renRatio - basRatio);
       const driftExceeded = drift > ctx.thresholds.covBRatioDrift;
 
       return makeCheck('H-016', {

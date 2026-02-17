@@ -200,31 +200,9 @@ export const autoVehicleRules: CheckRuleDefinition[] = [
     phase: 6,
     isBlocking: false,
     lob: 'auto',
-    evaluate: (ctx) => {
-      const { matched } = matchVehicles(ctx.baseline.vehicles, ctx.renewal.vehicles);
-      const results: CheckResult[] = [];
-
-      for (const [basV, renV] of matched) {
-        const basZip = (basV as any).garageZip as string | undefined;
-        const renZip = (renV as any).garageZip as string | undefined;
-        if (!basZip && !renZip) continue;
-        if (norm(basZip) !== norm(renZip)) {
-          results.push(makeCheck('A-014', {
-            field: `Garaging: ${vehicleLabel(renV)}`,
-            previousValue: basZip || 'N/A',
-            renewalValue: renZip || 'N/A',
-            change: `${basZip || 'N/A'} → ${renZip || 'N/A'}`,
-            severity: 'info',
-            message: `Garaging zip changed for ${vehicleLabel(renV)}`,
-            agentAction: 'Garaging address changed — may affect rate territory',
-            checkType: 'value_change',
-            category: 'Vehicles',
-            isBlocking: false,
-          }));
-        }
-      }
-
-      return results.length > 0 ? results : null;
+    evaluate: () => {
+      // garageZip is not yet on the CanonicalVehicle schema — skip until garaging data is available
+      return null;
     },
   },
   {

@@ -291,8 +291,8 @@ export const autoCoverageRules: CheckRuleDefinition[] = [
       for (const v of ctx.renewal.vehicles) {
         const bi = findCov(v.coverages, 'bodily_injury');
         const pd = findCov(v.coverages, 'property_damage');
-        if (bi?.limit) vehBI.add(bi.limit);
-        if (pd?.limit) vehPD.add(pd.limit);
+        if (bi?.limitAmount != null) vehBI.add(String(bi.limitAmount));
+        if (pd?.limitAmount != null) vehPD.add(String(pd.limitAmount));
       }
 
       if (vehBI.size <= 1 && vehPD.size <= 1) return null;

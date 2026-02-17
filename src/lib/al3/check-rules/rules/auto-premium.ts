@@ -4,7 +4,7 @@
  */
 
 import type { CheckRuleDefinition, CheckResult } from '@/types/check-rules.types';
-import { makeCheck, fmtDollars, fmtPercent, pctChange } from '../helpers';
+import { makeCheck, fmtDollars, fmtPercent, pctChange, norm } from '../helpers';
 
 export const autoPremiumRules: CheckRuleDefinition[] = [
   {
@@ -95,8 +95,8 @@ export const autoPremiumRules: CheckRuleDefinition[] = [
 
         // Find matching baseline vehicle
         const basV = ctx.baseline.vehicles.find(bv =>
-          (bv.vin && renV.vin && bv.vin.toLowerCase() === renV.vin.toLowerCase()) ||
-          (bv.year === renV.year && bv.make?.toLowerCase() === renV.make?.toLowerCase())
+          (bv.vin && renV.vin && norm(bv.vin) === norm(renV.vin)) ||
+          (bv.year === renV.year && norm(bv.make) === norm(renV.make))
         );
 
         const basVPrem = basV ? basV.coverages.reduce((sum, c) => sum + (c.premium ?? 0), 0) : 0;

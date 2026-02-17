@@ -187,7 +187,7 @@ export const homePremiumRules: CheckRuleDefinition[] = [
     isBlocking: false,
     lob: 'home',
     evaluate: (ctx) => {
-      const expectedCovs = ['dwelling', 'personal_liability'];
+      const expectedCovs = ['dwelling', 'other_structures', 'personal_property', 'loss_of_use', 'personal_liability', 'medical_payments'];
       const missing = expectedCovs.filter(type =>
         !ctx.renewal.coverages.some(c => c.type === type && c.limitAmount != null && c.limitAmount > 0)
       );

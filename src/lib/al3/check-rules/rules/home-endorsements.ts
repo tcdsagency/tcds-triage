@@ -182,20 +182,6 @@ export const homeEndorsementRules: CheckRuleDefinition[] = [
     },
   },
   {
-    ruleId: 'H-055',
-    name: 'Forms Change',
-    description: 'Detect policy form changes (HO3→HO5, etc.)',
-    checkType: 'value_change',
-    category: 'Endorsements',
-    phase: 7,
-    isBlocking: false,
-    lob: 'home',
-    evaluate: () => {
-      // Policy form changes detected via LOB field — handled by H-005/H-007
-      return null;
-    },
-  },
-  {
     ruleId: 'H-056',
     name: 'Mortgagee Check',
     description: 'Verify mortgagee information is present if expected',

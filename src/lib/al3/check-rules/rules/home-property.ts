@@ -1,5 +1,5 @@
 /**
- * Home Property Rules (H-040 to H-047)
+ * Home Property Rules (H-040 to H-048, excluding H-042/H-047)
  * Phase 6 — Property details
  */
 
@@ -59,20 +59,6 @@ export const homePropertyRules: CheckRuleDefinition[] = [
         category: 'Property',
         isBlocking: false,
       });
-    },
-  },
-  {
-    ruleId: 'H-042',
-    name: 'Square Footage',
-    description: 'Note square footage if available',
-    checkType: 'value_change',
-    category: 'Property',
-    phase: 6,
-    isBlocking: false,
-    lob: 'home',
-    evaluate: () => {
-      // Square footage not typically on snapshots — placeholder
-      return null;
     },
   },
   {
@@ -218,20 +204,6 @@ export const homePropertyRules: CheckRuleDefinition[] = [
         category: 'Property',
         isBlocking: false,
       });
-    },
-  },
-  {
-    ruleId: 'H-047',
-    name: 'Protection Class',
-    description: 'Note protection class if available',
-    checkType: 'value_change',
-    category: 'Property',
-    phase: 6,
-    isBlocking: false,
-    lob: 'home',
-    evaluate: () => {
-      // Protection class not typically on snapshots — placeholder
-      return null;
     },
   },
   {
