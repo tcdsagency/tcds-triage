@@ -326,9 +326,16 @@ export async function POST(request: Request) {
                       }
                     }
 
-                    await db.update(policies)
+                    // Use optimistic locking via syncVersion to prevent concurrent overwrite
+                    const currentVersion = (existingFull[0] as any).syncVersion || 1;
+                    policyData.syncVersion = currentVersion + 1;
+
+                    const updateResult = await db.update(policies)
                       .set(policyData)
-                      .where(eq(policies.id, existingPolicy[0].id));
+                      .where(and(eq(policies.id, existingPolicy[0].id), eq(policies.syncVersion, currentVersion)));
+                    if ((updateResult as any).rowCount === 0) {
+                      log(`Optimistic lock conflict for policy ${policy.policyNumber} — skipping (modified by another process)`);
+                    }
                     savedPolicyId = existingPolicy[0].id;
                   }
                 } else {

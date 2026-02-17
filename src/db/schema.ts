@@ -578,6 +578,7 @@ export const policies = pgTable('policies', {
 
   // Sync
   lastSyncedAt: timestamp('last_synced_at'),
+  syncVersion: integer('sync_version').default(1).notNull(),
   rawData: jsonb('raw_data'), // Full HawkSoft response for reference
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -1321,8 +1322,8 @@ export const reportedIssues = pgTable('reported_issues', {
 export const quotes = pgTable('quotes', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  customerId: uuid('customer_id').references(() => customers.id),
-  
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+
   // Quote Type
   type: quoteTypeEnum('type').notNull(),
   status: quoteStatusEnum('status').default('draft'),
@@ -1432,7 +1433,7 @@ export const quotes = pgTable('quotes', {
 export const messages = pgTable('messages', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  customerId: uuid('customer_id').references(() => customers.id),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
 
   // Message Info
   type: messageTypeEnum('type').notNull(),
@@ -1542,8 +1543,8 @@ export const tasks = pgTable('tasks', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   
   // Related
-  customerId: uuid('customer_id').references(() => customers.id),
-  
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+
   // Task Info
   title: text('title').notNull(),
   description: text('description'),
@@ -1937,6 +1938,7 @@ export const serviceTickets = pgTable('service_tickets', {
 
   // Sync metadata
   lastSyncedFromAz: timestamp('last_synced_from_az'),
+  locallyModifiedAt: timestamp('locally_modified_at'),
 
   // Local timestamps
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -2363,6 +2365,10 @@ export const riskMonitorPolicies = pgTable('risk_monitor_policies', {
   azContactId: varchar('az_contact_id', { length: 100 }),
   azPolicyId: varchar('az_policy_id', { length: 100 }),
 
+  // Local database references
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }),
+  policyId: uuid('policy_id').references(() => policies.id, { onDelete: 'cascade' }),
+
   // Customer info
   contactName: text('contact_name').notNull(),
   contactEmail: text('contact_email'),
@@ -2646,6 +2652,14 @@ export const riskMonitorPoliciesRelations = relations(riskMonitorPolicies, ({ on
   tenant: one(tenants, {
     fields: [riskMonitorPolicies.tenantId],
     references: [tenants.id],
+  }),
+  customer: one(customers, {
+    fields: [riskMonitorPolicies.customerId],
+    references: [customers.id],
+  }),
+  policy: one(policies, {
+    fields: [riskMonitorPolicies.policyId],
+    references: [policies.id],
   }),
   alerts: many(riskMonitorAlerts),
   events: many(riskMonitorActivityEvents),
@@ -5531,6 +5545,9 @@ export const commissionPolicies = pgTable('commission_policies', {
   // Default agent assignment
   primaryAgentId: uuid('primary_agent_id').references(() => commissionAgents.id, { onDelete: 'set null' }),
 
+  // Link to central policy table for cross-referencing
+  centralPolicyId: uuid('central_policy_id').references(() => policies.id, { onDelete: 'set null' }),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
@@ -5538,6 +5555,7 @@ export const commissionPolicies = pgTable('commission_policies', {
   uniqueIndex('commission_policies_unique').on(table.tenantId, table.policyNumber, table.carrierId),
   index('commission_policies_carrier_idx').on(table.carrierId),
   index('commission_policies_agent_idx').on(table.primaryAgentId),
+  index('commission_policies_central_policy_idx').on(table.centralPolicyId),
 ]);
 
 // 9. Commission Transactions - Agency-level commission records
@@ -5825,6 +5843,7 @@ export const commissionPoliciesRelations = relations(commissionPolicies, ({ one,
   tenant: one(tenants, { fields: [commissionPolicies.tenantId], references: [tenants.id] }),
   carrier: one(commissionCarriers, { fields: [commissionPolicies.carrierId], references: [commissionCarriers.id] }),
   primaryAgent: one(commissionAgents, { fields: [commissionPolicies.primaryAgentId], references: [commissionAgents.id] }),
+  centralPolicy: one(policies, { fields: [commissionPolicies.centralPolicyId], references: [policies.id] }),
   transactions: many(commissionTransactions),
 }));
 

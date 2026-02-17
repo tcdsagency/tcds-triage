@@ -21,6 +21,7 @@ interface TwilioIncomingMessage {
   MediaContentType0?: string;
   AccountSid?: string;
   ApiVersion?: string;
+  DateSent?: string;
 }
 
 // =============================================================================
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest) {
         MediaUrl0: jsonData.MediaUrl0 || jsonData.mediaUrl0,
         MediaContentType0: jsonData.MediaContentType0 || jsonData.mediaContentType0,
         AccountSid: jsonData.AccountSid || jsonData.accountSid,
+        DateSent: jsonData.DateSent || jsonData.dateSent,
       };
     } else {
       // Parse form data (Twilio sends as x-www-form-urlencoded)
@@ -61,6 +63,7 @@ export async function POST(request: NextRequest) {
         MediaUrl0: formData.get("MediaUrl0") as string,
         MediaContentType0: formData.get("MediaContentType0") as string,
         AccountSid: formData.get("AccountSid") as string,
+        DateSent: formData.get("DateSent") as string || undefined,
       };
     }
 
@@ -216,7 +219,7 @@ export async function POST(request: NextRequest) {
         contactType,
         isAcknowledged: false,
         isAfterHours,
-        sentAt: new Date(),
+        sentAt: payload.DateSent ? new Date(payload.DateSent) : new Date(),
       })
       .returning();
 
@@ -455,10 +458,30 @@ async function checkAutoReplyCooldown(
   cooldownHours: number
 ): Promise<boolean> {
   try {
+    // Use atomic Redis SET NX to prevent race conditions where two simultaneous
+    // messages both pass the cooldown check before either writes the outbound record
+    const IORedis = (await import('ioredis')).default;
+    const redisUrl = process.env.REDIS_URL;
+    if (redisUrl) {
+      const redis = new IORedis(redisUrl, { tls: { rejectUnauthorized: false }, lazyConnect: true });
+      try {
+        await redis.connect();
+        const cooldownKey = `auto-reply-cooldown:${tenantId}:${phone}`;
+        const ttlSeconds = cooldownHours * 3600;
+        const result = await redis.set(cooldownKey, '1', 'EX', ttlSeconds, 'NX');
+        await redis.quit();
+        return result === 'OK'; // true if lock acquired (no recent reply)
+      } catch (redisError) {
+        console.error("[Webhook] Redis cooldown check failed, falling back to DB:", redisError);
+        try { await redis.quit(); } catch { /* ignore */ }
+        // Fall through to DB-based check below
+      }
+    }
+
+    // Fallback: DB-based cooldown check (still works, just has the race window)
     const cooldownStart = new Date();
     cooldownStart.setHours(cooldownStart.getHours() - cooldownHours);
 
-    // Check if we've sent an auto-reply to this number recently
     const [recentReply] = await db
       .select({ id: messages.id })
       .from(messages)
@@ -474,7 +497,7 @@ async function checkAutoReplyCooldown(
       )
       .limit(1);
 
-    return !recentReply; // Return true if no recent reply (cooldown passed)
+    return !recentReply;
   } catch (error) {
     console.error("[Webhook] Error checking cooldown:", error);
     return true; // Default to allowing the reply

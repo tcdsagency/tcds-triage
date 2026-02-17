@@ -183,6 +183,7 @@ export const renewalQueue = new Queue<RenewalBatchJobData | RenewalCandidateJobD
       type: 'exponential' as const,
       delay: 10000, // Start at 10s
     },
+    timeout: 120000, // 2-minute job timeout — prevents worker hang on stalled API calls
   },
 });
 

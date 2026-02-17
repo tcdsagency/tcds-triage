@@ -274,14 +274,29 @@ export class HawkSoftAPI {
     const separator = endpoint.includes('?') ? '&' : '?';
     const url = `${this.baseUrl}${endpoint}${separator}version=3.0`;
 
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': this.authHeader,
-        ...options.headers,
-      },
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30-second timeout
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': this.authHeader,
+          ...options.headers,
+        },
+      });
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`HawkSoft API timeout after 30s: ${endpoint}`);
+      }
+      throw error;
+    }
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const error = await response.text();

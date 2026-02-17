@@ -166,8 +166,19 @@ export async function syncServiceTickets(
           continue;
         }
 
-        // Update local ticket with new data
+        // Update local ticket with new data (with conflict detection)
         if (!options.dryRun) {
+          // Check if ticket was locally modified since last sync
+          const locallyModified = (ticket as any).locallyModifiedAt;
+          const lastSynced = ticket.lastSyncedFromAz || new Date(0);
+          const hasLocalConflict = locallyModified && new Date(locallyModified) > new Date(lastSynced);
+
+          if (hasLocalConflict) {
+            console.log(`[ServiceTicketSync] Conflict detected for ticket ${ticket.azTicketId} — local changes newer than last sync, skipping AZ overwrite`);
+            result.unchanged++;
+            continue;
+          }
+
           await db
             .update(serviceTickets)
             .set({
