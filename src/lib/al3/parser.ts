@@ -373,7 +373,9 @@ function parseEDIFACTSubRecords(line: string): { groupCode: string; coverageCode
           }
         }
         currentGroupCode = headerMatch[1];
-        currentCoverageCode = headerMatch[2];
+        // Strip trailing date patterns from coverage codes (NatGen appends dates like "260228")
+        // Pattern: 6-8 digit YYMMDD or YYYYMMDD suffix on the coverage code
+        currentCoverageCode = headerMatch[2].replace(/\d{6,8}$/, '').trim() || headerMatch[2];
         currentSegments = [];
       }
       continue;
@@ -449,13 +451,30 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
       }
 
       // Limit: tag "1E" with digit-only data (leading zeros, e.g., "00025000")
-      // Standard format: 8 zero-padded digits. Compound: >8 digits = limit(8) + extra.
+      // Standard format: 8 zero-padded digits. Compound: >8 digits = limit(8) + deductible(remainder).
       // Short values (<8 digits) occur when records are truncated at field boundaries —
       // right-pad with zeros to 8 digits (e.g., "0065" → "00650000" → 650,000).
       if (limitAmount === undefined && t === '1E' && /^0{1,}\d+$/.test(d) && d.length >= 3) {
         let limitPortion = d;
         if (limitPortion.length > 8) {
-          limitPortion = limitPortion.substring(0, 8);
+          // Compound: limit(8) + deductible data
+          // Allstate: limit(8) + hurricane_ded(5) + aop_ded(4) = 17 digits — extract last 4
+          // ERA/NatGen: limit(8) + ded(5) = 13 digits — extract full remainder
+          // If a separate deductible segment exists later, it can override this.
+          const remainder = d.substring(8);
+          limitPortion = d.substring(0, 8);
+          if (deductibleAmount === undefined && remainder.length >= 4) {
+            // For long remainders (Allstate), extract last 4 digits (AOP deductible)
+            // For short remainders (ERA/NatGen), use the full value
+            const dedStr = remainder.length > 5
+              ? remainder.substring(remainder.length - 4)
+              : remainder;
+            const dedVal = parseInt(dedStr.replace(/^0+/, '') || '0', 10);
+            if (dedVal >= 100 && dedVal <= 100000) {
+              deductibleAmount = dedVal;
+              deductibleStr = dedStr;
+            }
+          }
         } else if (limitPortion.length < 8) {
           limitPortion = limitPortion.padEnd(8, '0');
         }
@@ -467,22 +486,41 @@ function parseEDIFACTHomeCoverages(line: string): AL3Coverage[] {
 
       // Deductible: tag "2E" with zero-padded digits (NatGen/Integon EDIFACT format)
       // Tag "2E" contains the deductible value, NOT the limit. Must check before fallback limit.
+      // Allstate uses tag "2E" for non-deductible flag values (00001, 00005) — filter out < $50.
       if (deductibleAmount === undefined && t === '2E' && /^0{2,}\d{3,}$/.test(d) && d.length <= 8) {
         const cleaned = d.replace(/^0+/, '') || '0';
         const val = parseInt(cleaned, 10);
-        if (val > 0) {
+        if (val >= 50) {
           deductibleAmount = val;
           deductibleStr = d;
         }
         continue;
       }
 
-      // Fallback limit: any segment with leading-zero digits if tag 1E wasn't found
-      // Exclude tag "2E" which is a deductible tag (handled above)
-      if (limitAmount === undefined && t !== '2E' && /^0{2,}\d{4,}$/.test(d) && d.length <= 10) {
-        const cleaned = d.replace(/^0+/, '') || '0';
-        limitAmount = parseInt(cleaned, 10);
-        limitStr = d;
+      // Fallback limit: any segment with zero-padded digits if tag 1E wasn't found.
+      // Non-Allstate EDIFACT carriers (ERA/Fortegra/OBIE/NatGen) put limits under various tags
+      // (46, 43, 45, 4C, etc.) instead of just 1E. Values can be:
+      //   - 8-digit zero-padded dollar amounts: "00050918" → $50,918
+      //   - Short zero-padded (2+ leading zeros, <8 digits): "003" → right-pad → $300,000 (PL)
+      //   - Single-leading-zero values: "05000" → $5,000 (no padding, already dollars)
+      // Exclude tag "2E" which is a deductible tag (handled above).
+      if (limitAmount === undefined && t !== '2E' && /^0\d+$/.test(d) && d.length >= 3 && d.length <= 13) {
+        let limitPortion = d;
+        // Short values with 2+ leading zeros: truncated fixed-width field, right-pad to 8
+        // E.g., "003" → "00300000" = $300,000 (standard PL limit format)
+        if (/^00/.test(d) && d.length < 8) {
+          limitPortion = d.padEnd(8, '0');
+        } else if (d.length > 8) {
+          // Compound: first 8 digits = limit (remainder discarded — deductible
+          // comes from a separate segment via the "deductible after limit" handler)
+          limitPortion = d.substring(0, 8);
+        }
+        const cleaned = limitPortion.replace(/^0+/, '') || '0';
+        const val = parseInt(cleaned, 10);
+        if (val > 0) {
+          limitAmount = val;
+          limitStr = limitPortion;
+        }
         continue;
       }
 
@@ -1804,16 +1842,23 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
   } else {
     // 6CVH: home/watercraft coverage record
     // Different carriers use different field positions:
-    //   - SAFECO 6CVH240: limit at 60-72, secondary at 90-101
+    //   - SAFECO 6CVH240: premium-in-cents at 60-71, limit(8)+ded(5) at 102+
     //   - Openly 6CVH323: limit at ~86, description at ~150
     // Use pattern-based extraction as fallback when fixed positions yield nothing
 
-    // Try fixed positions first (works for SAFECO)
+    // Try fixed positions first
     let primaryStr = extractField(line, CVH_FIELDS.LIMIT);
     let secondaryStr = extractField(line, CVH_FIELDS.SECONDARY_AMOUNT);
 
     // Detect if primary field is premium (has +/- sign) or limit
     const hasPremiumSign = /[+-]$/.test(primaryStr.trim());
+
+    // Detect SAFECO-style home format: standard secondary position (90-101) is blank,
+    // but position 102+ has 8+ digits (limit+deductible data shifted right).
+    // This distinguishes from standard layout where limit is at 60-72 and secondary at 90-101.
+    const secondaryIsBlank = secondaryStr.trim() === '';
+    const pos102Data = line.length > 102 ? line.substring(102, 115).trim() : '';
+    const isSafecoHome = secondaryIsBlank && /^\d{8}/.test(pos102Data);
 
     let premium: number | undefined;
     let limitAmount: number | undefined;
@@ -1828,6 +1873,46 @@ function parse6LevelCoverage(line: string, type: 'vehicle' | 'home'): AL3Coverag
       if (premium) premium = premium / 100;
       limitAmount = parseAL3Number(secondaryStr);
       limitStr = secondaryStr || undefined;
+    } else if (isSafecoHome) {
+      // SAFECO 6CVH240 format:
+      //   Position 60-71: premium in cents (e.g., "00000203900" = $2,039.00)
+      //   Position 102+: limit (8 digits) + deductible (up to 5 digits)
+      //     e.g., "0029830001000" → limit=$298,300, ded=$1,000
+      //     e.g., "00300000" → limit=$300,000 (no deductible)
+      //   (Position 90-101 is blank in SAFECO format)
+      const primaryAmount = parseAL3Number(primaryStr);
+      if (primaryAmount) {
+        premium = primaryAmount / 100; // cents to dollars
+      }
+
+      // Extract secondary data from SAFECO-specific position 102+
+      const safecoSecondary = line.length > 102 ? line.substring(102, 115).trim() : '';
+      if (safecoSecondary.length > 0) {
+        const secDigits = safecoSecondary.replace(/[^0-9]/g, '');
+        if (secDigits.length >= 8) {
+          const rawLimit = parseInt(secDigits.substring(0, 8), 10);
+          if (rawLimit > 0) {
+            limitAmount = rawLimit;
+            limitStr = String(rawLimit);
+          }
+          // Remaining digits after 8-char limit are the deductible
+          const dedPart = secDigits.substring(8);
+          if (dedPart.length > 0) {
+            const rawDed = parseInt(dedPart, 10);
+            if (rawDed > 0 && rawDed <= 100000) {
+              deductibleAmount = rawDed;
+              deductibleStr = String(rawDed);
+            }
+          }
+        } else {
+          // Short secondary — treat as limit only
+          const rawLimit = parseAL3Number(safecoSecondary);
+          if (rawLimit) {
+            limitAmount = rawLimit;
+            limitStr = String(rawLimit);
+          }
+        }
+      }
     } else {
       // Home format: primary is limit
       limitAmount = parseAL3Number(primaryStr);
