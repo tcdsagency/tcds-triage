@@ -960,6 +960,80 @@ async function createAutoTicketForPollCall(params: {
 }
 
 // =============================================================================
+// Cleanup Stale Calls — Complete abandoned "active" calls stuck without dialog
+// =============================================================================
+
+async function cleanupStaleCalls(): Promise<number> {
+  const tenantId = process.env.DEFAULT_TENANT_ID;
+  if (!tenantId) return 0;
+
+  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+
+  // Find calls stuck in active/in_progress state for > 30 minutes with no duration
+  const staleCalls = await db
+    .select({
+      id: calls.id,
+      extension: calls.extension,
+      fromNumber: calls.fromNumber,
+      externalNumber: calls.externalNumber,
+      createdAt: calls.createdAt,
+    })
+    .from(calls)
+    .where(
+      and(
+        eq(calls.tenantId, tenantId),
+        or(
+          eq(calls.transcriptionStatus, "active"),
+          eq(calls.status, "in_progress"),
+        ),
+        lte(calls.createdAt, thirtyMinutesAgo),
+        sql`${calls.durationSeconds} IS NULL`,
+      )
+    )
+    .limit(20);
+
+  if (staleCalls.length === 0) return 0;
+
+  console.log(`[TranscriptWorker] Found ${staleCalls.length} stale call(s) to clean up`);
+
+  let cleaned = 0;
+  for (const stale of staleCalls) {
+    // Mark call as completed
+    await db
+      .update(calls)
+      .set({
+        status: "completed",
+        transcriptionStatus: "failed",
+        transcriptionError: "stale_cleanup",
+        endedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(calls.id, stale.id));
+
+    // Queue a transcript job — MSSQL may have the recording
+    const nextAttemptAt = new Date(Date.now() + 30 * 1000);
+    await db
+      .insert(pendingTranscriptJobs)
+      .values({
+        tenantId,
+        callId: stale.id,
+        callerNumber: stale.externalNumber || stale.fromNumber || null,
+        agentExtension: stale.extension || null,
+        callStartedAt: stale.createdAt || new Date(),
+        callEndedAt: new Date(),
+        status: "pending",
+        nextAttemptAt,
+        attemptCount: 0,
+      })
+      .catch(() => {});
+
+    console.log(`[TranscriptWorker] Cleaned up stale call ${stale.id.slice(0, 8)} (ext=${stale.extension})`);
+    cleaned++;
+  }
+  return cleaned;
+}
+
+// =============================================================================
 // Poll SQL Server for Missed Calls (catches outbound calls not in webhook flow)
 // =============================================================================
 
@@ -1044,6 +1118,44 @@ async function pollSQLForMissedCalls(): Promise<{ found: number; processed: numb
 
         if (existingCall) {
           console.log(`[TranscriptWorker] Call already exists for ${phoneSuffix} at ${transcript.recordingDate.toISOString()} (call ${existingCall.id.slice(0, 8)}), skipping SQL record ${transcript.id}`);
+          continue;
+        }
+      }
+
+      // Also check by extension + time window (catches calls with "Unknown" phone from 3CX WebSocket)
+      if (transcript.extension) {
+        const windowMs = 15 * 60 * 1000;
+        const windowStart = new Date(transcript.recordingDate.getTime() - windowMs);
+        const windowEnd = new Date(transcript.recordingDate.getTime() + windowMs);
+
+        const [extMatch] = await db
+          .select({ id: calls.id, fromNumber: calls.fromNumber })
+          .from(calls)
+          .where(
+            and(
+              eq(calls.tenantId, tenantId),
+              eq(calls.extension, transcript.extension),
+              gte(calls.startedAt, windowStart),
+              lte(calls.startedAt, windowEnd),
+            )
+          )
+          .limit(1);
+
+        if (extMatch) {
+          // Enrich the existing call with the real phone from MSSQL
+          const customerPhone = transcript.direction === "inbound"
+            ? transcript.callerNumber
+            : transcript.calledNumber;
+          const realPhone = (customerPhone || '').replace(/\D/g, '');
+          if (extMatch.fromNumber === "Unknown" && realPhone.length >= 7) {
+            await db.update(calls).set({
+              fromNumber: customerPhone,
+              externalNumber: customerPhone,
+              updatedAt: new Date(),
+            }).where(eq(calls.id, extMatch.id));
+            console.log(`[TranscriptWorker] Enriched call ${extMatch.id.slice(0, 8)} with phone ${customerPhone} from MSSQL`);
+          }
+          console.log(`[TranscriptWorker] Call exists by extension+time for ${transcript.extension} (call ${extMatch.id.slice(0, 8)}), skipping SQL record ${transcript.id}`);
           continue;
         }
       }
@@ -1634,6 +1746,17 @@ export async function GET(request: NextRequest) {
     const pollResult = await pollSQLForMissedCalls();
     console.log(`[TranscriptWorker] SQL poll: found ${pollResult.found}, processed ${pollResult.processed} missed calls`);
 
+    // Clean up stale calls stuck in active/in_progress state
+    let staleCleaned = 0;
+    try {
+      staleCleaned = await cleanupStaleCalls();
+      if (staleCleaned > 0) {
+        console.log(`[TranscriptWorker] Cleaned up ${staleCleaned} stale call(s)`);
+      }
+    } catch (err) {
+      console.error(`[TranscriptWorker] Stale call cleanup error:`, err);
+    }
+
     // Process pending quote-ticket links (quotes submitted during calls that need AZ ticket notes)
     let quoteLinksProcessed = 0;
     try {
@@ -1675,6 +1798,7 @@ export async function GET(request: NextRequest) {
         message: "No pending jobs",
         processed: 0,
         sqlPoll: pollResult,
+        staleCleaned,
         quoteLinksProcessed,
         wrapupsAutoCompleted,
       });
@@ -1700,6 +1824,7 @@ export async function GET(request: NextRequest) {
       retrying,
       results,
       sqlPoll: pollResult,
+      staleCleaned,
       quoteLinksProcessed,
       wrapupsAutoCompleted,
     });

@@ -1247,7 +1247,18 @@ async function handleAutoTranscription(event) {
               sessionManager.markExtensionBusy(session.monitoringExtension);
             }
             sessionManager.transitionMediaState(session, 'failed');
+            sessionManager.transitionCallState(session, 'completed');
             sessionManager.finalize(session);
+
+            // No dialog was established — notify Vercel so the call record gets completed
+            notifyVercel('call_ended', {
+              sessionId: session.sessionId,
+              threeCxCallId: session.threeCxCallId,
+              externalNumber: session.externalNumber,
+              direction: session.direction,
+              duration: session.getDuration(),
+              segments: 0,
+            });
           }
         }, 15000);
 
@@ -1263,6 +1274,15 @@ async function handleAutoTranscription(event) {
         sessionManager.markExtensionBusy(monitoringExt);
         sessionManager.transitionMediaState(session, 'failed');
         notifyVercel('transcription_failed', { sessionId: session.sessionId, reason: 'listen2_failed' });
+        // Also send call_ended so Vercel can complete the call record
+        notifyVercel('call_ended', {
+          sessionId: session.sessionId,
+          threeCxCallId: session.threeCxCallId,
+          externalNumber: session.externalNumber,
+          direction: session.direction,
+          duration: session.getDuration(),
+          segments: 0,
+        });
       }
     } catch (err) {
       console.error(`[AutoTx] Error:`, err.message);
@@ -1272,8 +1292,22 @@ async function handleAutoTranscription(event) {
     const session = sessionManager.getSessionByThreeCxCallId(callId, targetExtension);
     if (session && session.source === 'websocket') {
       console.log(`[AutoTx] Call ended: ${session.sessionId}`);
-      // Note: Actual cleanup happens in dialog destroy handler
-      // This is just for logging/notification
+      // If no dialog was established (Listen2 failed, INVITE never arrived),
+      // we still need to notify Vercel so the call record gets completed
+      if (!session.dialogId && session.callState !== 'completed') {
+        console.log(`[AutoTx] Call ended without dialog: ${session.sessionId}, sending call_ended`);
+        sessionManager.transitionCallState(session, 'completed');
+        sessionManager.finalize(session);
+        notifyVercel('call_ended', {
+          sessionId: session.sessionId,
+          threeCxCallId: session.threeCxCallId,
+          externalNumber: session.externalNumber,
+          direction: session.direction,
+          duration: session.getDuration(),
+          segments: session.transcriptionSegmentCount || 0,
+        });
+      }
+      // Note: For calls with dialogs, cleanup happens in dialog destroy handler
     }
   }
 }

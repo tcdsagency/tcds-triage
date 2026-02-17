@@ -278,8 +278,12 @@ export class MSSQLTranscriptsClient {
 
     if (params.callerNumber) {
       const phone = params.callerNumber.replace(/\D/g, "");
-      request.input("phone", this.mssql.VarChar, `%${phone.slice(-10)}%`);
-      whereConditions.push("(CallerExt LIKE @phone OR DialedNum LIKE @phone)");
+      // Only use phone filter if it's a real phone number (7+ digits)
+      // Internal extensions (3-4 digits) would pollute the LIKE search
+      if (phone.length >= 7) {
+        request.input("phone", this.mssql.VarChar, `%${phone.slice(-10)}%`);
+        whereConditions.push("(CallerExt LIKE @phone OR DialedNum LIKE @phone)");
+      }
     }
 
     if (params.agentExtension) {

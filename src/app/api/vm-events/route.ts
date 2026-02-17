@@ -555,11 +555,38 @@ export async function POST(request: NextRequest) {
             .set({
               transcriptionStatus: "failed",
               transcriptionError: reason,
+              status: "completed",
+              endedAt: new Date(),
               updatedAt: new Date(),
             })
             .where(eq(calls.id, callId));
 
-          console.log(`[VM Events] Transcription failed for call ${callId}: ${reason}`);
+          console.log(`[VM Events] Transcription failed for call ${callId}: ${reason}, marked completed`);
+
+          // Queue transcript job for MSSQL fallback — recording may still exist there
+          const [callData] = await db
+            .select({
+              tenantId: calls.tenantId,
+              externalNumber: calls.externalNumber,
+              extension: calls.extension,
+              createdAt: calls.createdAt,
+            })
+            .from(calls)
+            .where(eq(calls.id, callId))
+            .limit(1);
+
+          if (callData) {
+            queueTranscriptJob(
+              callId,
+              callData.tenantId,
+              externalNumber || callData.externalNumber || null,
+              extension || callData.extension || null,
+              callData.createdAt || new Date(),
+              new Date()
+            ).catch((err) =>
+              console.error(`[VM Events] Failed to queue fallback transcript job:`, err.message)
+            );
+          }
         }
         break;
       }
