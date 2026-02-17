@@ -17,7 +17,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { renewalCandidates, renewalComparisons, customers, policies } from '@/db/schema';
+import { renewalCandidates, renewalComparisons, customers, policies, users } from '@/db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { getAgencyZoomClient, type ServiceTicket } from '@/lib/api/agencyzoom';
 import { SERVICE_PIPELINES } from '@/lib/api/agencyzoom-service-tickets';
@@ -241,6 +241,29 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Build AZ CSR ID → user ID mapping for agent assignment
+      const unmatchedCsrIds = [...new Set(unmatchedTickets.map(t => t.csr).filter(Boolean))];
+      const csrToUserId = new Map<number, string>(); // AZ CSR ID → users.id
+      if (unmatchedCsrIds.length > 0) {
+        const userRows = await db
+          .select({ id: users.id, agencyzoomId: users.agencyzoomId })
+          .from(users)
+          .where(
+            and(
+              eq(users.tenantId, tenantId),
+              sql`${users.agencyzoomId} IN (${sql.join(unmatchedCsrIds.map(id => sql`${id.toString()}`), sql`, `)})`
+            )
+          );
+        for (const row of userRows) {
+          if (row.agencyzoomId) {
+            const csrId = parseInt(row.agencyzoomId, 10);
+            if (!isNaN(csrId)) {
+              csrToUserId.set(csrId, row.id);
+            }
+          }
+        }
+      }
+
       for (const ticket of unmatchedTickets) {
         try {
           // Try to resolve the ticket to a customer
@@ -382,7 +405,7 @@ export async function POST(request: NextRequest) {
             if (awaitingCandidate) continue; // Phase 1 will match this next run
           }
 
-          const assignedAgentId = matchedPolicy?.producerId || customerInfo?.producerId || null;
+          const assignedAgentId = matchedPolicy?.producerId || customerInfo?.producerId || (ticket.csr ? csrToUserId.get(ticket.csr) : null) || null;
 
           // Create pending_manual_renewal placeholder
           const [comparison] = await db
