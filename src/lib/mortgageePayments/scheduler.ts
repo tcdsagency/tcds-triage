@@ -177,6 +177,9 @@ export class MortgageePaymentScheduler {
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
     const sixtyDaysFromNow = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
 
+    // Only check home-type policies — auto lienholders are not in MCI
+    const homeLOBs = ["HOME", "DFIRE", "MHOME", "FLOOD"];
+
     const rows = await db
       .select({ mortgagee: mortgagees })
       .from(mortgagees)
@@ -186,6 +189,8 @@ export class MortgageePaymentScheduler {
           eq(mortgagees.tenantId, this.tenantId),
           eq(mortgagees.isActive, true),
           eq(policies.status, "active"),
+          // Only home/dwelling/flood policies — skip auto, boat, commercial, etc.
+          sql`${policies.lineOfBusiness} IN (${sql.join(homeLOBs.map(l => sql`${l}`), sql`, `)})`,
           // Policy is within 120-day renewal window (±60 days of expiration)
           gte(policies.expirationDate, sixtyDaysAgo),
           lte(policies.expirationDate, sixtyDaysFromNow),
