@@ -200,7 +200,8 @@ export const COVERAGE_CODE_MAP: Record<string, string> = {
   'UMPED': 'uninsured_motorist_pd',
 
   // IVANS-specific coverage codes
-  'CSL': 'combined_single_limit',
+  'CSL': 'bodily_injury',
+  'UMCSL': 'uninsured_motorist',
   'UMISP': 'uninsured_motorist',
   'MEDPM': 'medical_payments',
   'EDC': 'extended_dwelling',

@@ -321,6 +321,7 @@ const MAJOR_COVERAGE_TYPES = new Set([
   'bodily_injury', 'property_damage', 'dwelling', 'personal_liability',
   'uninsured_motorist', 'underinsured_motorist', 'personal_property',
   'other_structures', 'loss_of_use', 'medical_payments',
+  'combined_single_limit',
 ]);
 
 function compareCoverages(
