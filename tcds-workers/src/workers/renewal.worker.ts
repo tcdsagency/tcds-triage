@@ -610,9 +610,10 @@ async function syncAzRenewals(): Promise<void> {
     const data = await res.json() as {
       success: boolean;
       matched?: number;
-      staleMarked?: number;
+      placeholdersCreated?: number;
       totalPending?: number;
       totalAzTickets?: number;
+      unmatchedTickets?: number;
       matches?: Array<{ candidateId: string; tenantId: string; batchId: string; azTicketId: number }>;
       error?: string;
     };
@@ -647,9 +648,10 @@ async function syncAzRenewals(): Promise<void> {
 
     logger.info({
       matched: data.matched,
-      staleMarked: data.staleMarked,
+      placeholdersCreated: data.placeholdersCreated,
       totalPending: data.totalPending,
       totalAzTickets: data.totalAzTickets,
+      unmatchedTickets: data.unmatchedTickets,
     }, 'AZ renewal sync complete');
   } catch (error) {
     logger.error({ error }, 'AZ renewal sync failed');
