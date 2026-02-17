@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createMortgageePaymentScheduler } from "@/lib/mortgageePayments/scheduler";
 
+export const maxDuration = 300;
+
 /**
  * GET /api/mortgagee-payments/trigger
  * Vercel cron sends GET requests — delegate to shared logic

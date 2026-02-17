@@ -15,7 +15,7 @@ import {
   properties,
   customers,
 } from "@/db/schema";
-import { eq, and, lte, sql, isNull, or, desc } from "drizzle-orm";
+import { eq, and, lte, gte, sql, isNull, or, not, desc } from "drizzle-orm";
 
 /**
  * Mortgage companies confirmed to NOT use MCI.
@@ -102,7 +102,7 @@ export class MortgageePaymentScheduler {
         windowEndHour: 5,
         dailyCheckBudget: 200,
         checksToday: 0,
-        delayBetweenChecksMs: 30000,
+        delayBetweenChecksMs: 10000,
         microserviceUrl: "",
         microserviceApiKey: "",
         alertOnLatePayment: true,
@@ -119,7 +119,7 @@ export class MortgageePaymentScheduler {
       windowEndHour: record.scheduleEndHour ?? 5,
       dailyCheckBudget: record.dailyCheckBudget ?? 200,
       checksToday: record.checksToday ?? 0,
-      delayBetweenChecksMs: record.delayBetweenChecksMs ?? 30000,
+      delayBetweenChecksMs: record.delayBetweenChecksMs ?? 10000,
       microserviceUrl: record.microserviceUrl ?? "",
       microserviceApiKey: record.microserviceApiKey ?? "",
       alertOnLatePayment: record.alertOnLatePayment ?? true,
@@ -155,12 +155,12 @@ export class MortgageePaymentScheduler {
 
   /**
    * Get mortgagees that need to be checked.
+   * Only selects mortgagees whose policy is within the 120-day renewal window
+   * (60 days before and after expiration). Skips mortgagees already confirmed
+   * "current" during the current policy term.
    */
   async getMortgageesToCheck(): Promise<(typeof mortgagees.$inferSelect)[]> {
     if (!this.settings) return [];
-
-    const checkIntervalMs = this.settings.recheckDays * 24 * 60 * 60 * 1000;
-    const cutoffDate = new Date(Date.now() - checkIntervalMs);
 
     // Get remaining budget for today
     const remainingBudget = Math.max(
@@ -173,6 +173,10 @@ export class MortgageePaymentScheduler {
       return [];
     }
 
+    const now = new Date();
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const sixtyDaysFromNow = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+
     const rows = await db
       .select({ mortgagee: mortgagees })
       .from(mortgagees)
@@ -182,13 +186,18 @@ export class MortgageePaymentScheduler {
           eq(mortgagees.tenantId, this.tenantId),
           eq(mortgagees.isActive, true),
           eq(policies.status, "active"),
+          // Policy is within 120-day renewal window (±60 days of expiration)
+          gte(policies.expirationDate, sixtyDaysAgo),
+          lte(policies.expirationDate, sixtyDaysFromNow),
+          // Skip if already confirmed current this policy term
           or(
+            sql`${mortgagees.currentPaymentStatus} != 'current'`,
             isNull(mortgagees.lastPaymentCheckAt),
-            lte(mortgagees.lastPaymentCheckAt, cutoffDate)
+            sql`${mortgagees.lastPaymentCheckAt} < ${policies.effectiveDate}`
           )
         )
       )
-      .orderBy(mortgagees.lastPaymentCheckAt) // Check oldest first
+      .orderBy(policies.expirationDate) // Prioritize nearest expirations
       .limit(remainingBudget);
 
     return rows.map((r) => r.mortgagee);
@@ -206,6 +215,11 @@ export class MortgageePaymentScheduler {
     let stoppedReason: string | undefined;
 
     // Load settings
+    this.settings = await this.loadSettings();
+
+    // Reset daily budget if it's a new day
+    await this.resetBudgetIfNeeded();
+    // Reload settings after potential reset
     this.settings = await this.loadSettings();
 
     if (!this.settings.enabled) {
@@ -567,6 +581,40 @@ export class MortgageePaymentScheduler {
         success: false,
         error: error.message,
       };
+    }
+  }
+
+  /**
+   * Reset the daily budget counter if the last reset was not today.
+   */
+  private async resetBudgetIfNeeded(): Promise<void> {
+    const [settings] = await db
+      .select({
+        lastBudgetResetAt: mortgageePaymentSettings.lastBudgetResetAt,
+      })
+      .from(mortgageePaymentSettings)
+      .where(eq(mortgageePaymentSettings.tenantId, this.tenantId))
+      .limit(1);
+
+    if (!settings) return;
+
+    const now = new Date();
+    const lastReset = settings.lastBudgetResetAt;
+
+    // Reset if never reset or last reset was a different day (UTC)
+    const needsReset =
+      !lastReset ||
+      lastReset.toISOString().slice(0, 10) !== now.toISOString().slice(0, 10);
+
+    if (needsReset) {
+      console.log("[MortgageeScheduler] Resetting daily budget counter");
+      await db
+        .update(mortgageePaymentSettings)
+        .set({
+          checksToday: 0,
+          lastBudgetResetAt: now,
+        })
+        .where(eq(mortgageePaymentSettings.tenantId, this.tenantId));
     }
   }
 
