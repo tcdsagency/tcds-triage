@@ -266,6 +266,18 @@ export async function initializeScheduledJobs(): Promise<void> {
     );
     logger.info('Scheduled: check-non-al3-renewals-daily (6 AM CT)');
 
+    // AZ Renewal Sync - Every 30 minutes
+    // Matches awaiting_az_ticket candidates to active AZ Renewals pipeline tickets
+    await (renewalQueue as Queue).upsertJobScheduler(
+      'az-renewal-sync',
+      { pattern: '*/30 * * * *', tz: 'America/Chicago' },
+      {
+        name: 'az-renewal-sync',
+        data: {},
+      }
+    );
+    logger.info('Scheduled: az-renewal-sync (every 30 min)');
+
     logger.info('All scheduled jobs initialized');
   } catch (err) {
     logger.error({ error: err }, 'Failed to initialize scheduled jobs');

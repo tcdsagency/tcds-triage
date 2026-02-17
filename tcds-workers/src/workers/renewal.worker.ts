@@ -44,6 +44,9 @@ export function createRenewalWorker(): Worker {
           case 'check-non-al3-renewals':
             await checkNonAL3Renewals();
             break;
+          case 'az-renewal-sync':
+            await syncAzRenewals();
+            break;
           default:
             logger.warn({ jobName: job.name }, 'Unknown renewal job type');
         }
@@ -282,7 +285,9 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
       totalBaselinesStored,
     });
 
-    // Create candidate records and queue individual processing
+    // Create candidate records in awaiting_az_ticket status
+    // Processing is deferred until an AZ ticket match is found by the az-renewal-sync job
+    let candidatesCreated = 0;
     for (const renewal of unique) {
       try {
         const candidateRes = await internalFetch('/api/renewals/internal/candidates', {
@@ -304,32 +309,22 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
 
         const result = await candidateRes.json() as { success: boolean; candidateId?: string };
         if (result.success && result.candidateId) {
-          // Queue individual candidate processing
-          const { renewalQueue } = await import('../queues');
-          await (renewalQueue as import('bullmq').Queue).add('process-candidate', {
-            candidateId: result.candidateId,
-            tenantId,
-            batchId,
-          } as RenewalCandidateJobData, {
-            jobId: `renewal-candidate-${result.candidateId}`,
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 10000 },
-          });
+          // Set candidate to awaiting_az_ticket (not immediately queued for processing)
+          await patchCandidate(result.candidateId, { status: 'awaiting_az_ticket' });
+          candidatesCreated++;
         }
       } catch (err) {
         logger.error({ batchId, error: err }, 'Failed to create candidate');
       }
     }
 
-    // If no candidates, mark batch complete
-    if (unique.length === 0) {
-      await patchBatch(batchId, {
-        status: 'completed',
-        processingCompletedAt: new Date().toISOString(),
-      });
-    }
+    // Mark batch as completed (ingestion complete — processing deferred to AZ sync)
+    await patchBatch(batchId, {
+      status: 'completed',
+      processingCompletedAt: new Date().toISOString(),
+    });
 
-    logger.info({ batchId, candidatesCreated: unique.length }, 'Batch processing complete');
+    logger.info({ batchId, candidatesCreated }, 'Batch ingestion complete — candidates awaiting AZ ticket match');
   } catch (error) {
     logger.error({ batchId, error }, 'Batch processing failed');
 
@@ -481,6 +476,7 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
             baselineStatus: 'unknown',
             baselineStatusReason: 'Policy not found in HawkSoft — prior-term data unavailable',
           },
+          agencyzoomSrId: candidate.agencyzoomSrId || null,
         }),
       });
 
@@ -557,6 +553,7 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
         },
         checkResults: compareData.checkEngineResult?.checkResults || null,
         checkSummary: compareData.checkSummary || null,
+        agencyzoomSrId: candidate.agencyzoomSrId || null,
       }),
     });
 
@@ -593,6 +590,69 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
       );
     }
 
+    throw error;
+  }
+}
+
+// =============================================================================
+// AZ RENEWAL SYNC
+// =============================================================================
+
+async function syncAzRenewals(): Promise<void> {
+  logger.info('Running AZ renewal sync');
+
+  try {
+    const res = await internalFetch('/api/renewals/internal/az-sync', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    const data = await res.json() as {
+      success: boolean;
+      matched?: number;
+      staleMarked?: number;
+      totalPending?: number;
+      totalAzTickets?: number;
+      matches?: Array<{ candidateId: string; tenantId: string; batchId: string; azTicketId: number }>;
+      error?: string;
+    };
+
+    if (!data.success) {
+      throw new Error(data.error || 'az-sync API returned failure');
+    }
+
+    // Queue process-candidate for each matched pair
+    if (data.matches && data.matches.length > 0) {
+      const { renewalQueue } = await import('../queues');
+
+      for (const match of data.matches) {
+        // Update candidate: set agencyzoomSrId and transition to pending
+        await patchCandidate(match.candidateId, {
+          agencyzoomSrId: match.azTicketId,
+          status: 'pending',
+        });
+
+        // Queue for processing
+        await (renewalQueue as import('bullmq').Queue).add('process-candidate', {
+          candidateId: match.candidateId,
+          tenantId: match.tenantId,
+          batchId: match.batchId,
+        } as RenewalCandidateJobData, {
+          jobId: `renewal-candidate-${match.candidateId}`,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 10000 },
+        });
+      }
+    }
+
+    logger.info({
+      matched: data.matched,
+      staleMarked: data.staleMarked,
+      totalPending: data.totalPending,
+      totalAzTickets: data.totalAzTickets,
+    }, 'AZ renewal sync complete');
+  } catch (error) {
+    logger.error({ error }, 'AZ renewal sync failed');
     throw error;
   }
 }

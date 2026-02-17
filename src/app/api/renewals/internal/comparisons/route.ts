@@ -164,20 +164,22 @@ export async function POST(request: NextRequest) {
       performedBy: 'system',
     });
 
-    // Create AgencyZoom Service Request (non-blocking)
-    if (body.customerId) {
+    // Link pre-existing AZ ticket if provided (from az-renewal-sync matching)
+    if (body.agencyzoomSrId) {
       try {
-        const { findOrCreateRenewalSR } = await import('@/lib/api/renewal-sr-service');
-        await findOrCreateRenewalSR({
+        await db.update(renewalComparisons)
+          .set({ agencyzoomSrId: body.agencyzoomSrId, updatedAt: new Date() })
+          .where(eq(renewalComparisons.id, comparison.id));
+
+        await logRenewalEvent({
           tenantId: body.tenantId,
           renewalComparisonId: comparison.id,
-          customerId: body.customerId,
-          policyNumber: body.policyNumber,
-          carrierName: body.carrierName,
-          lineOfBusiness: body.lineOfBusiness,
+          eventType: 'sr_created',
+          eventData: { srId: body.agencyzoomSrId, action: 'linked_existing' },
+          performedBy: 'system',
         });
       } catch (srErr) {
-        console.error('[Comparisons] SR creation failed (non-blocking):', srErr);
+        console.error('[Comparisons] AZ ticket linking failed (non-blocking):', srErr);
       }
     }
 

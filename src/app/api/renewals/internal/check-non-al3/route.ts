@@ -15,8 +15,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { policies, renewalBaselines, renewalComparisons, customers } from '@/db/schema';
-import { eq, and, gte, lte } from 'drizzle-orm';
+import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import { logRenewalEvent } from '@/lib/api/renewal-audit';
+import { getAgencyZoomClient, type ServiceTicket } from '@/lib/api/agencyzoom';
+import { SERVICE_PIPELINES } from '@/lib/api/agencyzoom-service-tickets';
 
 export async function POST(request: NextRequest) {
   try {
@@ -57,10 +59,87 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, created: 0, message: 'No expiring policies found' });
     }
 
+    // Fetch active AZ tickets in Renewals pipeline to gate placeholder creation
+    const azClient = getAgencyZoomClient();
+    const azTickets: ServiceTicket[] = [];
+    let azPage = 0;
+    const azPageSize = 100;
+
+    while (true) {
+      const { data: tickets, total } = await azClient.getServiceTickets({
+        pipelineId: SERVICE_PIPELINES.RENEWALS,
+        status: 1,
+        limit: azPageSize,
+        page: azPage,
+      });
+      azTickets.push(...tickets);
+      if (azTickets.length >= total || tickets.length < azPageSize) break;
+      azPage++;
+    }
+
+    // Build a set of policy numbers from AZ ticket subjects for matching
+    const azPolicyNumbers = new Set<string>();
+    for (const ticket of azTickets) {
+      // Strategy A: "Renewal Review: <name> - <policy>"
+      const subjectMatch = ticket.subject.match(/Renewal Review:\s*(.+?)\s*-\s*(\S+)/i);
+      if (subjectMatch) {
+        azPolicyNumbers.add(subjectMatch[2].trim().toUpperCase());
+      }
+      // Also add any policy-number-like strings from subject for broad matching
+      // (Strategy C: any policy number appearing in subject)
+      const words = ticket.subject.split(/[\s,;|/-]+/);
+      for (const word of words) {
+        const cleaned = word.trim().toUpperCase();
+        if (cleaned.length >= 5) {
+          azPolicyNumbers.add(cleaned);
+        }
+      }
+    }
+
+    // Build householdId set for customer-based matching
+    const azHouseholdIds = new Set(azTickets.map(t => t.householdId));
+
+    // Get customer agencyzoomIds for household matching
+    const allCustomerIds = [...new Set(expiringPolicies.map(p => p.customerId))];
+    const customerAzIds = new Map<string, string>(); // customerId → agencyzoomId
+    if (allCustomerIds.length > 0) {
+      // Batch in chunks to avoid query limits
+      const CHUNK = 500;
+      for (let i = 0; i < allCustomerIds.length; i += CHUNK) {
+        const chunk = allCustomerIds.slice(i, i + CHUNK);
+        const rows = await db
+          .select({ id: customers.id, agencyzoomId: customers.agencyzoomId })
+          .from(customers)
+          .where(
+            and(
+              eq(customers.tenantId, tenantId),
+              // Use SQL IN for the chunk
+              ...[chunk.length > 0 ? sql`${customers.id} IN (${sql.join(chunk.map(id => sql`${id}`), sql`, `)})` : sql`false`]
+            )
+          );
+        for (const row of rows) {
+          if (row.agencyzoomId) {
+            customerAzIds.set(row.id, row.agencyzoomId);
+          }
+        }
+      }
+    }
+
     let created = 0;
     let skippedExisting = 0;
+    let skippedNoAzTicket = 0;
 
     for (const policy of expiringPolicies) {
+      // Gate: only create placeholder if there's a matching AZ ticket
+      const policyNumUpper = (policy.policyNumber || '').toUpperCase();
+      const hasAzByPolicy = azPolicyNumbers.has(policyNumUpper);
+      const customerAzId = customerAzIds.get(policy.customerId);
+      const hasAzByHousehold = customerAzId ? azHouseholdIds.has(parseInt(customerAzId, 10)) : false;
+
+      if (!hasAzByPolicy && !hasAzByHousehold) {
+        skippedNoAzTicket++;
+        continue;
+      }
       // Check if any comparison already exists for this policy + effective date
       // (match by policy number only, ignoring carrier name variations between
       //  HawkSoft names and AL3 carrier names)
@@ -152,6 +231,7 @@ export async function POST(request: NextRequest) {
       success: true,
       created,
       skippedExisting,
+      skippedNoAzTicket,
       totalChecked: expiringPolicies.length,
     });
   } catch (error) {

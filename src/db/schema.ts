@@ -4852,6 +4852,7 @@ export const renewalBatchStatusEnum = pgEnum('renewal_batch_status', [
 ]);
 
 export const renewalCandidateStatusEnum = pgEnum('renewal_candidate_status', [
+  'awaiting_az_ticket',
   'pending',
   'fetching_baseline',
   'comparing',
@@ -5096,6 +5097,9 @@ export const renewalCandidates = pgTable('renewal_candidates', {
   // current term data before any HawkSoft syncs can update it
   baselineSnapshot: jsonb('baseline_snapshot'),
   baselineCapturedAt: timestamp('baseline_captured_at'),
+
+  // AgencyZoom link
+  agencyzoomSrId: integer('agencyzoom_sr_id'),
 
   // Error tracking
   errorMessage: text('error_message'),
