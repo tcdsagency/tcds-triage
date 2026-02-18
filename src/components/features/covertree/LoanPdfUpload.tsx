@@ -44,12 +44,19 @@ export default function LoanPdfUpload({ onExtracted }: LoanPdfUploadProps) {
 
       setUploading(true);
       try {
-        const formData = new FormData();
-        formData.append('file', file);
+        // Convert to base64 client-side to avoid Vercel body size limits with FormData
+        const arrayBuffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const pdfBase64 = btoa(binary);
 
         const res = await fetch('/api/covertree/extract-pdf', {
           method: 'POST',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pdfBase64, fileName: file.name }),
         });
 
         if (!res.ok) {

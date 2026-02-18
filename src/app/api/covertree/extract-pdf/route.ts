@@ -1,12 +1,11 @@
 /**
  * POST /api/covertree/extract-pdf
- * Stateless endpoint: accepts a PDF (1003 loan app or appraisal),
+ * Stateless endpoint: accepts a PDF as base64 JSON,
  * extracts borrower/property data via Claude, and returns mapped
  * CoverTree form data + confidence score.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { pdfToBase64 } from '@/lib/pdf/extraction';
 import {
   extractCoverTreePdfData,
   computeOverallConfidence,
@@ -17,32 +16,25 @@ export const maxDuration = 120; // Allow up to 2 minutes for Claude PDF extracti
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
+    const body = await request.json();
+    const { pdfBase64 } = body as { pdfBase64?: string };
 
-    if (!file) {
+    if (!pdfBase64) {
       return NextResponse.json(
-        { success: false, error: 'No file provided' },
+        { success: false, error: 'No PDF data provided' },
         { status: 400 }
       );
     }
 
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      return NextResponse.json(
-        { success: false, error: 'Only PDF files are supported' },
-        { status: 400 }
-      );
-    }
-
-    if (file.size > 25 * 1024 * 1024) {
+    // Rough size check (base64 is ~33% larger than raw)
+    const estimatedBytes = (pdfBase64.length * 3) / 4;
+    if (estimatedBytes > 25 * 1024 * 1024) {
       return NextResponse.json(
         { success: false, error: 'File size exceeds 25MB limit' },
         { status: 400 }
       );
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const pdfBase64 = pdfToBase64(arrayBuffer);
     const extracted = await extractCoverTreePdfData(pdfBase64);
     const confidence = computeOverallConfidence(extracted);
     const mappedFormData = mapExtractionToFormData(extracted);
