@@ -529,6 +529,9 @@ export function canopyPullToHomeQuote(pull: any): any {
   const liabCov = findCanopyCoverage(coverages, ['personal_liability', 'liability', 'family_liability_protection']);
   const medCov = findCanopyCoverage(coverages, ['medical_payments', 'med_pay']);
   const deductCov = findCanopyCoverage(coverages, ['all_peril', 'all_perils', 'all_other_perils', 'deductible']);
+  const aleCov = findCanopyCoverage(coverages, ['additional_living_expense', 'loss_of_use']);
+  const windHailCov = findCanopyCoverage(coverages, ['windstorm_or_hail', 'wind_hail', 'windstorm']);
+  const hurricaneCov = findCanopyCoverage(coverages, ['hurricane']);
 
   const homeCoverage: any = {};
   if (dwellingCov?.per_incident_limit_cents) homeCoverage.dwellingLimit = Math.round(dwellingCov.per_incident_limit_cents / 100);
@@ -539,6 +542,9 @@ export function canopyPullToHomeQuote(pull: any): any {
     homeCoverage.medicalPaymentsLimit = Math.round((medCov.per_incident_limit_cents || medCov.per_person_limit_cents) / 100);
   }
   if (deductCov?.deductible_cents) homeCoverage.allPerilDeductible = Math.round(deductCov.deductible_cents / 100);
+  if (aleCov?.per_incident_limit_cents) homeCoverage.lossOfUseLimit = Math.round(aleCov.per_incident_limit_cents / 100);
+  if (windHailCov?.deductible_cents) homeCoverage.windHailDeductible = Math.round(windHailCov.deductible_cents / 100);
+  if (hurricaneCov?.deductible_cents) homeCoverage.hurricaneDeductible = Math.round(hurricaneCov.deductible_cents / 100);
 
   // Policy info
   const policy = (pull.policies || []).find((p: any) => (p.type || '').toLowerCase().includes('home')) || (pull.policies || [])[0];
@@ -986,6 +992,9 @@ export function canopyPullToHomeApplication(pull: any, appTemplate: any): { app:
     if (quoteData.allPerilDeductible) { app.coverage.allPerilDeductible = quoteData.allPerilDeductible; syncReport.coverages.updated.push(`All Peril Ded → $${quoteData.allPerilDeductible}`); }
     if (quoteData.otherStructuresLimit) { app.coverage.otherStructuresLimit = quoteData.otherStructuresLimit; syncReport.coverages.updated.push(`Other Structures → $${quoteData.otherStructuresLimit}`); }
     if (quoteData.personalPropertyLimit) { app.coverage.personalPropertyLimit = quoteData.personalPropertyLimit; syncReport.coverages.updated.push(`Personal Property → $${quoteData.personalPropertyLimit}`); }
+    if (quoteData.lossOfUseLimit) { app.coverage.lossOfUseLimit = quoteData.lossOfUseLimit; syncReport.coverages.updated.push(`Loss of Use → $${quoteData.lossOfUseLimit}`); }
+    if (quoteData.windHailDeductible) { app.coverage.windHailDeductible = quoteData.windHailDeductible; syncReport.coverages.updated.push(`Wind/Hail Ded → $${quoteData.windHailDeductible}`); }
+    if (quoteData.hurricaneDeductible) { app.coverage.hurricaneDeductible = quoteData.hurricaneDeductible; syncReport.coverages.updated.push(`Hurricane Ded → $${quoteData.hurricaneDeductible}`); }
   }
 
   // Map property address
