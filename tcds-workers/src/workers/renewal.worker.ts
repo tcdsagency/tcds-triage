@@ -293,9 +293,11 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
       totalBaselinesStored,
     });
 
-    // Create candidate records in awaiting_az_ticket status
-    // Processing is deferred until an AZ ticket match is found by the az-renewal-sync job
+    // Create candidate records
+    // For raw AL3 uploads (single file), process immediately.
+    // For ZIP batches, defer to AZ sync for ticket matching.
     let candidatesCreated = 0;
+    const createdCandidateIds: Array<{ candidateId: string; tenantId: string; batchId: string }> = [];
     for (const renewal of unique) {
       try {
         const candidateRes = await internalFetch('/api/renewals/internal/candidates', {
@@ -317,8 +319,14 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
 
         const result = await candidateRes.json() as { success: boolean; candidateId?: string };
         if (result.success && result.candidateId) {
-          // Set candidate to awaiting_az_ticket (not immediately queued for processing)
-          await patchCandidate(result.candidateId, { status: 'awaiting_az_ticket' });
+          if (isRawAL3) {
+            // Raw AL3 upload — process immediately, skip AZ ticket requirement
+            await patchCandidate(result.candidateId, { status: 'pending' });
+            createdCandidateIds.push({ candidateId: result.candidateId, tenantId, batchId });
+          } else {
+            // ZIP batch — defer to AZ sync for ticket matching
+            await patchCandidate(result.candidateId, { status: 'awaiting_az_ticket' });
+          }
           candidatesCreated++;
         }
       } catch (err) {
@@ -326,13 +334,30 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
       }
     }
 
-    // Mark batch as completed (ingestion complete — processing deferred to AZ sync)
+    // For raw AL3 uploads, queue candidates for immediate processing
+    if (isRawAL3 && createdCandidateIds.length > 0) {
+      const { renewalQueue } = await import('../queues');
+      for (const cand of createdCandidateIds) {
+        await (renewalQueue as import('bullmq').Queue).add('process-candidate', {
+          candidateId: cand.candidateId,
+          tenantId: cand.tenantId,
+          batchId: cand.batchId,
+        } as RenewalCandidateJobData, {
+          jobId: `renewal-candidate-${cand.candidateId}`,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 10000 },
+        });
+      }
+      logger.info({ batchId, count: createdCandidateIds.length }, 'Raw AL3 candidates queued for immediate processing');
+    }
+
+    // Mark batch as completed
     await patchBatch(batchId, {
       status: 'completed',
       processingCompletedAt: new Date().toISOString(),
     });
 
-    logger.info({ batchId, candidatesCreated }, 'Batch ingestion complete — candidates awaiting AZ ticket match');
+    logger.info({ batchId, candidatesCreated, immediateProcessing: isRawAL3 }, 'Batch ingestion complete');
   } catch (error) {
     logger.error({ batchId, error }, 'Batch processing failed');
 
