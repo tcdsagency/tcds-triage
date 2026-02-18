@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
         tenantId: TENANT_ID,
         storagePath,
         fileBuffer: buffer.toString('base64'), // Pass buffer for in-memory processing
+        originalFileName: file.name,
       });
     } catch (queueError) {
       console.error('[Upload] Failed to queue batch processing:', queueError);

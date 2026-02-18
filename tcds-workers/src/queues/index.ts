@@ -162,6 +162,7 @@ export interface RenewalBatchJobData {
   tenantId: string;
   storagePath: string;
   fileBuffer?: string; // Base64 encoded for in-memory processing
+  originalFileName?: string;
 }
 
 export interface RenewalCandidateJobData {

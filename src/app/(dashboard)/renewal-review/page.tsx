@@ -192,8 +192,8 @@ export default function RenewalReviewPage() {
 
   // Upload handlers
   const handleFileUpload = async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.zip')) {
-      setUploadError('Only .zip files are accepted');
+    if (!/\.(zip|al3|dat|txt|asc)$/i.test(file.name)) {
+      setUploadError('Only .zip, .al3, .dat, .txt, or .asc files are accepted');
       return;
     }
 
@@ -360,7 +360,7 @@ export default function RenewalReviewPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".zip"
+              accept=".zip,.al3,.dat,.txt,.asc"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -694,7 +694,7 @@ export default function RenewalReviewPage() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".zip"
+                    accept=".zip,.al3,.dat,.txt,.asc"
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];

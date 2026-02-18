@@ -116,15 +116,23 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
       throw new Error('Storage download not yet implemented');
     }
 
-    // Extract AL3 files from ZIP via internal API
-    const extractRes = await internalFetch('/api/renewals/internal/parse', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'extract-zip', fileBuffer }),
-    });
-    const extractData = await extractRes.json() as { success: boolean; files: Array<{ fileName: string; content: string }> };
-    if (!extractData.success) throw new Error('ZIP extraction failed');
+    // Extract AL3 files — skip ZIP extraction for raw AL3/DAT/TXT/ASC files
+    const isRawAL3 = /\.(al3|dat|txt|asc)$/i.test(data.originalFileName || '');
+    let al3Files: Array<{ fileName: string; content: string }>;
 
-    const al3Files = extractData.files;
+    if (isRawAL3) {
+      const content = Buffer.from(fileBuffer, 'base64').toString('latin1');
+      al3Files = [{ fileName: data.originalFileName!, content }];
+      logger.info({ batchId, fileName: data.originalFileName }, 'Raw AL3 file — skipping ZIP extraction');
+    } else {
+      const extractRes = await internalFetch('/api/renewals/internal/parse', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'extract-zip', fileBuffer }),
+      });
+      const extractData = await extractRes.json() as { success: boolean; files: Array<{ fileName: string; content: string }> };
+      if (!extractData.success) throw new Error('ZIP extraction failed');
+      al3Files = extractData.files;
+    }
     logger.info({ batchId, filesFound: al3Files.length }, 'AL3 files extracted');
 
     // Update batch with file count
