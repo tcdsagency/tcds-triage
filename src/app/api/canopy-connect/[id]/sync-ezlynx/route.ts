@@ -220,16 +220,38 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
           await ezlynxBot.saveAutoApplication(openAppId, mergedApp);
 
-          // Post-save verification: re-fetch and confirm key fields
+          // Post-save verification: re-fetch and compare key fields
           let verification: any = {};
           try {
             const savedApp = await ezlynxBot.getAutoApplication(openAppId);
+            const gc = savedApp.coverage?.generalCoverage;
             verification = {
               driverCount: savedApp.drivers?.length ?? 0,
               vehicleCount: savedApp.vehicles?.vehicleCollection?.length ?? 0,
               effectiveDate: savedApp.policyInformation?.effectiveDate,
-              biLimit: savedApp.coverage?.generalCoverage?.bodilyInjury,
+              coverages: {
+                bodilyInjury: gc?.bodilyInjury?.description ?? null,
+                propertyDamage: gc?.propertyDamage?.description ?? null,
+                uninsuredMotorist: gc?.uninsuredMotoristBI?.description ?? null,
+                medicalPayments: gc?.medicalPayments?.description ?? null,
+              },
+              vehicleCoverages: (savedApp.vehicles?.vehicleCollection || []).map((v: any) => ({
+                vin: v.vin,
+                compDeductible: v.coverage?.comprehensiveDeductible?.description ?? null,
+                collDeductible: v.coverage?.collisionDeductible?.description ?? null,
+              })),
             };
+            // Check for mismatches: compare expected vs actual
+            const expected = syncReport.coverages.updated;
+            const mismatches: string[] = [];
+            if (expected.includes('bodilyInjury') && !gc?.bodilyInjury?.value && gc?.bodilyInjury?.value !== 0) mismatches.push('bodilyInjury');
+            if (expected.includes('propertyDamage') && !gc?.propertyDamage?.value && gc?.propertyDamage?.value !== 0) mismatches.push('propertyDamage');
+            if (expected.includes('uninsuredMotoristBI') && !gc?.uninsuredMotoristBI?.value && gc?.uninsuredMotoristBI?.value !== 0) mismatches.push('uninsuredMotoristBI');
+            if (expected.includes('medicalPayments') && !gc?.medicalPayments?.value && gc?.medicalPayments?.value !== 0) mismatches.push('medicalPayments');
+            if (mismatches.length > 0) {
+              verification.mismatches = mismatches;
+              console.log(`[Canopy Sync] Auto coverage mismatches: ${mismatches.join(', ')}`);
+            }
           } catch (verifyErr) {
             console.log("[Canopy Sync] Post-save verify failed:", (verifyErr as Error).message);
           }
@@ -248,8 +270,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       }
 
       // Home application — update existing or create if dwellings exist
+      // Check both top-level dwellings and policy-level dwellings (Canopy nests them)
       const dwellings = (pull as any).dwellings || [];
-      if (existingHomeApp || dwellings.length > 0) {
+      const hasPolicyDwellings = ((pull as any).policies || []).some((p: any) => p.dwellings?.length > 0);
+      if (existingHomeApp || dwellings.length > 0 || hasPolicyDwellings) {
         try {
           let openAppId: string;
           if (existingHomeApp) {
@@ -265,14 +289,34 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
           await ezlynxBot.saveHomeApplication(openAppId, mergedApp);
 
-          // Post-save verification
+          // Post-save verification: re-fetch and compare key fields
           let verification: any = {};
           try {
             const savedApp = await ezlynxBot.getHomeApplication(openAppId);
+            const gc = savedApp.generalCoverage;
             verification = {
               effectiveDate: savedApp.policyInformation?.effectiveDate,
-              dwellingLimit: savedApp.coverage?.dwellingLimit,
+              coverages: {
+                dwelling: gc?.dwelling ?? null,
+                personalProperty: gc?.personalProperty ?? null,
+                lossOfUse: gc?.lossOfUse ?? null,
+                personalLiability: gc?.personalLiability?.description ?? null,
+                medicalPayments: gc?.medicalPayments?.description ?? null,
+                perilsDeductible: gc?.perilsDeductible?.description ?? null,
+                windDeductible: gc?.windDeductible?.description ?? null,
+                hurricaneDeductible: gc?.hurricaneDeductible?.description ?? null,
+              },
             };
+            // Check for mismatches
+            const expected = syncReport.coverages.updated;
+            const mismatches: string[] = [];
+            if (expected.includes('dwelling') && !gc?.dwelling) mismatches.push('dwelling');
+            if (expected.includes('personalLiability') && !gc?.personalLiability?.value && gc?.personalLiability?.value !== 0) mismatches.push('personalLiability');
+            if (expected.includes('perilsDeductible') && !gc?.perilsDeductible?.value && gc?.perilsDeductible?.value !== 0) mismatches.push('perilsDeductible');
+            if (mismatches.length > 0) {
+              verification.mismatches = mismatches;
+              console.log(`[Canopy Sync] Home coverage mismatches: ${mismatches.join(', ')}`);
+            }
           } catch (verifyErr) {
             console.log("[Canopy Sync] Home post-save verify failed:", (verifyErr as Error).message);
           }
@@ -293,7 +337,8 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     console.log(
       `[Canopy Sync] ${operation} EZLynx applicant ${ezlynxAccountId} from pull ${pull.pullId || id}`,
-      autoSyncReport ? `| Auto: ${autoSyncReport.drivers.matched.length} drivers matched, ${autoSyncReport.drivers.added.length} added, ${autoSyncReport.vehicles.matched.length} vehicles matched, ${autoSyncReport.vehicles.added.length} added, ${autoSyncReport.vehicles.unmatched.length} unmatched` : '',
+      autoSyncReport ? `| Auto: ${autoSyncReport.drivers.matched.length} drivers matched, ${autoSyncReport.drivers.added.length} added, ${autoSyncReport.vehicles.matched.length} vehicles matched, ${autoSyncReport.vehicles.added.length} added, ${autoSyncReport.coverages.updated.length} coverages` : '',
+      homeSyncReport ? `| Home: ${homeSyncReport.coverages.updated.length} coverages, ${homeSyncReport.dwelling.updated.length} dwelling fields` : '',
     );
 
     return NextResponse.json({
