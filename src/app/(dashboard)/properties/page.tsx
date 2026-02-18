@@ -7,7 +7,7 @@ import { FloodZoneIndicator, FloodRisk } from '@/components/ui/flood-zone-indica
 import {
   FileText, Send, Download, MapPin, Building2, Shield, TrendingUp, History,
   FileOutput, CheckCircle, Clock, AlertTriangle, ChevronDown, Eye, Layers,
-  Home, Droplets, Flame, Wind, Cloud, Activity
+  Home, Droplets, Flame, Wind, Cloud, Activity, ClipboardCheck, Printer
 } from 'lucide-react';
 
 // Dynamic import for Leaflet map (client-side only)
@@ -53,6 +53,7 @@ interface PropertyLookup {
   historicalSurveys: Array<{ date: string; imageUrl: string }>;
   historicalComparison?: HistoricalComparison;
   createdAt: string;
+  reportCard?: any;
 }
 
 interface FeaturePolygon {
@@ -168,7 +169,7 @@ interface MMIData {
 }
 
 type Mode = 'report' | 'explore';
-type TabType = 'overview' | 'imagery' | 'analysis' | 'market' | 'historical' | 'export';
+type TabType = 'overview' | 'imagery' | 'analysis' | 'market' | 'historical' | 'report_card' | 'export';
 
 interface GenerationStep {
   id: string;
@@ -186,6 +187,7 @@ const TABS: { id: TabType; label: string; icon: React.ReactNode }[] = [
   { id: 'analysis', label: 'Analysis', icon: <Shield className="w-4 h-4" /> },
   { id: 'market', label: 'Market Data', icon: <TrendingUp className="w-4 h-4" /> },
   { id: 'historical', label: 'Historical', icon: <History className="w-4 h-4" /> },
+  { id: 'report_card', label: 'Report Card', icon: <ClipboardCheck className="w-4 h-4" /> },
   { id: 'export', label: 'Export', icon: <FileOutput className="w-4 h-4" /> },
 ];
 
@@ -411,6 +413,29 @@ export default function PropertyIntelligencePage() {
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
+      {/* Print Styles */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          nav, aside, header, [data-sidebar], [data-header] { display: none !important; }
+          .no-print { display: none !important; }
+          .print-only { display: block !important; }
+          .print-report-card {
+            position: absolute !important; top: 0; left: 0; width: 100% !important;
+            padding: 20px !important; background: white !important; color: black !important;
+            overflow: visible !important;
+          }
+          .print-report-card * { color: black !important; background: white !important; border-color: #e5e7eb !important; }
+          .print-report-card .rc-status-verified { background: #dcfce7 !important; color: #166534 !important; }
+          .print-report-card .rc-status-conflict { background: #fee2e2 !important; color: #991b1b !important; }
+          .print-report-card .rc-status-single_source { background: #dbeafe !important; color: #1e40af !important; }
+          .print-report-card .rc-status-unavailable { background: #f3f4f6 !important; color: #6b7280 !important; }
+          .print-report-card .rc-provider-pill { border: 1px solid #d1d5db !important; }
+          .print-report-card .rc-confidence-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .print-report-card .rc-conflict-card { border: 2px solid #ef4444 !important; background: #fef2f2 !important; }
+          @page { margin: 0.5in; size: letter; }
+        }
+      ` }} />
       {/* Header */}
       <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
         <div className="flex items-center justify-between gap-4">
@@ -1504,6 +1529,13 @@ export default function PropertyIntelligencePage() {
             )}
 
             {/* ============================================================ */}
+            {/* REPORT CARD TAB */}
+            {/* ============================================================ */}
+            {activeTab === 'report_card' && (
+              <ReportCardTab lookup={lookup} />
+            )}
+
+            {/* ============================================================ */}
             {/* EXPORT TAB */}
             {/* ============================================================ */}
             {activeTab === 'export' && (
@@ -1919,5 +1951,243 @@ function SourceBadge({ source }: { source: 'RPR' | 'Nearmap' | 'Nearmap AI' | 'C
     <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-medium', colors[source])}>
       {source}
     </span>
+  );
+}
+
+// =============================================================================
+// REPORT CARD TAB
+// =============================================================================
+
+const PROVIDER_DISPLAY: Record<string, { label: string; color: string }> = {
+  rpr: { label: 'RPR', color: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
+  propertyApi: { label: 'PropertyAPI', color: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800' },
+  orion180: { label: 'Orion180', color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' },
+  nearmap: { label: 'Nearmap', color: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-400 dark:border-sky-800' },
+  mmi: { label: 'MMI', color: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800' },
+  fema: { label: 'FEMA', color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800' },
+};
+
+const STATUS_STYLES: Record<string, { label: string; class: string; dotClass: string }> = {
+  verified: { label: 'Verified', class: 'rc-status-verified bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', dotClass: 'bg-green-500' },
+  conflict: { label: 'Conflict', class: 'rc-status-conflict bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', dotClass: 'bg-red-500' },
+  single_source: { label: 'Single Source', class: 'rc-status-single_source bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', dotClass: 'bg-blue-500' },
+  unavailable: { label: 'Unavailable', class: 'rc-status-unavailable bg-gray-50 text-gray-500 border-gray-200 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700', dotClass: 'bg-gray-400' },
+};
+
+const SECTION_CONFIG: { key: string; label: string; icon: string }[] = [
+  { key: 'basics', label: 'Basics', icon: '🏠' },
+  { key: 'construction', label: 'Construction', icon: '🔨' },
+  { key: 'owner', label: 'Owner', icon: '👤' },
+  { key: 'valuation', label: 'Valuation', icon: '💰' },
+  { key: 'risk', label: 'Risk Grades', icon: '⚡' },
+  { key: 'aerial', label: 'Aerial (Nearmap)', icon: '🛰️' },
+  { key: 'market', label: 'Market', icon: '📊' },
+  { key: 'parcel', label: 'Parcel', icon: '📍' },
+];
+
+function formatFieldValue(value: any): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number') {
+    if (value > 10000) return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+    if (value % 1 !== 0) return value.toFixed(2);
+    return value.toLocaleString();
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return 'None';
+    if (typeof value[0] === 'string') return value.join(', ');
+    return `${value.length} records`;
+  }
+  if (typeof value === 'object') {
+    if ('lat' in value && 'lng' in value) return `${value.lat.toFixed(5)}, ${value.lng.toFixed(5)}`;
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function RCProviderPill({ provider }: { provider: string }) {
+  const info = PROVIDER_DISPLAY[provider] || { label: provider, color: 'bg-gray-50 text-gray-600 border-gray-200' };
+  return (
+    <span className={cn('rc-provider-pill text-[10px] px-1.5 py-0.5 rounded border font-medium whitespace-nowrap', info.color)}>
+      {info.label}
+    </span>
+  );
+}
+
+function RCStatusBadge({ status }: { status: string }) {
+  const style = STATUS_STYLES[status] || STATUS_STYLES.unavailable;
+  return (
+    <span className={cn('text-[10px] px-2 py-0.5 rounded-full border font-semibold whitespace-nowrap', style.class)}>
+      {style.label}
+    </span>
+  );
+}
+
+function ReportCardTab({ lookup }: { lookup: PropertyLookup }) {
+  const rc = lookup.reportCard;
+
+  if (!rc) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[300px]">
+        <div className="text-center">
+          <ClipboardCheck className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">No Report Card Available</h3>
+          <p className="text-gray-600 dark:text-gray-400">Report card data was not generated for this property lookup.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const summary = rc.summary;
+  const providers = rc.providers as Record<string, boolean>;
+  const confidenceColor = summary.overallConfidence >= 75 ? 'text-green-600 dark:text-green-400' :
+    summary.overallConfidence >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400';
+  const confidenceBarColor = summary.overallConfidence >= 75 ? 'bg-green-500' :
+    summary.overallConfidence >= 50 ? 'bg-amber-500' : 'bg-red-500';
+
+  return (
+    <div className="print-report-card p-6 space-y-6">
+      {/* Header — visible in print */}
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/tcds-logo.svg" alt="TCDS" className="h-10 w-auto" />
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 italic">Built to make our jobs easier by Todd</p>
+        </div>
+        <div className="text-right">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{rc.address}</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Generated {new Date(rc.generatedAt).toLocaleDateString()} {new Date(rc.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </p>
+          <button
+            onClick={() => window.print()}
+            className="no-print mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+          >
+            <Printer className="w-4 h-4" />
+            Print Report
+          </button>
+        </div>
+      </div>
+
+      {/* Summary Bar */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Overall Confidence</div>
+          <div className={cn('text-3xl font-bold', confidenceColor)}>{summary.overallConfidence}%</div>
+          <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mt-2 rc-confidence-bar">
+            <div className={cn('h-full rounded-full', confidenceBarColor)} style={{ width: `${summary.overallConfidence}%` }} />
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Verified</div>
+          <div className="text-3xl font-bold text-green-600 dark:text-green-400">{summary.verifiedCount}</div>
+          <div className="text-xs text-gray-500 mt-1">of {summary.totalFields} fields</div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Conflicts</div>
+          <div className={cn('text-3xl font-bold', summary.conflictCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400')}>{summary.conflictCount}</div>
+          <div className="text-xs text-gray-500 mt-1">need review</div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Single Source</div>
+          <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{summary.singleSourceCount}</div>
+          <div className="text-xs text-gray-500 mt-1">unverified</div>
+        </div>
+      </div>
+
+      {/* Provider Status Strip */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Data Sources:</span>
+        {Object.entries(providers).map(([key, hasData]) => {
+          const info = PROVIDER_DISPLAY[key] || { label: key, color: '' };
+          return (
+            <div key={key} className="flex items-center gap-1.5">
+              <div className={cn('w-2 h-2 rounded-full', hasData ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600')} />
+              <span className={cn('text-sm font-medium', hasData ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-600')}>
+                {info.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Data Sections */}
+      {SECTION_CONFIG.map(({ key, label, icon }) => {
+        const sectionData = rc[key];
+        if (!sectionData) return null;
+        const fields = Object.values(sectionData) as any[];
+        return (
+          <div key={key} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+              <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                <span>{icon}</span> {label}
+              </h3>
+            </div>
+            <table className="w-full text-sm">
+              <tbody>
+                {fields.map((field: any, i: number) => (
+                  <tr key={field.field} className={cn(i % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50/50 dark:bg-gray-800/30')}>
+                    <td className="px-5 py-2.5 text-gray-600 dark:text-gray-400 w-[180px] whitespace-nowrap">{field.field}</td>
+                    <td className="px-3 py-2.5 font-medium text-gray-900 dark:text-gray-100">
+                      {formatFieldValue(field.resolved)}
+                      {field.notes && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400 italic mt-0.5">{field.notes}</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 w-[110px]">
+                      <RCStatusBadge status={field.status} />
+                    </td>
+                    <td className="px-5 py-2.5 w-[200px]">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {field.sources
+                          .filter((s: any) => s.normalized !== null && s.normalized !== undefined)
+                          .map((s: any) => (
+                            <RCProviderPill key={s.provider} provider={s.provider} />
+                          ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+
+      {/* Conflicts Detail */}
+      {summary.conflicts && summary.conflicts.length > 0 && (
+        <div className="rc-conflict-card bg-red-50 dark:bg-red-900/10 rounded-xl border-2 border-red-300 dark:border-red-800 overflow-hidden">
+          <div className="px-5 py-3 border-b border-red-200 dark:border-red-800 bg-red-100 dark:bg-red-900/20">
+            <h3 className="font-bold text-red-800 dark:text-red-300 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              Conflicts ({summary.conflicts.length})
+            </h3>
+          </div>
+          <div className="divide-y divide-red-200 dark:divide-red-800">
+            {summary.conflicts.map((conflict: any, i: number) => (
+              <div key={i} className="px-5 py-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-semibold text-gray-900 dark:text-gray-100">{conflict.field}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">({conflict.section})</span>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {Object.entries(conflict.values).map(([provider, value]) => (
+                    <div key={provider} className="flex items-center gap-1.5 bg-white dark:bg-gray-800 rounded-lg px-3 py-1.5 border border-gray-200 dark:border-gray-700">
+                      <RCProviderPill provider={provider} />
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatFieldValue(value)}</span>
+                    </div>
+                  ))}
+                </div>
+                {conflict.notes && (
+                  <p className="text-xs text-gray-600 dark:text-gray-400 italic mt-2">{conflict.notes}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
