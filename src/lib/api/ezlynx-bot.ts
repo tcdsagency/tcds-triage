@@ -373,10 +373,14 @@ class EzlynxBotClient {
   // ---------------------------------------------------------------------------
 
   async getOpenApplications(applicantId: string): Promise<any[]> {
-    const result = await this.request<{ success: boolean; applications: any[] }>(
+    const result = await this.request<{ success: boolean; applications: any }>(
       `/api/application/${applicantId}/list`
     );
-    return result.applications || [];
+    // Bot returns { applications: { openApplications: [...] } }
+    const apps = result.applications;
+    if (Array.isArray(apps)) return apps;
+    if (apps?.openApplications) return apps.openApplications;
+    return [];
   }
 
   async getAutoApplication(openAppId: string): Promise<any> {
