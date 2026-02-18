@@ -704,6 +704,16 @@ export function findCanopyCoverage(coverages: any[], names: string[]): any | und
   });
 }
 
+/** EZLynx state code → enum value mapping (used for driver license state) */
+const STATE_CODE_TO_VALUE: Record<string, number> = {
+  AL: 1, AK: 2, AZ: 3, AR: 4, CA: 5, CO: 6, CT: 7, DE: 8, DC: 9, FL: 10,
+  GA: 11, HI: 12, ID: 13, IL: 14, IN: 15, IA: 16, KS: 17, KY: 18, LA: 19, ME: 20,
+  MD: 21, MA: 22, MI: 23, MN: 24, MS: 25, MO: 26, MT: 27, NE: 28, NV: 29, NH: 30,
+  NJ: 31, NM: 32, NY: 33, NC: 34, ND: 35, OH: 36, OK: 37, OR: 38, PA: 39, RI: 40,
+  SC: 41, SD: 42, TN: 43, TX: 44, UT: 45, VT: 46, VA: 47, WA: 48, WV: 49, WI: 50,
+  WY: 51,
+};
+
 // =============================================================================
 // APPLICATION MAPPERS (for new Application Save API)
 // =============================================================================
@@ -789,16 +799,39 @@ export function canopyPullToAutoApplication(pull: any, appTemplate: any): { app:
         ezlynxIndex: matchIdx,
       });
     } else {
-      // UNMATCHED — add as a new driver
-      const newDriver: any = {};
+      // UNMATCHED — add as a new driver with full EZLynx structure
+      // EZLynx requires enum fields as { value, name, description } objects
+      const newDriver: any = {
+        isPrimary: false,
+        isCoApplicant: false,
+        hasLicensedBeenSuspendedRecently: false,
+        isSR22Required: false,
+        isFR44Required: false,
+      };
       if (cd.firstName) newDriver.firstName = cd.firstName;
       if (cd.lastName) newDriver.lastName = cd.lastName;
       if (cd.dateOfBirth) newDriver.dateOfBirth = cd.dateOfBirth;
       if (cd.licenseNumber) newDriver.driversLicenseNumber = cd.licenseNumber;
-      if (cd.licenseState) newDriver.driversLicenseState = cd.licenseState;
-      if (cd.gender != null) newDriver.gender = { value: cd.gender };
-      if (cd.maritalStatus != null) newDriver.maritalStatus = { value: cd.maritalStatus };
-      if (cd.relationship != null) newDriver.relationship = { value: cd.relationship };
+      if (cd.licenseState) {
+        const stateVal = STATE_CODE_TO_VALUE[cd.licenseState.toUpperCase()];
+        newDriver.driversLicenseState = stateVal != null
+          ? { value: stateVal, name: cd.licenseState.toUpperCase(), description: cd.licenseState.toUpperCase() }
+          : { value: 0, name: cd.licenseState.toUpperCase(), description: cd.licenseState.toUpperCase() };
+      }
+      if (cd.gender != null) {
+        const genderNames = ['Male', 'Female'];
+        newDriver.gender = { value: cd.gender, name: genderNames[cd.gender] || 'Unknown', description: genderNames[cd.gender] || 'Unknown' };
+      }
+      if (cd.maritalStatus != null) {
+        const maritalNames = ['Single', 'Married', 'Divorced', 'Widowed'];
+        newDriver.maritalStatus = { value: cd.maritalStatus, name: maritalNames[cd.maritalStatus] || 'Unknown', description: maritalNames[cd.maritalStatus] || 'Unknown' };
+      }
+      if (cd.relationship != null) {
+        const relNames: Record<number, string> = { 3: 'Insured', 4: 'Child', 6: 'Parent', 7: 'Spouse', 8: 'Other' };
+        newDriver.relationship = { value: cd.relationship, name: relNames[cd.relationship] || 'Other', description: relNames[cd.relationship] || 'Other' };
+      }
+      newDriver.driversLicenseStatus = { value: 0, name: 'Valid', description: 'Valid' };
+      newDriver.ratedDriver = { value: 0, name: 'Rated', description: 'Rated' };
 
       existingDrivers.push(newDriver);
       syncReport.drivers.added.push({
