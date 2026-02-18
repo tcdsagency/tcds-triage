@@ -232,22 +232,24 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
               coverages: {
                 bodilyInjury: gc?.bodilyInjury?.description ?? null,
                 propertyDamage: gc?.propertyDamage?.description ?? null,
-                uninsuredMotorist: gc?.uninsuredMotoristBI?.description ?? null,
+                uninsuredMotorist: gc?.uninsuredMotorist?.description ?? null,
                 medicalPayments: gc?.medicalPayments?.description ?? null,
               },
               vehicleCoverages: (savedApp.vehicles?.vehicleCollection || []).map((v: any) => ({
                 vin: v.vin,
-                compDeductible: v.coverage?.comprehensiveDeductible?.description ?? null,
-                collDeductible: v.coverage?.collisionDeductible?.description ?? null,
+                compDeductible: v.coverage?.comprehensive?.description ?? null,
+                collDeductible: v.coverage?.collision?.description ?? null,
               })),
             };
             // Check for mismatches: compare expected vs actual
             const expected = syncReport.coverages.updated;
             const mismatches: string[] = [];
-            if (expected.includes('bodilyInjury') && !gc?.bodilyInjury?.value && gc?.bodilyInjury?.value !== 0) mismatches.push('bodilyInjury');
-            if (expected.includes('propertyDamage') && !gc?.propertyDamage?.value && gc?.propertyDamage?.value !== 0) mismatches.push('propertyDamage');
-            if (expected.includes('uninsuredMotoristBI') && !gc?.uninsuredMotoristBI?.value && gc?.uninsuredMotoristBI?.value !== 0) mismatches.push('uninsuredMotoristBI');
-            if (expected.includes('medicalPayments') && !gc?.medicalPayments?.value && gc?.medicalPayments?.value !== 0) mismatches.push('medicalPayments');
+            // Coverage update strings are like "BI → 100/300", check by prefix
+            const has = (prefix: string) => expected.some((s: string) => s.startsWith(prefix));
+            if (has('BI') && !gc?.bodilyInjury?.description) mismatches.push('bodilyInjury');
+            if (has('PD') && !gc?.propertyDamage?.description) mismatches.push('propertyDamage');
+            if (has('UM') && !gc?.uninsuredMotorist?.description) mismatches.push('uninsuredMotorist');
+            if (has('MedPay') && !gc?.medicalPayments?.description) mismatches.push('medicalPayments');
             if (mismatches.length > 0) {
               verification.mismatches = mismatches;
               console.log(`[Canopy Sync] Auto coverage mismatches: ${mismatches.join(', ')}`);
@@ -307,12 +309,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
                 hurricaneDeductible: gc?.hurricaneDeductible?.description ?? null,
               },
             };
-            // Check for mismatches
+            // Check for mismatches — coverage strings are like "Dwelling → $361376"
             const expected = syncReport.coverages.updated;
             const mismatches: string[] = [];
-            if (expected.includes('dwelling') && !gc?.dwelling) mismatches.push('dwelling');
-            if (expected.includes('personalLiability') && !gc?.personalLiability?.value && gc?.personalLiability?.value !== 0) mismatches.push('personalLiability');
-            if (expected.includes('perilsDeductible') && !gc?.perilsDeductible?.value && gc?.perilsDeductible?.value !== 0) mismatches.push('perilsDeductible');
+            const has = (prefix: string) => expected.some((s: string) => s.startsWith(prefix));
+            if (has('Dwelling') && !gc?.dwelling) mismatches.push('dwelling');
+            if (has('Liability') && !gc?.personalLiability?.description) mismatches.push('personalLiability');
+            if (has('All Peril') && !gc?.perilsDeductible?.description) mismatches.push('perilsDeductible');
             if (mismatches.length > 0) {
               verification.mismatches = mismatches;
               console.log(`[Canopy Sync] Home coverage mismatches: ${mismatches.join(', ')}`);
