@@ -284,7 +284,9 @@ export function mapExtractionToFormData(
   if (extracted.propertyZip) result.propertyZip = extracted.propertyZip;
   if (extracted.propertyCounty) result.propertyCounty = extracted.propertyCounty;
 
-  // If property address differs from mailing, uncheck sameAsMailing
+  // Only uncheck sameAsMailing when we have BOTH addresses and they differ.
+  // If we only have property address (common with appraisals), leave sameAsMailing alone
+  // so it doesn't incorrectly show a blank separate property address section.
   if (extracted.propertyStreet && extracted.mailingStreet) {
     const propNorm = extracted.propertyStreet.toLowerCase().replace(/[^a-z0-9]/g, '');
     const mailNorm = extracted.mailingStreet.toLowerCase().replace(/[^a-z0-9]/g, '');

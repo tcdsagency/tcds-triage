@@ -543,7 +543,17 @@ export default function CoverTreePage() {
         fillIfEmpty('propertyState', extracted.propertyState);
         fillIfEmpty('propertyZip', extracted.propertyZip);
         fillIfEmpty('propertyCounty', extracted.propertyCounty);
-        if (extracted.sameAsMailing === false) updated.sameAsMailing = false;
+        if (extracted.sameAsMailing === false) {
+          updated.sameAsMailing = false;
+        } else if (updated.sameAsMailing && !extracted.mailingStreet && extracted.propertyStreet) {
+          // Appraisal-only: no mailing address extracted, but we have property address.
+          // Since sameAsMailing is checked, the form uses mailing fields as the address.
+          // Fill mailing fields with property data so the address actually shows up.
+          fillIfEmpty('mailingStreet', extracted.propertyStreet);
+          fillIfEmpty('mailingCity', extracted.propertyCity);
+          fillIfEmpty('mailingState', extracted.propertyState);
+          fillIfEmpty('mailingZip', extracted.propertyZip);
+        }
         fillIfEmpty('homeType', extracted.homeType);
         fillIfEmpty('manufacturer', extracted.manufacturer);
         fillIfEmpty('modelYear', extracted.modelYear);
