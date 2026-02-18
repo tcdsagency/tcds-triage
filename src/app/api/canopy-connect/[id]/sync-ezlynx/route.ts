@@ -15,8 +15,8 @@ import { eq, and } from "drizzle-orm";
 import { ezlynxBot } from "@/lib/api/ezlynx-bot";
 import {
   canopyPullToApplicant,
-  canopyPullToAutoQuote,
-  canopyPullToHomeQuote,
+  canopyPullToAutoApplication,
+  canopyPullToHomeApplication,
   customerToUpdatePayload,
 } from "@/lib/api/ezlynx-mappers";
 
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { customerId: bodyCustomerId, pushQuotes = false } = body;
+    const { customerId: bodyCustomerId } = body;
 
     // 1. Fetch the pull record
     const [pull] = await db
@@ -182,64 +182,62 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       })
       .where(eq(canopyConnectPulls.id, id));
 
-    // 8. Push quotes if requested — use new application save APIs
+    // 8. Always update open applications with Canopy data
     const quoteResults: any = {};
-    if (pushQuotes && ezlynxAccountId) {
-      // Auto application if vehicles exist
+    if (ezlynxAccountId) {
+      // Check for existing open applications
+      let openApps: any[] = [];
+      try {
+        const appsResult = await ezlynxBot.getOpenApplications(ezlynxAccountId);
+        openApps = appsResult || [];
+      } catch (e) {
+        console.log("[Canopy Sync] Could not fetch open applications:", (e as Error).message);
+      }
+
+      const existingAutoApp = openApps.find((a: any) => a.lob === "AUTO");
+      const existingHomeApp = openApps.find((a: any) => a.lob === "HOME");
+
+      // Auto application — update existing or create if vehicles exist
       const vehicles = (pull as any).vehicles || [];
-      if (vehicles.length > 0) {
+      if (existingAutoApp || vehicles.length > 0) {
         try {
-          // Create auto application
-          const { openAppId } = await ezlynxBot.createAutoApplication(ezlynxAccountId);
+          let openAppId: string;
+          if (existingAutoApp) {
+            openAppId = existingAutoApp.openAppID;
+          } else {
+            const created = await ezlynxBot.createAutoApplication(ezlynxAccountId);
+            openAppId = created.openAppId;
+          }
 
-          // Get the application template
           const appTemplate = await ezlynxBot.getAutoApplication(openAppId);
-
-          // Map Canopy data into the application structure
-          const autoQuoteData = canopyPullToAutoQuote(pull);
-          const mergedApp = { ...appTemplate, _canopyData: autoQuoteData };
-
-          // Save the application
+          const mergedApp = canopyPullToAutoApplication(pull, appTemplate);
           await ezlynxBot.saveAutoApplication(openAppId, mergedApp);
           quoteResults.auto = { success: true, method: "application-api", openAppId };
         } catch (e) {
-          // Fall back to old quote method
-          try {
-            const autoQuoteData = canopyPullToAutoQuote(pull);
-            const autoResult = await ezlynxBot.submitAutoQuote(ezlynxAccountId, autoQuoteData);
-            quoteResults.auto = autoResult;
-          } catch (e2) {
-            quoteResults.auto = { success: false, error: (e2 as Error).message };
-          }
+          console.log("[Canopy Sync] Auto application update failed:", (e as Error).message);
+          quoteResults.auto = { success: false, error: (e as Error).message };
         }
       }
 
-      // Home application if dwellings exist
+      // Home application — update existing or create if dwellings exist
       const dwellings = (pull as any).dwellings || [];
-      if (dwellings.length > 0) {
+      if (existingHomeApp || dwellings.length > 0) {
         try {
-          // Create home application
-          const { openAppId } = await ezlynxBot.createHomeApplication(ezlynxAccountId);
+          let openAppId: string;
+          if (existingHomeApp) {
+            openAppId = existingHomeApp.openAppID;
+          } else {
+            const created = await ezlynxBot.createHomeApplication(ezlynxAccountId);
+            openAppId = created.openAppId;
+          }
 
-          // Get the application template
           const appTemplate = await ezlynxBot.getHomeApplication(openAppId);
-
-          // Map Canopy data into the application structure
-          const homeQuoteData = canopyPullToHomeQuote(pull);
-          const mergedApp = { ...appTemplate, _canopyData: homeQuoteData };
-
-          // Save the application
+          const mergedApp = canopyPullToHomeApplication(pull, appTemplate);
           await ezlynxBot.saveHomeApplication(openAppId, mergedApp);
           quoteResults.home = { success: true, method: "application-api", openAppId };
         } catch (e) {
-          // Fall back to old quote method
-          try {
-            const homeQuoteData = canopyPullToHomeQuote(pull);
-            const homeResult = await ezlynxBot.submitHomeQuote(ezlynxAccountId, homeQuoteData);
-            quoteResults.home = homeResult;
-          } catch (e2) {
-            quoteResults.home = { success: false, error: (e2 as Error).message };
-          }
+          console.log("[Canopy Sync] Home application update failed:", (e as Error).message);
+          quoteResults.home = { success: false, error: (e as Error).message };
         }
       }
     }
