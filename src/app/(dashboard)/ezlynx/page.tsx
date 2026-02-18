@@ -114,6 +114,7 @@ function SearchPanel({ onSelectResult }: {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const handleSearch = async () => {
     if (!firstName && !lastName) {
@@ -122,6 +123,7 @@ function SearchPanel({ onSelectResult }: {
     }
     setSearching(true);
     setSearched(true);
+    setSearchError(null);
     try {
       const params = new URLSearchParams();
       if (firstName) params.set("firstName", firstName);
@@ -131,9 +133,18 @@ function SearchPanel({ onSelectResult }: {
 
       const res = await fetch(`/api/ezlynx/search?${params}`);
       const data = await res.json();
+
+      if (!res.ok || data.error) {
+        const isBotDown = res.status === 502 || res.status === 503 ||
+          (data.error && /connect|ECONNREFUSED|timeout|socket|auth/i.test(data.error));
+        setSearchError(isBotDown ? "Bot not connected — is the EZLynx bot running?" : (data.error || "Search failed"));
+        setResults([]);
+        return;
+      }
+
       setResults(data.results || []);
     } catch (err: any) {
-      toast.error("Search failed", { description: err.message });
+      setSearchError(err.message || "Search failed");
       setResults([]);
     } finally {
       setSearching(false);
@@ -182,7 +193,12 @@ function SearchPanel({ onSelectResult }: {
       {/* Results */}
       {searched && (
         <div className="mt-3 border-t border-gray-100 dark:border-gray-700 pt-3">
-          {results.length === 0 ? (
+          {searchError ? (
+            <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{searchError}</span>
+            </div>
+          ) : results.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-4">No results found</p>
           ) : (
             <div className="space-y-2 max-h-80 overflow-y-auto">
