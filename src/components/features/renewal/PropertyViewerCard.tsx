@@ -230,10 +230,10 @@ export default function PropertyViewerCard({ renewalId, lineOfBusiness, address 
           )}
         </div>
 
-        {/* Side-by-side viewer grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 px-4">
+        {/* Stacked viewer */}
+        <div className="flex flex-col gap-2 px-4">
           {/* Aerial viewer */}
-          <div className="relative rounded-md overflow-hidden bg-gray-100 dark:bg-gray-900 aspect-square min-h-[400px]">
+          <div className="relative rounded-md overflow-hidden bg-gray-100 dark:bg-gray-900 aspect-video min-h-[300px]">
             <NearmapMap
               lat={data.lat}
               lng={data.lon}
@@ -251,7 +251,7 @@ export default function PropertyViewerCard({ renewalId, lineOfBusiness, address 
           </div>
 
           {/* Street View */}
-          <div className="relative rounded-md overflow-hidden bg-gray-100 dark:bg-gray-900 aspect-square min-h-[400px]">
+          <div className="relative rounded-md overflow-hidden bg-gray-100 dark:bg-gray-900 aspect-video min-h-[300px]">
             {viewerTab === 'satellite' && mapEmbedUrl ? (
               <iframe
                 src={mapEmbedUrl}
