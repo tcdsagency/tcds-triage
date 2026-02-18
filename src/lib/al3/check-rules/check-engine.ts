@@ -1,19 +1,15 @@
 /**
- * Check Engine — 7-Phase Executor
- * ================================
- * Post-processing layer that runs 77 formal check rules against
+ * Check Engine — Phase Executor
+ * ==============================
+ * Post-processing layer that runs core check rules against
  * renewal/baseline snapshots and the existing comparison result.
  *
- * Execution phases:
- *   Phase 1: BLOCKING — Address, dates, carrier (halt if critical)
- *   Phase 2: IDENTITY — Policy #, insured name, form, agent
- *     → BLOCKING GATE 1: halt if any Phase 1 critical
- *   Phase 3: COVERAGE — Limits, ratios, deductibles
+ * Active phases (core rules only):
+ *   Phase 3: COVERAGE — Limits and deductibles
  *   Phase 4: THRESHOLD — Premium change severity classification
- *   Phase 5: PREMIUM MATH — Sum verification
- *     → BLOCKING GATE 2: halt if premium math fails
- *   Phase 6: DETAILS — Property, vehicles, drivers, VIN validation
- *   Phase 7: ENDORSEMENTS — Forms, discounts, mortgagee
+ *
+ * Phases 1, 2, 5, 6, 7 are empty (rules removed).
+ * Blocking gates are no-ops with no rules in phases 1 and 5.
  */
 
 import type {
@@ -165,15 +161,9 @@ export function runCheckEngine(
 
 /**
  * Check if a specific phase produced any critical blocking results.
- *
- * Note: CheckResult does not carry a phase field, so we match by ruleId prefix.
- * Phase 1 blocking rules: H-003/H-004/H-006, A-003/A-004/A-005
- * Phase 5 blocking rules: H-032, A-042
+ * Currently no blocking rules exist (phases 1 and 5 are empty).
  */
-const PHASE_BLOCKING_RULES: Record<number, Set<string>> = {
-  1: new Set(['H-003', 'H-004', 'H-006', 'A-003', 'A-004', 'A-005']),
-  5: new Set(['H-032', 'A-042']),
-};
+const PHASE_BLOCKING_RULES: Record<number, Set<string>> = {};
 
 function hasCriticalBlockers(results: CheckResult[], phase: number): boolean {
   const phaseRuleIds = PHASE_BLOCKING_RULES[phase];

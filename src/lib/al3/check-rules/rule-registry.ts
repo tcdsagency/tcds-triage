@@ -7,40 +7,27 @@
 import type { CheckRuleDefinition } from '@/types/check-rules.types';
 
 // Home rules
-import { homeIdentityRules } from './rules/home-identity';
 import { homeCoverageRules } from './rules/home-coverages';
 import { homeDeductibleRules } from './rules/home-deductibles';
 import { homePremiumRules } from './rules/home-premium';
-import { homePropertyRules } from './rules/home-property';
-import { homeEndorsementRules } from './rules/home-endorsements';
 
 // Auto rules
-import { autoIdentityRules } from './rules/auto-identity';
-import { autoVehicleRules } from './rules/auto-vehicles';
-import { autoDriverRules } from './rules/auto-drivers';
 import { autoCoverageRules } from './rules/auto-coverages';
 import { autoPremiumRules } from './rules/auto-premium';
-import { autoEndorsementRules } from './rules/auto-endorsements';
 
 /**
  * All rules in one flat array.
+ * Core rules only: coverage limits, deductibles, and premium changes.
  */
 export const ALL_RULES: CheckRuleDefinition[] = [
-  // Home rules (37 rules: H-001–H-058, excluding H-008/H-042/H-047/H-055)
-  ...homeIdentityRules,
+  // Home rules: H-010–H-015 (coverage limits), H-020–H-023 (deductibles), H-030 (premium)
   ...homeCoverageRules,
   ...homeDeductibleRules,
   ...homePremiumRules,
-  ...homePropertyRules,
-  ...homeEndorsementRules,
 
-  // Auto rules (35 rules: A-001–A-051, excluding A-052)
-  ...autoIdentityRules,
-  ...autoVehicleRules,
-  ...autoDriverRules,
+  // Auto rules: A-030–A-038 (coverages/deductibles), A-040 (premium)
   ...autoCoverageRules,
   ...autoPremiumRules,
-  ...autoEndorsementRules,
 ];
 
 /**

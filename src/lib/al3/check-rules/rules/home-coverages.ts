@@ -1,6 +1,6 @@
 /**
- * Home Coverage Rules (H-010 to H-017)
- * Phase 3 — Coverage limits and ratio checks
+ * Home Coverage Rules (H-010 to H-015)
+ * Phase 3 — Coverage limit checks
  */
 
 import type { CheckRuleDefinition, CheckRuleContext, CheckResult } from '@/types/check-rules.types';
@@ -156,99 +156,5 @@ export const homeCoverageRules: CheckRuleDefinition[] = [
     isBlocking: false,
     lob: 'home',
     evaluate: (ctx) => makeCoverageCheck('H-015', 'Coverage F (Medical Payments)', 'medical_payments', ctx),
-  },
-  {
-    ruleId: 'H-016',
-    name: 'Coverage B/A Ratio',
-    description: 'Check that Coverage B stays within expected ratio of Coverage A (typically 10%)',
-    checkType: 'ratio',
-    category: 'Coverages',
-    phase: 3,
-    isBlocking: false,
-    lob: 'home',
-    evaluate: (ctx) => {
-      const renA = getCovLimit(ctx.renewal.coverages, 'dwelling');
-      const renB = getCovLimit(ctx.renewal.coverages, 'other_structures');
-      const basA = getCovLimit(ctx.baseline.coverages, 'dwelling');
-      const basB = getCovLimit(ctx.baseline.coverages, 'other_structures');
-
-      if (!renA || !renB) return null;
-
-      const renRatio = (renB / renA) * 100;
-      const basRatio = basA && basB ? (basB / basA) * 100 : null;
-
-      if (basRatio == null) {
-        return makeCheck('H-016', {
-          field: 'Cov B/A Ratio',
-          previousValue: null,
-          renewalValue: `${renRatio.toFixed(1)}%`,
-          change: `${renRatio.toFixed(1)}%`,
-          severity: 'info',
-          message: `Coverage B/A ratio: ${renRatio.toFixed(1)}% — baseline missing, ratio comparison skipped`,
-          agentAction: 'Baseline Cov B or A unavailable — cannot compare ratio drift',
-          checkType: 'ratio',
-          category: 'Coverages',
-          isBlocking: false,
-        });
-      }
-
-      const drift = Math.abs(renRatio - basRatio);
-      const driftExceeded = drift > ctx.thresholds.covBRatioDrift;
-
-      return makeCheck('H-016', {
-        field: 'Cov B/A Ratio',
-        previousValue: basRatio != null ? `${basRatio.toFixed(1)}%` : null,
-        renewalValue: `${renRatio.toFixed(1)}%`,
-        change: basRatio != null
-          ? `${basRatio.toFixed(1)}% → ${renRatio.toFixed(1)}% (drift: ${drift.toFixed(1)}%)`
-          : `${renRatio.toFixed(1)}%`,
-        severity: driftExceeded ? 'warning' : 'unchanged',
-        message: driftExceeded
-          ? `Coverage B/A ratio drifted ${drift.toFixed(1)}% (threshold: ${ctx.thresholds.covBRatioDrift}%)`
-          : `Coverage B/A ratio: ${renRatio.toFixed(1)}% — within tolerance`,
-        agentAction: driftExceeded
-          ? 'Review Other Structures limit — ratio to dwelling changed. If policy form changed (e.g. HO-3 → HO-5), ratio change may be expected.'
-          : 'No action needed',
-        checkType: 'ratio',
-        category: 'Coverages',
-        isBlocking: false,
-      });
-    },
-  },
-  {
-    ruleId: 'H-017',
-    name: 'Coverage C/A Ratio',
-    description: 'Check Coverage C is within 40-80% of Coverage A',
-    checkType: 'ratio',
-    category: 'Coverages',
-    phase: 3,
-    isBlocking: false,
-    lob: 'home',
-    evaluate: (ctx) => {
-      const renA = getCovLimit(ctx.renewal.coverages, 'dwelling');
-      const renC = getCovLimit(ctx.renewal.coverages, 'personal_property');
-
-      if (!renA || !renC) return null;
-
-      const ratio = (renC / renA) * 100;
-      const inRange = ratio >= ctx.thresholds.covCRatioMin && ratio <= ctx.thresholds.covCRatioMax;
-
-      return makeCheck('H-017', {
-        field: 'Cov C/A Ratio',
-        previousValue: null,
-        renewalValue: `${ratio.toFixed(1)}%`,
-        change: `${ratio.toFixed(1)}% (expected: ${ctx.thresholds.covCRatioMin}-${ctx.thresholds.covCRatioMax}%)`,
-        severity: inRange ? 'unchanged' : 'warning',
-        message: inRange
-          ? `Coverage C/A ratio ${ratio.toFixed(1)}% is within expected range`
-          : `Coverage C/A ratio ${ratio.toFixed(1)}% is outside expected range (${ctx.thresholds.covCRatioMin}-${ctx.thresholds.covCRatioMax}%)`,
-        agentAction: inRange
-          ? 'No action needed'
-          : 'Personal Property limit may be too high or too low relative to dwelling — review with customer. If policy form changed (e.g. HO-3 → HO-5), ratio change may be expected.',
-        checkType: 'ratio',
-        category: 'Coverages',
-        isBlocking: false,
-      });
-    },
   },
 ];

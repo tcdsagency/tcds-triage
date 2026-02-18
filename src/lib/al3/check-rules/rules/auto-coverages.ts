@@ -1,6 +1,6 @@
 /**
- * Auto Coverage Rules (A-030 to A-039)
- * Phase 3 — Auto coverage checks
+ * Auto Coverage Rules (A-030 to A-038)
+ * Phase 3 — Auto coverage and deductible checks
  */
 
 import type { CheckRuleDefinition, CheckResult, CheckRuleContext } from '@/types/check-rules.types';
@@ -267,46 +267,6 @@ export const autoCoverageRules: CheckRuleDefinition[] = [
     evaluate: (ctx) => {
       return makeAutoCovCheck('A-038', 'Towing/Roadside', 'towing', ctx)
         ?? makeAutoCovCheck('A-038', 'Roadside Assistance', 'roadside_assistance', ctx);
-    },
-  },
-  {
-    ruleId: 'A-039',
-    name: 'Coverage Consistency',
-    description: 'Verify BI/PD limits are consistent across all vehicles',
-    checkType: 'cross_field',
-    category: 'Coverages',
-    phase: 3,
-    isBlocking: false,
-    lob: 'auto',
-    evaluate: (ctx) => {
-      // Policy-level coverages (BI, PD) should be consistent — if they exist at vehicle level, flag inconsistency
-      const vehBI = new Set<string>();
-      const vehPD = new Set<string>();
-      for (const v of ctx.renewal.vehicles) {
-        const bi = findCov(v.coverages, 'bodily_injury');
-        const pd = findCov(v.coverages, 'property_damage');
-        if (bi?.limitAmount != null) vehBI.add(String(bi.limitAmount));
-        if (pd?.limitAmount != null) vehPD.add(String(pd.limitAmount));
-      }
-
-      if (vehBI.size <= 1 && vehPD.size <= 1) return null;
-
-      const issues: string[] = [];
-      if (vehBI.size > 1) issues.push(`BI limits vary: ${[...vehBI].join(', ')}`);
-      if (vehPD.size > 1) issues.push(`PD limits vary: ${[...vehPD].join(', ')}`);
-
-      return makeCheck('A-039', {
-        field: 'Coverage Consistency',
-        previousValue: null,
-        renewalValue: issues.join('; '),
-        change: 'Inconsistent',
-        severity: 'warning',
-        message: `Coverage inconsistency: ${issues.join('; ')}`,
-        agentAction: 'BI/PD limits differ between vehicles — verify this is intentional',
-        checkType: 'cross_field',
-        category: 'Coverages',
-        isBlocking: false,
-      });
     },
   },
 ];
