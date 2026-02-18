@@ -123,11 +123,31 @@ export default function EzlynxCard({
       description: insuredName,
     });
     try {
+      // Build profile from customerProfile or fall back to renewalSnapshot fields
+      const profile = customerProfile || (() => {
+        if (!insuredName) return undefined;
+        const parts = insuredName.trim().split(/\s+/);
+        return {
+          firstName: parts[0] || '',
+          lastName: parts.slice(1).join(' ') || '',
+          address: {
+            street: renewalSnapshot?.insuredAddress,
+            city: renewalSnapshot?.insuredCity,
+            state: renewalSnapshot?.insuredState,
+            zip: renewalSnapshot?.insuredZip,
+          },
+          contact: {
+            email: renewalSnapshot?.insuredEmail,
+            phone: renewalSnapshot?.insuredPhone,
+          },
+        };
+      })();
+
       const res = await fetch('/api/ezlynx/applicant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          profile: customerProfile,
+          profile,
           customerId,
         }),
       });
@@ -151,7 +171,7 @@ export default function EzlynxCard({
     } finally {
       setCreating(false);
     }
-  }, [insuredName, customerProfile, customerId]);
+  }, [insuredName, customerProfile, customerId, renewalSnapshot]);
 
   const handleUpdateForReshop = useCallback(async () => {
     const accountId = linkedId;
