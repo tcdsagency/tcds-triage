@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/db";
-import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, triageItems, messages, liveTranscriptSegments, reviewRequests, googleReviews, serviceTickets, tenants } from "@/db/schema";
+import { calls, customers, wrapupDrafts, activities, users, matchSuggestions, triageItems, messages, pendingTranscriptJobs, reviewRequests, googleReviews, serviceTickets, tenants } from "@/db/schema";
 import {
   SERVICE_PIPELINES,
   PIPELINE_STAGES,
@@ -22,7 +22,7 @@ import {
   SPECIAL_HOUSEHOLDS,
   getDefaultDueDate,
 } from "@/lib/api/agencyzoom-service-tickets";
-import { eq, or, ilike, and, gte, lte, desc, isNotNull, asc, sql } from "drizzle-orm";
+import { eq, or, ilike, and, gte, lte, desc, isNotNull, sql } from "drizzle-orm";
 import { getMSSQLTranscriptsClient } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient, type AgencyZoomCustomer, type AgencyZoomLead } from "@/lib/api/agencyzoom";
 import { trestleIQClient, quickLeadCheck } from "@/lib/api/trestleiq";
@@ -1065,34 +1065,64 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
       }
     }
 
-    // Fallback: fetch from live_transcript_segments (Deepgram real-time) if still no transcript
-    if (!transcript && call.id) {
-      try {
-        const segments = await db
-          .select({ speaker: liveTranscriptSegments.speaker, text: liveTranscriptSegments.text })
-          .from(liveTranscriptSegments)
-          .where(eq(liveTranscriptSegments.callId, call.id))
-          .orderBy(asc(liveTranscriptSegments.sequenceNumber));
-
-        if (segments.length > 0) {
-          transcript = segments
-            .map(s => `${s.speaker === 'agent' ? 'Agent' : 'Customer'}: ${s.text}`)
-            .join('\n');
-          transcriptSource = "live_deepgram";
-
-          // Update call with transcript (non-blocking)
-          db.update(calls)
-            .set({ transcription: transcript })
-            .where(eq(calls.id, call.id))
-            .catch(err => console.error("[Call-Completed] Failed to save live transcript:", err));
-          console.log(`[Call-Completed] Assembled transcript from ${segments.length} live segments`);
-        }
-      } catch (error) {
-        console.error("[Call-Completed] Live transcript segments fetch error:", error);
-      }
-    }
-
     console.log(`[Call-Completed] Transcript source: ${transcriptSource}, length: ${transcript.length}`);
+
+    // 2.5 No transcript available — defer to transcript worker (unless short/hangup call)
+    const isShortCallEarly = (body.duration || 0) < 15;
+    if ((!transcript || transcript.length < 50) && !isShortCallEarly) {
+      console.log(`[Call-Completed] No transcript available (length: ${transcript?.length || 0}) — creating pendingTranscriptJob for call ${call.id}`);
+
+      // Determine customer phone for the job
+      const callDir = call.direction || direction;
+      const jobCallerNumber = callDir === "inbound"
+        ? (call.fromNumber || callerNumber)
+        : (call.toNumber || calledNumber);
+
+      try {
+        const nextAttemptAt = new Date(Date.now() + 60 * 1000); // 60s delay
+        await db
+          .insert(pendingTranscriptJobs)
+          .values({
+            tenantId,
+            callId: call.id,
+            callerNumber: jobCallerNumber || null,
+            agentExtension: call.extension || extension || null,
+            callStartedAt: call.startedAt || new Date(),
+            callEndedAt: call.endedAt || new Date(),
+            status: "pending",
+            nextAttemptAt,
+            attemptCount: 0,
+          });
+
+        // Update call transcription status
+        await db
+          .update(calls)
+          .set({
+            transcriptionStatus: "pending",
+            updatedAt: new Date(),
+          })
+          .where(eq(calls.id, call.id));
+
+        console.log(`[Call-Completed] pendingTranscriptJob created for call ${call.id}, next attempt at ${nextAttemptAt.toISOString()}`);
+      } catch (jobError) {
+        // If job creation fails (e.g., duplicate), log but don't crash
+        console.error(`[Call-Completed] Failed to create pendingTranscriptJob:`, jobError);
+      }
+
+      // Broadcast call_ended to realtime server even though we're deferring wrapup
+      await notifyRealtimeServer({
+        type: "call_ended",
+        sessionId: call.id,
+        externalCallId: call.externalCallId,
+        extension,
+        duration: body.duration,
+        status: call.status,
+      });
+
+      const processingTime = Date.now() - startTime;
+      console.log(`[Call-Completed] Deferred to transcript worker in ${processingTime}ms — callId: ${body.callId}`);
+      return; // Skip wrapup creation — transcript worker will handle it
+    }
 
     // 3. Run AI analysis (with 20s timeout to avoid Zapier timeout)
     let analysis: AIAnalysis | null = null;

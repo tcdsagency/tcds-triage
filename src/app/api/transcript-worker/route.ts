@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { pendingTranscriptJobs, wrapupDrafts, calls, customers, liveTranscriptSegments, users, tenants, serviceTickets } from "@/db/schema";
+import { pendingTranscriptJobs, wrapupDrafts, calls, customers, users, tenants, serviceTickets } from "@/db/schema";
 import { eq, lte, gte, and, sql, asc, or, ilike } from "drizzle-orm";
 import { getMSSQLTranscriptsClient, TranscriptRecord } from "@/lib/api/mssql-transcripts";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
@@ -177,42 +177,6 @@ function isAutoAttendantOnly(transcript: string): boolean {
     lower.includes("my name is");
 
   return !hasConversation && autoAttendantPhrases.some((p) => lower.includes(p));
-}
-
-// =============================================================================
-// Live Transcript Fallback - Consolidate segments when SQL Server unavailable
-// =============================================================================
-
-async function getLiveTranscriptFallback(callId: string): Promise<string | null> {
-  try {
-    const segments = await db
-      .select({
-        speaker: liveTranscriptSegments.speaker,
-        text: liveTranscriptSegments.text,
-        sequenceNumber: liveTranscriptSegments.sequenceNumber,
-      })
-      .from(liveTranscriptSegments)
-      .where(eq(liveTranscriptSegments.callId, callId))
-      .orderBy(asc(liveTranscriptSegments.sequenceNumber));
-
-    if (segments.length === 0) {
-      return null;
-    }
-
-    // Consolidate segments into a readable transcript
-    const transcript = segments
-      .map(s => {
-        const speakerLabel = s.speaker === 'agent' ? 'Agent' : 'Customer';
-        return `${speakerLabel}: ${s.text}`;
-      })
-      .join('\n');
-
-    console.log(`[TranscriptWorker] Consolidated ${segments.length} live segments into transcript`);
-    return transcript;
-  } catch (error) {
-    console.error(`[TranscriptWorker] Failed to get live transcript fallback:`, error);
-    return null;
-  }
 }
 
 // =============================================================================
@@ -387,6 +351,7 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
             fromNumber: calls.fromNumber,
             toNumber: calls.toNumber,
             externalNumber: calls.externalNumber,
+            durationSeconds: calls.durationSeconds,
           })
           .from(calls)
           .where(eq(calls.id, job.callId))
@@ -418,7 +383,7 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
         }
 
         // Use upsert to create if not exists, update if exists
-        await db
+        const [wrapup] = await db
           .insert(wrapupDrafts)
           .values({
             tenantId: callDetails?.tenantId || job.tenantId || process.env.DEFAULT_TENANT_ID!,
@@ -461,7 +426,8 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
               direction: (callDirection === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
               updatedAt: new Date(),
             },
-          });
+          })
+          .returning({ id: wrapupDrafts.id });
 
         // Update call with transcript, corrected direction and AI results
         await db
@@ -477,6 +443,51 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
             updatedAt: new Date(),
           })
           .where(eq(calls.id, job.callId));
+
+        // Also update the wrapup's customerPhone if we enriched from MSSQL
+        if (mssqlCallerNumber && wrapup?.id) {
+          const existingWrapup = await db
+            .select({ customerPhone: wrapupDrafts.customerPhone })
+            .from(wrapupDrafts)
+            .where(eq(wrapupDrafts.id, wrapup.id))
+            .limit(1);
+
+          if (existingWrapup[0]?.customerPhone === "Unknown" || !existingWrapup[0]?.customerPhone) {
+            await db.update(wrapupDrafts).set({
+              customerPhone: mssqlCallerNumber,
+              updatedAt: new Date(),
+            }).where(eq(wrapupDrafts.id, wrapup.id));
+            console.log(`[TranscriptWorker] Updated wrapup ${wrapup.id} customerPhone from MSSQL: ${mssqlCallerNumber}`);
+          }
+        }
+
+        // Auto-create service ticket for inbound calls
+        if (callDirection === "inbound" && wrapup?.id && !aiResult.isHangup) {
+          try {
+            await createAutoTicketForPollCall({
+              tenantId: callDetails?.tenantId || job.tenantId || process.env.DEFAULT_TENANT_ID!,
+              callId: job.callId,
+              agentId: callDetails?.agentId || null,
+              customerPhone: customerPhone || null,
+              customerName: aiResult.customerName,
+              aiResult,
+              transcript: transcript.transcript,
+              durationSeconds: parseDuration(transcript.duration),
+              wrapupId: wrapup.id,
+            });
+          } catch (ticketError) {
+            console.error(`[TranscriptWorker] Auto-ticket failed for job ${job.id}:`, ticketError instanceof Error ? ticketError.message : ticketError);
+          }
+        }
+
+        // Outbound calls: auto-complete (no ticket needed)
+        if (callDirection === "outbound" && wrapup?.id) {
+          try {
+            await writeToAgencyZoom(job.callId, aiResult);
+          } catch (err) {
+            console.error(`[TranscriptWorker] AgencyZoom writeback failed:`, err instanceof Error ? err.message : err);
+          }
+        }
       }
 
       // Mark job complete
@@ -492,11 +503,6 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
       // Broadcast to UI
       if (job.callId) {
         await broadcastTranscriptReady(job.callId, aiResult);
-
-        // Write to AgencyZoom
-        writeToAgencyZoom(job.callId, aiResult).catch((err) =>
-          console.error(`[TranscriptWorker] AgencyZoom writeback failed:`, err.message)
-        );
       }
 
       return { success: true };
@@ -505,10 +511,10 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
       const attemptCount = (job.attemptCount || 0) + 1;
 
       if (attemptCount >= MAX_ATTEMPTS) {
-        // Max attempts reached - try live transcript fallback before failing
-        console.warn(`[TranscriptWorker] Job ${job.id} SQL Server failed after ${attemptCount} attempts - trying live transcript fallback`);
+        // Max attempts reached - mark as failed
+        console.warn(`[TranscriptWorker] Job ${job.id} failed after ${attemptCount} attempts — no SQL transcript found`);
 
-        // Get call details first
+        // Get call details for manual review wrapup
         const [callDetails] = job.callId ? await db
           .select({
             tenantId: calls.tenantId,
@@ -526,105 +532,12 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
           ? (callDetails?.externalNumber || callDetails?.fromNumber || job.callerNumber)
           : (callDetails?.externalNumber || callDetails?.toNumber);
 
-        // Try live transcript fallback
-        const liveTranscript = job.callId ? await getLiveTranscriptFallback(job.callId) : null;
-
-        if (liveTranscript && liveTranscript.length > 50) {
-          // SUCCESS: Use live transcript as fallback
-          console.log(`[TranscriptWorker] Using live transcript fallback for job ${job.id}`);
-
-          // Run AI extraction on live transcript
-          const aiResult = await extractCallDataWithAI(liveTranscript, {
-            direction: callDirection,
-            agentExtension: job.agentExtension || "",
-            callerNumber: job.callerNumber || "",
-            duration: undefined,
-          });
-
-          // Create or update wrapup draft with live transcript data
-          if (job.callId) {
-            await db
-              .insert(wrapupDrafts)
-              .values({
-                tenantId: callDetails?.tenantId || job.tenantId || process.env.DEFAULT_TENANT_ID!,
-                callId: job.callId,
-                status: "pending_review",
-                summary: aiResult.summary,
-                customerName: aiResult.customerName,
-                customerPhone: customerPhone || null,
-                policyNumbers: aiResult.policyNumbers,
-                insuranceType: aiResult.insuranceType,
-                requestType: aiResult.requestType,
-                direction: (callDirection === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
-                agentExtension: job.agentExtension || null,
-                matchStatus: "unmatched",
-                aiExtraction: {
-                  ...aiResult,
-                  transcriptSource: "live_fallback",
-                },
-                aiProcessingStatus: "completed",
-                aiProcessedAt: new Date(),
-              })
-              .onConflictDoUpdate({
-                target: wrapupDrafts.callId,
-                set: {
-                  status: "pending_review",
-                  summary: aiResult.summary,
-                  customerName: aiResult.customerName,
-                  policyNumbers: aiResult.policyNumbers,
-                  insuranceType: aiResult.insuranceType,
-                  requestType: aiResult.requestType,
-                  aiExtraction: {
-                    ...aiResult,
-                    transcriptSource: "live_fallback",
-                  },
-                  aiProcessingStatus: "completed",
-                  aiProcessedAt: new Date(),
-                  updatedAt: new Date(),
-                },
-              });
-
-            // Update call with consolidated transcript
-            await db
-              .update(calls)
-              .set({
-                transcription: liveTranscript,
-                transcriptionStatus: "completed",
-                aiSummary: aiResult.summary,
-                aiActionItems: aiResult.actionItems,
-                aiSentiment: { overall: aiResult.sentiment, score: 0, timeline: [] },
-                aiTopics: aiResult.topics,
-                updatedAt: new Date(),
-              })
-              .where(eq(calls.id, job.callId));
-          }
-
-          // Mark job completed (with fallback)
-          await db
-            .update(pendingTranscriptJobs)
-            .set({
-              status: "completed",
-              completedAt: new Date(),
-              error: "Completed using live transcript fallback",
-              attemptCount,
-            })
-            .where(eq(pendingTranscriptJobs.id, job.id));
-
-          // Broadcast to UI
-          if (job.callId) {
-            await broadcastTranscriptReady(job.callId, aiResult);
-          }
-
-          return { success: true, source: "live_fallback" };
-        }
-
-        // No live transcript available either - mark as failed
         await db
           .update(pendingTranscriptJobs)
           .set({
             status: "failed",
             failedAt: new Date(),
-            error: "Max retry attempts reached - no transcript available from SQL Server or live segments",
+            error: "Max retry attempts reached - no transcript available from SQL Server",
             attemptCount,
           })
           .where(eq(pendingTranscriptJobs.id, job.id));
@@ -729,47 +642,52 @@ async function createAutoTicketForPollCall(params: {
       return;
     }
 
-    // 2. Phone validation - skip internal/test calls
+    // 2. Phone validation - skip PlayFile/test calls, but allow Unknown if we have AI data
     const callerDigits = (customerPhone || '').replace(/\D/g, '');
-    if (
-      !customerPhone ||
-      customerPhone === 'Unknown' ||
-      customerPhone === 'PlayFile' ||
-      customerPhone.toLowerCase().includes('playfile') ||
-      callerDigits.length < 7 ||
-      callerDigits.length > 11
-    ) {
-      console.log(`[TranscriptWorker] Skipping ticket for invalid phone: ${customerPhone}`);
+    const isPlayFile = customerPhone === 'PlayFile' || (customerPhone || '').toLowerCase().includes('playfile');
+    const hasValidPhone = customerPhone && customerPhone !== 'Unknown' && !isPlayFile
+      && callerDigits.length >= 7 && callerDigits.length <= 11;
+    const hasAIData = !!(customerName || (aiResult.summary && aiResult.summary.length > 50));
+
+    if (isPlayFile) {
+      console.log(`[TranscriptWorker] Skipping ticket for PlayFile/test call`);
       return;
     }
 
-    // 3. Customer lookup - search local DB by last 10 digits
+    if (!hasValidPhone && !hasAIData) {
+      console.log(`[TranscriptWorker] Skipping ticket: no valid phone (${customerPhone}) and no AI data`);
+      return;
+    }
+
+    // 3. Customer lookup - search local DB by last 10 digits (skip if no valid phone)
     const phoneSuffix = callerDigits.slice(-10);
     let matchedAzCustomerId: number | null = null;
     let localCustomerId: string | null = null;
 
-    const [foundCustomer] = await db
-      .select({
-        id: customers.id,
-        agencyzoomId: customers.agencyzoomId,
-      })
-      .from(customers)
-      .where(
-        and(
-          eq(customers.tenantId, tenantId),
-          or(
-            ilike(customers.phone, `%${phoneSuffix}`),
-            ilike(customers.phoneAlt, `%${phoneSuffix}`)
+    if (hasValidPhone && phoneSuffix.length >= 7) {
+      const [foundCustomer] = await db
+        .select({
+          id: customers.id,
+          agencyzoomId: customers.agencyzoomId,
+        })
+        .from(customers)
+        .where(
+          and(
+            eq(customers.tenantId, tenantId),
+            or(
+              ilike(customers.phone, `%${phoneSuffix}`),
+              ilike(customers.phoneAlt, `%${phoneSuffix}`)
+            )
           )
         )
-      )
-      .limit(1);
+        .limit(1);
 
-    if (foundCustomer?.agencyzoomId) {
-      matchedAzCustomerId = parseInt(foundCustomer.agencyzoomId, 10);
-      localCustomerId = foundCustomer.id;
-      if (isNaN(matchedAzCustomerId) || matchedAzCustomerId <= 0) {
-        matchedAzCustomerId = null;
+      if (foundCustomer?.agencyzoomId) {
+        matchedAzCustomerId = parseInt(foundCustomer.agencyzoomId, 10);
+        localCustomerId = foundCustomer.id;
+        if (isNaN(matchedAzCustomerId) || matchedAzCustomerId <= 0) {
+          matchedAzCustomerId = null;
+        }
       }
     }
 
@@ -863,7 +781,7 @@ async function createAutoTicketForPollCall(params: {
 
     // Phone-based dedup: check if a ticket was already created for this phone in the last hour
     // This catches cross-wrapup duplicates where the webhook and SQL poll created separate wrapups
-    if (customerPhone) {
+    if (hasValidPhone && phoneSuffix.length >= 7) {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       const [recentPhoneTicket] = await db
         .select({ id: serviceTickets.id, azTicketId: serviceTickets.azTicketId, subject: serviceTickets.subject })
