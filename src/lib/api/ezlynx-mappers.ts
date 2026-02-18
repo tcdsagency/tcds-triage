@@ -456,10 +456,10 @@ export function canopyPullToAutoQuote(pull: any): any {
   if (biCov) {
     generalCoverage.bodilyInjury = canopyCentsToBILimit(biCov.per_person_limit_cents, biCov.per_incident_limit_cents);
   }
-  if (pdCov) generalCoverage.propertyDamage = canopyCentsToLimit(pdCov.per_incident_limit_cents);
-  if (umCov) generalCoverage.uninsuredMotorist = canopyCentsToBILimit(umCov.per_person_limit_cents, umCov.per_incident_limit_cents);
-  if (uimCov) generalCoverage.underinsuredMotorist = canopyCentsToBILimit(uimCov.per_person_limit_cents, uimCov.per_incident_limit_cents);
-  if (mpCov) generalCoverage.medicalPayments = canopyCentsToLimit(mpCov.per_person_limit_cents || mpCov.per_incident_limit_cents);
+  if (pdCov) generalCoverage.propertyDamage = canopyCentsToLimit(pdCov.per_incident_limit_cents, PD_ENUMS);
+  if (umCov) generalCoverage.uninsuredMotorist = canopyCentsToBILimit(umCov.per_person_limit_cents, umCov.per_incident_limit_cents, UM_ENUMS);
+  if (uimCov) generalCoverage.underinsuredMotorist = canopyCentsToBILimit(uimCov.per_person_limit_cents, uimCov.per_incident_limit_cents, UM_ENUMS);
+  if (mpCov) generalCoverage.medicalPayments = canopyCentsToLimit(mpCov.per_person_limit_cents || mpCov.per_incident_limit_cents, MEDPAY_ENUMS);
 
   // Per-vehicle coverages
   const vehicleCoverages = (pull.vehicles || []).map((v: any, idx: number) => {
@@ -565,26 +565,158 @@ export function canopyPullToHomeQuote(pull: any): any {
 // CANOPY HELPER FUNCTIONS
 // =============================================================================
 
-/** Convert cents to EZLynx Item enum string (e.g. 50000 cents → "Item500") */
-export function canopyCentsToLimit(cents?: number | null): string | undefined {
-  if (!cents) return undefined;
-  const dollars = Math.round(cents / 100);
-  return `Item${dollars}`;
+// EZLynx coverage enum objects: { value, name, description }
+// Each coverage field has its own enum list. The `value` (int) is authoritative;
+// `name` must be non-null for the API to accept the object.
+
+type EzEnum = { value: number; name: string; description: string };
+
+// BI split-limit enum (value → name/description)
+const BI_ENUMS: EzEnum[] = [
+  { value: 0, name: 'NoCoverage', description: 'No Coverage' },
+  { value: 1, name: 'StateMinimum', description: 'State Minimum' },
+  { value: 2, name: 'Item1020', description: '10/20' },
+  { value: 3, name: 'Item1225', description: '12/25' },
+  { value: 4, name: 'Item12525', description: '12.5/25' },
+  { value: 5, name: 'Item1530', description: '15/30' },
+  { value: 6, name: 'Item2040', description: '20/40' },
+  { value: 7, name: 'Item2050', description: '20/50' },
+  { value: 8, name: 'Item2525', description: '25/25' },
+  { value: 9, name: 'Item2550', description: '25/50' },
+  { value: 10, name: 'Item2565', description: '25/65' },
+  { value: 11, name: 'Item3060', description: '30/60' },
+  { value: 12, name: 'Item3065', description: '30/65' },
+  { value: 13, name: 'Item3570', description: '35/70' },
+  { value: 14, name: 'Item5050', description: '50/50' },
+  { value: 15, name: 'Item50100', description: '50/100' },
+  { value: 16, name: 'Item60120', description: '60/120' },
+  { value: 17, name: 'Item100100', description: '100/100' },
+  { value: 18, name: 'Item100200', description: '100/200' },
+  { value: 19, name: 'Item100300', description: '100/300' },
+  { value: 20, name: 'Item200600', description: '200/600' },
+  { value: 21, name: 'Item250500', description: '250/500' },
+  { value: 22, name: 'Item300300', description: '300/300' },
+  { value: 23, name: 'Item500500', description: '500/500' },
+  { value: 24, name: 'Item5001000', description: '500/1000' },
+  { value: 25, name: 'Item10001000', description: '1000/1000' },
+];
+
+// UM enum (different value→name mapping than BI)
+const UM_ENUMS: EzEnum[] = [
+  { value: 0, name: 'Reject', description: 'Reject' },
+  { value: 1, name: 'StateMinimum', description: 'State Minimum' },
+  { value: 2, name: 'Item1020', description: '10/20' },
+  { value: 3, name: 'Item1225', description: '12/25' },
+  { value: 4, name: 'Item12525', description: '12.5/25' },
+  { value: 5, name: 'Item1530', description: '15/30' },
+  { value: 6, name: 'Item2040', description: '20/40' },
+  { value: 7, name: 'Item2050', description: '20/50' },
+  { value: 8, name: 'Item2525', description: '25/25' },
+  { value: 9, name: 'Item2550', description: '25/50' },
+  { value: 10, name: 'Item2560', description: '25/60' },
+  { value: 11, name: 'Item2565', description: '25/65' },
+  { value: 12, name: 'Item3060', description: '30/60' },
+  { value: 13, name: 'Item3065', description: '30/65' },
+  { value: 14, name: 'Item3570', description: '35/70' },
+  { value: 15, name: 'Item3580', description: '35/80' },
+  { value: 16, name: 'Item4090', description: '40/90' },
+  { value: 17, name: 'Item5050', description: '50/50' },
+  { value: 18, name: 'Item50100', description: '50/100' },
+  { value: 19, name: 'Item60120', description: '60/120' },
+  { value: 20, name: 'Item100100', description: '100/100' },
+  { value: 21, name: 'Item100200', description: '100/200' },
+  { value: 22, name: 'Item100300', description: '100/300' },
+  { value: 23, name: 'Item200400', description: '200/400' },
+  { value: 24, name: 'Item200600', description: '200/600' },
+  { value: 25, name: 'Item250500', description: '250/500' },
+  { value: 26, name: 'Item2501000', description: '250/1000' },
+  { value: 27, name: 'Item300300', description: '300/300' },
+  { value: 28, name: 'Item300500', description: '300/500' },
+  { value: 29, name: 'Item500500', description: '500/500' },
+  { value: 30, name: 'Item5001000', description: '500/1000' },
+  { value: 31, name: 'Item10001000', description: '1000/1000' },
+];
+
+// PD single-limit enum
+const PD_ENUMS: EzEnum[] = [
+  { value: 0, name: 'NoCoverage', description: 'No Coverage' },
+  { value: 1, name: 'StateMinimum', description: 'State Minimum' },
+  { value: 2, name: 'Item5000', description: '5000' },
+  { value: 3, name: 'Item7500', description: '7500' },
+  { value: 4, name: 'Item10000', description: '10000' },
+  { value: 5, name: 'Item15000', description: '15000' },
+  { value: 6, name: 'Item20000', description: '20000' },
+  { value: 7, name: 'Item25000', description: '25000' },
+  { value: 8, name: 'Item30000', description: '30000' },
+  { value: 9, name: 'Item35000', description: '35000' },
+  { value: 10, name: 'Item40000', description: '40000' },
+  { value: 11, name: 'Item50000', description: '50000' },
+  { value: 12, name: 'Item100000', description: '100000' },
+  { value: 13, name: 'Item250000', description: '250000' },
+  { value: 14, name: 'Item300000', description: '300000' },
+  { value: 15, name: 'Item500000', description: '500000' },
+];
+
+// MedPay enum
+const MEDPAY_ENUMS: EzEnum[] = [
+  { value: 0, name: 'None', description: 'None' },
+  { value: 1, name: 'Item500', description: '500' },
+  { value: 2, name: 'Item1000', description: '1000' },
+  { value: 3, name: 'Item2000', description: '2000' },
+  { value: 4, name: 'Item2500', description: '2500' },
+  { value: 5, name: 'Item5000', description: '5000' },
+  { value: 6, name: 'Item10000', description: '10000' },
+  { value: 7, name: 'Item15000', description: '15000' },
+  { value: 8, name: 'Item25000', description: '25000' },
+  { value: 9, name: 'Item50000', description: '50000' },
+  { value: 10, name: 'Item100000', description: '100000' },
+];
+
+// Comp/Coll deductible enum (shared)
+const DEDUCTIBLE_ENUMS: EzEnum[] = [
+  { value: 0, name: 'NoCoverage', description: 'No Coverage' },
+  { value: 1, name: 'Item0', description: '0' },
+  { value: 2, name: 'Item50', description: '50' },
+  { value: 3, name: 'Item100', description: '100' },
+  { value: 4, name: 'Item200', description: '200' },
+  { value: 5, name: 'Item250', description: '250' },
+  { value: 6, name: 'Item300', description: '300' },
+  { value: 7, name: 'Item500', description: '500' },
+  { value: 8, name: 'Item750', description: '750' },
+  { value: 9, name: 'Item1000', description: '1000' },
+  { value: 10, name: 'Item1500', description: '1500' },
+  { value: 11, name: 'Item2000', description: '2000' },
+  { value: 12, name: 'Item2500', description: '2500' },
+];
+
+/** Look up an EZLynx enum by its Item name */
+function findEnum(enums: EzEnum[], itemName: string): EzEnum | undefined {
+  return enums.find(e => e.name === itemName);
 }
 
-/** Convert BI per-person/per-accident cents to "Item{pp}{pa}" (e.g. Item50100) */
-function canopyCentsToBILimit(perPersonCents?: number | null, perAccidentCents?: number | null): string | undefined {
+/** Convert cents to EZLynx single-limit enum object for PD/MedPay */
+export function canopyCentsToLimit(cents?: number | null, enumList?: EzEnum[]): EzEnum | undefined {
+  if (!cents) return undefined;
+  const dollars = Math.round(cents / 100);
+  const name = `Item${dollars}`;
+  return findEnum(enumList || PD_ENUMS, name);
+}
+
+/** Convert BI per-person/per-accident cents to EZLynx split-limit enum object */
+function canopyCentsToBILimit(perPersonCents?: number | null, perAccidentCents?: number | null, enumList?: EzEnum[]): EzEnum | undefined {
   if (!perPersonCents || !perAccidentCents) return undefined;
   const pp = Math.round(perPersonCents / 100000); // in thousands
   const pa = Math.round(perAccidentCents / 100000);
-  return `Item${pp}${pa}`;
+  const name = `Item${pp}${pa}`;
+  return findEnum(enumList || BI_ENUMS, name);
 }
 
-/** Convert deductible cents to EZLynx Item enum */
-export function canopyCentsToDeductible(cents?: number | null): string | undefined {
+/** Convert deductible cents to EZLynx deductible enum object */
+export function canopyCentsToDeductible(cents?: number | null): EzEnum | undefined {
   if (!cents) return undefined;
   const dollars = Math.round(cents / 100);
-  return `Item${dollars}`;
+  const name = `Item${dollars}`;
+  return findEnum(DEDUCTIBLE_ENUMS, name);
 }
 
 /** Map Canopy roof type to EZLynx enum */
@@ -704,16 +836,6 @@ export function findCanopyCoverage(coverages: any[], names: string[]): any | und
   });
 }
 
-/** EZLynx state code → enum value mapping (used for driver license state) */
-const STATE_CODE_TO_VALUE: Record<string, number> = {
-  AL: 1, AK: 2, AZ: 3, AR: 4, CA: 5, CO: 6, CT: 7, DE: 8, DC: 9, FL: 10,
-  GA: 11, HI: 12, ID: 13, IL: 14, IN: 15, IA: 16, KS: 17, KY: 18, LA: 19, ME: 20,
-  MD: 21, MA: 22, MI: 23, MN: 24, MS: 25, MO: 26, MT: 27, NE: 28, NV: 29, NH: 30,
-  NJ: 31, NM: 32, NY: 33, NC: 34, ND: 35, OH: 36, OK: 37, OR: 38, PA: 39, RI: 40,
-  SC: 41, SD: 42, TN: 43, TX: 44, UT: 45, VT: 46, VA: 47, WA: 48, WV: 49, WI: 50,
-  WY: 51,
-};
-
 // =============================================================================
 // APPLICATION MAPPERS (for new Application Save API)
 // =============================================================================
@@ -799,39 +921,16 @@ export function canopyPullToAutoApplication(pull: any, appTemplate: any): { app:
         ezlynxIndex: matchIdx,
       });
     } else {
-      // UNMATCHED — add as a new driver with full EZLynx structure
-      // EZLynx requires enum fields as { value, name, description } objects
-      const newDriver: any = {
-        isPrimary: false,
-        isCoApplicant: false,
-        hasLicensedBeenSuspendedRecently: false,
-        isSR22Required: false,
-        isFR44Required: false,
-      };
+      // UNMATCHED — add as a new driver
+      const newDriver: any = {};
       if (cd.firstName) newDriver.firstName = cd.firstName;
       if (cd.lastName) newDriver.lastName = cd.lastName;
       if (cd.dateOfBirth) newDriver.dateOfBirth = cd.dateOfBirth;
       if (cd.licenseNumber) newDriver.driversLicenseNumber = cd.licenseNumber;
-      if (cd.licenseState) {
-        const stateVal = STATE_CODE_TO_VALUE[cd.licenseState.toUpperCase()];
-        newDriver.driversLicenseState = stateVal != null
-          ? { value: stateVal, name: cd.licenseState.toUpperCase(), description: cd.licenseState.toUpperCase() }
-          : { value: 0, name: cd.licenseState.toUpperCase(), description: cd.licenseState.toUpperCase() };
-      }
-      if (cd.gender != null) {
-        const genderNames = ['Male', 'Female'];
-        newDriver.gender = { value: cd.gender, name: genderNames[cd.gender] || 'Unknown', description: genderNames[cd.gender] || 'Unknown' };
-      }
-      if (cd.maritalStatus != null) {
-        const maritalNames = ['Single', 'Married', 'Divorced', 'Widowed'];
-        newDriver.maritalStatus = { value: cd.maritalStatus, name: maritalNames[cd.maritalStatus] || 'Unknown', description: maritalNames[cd.maritalStatus] || 'Unknown' };
-      }
-      if (cd.relationship != null) {
-        const relNames: Record<number, string> = { 3: 'Insured', 4: 'Child', 6: 'Parent', 7: 'Spouse', 8: 'Other' };
-        newDriver.relationship = { value: cd.relationship, name: relNames[cd.relationship] || 'Other', description: relNames[cd.relationship] || 'Other' };
-      }
-      newDriver.driversLicenseStatus = { value: 0, name: 'Valid', description: 'Valid' };
-      newDriver.ratedDriver = { value: 0, name: 'Rated', description: 'Rated' };
+      if (cd.licenseState) newDriver.driversLicenseState = cd.licenseState;
+      if (cd.gender != null) newDriver.gender = { value: cd.gender };
+      if (cd.maritalStatus != null) newDriver.maritalStatus = { value: cd.maritalStatus };
+      if (cd.relationship != null) newDriver.relationship = { value: cd.relationship };
 
       existingDrivers.push(newDriver);
       syncReport.drivers.added.push({
@@ -953,11 +1052,11 @@ export function canopyPullToAutoApplication(pull: any, appTemplate: any): { app:
       if (!existing?.coverage) continue;
       if (vc.compDeductible != null) {
         existing.coverage.comprehensive = vc.compDeductible;
-        syncReport.coverages.updated.push(`Vehicle ${ezlynxIdx}: Comp deductible → ${vc.compDeductible}`);
+        syncReport.coverages.updated.push(`Vehicle ${ezlynxIdx}: Comp deductible → ${vc.compDeductible.description}`);
       }
       if (vc.collDeductible != null) {
         existing.coverage.collision = vc.collDeductible;
-        syncReport.coverages.updated.push(`Vehicle ${ezlynxIdx}: Coll deductible → ${vc.collDeductible}`);
+        syncReport.coverages.updated.push(`Vehicle ${ezlynxIdx}: Coll deductible → ${vc.collDeductible.description}`);
       }
       if (vc.towing != null) existing.coverage.towing = vc.towing;
       if (vc.rental != null) existing.coverage.rental = vc.rental;
@@ -971,23 +1070,23 @@ export function canopyPullToAutoApplication(pull: any, appTemplate: any): { app:
     const gc = app.coverage.generalCoverage;
     if (quoteData.generalCoverage.bodilyInjury != null) {
       gc.bodilyInjury = quoteData.generalCoverage.bodilyInjury;
-      syncReport.coverages.updated.push(`BI → ${quoteData.generalCoverage.bodilyInjury}`);
+      syncReport.coverages.updated.push(`BI → ${quoteData.generalCoverage.bodilyInjury.description}`);
     }
     if (quoteData.generalCoverage.propertyDamage != null) {
       gc.propertyDamage = quoteData.generalCoverage.propertyDamage;
-      syncReport.coverages.updated.push(`PD → ${quoteData.generalCoverage.propertyDamage}`);
+      syncReport.coverages.updated.push(`PD → ${quoteData.generalCoverage.propertyDamage.description}`);
     }
     if (quoteData.generalCoverage.uninsuredMotorist != null) {
       gc.uninsuredMotorist = quoteData.generalCoverage.uninsuredMotorist;
-      syncReport.coverages.updated.push(`UM → ${quoteData.generalCoverage.uninsuredMotorist}`);
+      syncReport.coverages.updated.push(`UM → ${quoteData.generalCoverage.uninsuredMotorist.description}`);
     }
     if (quoteData.generalCoverage.underinsuredMotorist != null) {
       gc.underinsuredMotorist = quoteData.generalCoverage.underinsuredMotorist;
-      syncReport.coverages.updated.push(`UIM → ${quoteData.generalCoverage.underinsuredMotorist}`);
+      syncReport.coverages.updated.push(`UIM → ${quoteData.generalCoverage.underinsuredMotorist.description}`);
     }
     if (quoteData.generalCoverage.medicalPayments != null) {
       gc.medicalPayments = quoteData.generalCoverage.medicalPayments;
-      syncReport.coverages.updated.push(`MedPay → ${quoteData.generalCoverage.medicalPayments}`);
+      syncReport.coverages.updated.push(`MedPay → ${quoteData.generalCoverage.medicalPayments.description}`);
     }
   }
 
