@@ -181,6 +181,12 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
           reviewedCount={reviewedCount}
           totalReviewable={totalReviewable}
           detail={detail}
+          ezlynxAccountId={(detail as any).ezlynxAccountId}
+          ezlynxSyncedAt={(detail as any).ezlynxSyncedAt}
+          insuredName={detail.renewalSnapshot?.insuredName}
+          customerId={detail.customerId}
+          renewalSnapshot={detail.renewalSnapshot}
+          lineOfBusiness={detail.lineOfBusiness}
         />
       </div>
 

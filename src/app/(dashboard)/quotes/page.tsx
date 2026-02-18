@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Search, Plus, MoreVertical, Clock, CheckCircle2, XCircle,
   Car, Home, Ship, ChevronRight, Phone, Mail,
-  DollarSign, FileText, Sparkles, Loader2, RefreshCw, Shield
+  DollarSign, FileText, Sparkles, Loader2, RefreshCw, Shield, Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { QuoteComparisonModal } from "@/components/features/QuoteComparisonModal";
+import { toast } from "sonner";
 
 interface Quote {
   id: string;
@@ -81,6 +82,51 @@ export default function QuotesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [comparisonQuoteId, setComparisonQuoteId] = useState<string | null>(null);
+  const [pushingToEzlynx, setPushingToEzlynx] = useState<string | null>(null);
+
+  const handlePushToEzlynx = async (quote: Quote) => {
+    setPushingToEzlynx(quote.id);
+    const type = quote.type?.includes("auto") ? "auto" : "home";
+    const toastId = toast.loading(`Pushing ${type} quote to EZLynx...`, {
+      description: quote.customer?.name || "Unknown",
+    });
+    try {
+      // First we need to check if the customer has an ezlynxAccountId
+      // We'll try to push directly — the API route handles the lookup
+      const res = await fetch("/api/ezlynx/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: (quote as any).ezlynxAccountId || "",
+          type,
+          quoteId: quote.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`${type === "auto" ? "Auto" : "Home"} quote pushed to EZLynx`, {
+          id: toastId,
+          description: `Job ID: ${data.jobId}`,
+          duration: 8000,
+        });
+      } else {
+        const errMsg = data.error || "Unknown error";
+        if (errMsg.includes("accountId")) {
+          toast.error("Customer not linked to EZLynx", {
+            id: toastId,
+            description: "Open the customer profile and use 'Send to EZLynx' first",
+            duration: 8000,
+          });
+        } else {
+          toast.error("Push to EZLynx failed", { id: toastId, description: errMsg, duration: 8000 });
+        }
+      }
+    } catch (err: any) {
+      toast.error("EZLynx error", { id: toastId, description: err.message });
+    } finally {
+      setPushingToEzlynx(null);
+    }
+  };
 
   const fetchQuotes = async (showRefresh = false) => {
     try {
@@ -269,6 +315,17 @@ export default function QuotesPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem>Edit Quote</DropdownMenuItem>
                           <DropdownMenuItem>Send to Customer</DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handlePushToEzlynx(quote)}
+                            disabled={pushingToEzlynx === quote.id}
+                          >
+                            {pushingToEzlynx === quote.id ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Zap className="w-4 h-4 mr-2" />
+                            )}
+                            Push to EZLynx
+                          </DropdownMenuItem>
                           <DropdownMenuItem>Mark as Accepted</DropdownMenuItem>
                           <DropdownMenuItem className="text-red-600">Delete</DropdownMenuItem>
                         </DropdownMenuContent>

@@ -52,6 +52,8 @@ export async function GET(
         customerLastName: customers.lastName,
         customerPhone: customers.phone,
         customerEmail: customers.email,
+        ezlynxAccountId: customers.ezlynxAccountId,
+        ezlynxSyncedAt: customers.ezlynxSyncedAt,
       })
       .from(renewalComparisons)
       .leftJoin(customers, eq(renewalComparisons.customerId, customers.id))

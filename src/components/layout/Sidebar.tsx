@@ -80,6 +80,7 @@ const ROUTE_FEATURE_MAP: Record<string, string> = {
   '/renewal-review': 'renewalReview',
   '/properties': 'properties',
   '/reports': 'reports',
+  '/ezlynx': 'ezlynx',
   '/reviews': 'reviews',
   '/ai-tasks': 'aiTasks',
   '/training': 'training',
@@ -146,6 +147,7 @@ const toolsNav = [
   { name: 'Carriers & Brokers', href: '/carriers-brokers', icon: Building2 },
   { name: 'Commission Tracker', href: '/commissions', icon: DollarSign },
   { name: 'Lien Holders', href: '/lien-holders', icon: Landmark },
+  { name: 'EZLynx Bot', href: '/ezlynx', icon: Zap },
   { name: 'Quick Links', href: '/quick-links', icon: ExternalLink },
   // { name: 'Reports', href: '/reports', icon: BarChart3 }, // Temporarily disabled
 ];

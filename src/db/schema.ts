@@ -513,6 +513,10 @@ export const customers = pgTable('customers', {
   lastSyncedFromHs: timestamp('last_synced_from_hs'),
   lastSyncedFromDonna: timestamp('last_synced_from_donna'),
   
+  // EZLynx Integration
+  ezlynxAccountId: varchar('ezlynx_account_id', { length: 50 }),
+  ezlynxSyncedAt: timestamp('ezlynx_synced_at'),
+
   // Archive Status (soft-delete - never hard delete, customer may reappear)
   isArchived: boolean('is_archived').default(false),
   archivedAt: timestamp('archived_at'),
@@ -531,6 +535,7 @@ export const customers = pgTable('customers', {
   index('customers_pipeline_idx').on(table.tenantId, table.pipelineId, table.pipelineStageId),
   // Unique constraint to prevent duplicate AgencyZoom leads
   uniqueIndex('customers_tenant_az_unique').on(table.tenantId, table.agencyzoomId),
+  index('customers_ezlynx_idx').on(table.tenantId, table.ezlynxAccountId),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════

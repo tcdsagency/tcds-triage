@@ -83,3 +83,47 @@ export async function GET(
     );
   }
 }
+
+// PATCH /api/customers/[id] — Update specific customer fields
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant not configured' }, { status: 500 });
+    }
+
+    const body = await request.json();
+
+    // Only allow updating specific safe fields
+    const allowedFields = ['ezlynxAccountId', 'ezlynxSyncedAt'] as const;
+    const updates: Record<string, any> = {};
+    for (const field of allowedFields) {
+      if (field in body) {
+        updates[field] = body[field];
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
+
+    updates.updatedAt = new Date();
+
+    await db
+      .update(customers)
+      .set(updates)
+      .where(and(eq(customers.tenantId, tenantId), eq(customers.id, id)));
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Customer patch error:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Update failed' },
+      { status: 500 }
+    );
+  }
+}

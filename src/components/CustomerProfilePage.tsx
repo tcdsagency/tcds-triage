@@ -40,7 +40,8 @@ import {
   User,
   Wind,
   FileWarning,
-  BookOpen
+  BookOpen,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -216,6 +217,124 @@ export default function CustomerProfilePage() {
   // Gaya
   const [sendingToGaya, setSendingToGaya] = useState(false);
   const [gayaSuccess, setGayaSuccess] = useState(false);
+
+  // EZLynx
+  const [sendingToEzlynx, setSendingToEzlynx] = useState(false);
+  const [quotingInEzlynx, setQuotingInEzlynx] = useState(false);
+
+  const ezlynxUrl = (accountId: string) =>
+    `https://app.ezlynx.com/web/account/${accountId}/details`;
+
+  const handleSendToEzlynx = useCallback(async () => {
+    if (!profile) return;
+    setSendingToEzlynx(true);
+    const ezlynxId = (profile as any).ezlynxAccountId;
+    const action = ezlynxId ? 'Updating' : 'Creating';
+    const toastId = toast.loading(`${action} applicant in EZLynx...`, {
+      description: `${profile.firstName} ${profile.lastName}`,
+    });
+    try {
+      if (ezlynxId) {
+        const res = await fetch(`/api/ezlynx/applicant/${ezlynxId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile, customerId: profile.id }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast.success('Updated in EZLynx', {
+            id: toastId,
+            description: `Account synced`,
+            action: {
+              label: 'Open in EZLynx',
+              onClick: () => window.open(ezlynxUrl(ezlynxId), '_blank'),
+            },
+            duration: 8000,
+          });
+        } else {
+          toast.error('EZLynx update failed', { id: toastId, description: data.error, duration: 10000 });
+        }
+      } else {
+        const res = await fetch('/api/ezlynx/applicant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile, customerId: profile.id }),
+        });
+        const data = await res.json();
+        if (data.success && data.ezlynxId) {
+          toast.success('Created in EZLynx', {
+            id: toastId,
+            description: `Account ID: ${data.ezlynxId} (via ${data.method || 'API'})`,
+            action: {
+              label: 'Open in EZLynx',
+              onClick: () => window.open(ezlynxUrl(data.ezlynxId), '_blank'),
+            },
+            duration: 10000,
+          });
+          fetchProfile(true);
+        } else {
+          toast.error('EZLynx creation failed', { id: toastId, description: data.error, duration: 10000 });
+        }
+      }
+    } catch (err: any) {
+      toast.error('EZLynx error', { id: toastId, description: err.message, duration: 10000 });
+    } finally {
+      setSendingToEzlynx(false);
+    }
+  }, [profile]);
+
+  const handleQuoteInEzlynx = useCallback(async (policy: Policy) => {
+    if (!profile) return;
+    const ezlynxId = (profile as any).ezlynxAccountId;
+    if (!ezlynxId) {
+      toast.error('Send customer to EZLynx first', {
+        description: 'Use "Send to EZLynx" from the menu to create the applicant first.',
+        duration: 5000,
+      });
+      return;
+    }
+    setQuotingInEzlynx(true);
+    const type = policy.type === 'auto' ? 'auto' : 'home';
+    const toastId = toast.loading(`Submitting ${type} quote to EZLynx...`, {
+      description: `${policy.carrier?.name} - ${policy.policyNumber}`,
+    });
+    try {
+      const res = await fetch('/api/ezlynx/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: ezlynxId,
+          type,
+          ...(type === 'auto' ? {
+            vehicles: policy.vehicles,
+            drivers: policy.drivers,
+          } : {
+            yearBuilt: policy.property?.yearBuilt,
+            squareFeet: policy.property?.squareFeet,
+            roofType: policy.property?.roofType,
+          }),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`${type === 'auto' ? 'Auto' : 'Home'} quote submitted`, {
+          id: toastId,
+          description: `Job ID: ${data.jobId} - Bot is filling the quote now`,
+          action: {
+            label: 'Open in EZLynx',
+            onClick: () => window.open(ezlynxUrl(ezlynxId), '_blank'),
+          },
+          duration: 10000,
+        });
+      } else {
+        toast.error('Quote submission failed', { id: toastId, description: data.error, duration: 10000 });
+      }
+    } catch (err: any) {
+      toast.error('EZLynx error', { id: toastId, description: err.message, duration: 10000 });
+    } finally {
+      setQuotingInEzlynx(false);
+    }
+  }, [profile]);
 
   const handleSendToGaya = useCallback(async (policy: Policy) => {
     if (!profile) return;
@@ -637,6 +756,19 @@ export default function CustomerProfilePage() {
                       HawkSoft
                     </a>
                   )}
+
+                  {/* EZLynx link */}
+                  {(profile as any).ezlynxAccountId && (
+                    <a
+                      href={`https://app.ezlynx.com/web/account/${(profile as any).ezlynxAccountId}/details`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-700 hover:underline"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      EZLynx
+                    </a>
+                  )}
                 </div>
               </div>
             </div>
@@ -766,6 +898,48 @@ export default function CustomerProfilePage() {
                     <Clock className="w-4 h-4 mr-2" />
                     Schedule Callback
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={handleSendToEzlynx}
+                    disabled={sendingToEzlynx}
+                  >
+                    {sendingToEzlynx ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Zap className="w-4 h-4 mr-2" />
+                    )}
+                    {(profile as any).ezlynxAccountId
+                      ? (sendingToEzlynx ? 'Syncing...' : 'Update in EZLynx')
+                      : (sendingToEzlynx ? 'Creating...' : 'Send to EZLynx')}
+                  </DropdownMenuItem>
+                  {(profile as any).ezlynxAccountId && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger disabled={quotingInEzlynx}>
+                        {quotingInEzlynx ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Zap className="w-4 h-4 mr-2" />
+                        )}
+                        {quotingInEzlynx ? 'Quoting...' : 'Quote in EZLynx'}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        {(profile?.policies?.filter(p => p.status === 'active' && (p.type === 'auto' || p.type === 'home')) || []).map(policy => (
+                          <DropdownMenuItem key={policy.id} onClick={() => handleQuoteInEzlynx(policy)}>
+                            <span className="mr-2">{getPolicyTypeEmoji(policy.type)}</span>
+                            {policy.carrier?.name} - {policy.policyNumber}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
+                  {(profile as any).ezlynxAccountId && (
+                    <DropdownMenuItem
+                      onClick={() => window.open(`https://app.ezlynx.com/web/account/${(profile as any).ezlynxAccountId}/details`, '_blank')}
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      View in EZLynx
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger

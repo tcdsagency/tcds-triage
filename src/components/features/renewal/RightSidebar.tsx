@@ -4,6 +4,7 @@ import ReviewProgress from './ReviewProgress';
 import TalkPoints from './TalkPoints';
 import WaysToSaveCard from './WaysToSaveCard';
 import AIRecommendationsCard from './AIRecommendationsCard';
+import EzlynxCard from './EzlynxCard';
 import NotesPanel from './NotesPanel';
 import type { RenewalNote } from './types';
 import type { CheckResult, CheckSummary } from '@/types/check-rules.types';
@@ -28,6 +29,14 @@ interface RightSidebarProps {
     agentDecisionAt?: string | null;
     agentNotes?: string | null;
   };
+  // EZLynx integration (optional — passed when available)
+  ezlynxAccountId?: string | null;
+  ezlynxSyncedAt?: string | null;
+  insuredName?: string;
+  customerId?: string;
+  renewalSnapshot?: any;
+  lineOfBusiness?: string;
+  customerProfile?: any;
 }
 
 export default function RightSidebar({
@@ -43,6 +52,13 @@ export default function RightSidebar({
   reviewedCount,
   totalReviewable,
   detail,
+  ezlynxAccountId,
+  ezlynxSyncedAt,
+  insuredName,
+  customerId,
+  renewalSnapshot,
+  lineOfBusiness,
+  customerProfile,
 }: RightSidebarProps) {
   return (
     <div className="lg:w-[320px] lg:shrink-0 overflow-y-auto p-3 space-y-3 bg-white border-l border-gray-200 pb-24">
@@ -60,6 +76,17 @@ export default function RightSidebar({
 
       {/* AI Recommendations / Cross-Sell */}
       <AIRecommendationsCard policies={customerPolicies} />
+
+      {/* EZLynx Integration */}
+      <EzlynxCard
+        ezlynxAccountId={ezlynxAccountId}
+        ezlynxSyncedAt={ezlynxSyncedAt}
+        insuredName={insuredName}
+        customerId={customerId}
+        renewalSnapshot={renewalSnapshot}
+        lineOfBusiness={lineOfBusiness}
+        customerProfile={customerProfile}
+      />
 
       {/* Talk Points */}
       <TalkPoints

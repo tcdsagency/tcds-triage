@@ -55,6 +55,39 @@ export default function LeadsPage() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [creatingInEzlynx, setCreatingInEzlynx] = useState(false);
+
+  const handleCreateInEzlynx = async (lead: Lead) => {
+    setCreatingInEzlynx(true);
+    const toastId = toast.loading('Creating applicant in EZLynx...', {
+      description: lead.contactName || 'Unknown',
+    });
+    try {
+      const res = await fetch('/api/ezlynx/applicant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead }),
+      });
+      const data = await res.json();
+      if (data.success && data.ezlynxId) {
+        toast.success('Created in EZLynx', {
+          id: toastId,
+          description: `Account ID: ${data.ezlynxId}`,
+          action: {
+            label: 'Open in EZLynx',
+            onClick: () => window.open(`https://app.ezlynx.com/web/account/${data.ezlynxId}/details`, '_blank'),
+          },
+          duration: 10000,
+        });
+      } else {
+        toast.error('EZLynx creation failed', { id: toastId, description: data.error, duration: 8000 });
+      }
+    } catch (err: any) {
+      toast.error('EZLynx error', { id: toastId, description: err.message });
+    } finally {
+      setCreatingInEzlynx(false);
+    }
+  };
 
   const loadLeads = async () => {
     setLoading(true);
@@ -460,6 +493,13 @@ export default function LeadsPage() {
                     size="default"
                   />
                 )}
+                <button
+                  onClick={() => handleCreateInEzlynx(selectedLead)}
+                  disabled={creatingInEzlynx}
+                  className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-2 disabled:opacity-50"
+                >
+                  {creatingInEzlynx ? '...' : '⚡'} Create in EZLynx
+                </button>
               </div>
             </div>
           ) : (

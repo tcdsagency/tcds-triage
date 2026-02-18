@@ -273,6 +273,14 @@ export const FEATURES: FeatureConfig[] = [
     route: '/ai-tasks',
   },
   {
+    key: 'ezlynx',
+    label: 'EZLynx Bot',
+    description: 'EZLynx rating automation and applicant management',
+    category: 'tools',
+    defaultEnabled: true,
+    route: '/ezlynx',
+  },
+  {
     key: 'training',
     label: 'Training',
     description: 'Training materials and resources',

@@ -695,6 +695,8 @@ export async function GET(
     const searchParams = request.nextUrl.searchParams;
     let hawksoftId = searchParams.get("hsId");
     let agencyzoomId = searchParams.get("azId");
+    let ezlynxAccountId: string | null = null;
+    let ezlynxSyncedAt: Date | null = null;
 
     debugInfo.customerId = customerId;
 
@@ -752,6 +754,8 @@ export async function GET(
         if (customerRecord) {
           hawksoftId = customerRecord.hawksoftClientCode || null;
           agencyzoomId = customerRecord.agencyzoomId || null;
+          ezlynxAccountId = customerRecord.ezlynxAccountId || null;
+          ezlynxSyncedAt = customerRecord.ezlynxSyncedAt || null;
           debugInfo.dbLookup = "success";
         } else if (!hawksoftId) {
           debugInfo.dbLookup = "customer not found in database";
@@ -893,12 +897,16 @@ export async function GET(
       agencyzoomId: azContact?.id || agencyzoomId,
       
       // External links
-      agencyzoomUrl: agencyzoomId 
+      agencyzoomUrl: agencyzoomId
         ? `https://app.agencyzoom.com/customer/index?id=${agencyzoomId}`
         : undefined,
       hawksoftUrl: hsClient?.clientNumber
         ? `hawksoft://client/${hsClient.clientNumber}`
         : undefined,
+
+      // EZLynx integration
+      ezlynxAccountId: ezlynxAccountId || undefined,
+      ezlynxSyncedAt: ezlynxSyncedAt?.toISOString() || undefined,
       
       // Agent assignment - use user lookup for full name/avatar, fallback to HawkSoft code
       producer: hsClient?.producer ? {
