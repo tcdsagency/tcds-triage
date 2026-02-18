@@ -180,6 +180,11 @@ export class MortgageePaymentScheduler {
     // Only check home-type policies — auto lienholders are not in MCI
     const homeLOBs = ["HOME", "DFIRE", "MHOME", "FLOOD"];
 
+    // Build skip patterns filter to exclude non-MCI companies at query level
+    const skipConditions = MCI_SKIP_PATTERNS.map(
+      (p) => sql`LOWER(${mortgagees.name}) NOT LIKE ${"%" + p + "%"}`
+    );
+
     const rows = await db
       .select({ mortgagee: mortgagees })
       .from(mortgagees)
@@ -199,7 +204,11 @@ export class MortgageePaymentScheduler {
             sql`${mortgagees.currentPaymentStatus} != 'current'`,
             isNull(mortgagees.lastPaymentCheckAt),
             sql`${mortgagees.lastPaymentCheckAt} < ${policies.effectiveDate}`
-          )
+          ),
+          // Must have a loan number — MCI requires it
+          sql`${mortgagees.loanNumber} IS NOT NULL AND ${mortgagees.loanNumber} != ''`,
+          // Exclude companies not in MCI
+          ...skipConditions
         )
       )
       .orderBy(policies.expirationDate) // Prioritize nearest expirations
