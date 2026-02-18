@@ -721,11 +721,13 @@ export function findCanopyCoverage(coverages: any[], names: string[]): any | und
  */
 export function canopyPullToAutoApplication(pull: any, appTemplate: any): { app: any; syncReport: AutoSyncReport } {
   const app = JSON.parse(JSON.stringify(appTemplate)); // deep clone
+  const originalDriverCount = (appTemplate.drivers || []).length;
+  const originalVehicleCount = (appTemplate.vehicles?.vehicleCollection || []).length;
   const quoteData = canopyPullToAutoQuote(pull);
 
   const syncReport: AutoSyncReport = {
     drivers: { matched: [], unmatched: [], added: [] },
-    vehicles: { matched: [], unmatched: [] },
+    vehicles: { matched: [], unmatched: [], added: [] },
     coverages: { updated: [] },
     policyInfo: {},
   };
@@ -807,6 +809,19 @@ export function canopyPullToAutoApplication(pull: any, appTemplate: any): { app:
   }
   app.drivers = existingDrivers;
 
+  // Detect EZLynx-only drivers (in EZLynx but not in Canopy) — flag for user review
+  for (let i = 0; i < originalDriverCount; i++) {
+    if (!usedExistingIndices.has(i)) {
+      const ed = existingDrivers[i];
+      syncReport.drivers.ezlynxOnly = syncReport.drivers.ezlynxOnly || [];
+      syncReport.drivers.ezlynxOnly.push({
+        ezlynxName: `${ed.firstName || ''} ${ed.lastName || ''}`.trim(),
+        ezlynxIndex: i,
+        licenseNumber: ed.driversLicenseNumber || 'N/A',
+      });
+    }
+  }
+
   // =========================================================================
   // VEHICLE MATCHING — by VIN, NOT by index
   // =========================================================================
@@ -854,19 +869,53 @@ export function canopyPullToAutoApplication(pull: any, appTemplate: any): { app:
         ezlynxIndex: matchIdx,
       });
     } else {
-      syncReport.vehicles.unmatched.push({
+      // UNMATCHED — add as a new vehicle
+      const newVehicle: any = {};
+      if (cv.vin) newVehicle.vin = cv.vin;
+      if (cv.make) newVehicle.make = cv.make;
+      if (cv.model) newVehicle.model = cv.model;
+      if (cv.year != null) newVehicle.year = cv.year;
+      if (cv.annualMiles != null) newVehicle.annualMiles = cv.annualMiles;
+      if (cv.use) newVehicle.usage = cv.use;
+      if (cv.ownership) newVehicle.ownership = cv.ownership;
+      newVehicle.coverage = {}; // empty coverage object for per-vehicle coverages
+
+      const newIdx = vehicleCollection.length;
+      vehicleCollection.push(newVehicle);
+      canopyToEzlynxVehicleIdx.set(canopyIdx, newIdx);
+
+      syncReport.vehicles.added = syncReport.vehicles.added || [];
+      syncReport.vehicles.added.push({
         vin: cv.vin || 'N/A',
         canopyDesc: `${cv.year || ''} ${cv.make || ''} ${cv.model || ''}`.trim(),
-        reason: cv.vin ? 'VIN not found in EZLynx app' : 'No VIN provided',
+        ezlynxIndex: newIdx,
       });
     }
   });
 
-  // Map per-vehicle coverages — using VIN-matched indices
+  // Detect EZLynx-only vehicles (in EZLynx but not in Canopy) — flag for user review
+  for (let i = 0; i < originalVehicleCount; i++) {
+    if (!usedVehicleIndices.has(i)) {
+      const ev = vehicleCollection[i];
+      syncReport.vehicles.ezlynxOnly = syncReport.vehicles.ezlynxOnly || [];
+      syncReport.vehicles.ezlynxOnly.push({
+        vin: ev.vin || 'N/A',
+        ezlynxDesc: `${ev.year?.description || ev.year || ''} ${ev.make || ''} ${ev.model || ''}`.trim(),
+        ezlynxIndex: i,
+      });
+    }
+  }
+
+  // Ensure the vehicleCollection is written back
+  if (app.vehicles) {
+    app.vehicles.vehicleCollection = vehicleCollection;
+  }
+
+  // Map per-vehicle coverages — using VIN-matched and newly-added indices
   if (quoteData.vehicleCoverages) {
     for (const vc of quoteData.vehicleCoverages) {
       const ezlynxIdx = canopyToEzlynxVehicleIdx.get(vc.vehicleIndex);
-      if (ezlynxIdx == null) continue; // skip unmatched vehicles
+      if (ezlynxIdx == null) continue;
       const existing = vehicleCollection[ezlynxIdx];
       if (!existing?.coverage) continue;
       if (vc.compDeductible != null) {
@@ -936,10 +985,13 @@ export interface AutoSyncReport {
     matched: Array<{ canopyName: string; ezlynxName: string; matchMethod: string; ezlynxIndex: number }>;
     unmatched: Array<{ canopyName: string; licenseNumber: string; reason?: string }>;
     added: Array<{ canopyName: string; licenseNumber: string }>;
+    ezlynxOnly?: Array<{ ezlynxName: string; ezlynxIndex: number; licenseNumber: string }>;
   };
   vehicles: {
     matched: Array<{ vin: string; canopyDesc: string; ezlynxDesc: string; ezlynxIndex: number }>;
     unmatched: Array<{ vin: string; canopyDesc: string; reason: string }>;
+    added: Array<{ vin: string; canopyDesc: string; ezlynxIndex: number }>;
+    ezlynxOnly?: Array<{ vin: string; ezlynxDesc: string; ezlynxIndex: number }>;
   };
   coverages: {
     updated: string[];

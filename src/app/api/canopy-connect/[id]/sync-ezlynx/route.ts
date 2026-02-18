@@ -293,7 +293,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     console.log(
       `[Canopy Sync] ${operation} EZLynx applicant ${ezlynxAccountId} from pull ${pull.pullId || id}`,
-      autoSyncReport ? `| Auto: ${autoSyncReport.drivers.matched.length} drivers matched, ${autoSyncReport.drivers.added.length} added, ${autoSyncReport.vehicles.matched.length} vehicles matched, ${autoSyncReport.vehicles.unmatched.length} unmatched` : '',
+      autoSyncReport ? `| Auto: ${autoSyncReport.drivers.matched.length} drivers matched, ${autoSyncReport.drivers.added.length} added, ${autoSyncReport.vehicles.matched.length} vehicles matched, ${autoSyncReport.vehicles.added.length} added, ${autoSyncReport.vehicles.unmatched.length} unmatched` : '',
     );
 
     return NextResponse.json({
