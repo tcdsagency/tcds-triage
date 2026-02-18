@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
         id: renewalComparisons.id,
         customerId: renewalComparisons.customerId,
         renewalSnapshot: renewalComparisons.renewalSnapshot,
+        baselineSnapshot: renewalComparisons.baselineSnapshot,
         renewalEffectiveDate: renewalComparisons.renewalEffectiveDate,
         renewalExpirationDate: renewalComparisons.renewalExpirationDate,
         lineOfBusiness: renewalComparisons.lineOfBusiness,
@@ -180,7 +181,8 @@ export async function POST(request: NextRequest) {
       }
 
       const appTemplate = await ezlynxBot.getHomeApplication(openAppId);
-      const { app: mergedApp, syncReport } = renewalToHomeApplication(snapshot, comparison, appTemplate);
+      const baseline = comparison.baselineSnapshot as any;
+      const { app: mergedApp, syncReport } = renewalToHomeApplication(snapshot, comparison, appTemplate, baseline);
 
       await ezlynxBot.saveHomeApplication(openAppId, mergedApp);
 

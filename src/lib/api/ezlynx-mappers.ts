@@ -1309,6 +1309,7 @@ export interface HomeSyncReport {
   dwelling: { updated: string[] };
   policyInfo: {
     effectiveDate?: string;
+    priorPolicyExpirationDate?: string;
     priorCarrier?: string;
   };
 }
@@ -1690,6 +1691,7 @@ export function renewalToHomeApplication(
   snapshot: any,
   comparison: any,
   appTemplate: any,
+  baselineSnapshot?: any,
 ): { app: any; syncReport: HomeSyncReport } {
   const app = JSON.parse(JSON.stringify(appTemplate)); // deep clone
 
@@ -1698,6 +1700,17 @@ export function renewalToHomeApplication(
     dwelling: { updated: [] },
     policyInfo: {},
   };
+
+  // =========================================================================
+  // DWELLING INFO — from baselineSnapshot.propertyContext (if available)
+  // =========================================================================
+  const propCtx = baselineSnapshot?.propertyContext;
+  if (app.dwellingInfo && propCtx) {
+    if (propCtx.yearBuilt) { app.dwellingInfo.yearBuilt = String(propCtx.yearBuilt); syncReport.dwelling.updated.push(`yearBuilt → ${propCtx.yearBuilt}`); }
+    if (propCtx.squareFeet) { app.dwellingInfo.squareFootage = String(propCtx.squareFeet); syncReport.dwelling.updated.push(`sqft → ${propCtx.squareFeet}`); }
+    if (propCtx.roofType) { app.dwellingInfo.roofType = propCtx.roofType; syncReport.dwelling.updated.push(`roofType → ${propCtx.roofType}`); }
+    if (propCtx.constructionType) { app.dwellingInfo.exteriorWall = propCtx.constructionType; syncReport.dwelling.updated.push(`exteriorWall → ${propCtx.constructionType}`); }
+  }
 
   // =========================================================================
   // COVERAGE MAPPING — from snapshot.coverages[]
@@ -1766,6 +1779,18 @@ export function renewalToHomeApplication(
       if (effDate) {
         app.policyInformation.effectiveDate = effDate;
         syncReport.policyInfo.effectiveDate = effDate;
+      }
+    }
+    if (comparison?.renewalExpirationDate) {
+      const dateStr = typeof comparison.renewalExpirationDate === 'string'
+        ? comparison.renewalExpirationDate
+        : comparison.renewalExpirationDate instanceof Date
+          ? comparison.renewalExpirationDate.toISOString()
+          : undefined;
+      const expDate = toEzlynxDate(dateStr);
+      if (expDate) {
+        app.policyInformation.priorPolicyExpirationDate = expDate;
+        syncReport.policyInfo.priorPolicyExpirationDate = expDate;
       }
     }
   }
