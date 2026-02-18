@@ -1162,6 +1162,7 @@ function parseThreeCxEvent(event) {
     callerName: participant.party_caller_name || participant.PartyCallerName,
     did: partyDid,
     partyDn: participant.party_dn || participant.PartyDn || null,
+    partyDnType: partyDnType || null,
     direction,
     timestamp: Date.now(),
   };
@@ -1184,6 +1185,12 @@ async function handleAutoTranscription(event) {
     targetExtension = event.partyDn;
   }
   if (!autoTranscriptionExtensions.has(targetExtension)) return;
+
+  // Skip internal-to-internal calls (extension-to-extension, no external party)
+  if (event.partyDnType && event.partyDnType !== 'External' && !event.did) {
+    console.log(`[AutoTx] Skipping internal call: ext=${targetExtension} partyDn=${event.partyDn} partyDnType=${event.partyDnType}`);
+    return;
+  }
 
   if (type === 'answered') {
     // Check if already have a session - Fix #3: pass extension for precise matching
