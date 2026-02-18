@@ -149,10 +149,10 @@ class EzlynxBotClient {
   private apiKey: string;
 
   constructor() {
-    this.baseUrl = (process.env.EZLYNX_BOT_URL || 'http://75.37.55.209:5000').replace(/\/$/, '');
-    this.username = process.env.EZLYNX_BOT_USERNAME || 'admin';
-    this.password = process.env.EZLYNX_BOT_PASSWORD || '';
-    this.apiKey = process.env.EZLYNX_BOT_API_KEY || '';
+    this.baseUrl = (process.env.EZLYNX_BOT_URL || 'http://75.37.55.209:5000').trim().replace(/\/$/, '');
+    this.username = (process.env.EZLYNX_BOT_USERNAME || 'admin').trim();
+    this.password = (process.env.EZLYNX_BOT_PASSWORD || '').trim();
+    this.apiKey = (process.env.EZLYNX_BOT_API_KEY || '').trim();
   }
 
   private get authHeader(): string {
