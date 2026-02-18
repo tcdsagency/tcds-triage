@@ -231,13 +231,19 @@ class EzlynxBotClient {
     firstName?: string;
     lastName?: string;
     dateOfBirth?: string;
+    address?: string;
+    city?: string;
     state?: string;
+    zip?: string;
   }): Promise<{ success: boolean; results: SearchResult[] }> {
     const qs = new URLSearchParams();
     if (params.firstName) qs.set('firstName', params.firstName);
     if (params.lastName) qs.set('lastName', params.lastName);
     if (params.dateOfBirth) qs.set('dateOfBirth', params.dateOfBirth);
+    if (params.address) qs.set('address', params.address);
+    if (params.city) qs.set('city', params.city);
     if (params.state) qs.set('state', params.state);
+    if (params.zip) qs.set('zip', params.zip);
     return this.request(`/api/applicant/search-ezlynx?${qs.toString()}`);
   }
 

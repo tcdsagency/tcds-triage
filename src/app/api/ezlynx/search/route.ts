@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ezlynxBot } from '@/lib/api/ezlynx-bot';
 
-// GET /api/ezlynx/search?firstName=&lastName=&dateOfBirth=&state=
+// GET /api/ezlynx/search?firstName=&lastName=&dateOfBirth=&state=&address=&city=&zip=
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
@@ -9,6 +9,9 @@ export async function GET(request: NextRequest) {
     const lastName = searchParams.get('lastName') || undefined;
     const dateOfBirth = searchParams.get('dateOfBirth') || undefined;
     const state = searchParams.get('state') || undefined;
+    const address = searchParams.get('address') || undefined;
+    const city = searchParams.get('city') || undefined;
+    const zip = searchParams.get('zip') || undefined;
 
     if (!firstName && !lastName) {
       return NextResponse.json(
@@ -20,18 +23,29 @@ export async function GET(request: NextRequest) {
     // Primary search: full name
     const result = await ezlynxBot.searchApplicant({ firstName, lastName, dateOfBirth, state });
 
-    // Fallback: if no results and we had both first+last, retry with last name only
-    // Catches cases where first name differs (nicknames, initials, spouse primary)
-    if (result.results?.length === 0 && firstName && lastName) {
-      const fallback = await ezlynxBot.searchApplicant({ lastName, state });
-      if (fallback.results?.length) {
-        return NextResponse.json({ ...fallback, fallback: true });
+    if (result.results?.length) {
+      return NextResponse.json(result);
+    }
+
+    // Fallback 1: last name only (catches spouse under different first name)
+    if (firstName && lastName) {
+      const lastNameResult = await ezlynxBot.searchApplicant({ lastName, state });
+      if (lastNameResult.results?.length) {
+        return NextResponse.json({ ...lastNameResult, fallback: 'lastName' });
       }
     }
 
+    // Fallback 2: address only (catches account under completely different name)
+    if (address) {
+      const addressResult = await ezlynxBot.searchApplicant({ address, city, state, zip });
+      if (addressResult.results?.length) {
+        return NextResponse.json({ ...addressResult, fallback: 'address' });
+      }
+    }
+
+    // No results from any search
     return NextResponse.json(result);
   } catch (err: any) {
-    // Distinguish bot connection errors from other failures
     const message = err.message || 'Unknown error';
     const isConnectionError =
       message.includes('ECONNREFUSED') ||

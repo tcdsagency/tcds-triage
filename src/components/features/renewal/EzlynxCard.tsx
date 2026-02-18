@@ -56,6 +56,12 @@ export default function EzlynxCard({
       const params = new URLSearchParams();
       if (firstName) params.set('firstName', firstName);
       if (lastName) params.set('lastName', lastName);
+      // Pass address for fallback search (spouse under different name, etc.)
+      const snap = renewalSnapshot as any;
+      if (snap?.insuredAddress) params.set('address', snap.insuredAddress);
+      if (snap?.insuredCity) params.set('city', snap.insuredCity);
+      if (snap?.insuredState) params.set('state', snap.insuredState);
+      if (snap?.insuredZip) params.set('zip', snap.insuredZip);
 
       const res = await fetch(`/api/ezlynx/search?${params}`);
       const data = await res.json();
@@ -88,7 +94,7 @@ export default function EzlynxCard({
     } finally {
       setSearching(false);
     }
-  }, [insuredName]);
+  }, [insuredName, renewalSnapshot]);
 
   // Auto-search on mount when insuredName is present and not already linked
   useEffect(() => {
