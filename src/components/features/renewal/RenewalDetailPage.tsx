@@ -187,6 +187,7 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
           customerId={detail.customerId ?? undefined}
           renewalSnapshot={detail.renewalSnapshot}
           lineOfBusiness={detail.lineOfBusiness ?? undefined}
+          comparisonId={detail.id}
         />
       </div>
 

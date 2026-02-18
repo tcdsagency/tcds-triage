@@ -1314,6 +1314,466 @@ export interface HomeSyncReport {
 }
 
 // =============================================================================
+// RENEWAL/HAWKSOFT → EZLYNX APPLICATION MAPPERS
+// =============================================================================
+
+/**
+ * Split a full name string into firstName / lastName.
+ * "John Smith Jr" → { firstName: "John", lastName: "Smith Jr" }
+ * "SARA CARDOZA" → { firstName: "SARA", lastName: "CARDOZA" }
+ */
+function splitName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 0) return { firstName: '', lastName: '' };
+  if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
+
+/**
+ * Parse canonical split-limit string "100,000/300,000" or "100/300" → EZLynx enum.
+ * For single limits (PD, MedPay): uses limitAmount in dollars → find ItemNNNN.
+ */
+function canonicalLimitToSplitEnum(limit?: string, limitAmount?: number, enumList?: EzEnum[]): EzEnum | undefined {
+  const enums = enumList || BI_ENUMS;
+
+  // Try split-limit string first (e.g., "100,000/300,000" or "100/300")
+  if (limit) {
+    const cleaned = limit.replace(/,/g, '').replace(/\$/g, '').trim();
+    const splitMatch = cleaned.match(/^(\d+)\s*\/\s*(\d+)$/);
+    if (splitMatch) {
+      let pp = parseInt(splitMatch[1], 10);
+      let pa = parseInt(splitMatch[2], 10);
+      // If values are in dollars (>=1000), convert to thousands
+      if (pp >= 1000) pp = Math.round(pp / 1000);
+      if (pa >= 1000) pa = Math.round(pa / 1000);
+      const name = `Item${pp}${pa}`;
+      return findEnum(enums, name);
+    }
+  }
+
+  // Fall back to single limitAmount in dollars
+  if (limitAmount != null && limitAmount > 0) {
+    const name = `Item${limitAmount}`;
+    return findEnum(enums, name);
+  }
+
+  return undefined;
+}
+
+/**
+ * Parse canonical single-limit amount → EZLynx enum (for PD, MedPay).
+ */
+function canonicalSingleLimitToEnum(limitAmount?: number, enumList?: EzEnum[]): EzEnum | undefined {
+  if (limitAmount == null || limitAmount <= 0) return undefined;
+  const name = `Item${limitAmount}`;
+  return findEnum(enumList || PD_ENUMS, name);
+}
+
+/**
+ * Parse canonical deductible → EZLynx enum.
+ */
+function canonicalDeductibleToEnum(deductible?: string, deductibleAmount?: number, enumList?: EzEnum[]): EzEnum | undefined {
+  const enums = enumList || DEDUCTIBLE_ENUMS;
+
+  // Prefer deductibleAmount (numeric dollars)
+  if (deductibleAmount != null && deductibleAmount > 0) {
+    const name = `Item${deductibleAmount}`;
+    return findEnum(enums, name);
+  }
+
+  // Try parsing deductible string
+  if (deductible) {
+    const cleaned = deductible.replace(/,/g, '').replace(/\$/g, '').trim();
+    const num = parseInt(cleaned, 10);
+    if (!isNaN(num) && num > 0) {
+      const name = `Item${num}`;
+      return findEnum(enums, name);
+    }
+  }
+
+  return undefined;
+}
+
+/** Map canonical relationship string to EZLynx driver relationship enum value */
+function canonicalRelationshipToDriver(rel?: string): number | undefined {
+  if (!rel) return undefined;
+  const r = rel.toLowerCase();
+  if (r === 'insured' || r === 'named insured' || r === 'self' || r === 'primary') return 3;
+  if (r === 'spouse' || r === 'wife' || r === 'husband') return 7;
+  if (r === 'child' || r === 'son' || r === 'daughter') return 4;
+  if (r === 'parent' || r === 'mother' || r === 'father') return 6;
+  return 8; // Other
+}
+
+/**
+ * Map renewal snapshot (AL3/HawkSoft canonical data) → EZLynx Auto Application.
+ * Uses identity-matching for drivers (DL# or firstName) and vehicles (VIN).
+ * Same pattern as canopyPullToAutoApplication but for canonical RenewalSnapshot data.
+ */
+export function renewalToAutoApplication(
+  snapshot: any,
+  comparison: any,
+  appTemplate: any,
+): { app: any; syncReport: AutoSyncReport } {
+  const app = JSON.parse(JSON.stringify(appTemplate)); // deep clone
+  const originalDriverCount = (appTemplate.drivers || []).length;
+  const originalVehicleCount = (appTemplate.vehicles?.vehicleCollection || []).length;
+
+  const syncReport: AutoSyncReport = {
+    drivers: { matched: [], unmatched: [], added: [] },
+    vehicles: { matched: [], unmatched: [], added: [] },
+    coverages: { updated: [] },
+    policyInfo: {},
+  };
+
+  // =========================================================================
+  // DRIVER MATCHING — by DL# or firstName, NOT by index
+  // =========================================================================
+  const existingDrivers: any[] = app.drivers || [];
+  const canonicalDrivers: any[] = (snapshot.drivers || []).filter((d: any) => !d.isExcluded);
+  const usedExistingIndices = new Set<number>();
+
+  for (const cd of canonicalDrivers) {
+    const { firstName, lastName } = splitName(cd.name || '');
+    let matchIdx = -1;
+    let matchMethod = '';
+
+    // 1. Try match by DL#
+    if (cd.licenseNumber) {
+      matchIdx = existingDrivers.findIndex((ed, i) =>
+        !usedExistingIndices.has(i)
+        && ed.driversLicenseNumber
+        && ed.driversLicenseNumber.replace(/\D/g, '') === cd.licenseNumber.replace(/\D/g, '')
+      );
+      if (matchIdx >= 0) matchMethod = 'dl_number';
+    }
+
+    // 2. If no DL match, try by firstName (case-insensitive)
+    if (matchIdx < 0 && firstName) {
+      matchIdx = existingDrivers.findIndex((ed, i) =>
+        !usedExistingIndices.has(i)
+        && (ed.firstName || '').toUpperCase() === firstName.toUpperCase()
+      );
+      if (matchIdx >= 0) matchMethod = 'first_name';
+    }
+
+    if (matchIdx >= 0) {
+      // MATCHED — update only non-null fields; never overwrite gender/maritalStatus/occupation
+      usedExistingIndices.add(matchIdx);
+      const existing = existingDrivers[matchIdx];
+
+      if (firstName) existing.firstName = firstName.toUpperCase();
+      if (lastName) existing.lastName = lastName.toUpperCase();
+      if (cd.dateOfBirth) existing.dateOfBirth = toEzlynxDate(cd.dateOfBirth);
+      if (cd.licenseNumber) existing.driversLicenseNumber = cd.licenseNumber;
+      if (cd.licenseState) existing.driversLicenseState = cd.licenseState;
+      // Never overwrite: gender, maritalStatus, occupation (not in canonical data)
+
+      syncReport.drivers.matched.push({
+        canopyName: `${firstName} ${lastName}`,
+        ezlynxName: `${existing.firstName} ${existing.lastName}`,
+        matchMethod,
+        ezlynxIndex: matchIdx,
+      });
+    } else {
+      // UNMATCHED — add as a new driver
+      const newDriver: any = {};
+      if (firstName) newDriver.firstName = firstName.toUpperCase();
+      if (lastName) newDriver.lastName = lastName.toUpperCase();
+      if (cd.dateOfBirth) newDriver.dateOfBirth = toEzlynxDate(cd.dateOfBirth);
+      if (cd.licenseNumber) newDriver.driversLicenseNumber = cd.licenseNumber;
+      if (cd.licenseState) newDriver.driversLicenseState = cd.licenseState;
+      const relValue = canonicalRelationshipToDriver(cd.relationship);
+      if (relValue != null) newDriver.relationship = { value: relValue };
+
+      existingDrivers.push(newDriver);
+      syncReport.drivers.added.push({
+        canopyName: `${firstName} ${lastName}`,
+        licenseNumber: cd.licenseNumber || 'N/A',
+      });
+    }
+  }
+  app.drivers = existingDrivers;
+
+  // Detect EZLynx-only drivers
+  for (let i = 0; i < originalDriverCount; i++) {
+    if (!usedExistingIndices.has(i)) {
+      const ed = existingDrivers[i];
+      syncReport.drivers.ezlynxOnly = syncReport.drivers.ezlynxOnly || [];
+      syncReport.drivers.ezlynxOnly.push({
+        ezlynxName: `${ed.firstName || ''} ${ed.lastName || ''}`.trim(),
+        ezlynxIndex: i,
+        licenseNumber: ed.driversLicenseNumber || 'N/A',
+      });
+    }
+  }
+
+  // =========================================================================
+  // VEHICLE MATCHING — by VIN, NOT by index
+  // =========================================================================
+  const vehicleCollection: any[] = app.vehicles?.vehicleCollection || [];
+  const canonicalVehicles: any[] = snapshot.vehicles || [];
+  const usedVehicleIndices = new Set<number>();
+  const canonicalToEzlynxVehicleIdx = new Map<number, number>();
+
+  canonicalVehicles.forEach((cv: any, canonicalIdx: number) => {
+    let matchIdx = -1;
+
+    // Match by VIN
+    if (cv.vin) {
+      matchIdx = vehicleCollection.findIndex((ev, i) =>
+        !usedVehicleIndices.has(i)
+        && ev.vin
+        && ev.vin.toUpperCase() === cv.vin.toUpperCase()
+      );
+    }
+
+    if (matchIdx >= 0) {
+      usedVehicleIndices.add(matchIdx);
+      canonicalToEzlynxVehicleIdx.set(canonicalIdx, matchIdx);
+      const existing = vehicleCollection[matchIdx];
+
+      // Update non-null fields only
+      if (cv.vin) existing.vin = cv.vin;
+      if (cv.make) existing.make = cv.make.toUpperCase();
+      if (cv.model) existing.model = cv.model.toUpperCase();
+      if (cv.year != null) {
+        if (existing.year && typeof existing.year === 'object') {
+          existing.year = { ...existing.year, description: String(cv.year) };
+        } else {
+          existing.year = cv.year;
+        }
+      }
+      if (cv.annualMileage != null) existing.annualMiles = cv.annualMileage;
+
+      syncReport.vehicles.matched.push({
+        vin: cv.vin || 'N/A',
+        canopyDesc: `${cv.year || ''} ${cv.make || ''} ${cv.model || ''}`.trim(),
+        ezlynxDesc: `${existing.year?.description || existing.year || ''} ${existing.make || ''} ${existing.model || ''}`.trim(),
+        ezlynxIndex: matchIdx,
+      });
+    } else {
+      // UNMATCHED — add as new vehicle
+      const newVehicle: any = {};
+      if (cv.vin) newVehicle.vin = cv.vin;
+      if (cv.make) newVehicle.make = cv.make.toUpperCase();
+      if (cv.model) newVehicle.model = cv.model.toUpperCase();
+      if (cv.year != null) newVehicle.year = cv.year;
+      if (cv.annualMileage != null) newVehicle.annualMiles = cv.annualMileage;
+      if (cv.usage) newVehicle.usage = cv.usage;
+      newVehicle.coverage = {};
+
+      const newIdx = vehicleCollection.length;
+      vehicleCollection.push(newVehicle);
+      canonicalToEzlynxVehicleIdx.set(canonicalIdx, newIdx);
+
+      syncReport.vehicles.added = syncReport.vehicles.added || [];
+      syncReport.vehicles.added.push({
+        vin: cv.vin || 'N/A',
+        canopyDesc: `${cv.year || ''} ${cv.make || ''} ${cv.model || ''}`.trim(),
+        ezlynxIndex: newIdx,
+      });
+    }
+
+    // Per-vehicle coverages from canonical vehicle.coverages[]
+    const ezlynxIdx = canonicalToEzlynxVehicleIdx.get(canonicalIdx);
+    if (ezlynxIdx != null) {
+      const target = vehicleCollection[ezlynxIdx];
+      if (target?.coverage && cv.coverages) {
+        for (const cov of cv.coverages) {
+          const t = (cov.type || '').toLowerCase();
+          if (t === 'comprehensive' || t === 'comp' || t === 'other_than_collision') {
+            const e = canonicalDeductibleToEnum(cov.deductible, cov.deductibleAmount, DEDUCTIBLE_ENUMS);
+            if (e) {
+              target.coverage.comprehensive = e;
+              syncReport.coverages.updated.push(`Vehicle ${ezlynxIdx}: Comp deductible → ${e.description}`);
+            }
+          }
+          if (t === 'collision' || t === 'coll') {
+            const e = canonicalDeductibleToEnum(cov.deductible, cov.deductibleAmount, DEDUCTIBLE_ENUMS);
+            if (e) {
+              target.coverage.collision = e;
+              syncReport.coverages.updated.push(`Vehicle ${ezlynxIdx}: Coll deductible → ${e.description}`);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Detect EZLynx-only vehicles
+  for (let i = 0; i < originalVehicleCount; i++) {
+    if (!usedVehicleIndices.has(i)) {
+      const ev = vehicleCollection[i];
+      syncReport.vehicles.ezlynxOnly = syncReport.vehicles.ezlynxOnly || [];
+      syncReport.vehicles.ezlynxOnly.push({
+        vin: ev.vin || 'N/A',
+        ezlynxDesc: `${ev.year?.description || ev.year || ''} ${ev.make || ''} ${ev.model || ''}`.trim(),
+        ezlynxIndex: i,
+      });
+    }
+  }
+
+  if (app.vehicles) {
+    app.vehicles.vehicleCollection = vehicleCollection;
+  }
+
+  // =========================================================================
+  // GENERAL COVERAGE — from policy-level snapshot.coverages[]
+  // =========================================================================
+  if (app.coverage?.generalCoverage && snapshot.coverages) {
+    const gc = app.coverage.generalCoverage;
+    for (const cov of snapshot.coverages) {
+      const t = (cov.type || '').toLowerCase();
+
+      if (t === 'bodily_injury') {
+        const e = canonicalLimitToSplitEnum(cov.limit, cov.limitAmount, BI_ENUMS);
+        if (e) { gc.bodilyInjury = e; syncReport.coverages.updated.push(`BI → ${e.description}`); }
+      }
+      if (t === 'property_damage') {
+        const e = canonicalSingleLimitToEnum(cov.limitAmount, PD_ENUMS);
+        if (e) { gc.propertyDamage = e; syncReport.coverages.updated.push(`PD → ${e.description}`); }
+      }
+      if (t === 'uninsured_motorist') {
+        const e = canonicalLimitToSplitEnum(cov.limit, cov.limitAmount, UM_ENUMS);
+        if (e) { gc.uninsuredMotorist = e; syncReport.coverages.updated.push(`UM → ${e.description}`); }
+      }
+      if (t === 'underinsured_motorist') {
+        const e = canonicalLimitToSplitEnum(cov.limit, cov.limitAmount, UM_ENUMS);
+        if (e) { gc.underinsuredMotorist = e; syncReport.coverages.updated.push(`UIM → ${e.description}`); }
+      }
+      if (t === 'medical_payments') {
+        const e = canonicalSingleLimitToEnum(cov.limitAmount, MEDPAY_ENUMS);
+        if (e) { gc.medicalPayments = e; syncReport.coverages.updated.push(`MedPay → ${e.description}`); }
+      }
+    }
+  }
+
+  // =========================================================================
+  // POLICY INFO
+  // =========================================================================
+  if (app.policyInformation) {
+    if (comparison?.renewalEffectiveDate) {
+      const dateStr = typeof comparison.renewalEffectiveDate === 'string'
+        ? comparison.renewalEffectiveDate
+        : comparison.renewalEffectiveDate instanceof Date
+          ? comparison.renewalEffectiveDate.toISOString()
+          : undefined;
+      const effDate = toEzlynxDate(dateStr);
+      if (effDate) {
+        app.policyInformation.effectiveDate = effDate;
+        syncReport.policyInfo.effectiveDate = effDate;
+      }
+    }
+    if (comparison?.renewalExpirationDate) {
+      const dateStr = typeof comparison.renewalExpirationDate === 'string'
+        ? comparison.renewalExpirationDate
+        : comparison.renewalExpirationDate instanceof Date
+          ? comparison.renewalExpirationDate.toISOString()
+          : undefined;
+      const expDate = toEzlynxDate(dateStr);
+      if (expDate) {
+        app.policyInformation.priorPolicyExpirationDate = expDate;
+        syncReport.policyInfo.priorPolicyExpirationDate = expDate;
+      }
+    }
+  }
+
+  return { app, syncReport };
+}
+
+/**
+ * Map renewal snapshot (AL3/HawkSoft canonical data) → EZLynx Home Application.
+ * Same pattern as canopyPullToHomeApplication but for canonical RenewalSnapshot data.
+ */
+export function renewalToHomeApplication(
+  snapshot: any,
+  comparison: any,
+  appTemplate: any,
+): { app: any; syncReport: HomeSyncReport } {
+  const app = JSON.parse(JSON.stringify(appTemplate)); // deep clone
+
+  const syncReport: HomeSyncReport = {
+    coverages: { updated: [] },
+    dwelling: { updated: [] },
+    policyInfo: {},
+  };
+
+  // =========================================================================
+  // COVERAGE MAPPING — from snapshot.coverages[]
+  // =========================================================================
+  if (app.generalCoverage && snapshot.coverages) {
+    const gc = app.generalCoverage;
+
+    for (const cov of snapshot.coverages) {
+      const t = (cov.type || '').toLowerCase();
+
+      // Dollar-amount coverages (plain strings)
+      if (t === 'dwelling' && cov.limitAmount) {
+        gc.dwelling = String(cov.limitAmount);
+        syncReport.coverages.updated.push(`Dwelling → $${cov.limitAmount}`);
+      }
+      if (t === 'personal_property' && cov.limitAmount) {
+        gc.personalProperty = String(cov.limitAmount);
+        syncReport.coverages.updated.push(`Personal Property → $${cov.limitAmount}`);
+      }
+      if (t === 'loss_of_use' && cov.limitAmount) {
+        gc.lossOfUse = String(cov.limitAmount);
+        syncReport.coverages.updated.push(`Loss of Use → $${cov.limitAmount}`);
+      }
+      if (t === 'other_structures' && cov.limitAmount) {
+        gc.otherStructures = String(cov.limitAmount);
+        syncReport.coverages.updated.push(`Other Structures → $${cov.limitAmount}`);
+      }
+
+      // Enum coverages
+      if (t === 'personal_liability') {
+        const e = findEnum(HOME_LIABILITY_ENUMS, `Item${cov.limitAmount}`);
+        if (e) { gc.personalLiability = e; syncReport.coverages.updated.push(`Liability → $${e.description}`); }
+      }
+      if (t === 'medical_payments' || t === 'medical_payments_to_others') {
+        const e = findEnum(HOME_MEDPAY_ENUMS, `Item${cov.limitAmount}`);
+        if (e) { gc.medicalPayments = e; syncReport.coverages.updated.push(`MedPay → $${e.description}`); }
+      }
+
+      // Deductibles
+      if ((t.includes('all_peril') || t === 'deductible') && !t.includes('wind') && !t.includes('hurricane')) {
+        const e = canonicalDeductibleToEnum(cov.deductible, cov.deductibleAmount, HOME_PERILS_DEDUCTIBLE_ENUMS);
+        if (e) { gc.perilsDeductible = e; syncReport.coverages.updated.push(`All Peril Ded → $${e.description}`); }
+      }
+      if (t.includes('wind') || t.includes('hail')) {
+        const e = canonicalDeductibleToEnum(cov.deductible, cov.deductibleAmount, HOME_WIND_DEDUCTIBLE_ENUMS);
+        if (e) { gc.windDeductible = e; syncReport.coverages.updated.push(`Wind/Hail Ded → ${e.description}`); }
+      }
+      if (t.includes('hurricane')) {
+        const e = canonicalDeductibleToEnum(cov.deductible, cov.deductibleAmount, HOME_HURRICANE_DEDUCTIBLE_ENUMS);
+        if (e) { gc.hurricaneDeductible = e; syncReport.coverages.updated.push(`Hurricane Ded → ${e.description}`); }
+      }
+    }
+  }
+
+  // =========================================================================
+  // POLICY INFO
+  // =========================================================================
+  if (app.policyInformation) {
+    if (comparison?.renewalEffectiveDate) {
+      const dateStr = typeof comparison.renewalEffectiveDate === 'string'
+        ? comparison.renewalEffectiveDate
+        : comparison.renewalEffectiveDate instanceof Date
+          ? comparison.renewalEffectiveDate.toISOString()
+          : undefined;
+      const effDate = toEzlynxDate(dateStr);
+      if (effDate) {
+        app.policyInformation.effectiveDate = effDate;
+        syncReport.policyInfo.effectiveDate = effDate;
+      }
+    }
+  }
+
+  return { app, syncReport };
+}
+
+// =============================================================================
 // HELPERS (internal)
 // =============================================================================
 

@@ -37,6 +37,7 @@ interface RightSidebarProps {
   renewalSnapshot?: any;
   lineOfBusiness?: string;
   customerProfile?: any;
+  comparisonId?: string;
 }
 
 export default function RightSidebar({
@@ -59,6 +60,7 @@ export default function RightSidebar({
   renewalSnapshot,
   lineOfBusiness,
   customerProfile,
+  comparisonId,
 }: RightSidebarProps) {
   return (
     <div className="lg:w-[320px] lg:shrink-0 overflow-y-auto p-3 space-y-3 bg-white border-l border-gray-200 pb-24">
@@ -86,6 +88,7 @@ export default function RightSidebar({
         renewalSnapshot={renewalSnapshot}
         lineOfBusiness={lineOfBusiness}
         customerProfile={customerProfile}
+        comparisonId={comparisonId}
       />
 
       {/* Talk Points */}

@@ -19,6 +19,8 @@ interface EzlynxCardProps {
   lineOfBusiness?: string;
   /** Customer profile data for creating/updating applicant */
   customerProfile?: any;
+  /** Comparison ID for application API reshop */
+  comparisonId?: string;
 }
 
 export default function EzlynxCard({
@@ -29,6 +31,7 @@ export default function EzlynxCard({
   renewalSnapshot,
   lineOfBusiness,
   customerProfile,
+  comparisonId,
 }: EzlynxCardProps) {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -159,30 +162,28 @@ export default function EzlynxCard({
       description: insuredName,
     });
     try {
-      // First update applicant info
-      if (customerProfile) {
-        await fetch(`/api/ezlynx/applicant/${accountId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profile: customerProfile, customerId }),
-        });
-      }
-
-      // Then push quote data from renewal snapshot
-      const res = await fetch('/api/ezlynx/quote', {
+      const res = await fetch('/api/ezlynx/reshop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accountId,
-          type,
-          ...(renewalSnapshot || {}),
-        }),
+        body: JSON.stringify({ comparisonId }),
       });
       const data = await res.json();
       if (data.success) {
+        // Build sync summary from report
+        const report = data.syncReport;
+        const parts: string[] = [];
+        if (report?.drivers?.matched?.length) parts.push(`${report.drivers.matched.length} drivers matched`);
+        if (report?.drivers?.added?.length) parts.push(`${report.drivers.added.length} drivers added`);
+        if (report?.vehicles?.matched?.length) parts.push(`${report.vehicles.matched.length} vehicles matched`);
+        if (report?.vehicles?.added?.length) parts.push(`${report.vehicles.added.length} vehicles added`);
+        if (report?.coverages?.updated?.length) parts.push(`${report.coverages.updated.length} coverages updated`);
+        // Home-specific
+        if (report?.dwelling?.updated?.length) parts.push(`${report.dwelling.updated.length} dwelling fields`);
+        const summary = parts.length > 0 ? parts.join(', ') : `${type} application updated`;
+
         toast.success(`Reshop data pushed to EZLynx`, {
           id: toastId,
-          description: `${type === 'auto' ? 'Auto' : 'Home'} quote submitted (Job: ${data.jobId})`,
+          description: summary,
           action: {
             label: 'Open in EZLynx',
             onClick: () => window.open(ezlynxUrl(accountId), '_blank'),
@@ -197,7 +198,7 @@ export default function EzlynxCard({
     } finally {
       setUpdating(false);
     }
-  }, [linkedId, renewalSnapshot, lineOfBusiness, customerProfile, customerId, insuredName]);
+  }, [linkedId, comparisonId, lineOfBusiness, insuredName]);
 
   // === LINKED STATE ===
   if (linkedId) {
