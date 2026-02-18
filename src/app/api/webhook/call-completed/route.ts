@@ -2342,9 +2342,44 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         console.log(`[Call-Completed] 🎫 Auto-ticket skipped: wrapup=${!!txResult.wrapup}, analysis=${!!analysis}, direction=${direction}, shouldAutoVoid=${shouldAutoVoid}`);
       }
     } // end normal path else block
+    } else if (transcript && transcript.length >= 50) {
+      // AI analysis failed/timed out but we have a transcript — create wrapup for manual review
+      console.log(`[Call-Completed] ⚠️ AI analysis failed but transcript exists (${transcript.length} chars) — creating wrapup for manual review`);
+
+      const callDir = call.direction || direction;
+      const customerPhone = callDir === "inbound"
+        ? (call.fromNumber || callerNumber)
+        : (call.toNumber || calledNumber);
+
+      try {
+        await db.insert(wrapupDrafts).values({
+          tenantId,
+          callId: call.id,
+          status: "pending_review",
+          aiProcessingStatus: "failed",
+          customerPhone: customerPhone || "Unknown",
+          agentExtension: call.extension || null,
+          agentName: body.agentName || null,
+          direction: callDir || "inbound",
+          summary: "AI analysis failed — manual review required",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }).onConflictDoUpdate({
+          target: [wrapupDrafts.callId],
+          set: {
+            aiProcessingStatus: "failed",
+            status: "pending_review",
+            summary: "AI analysis failed — manual review required",
+            updatedAt: new Date(),
+          },
+        });
+        console.log(`[Call-Completed] ✅ Created manual-review wrapup for call ${call.id}`);
+      } catch (wrapupError) {
+        console.error(`[Call-Completed] ❌ Failed to create manual-review wrapup:`, wrapupError instanceof Error ? wrapupError.message : wrapupError);
+      }
     } else {
-      // No analysis and not a hangup - log why we're skipping wrapup creation
-      console.log(`[Call-Completed] ⏭️ Skipping wrapup creation for call ${call.id}: no analysis and not detected as hangup (duration: ${body.duration}s, transcript length: ${transcript?.length || 0})`);
+      // No analysis, not a hangup, and no meaningful transcript — nothing to do
+      console.log(`[Call-Completed] ⏭️ Skipping wrapup creation for call ${call.id}: no analysis, not hangup, no transcript (duration: ${body.duration}s, transcript length: ${transcript?.length || 0})`);
     }
 
     // 5. Auto-post note to AgencyZoom for OUTBOUND calls only
