@@ -183,6 +183,27 @@ export function buildRenewalSnapshot(
   coverages.length = 0;
   coverages.push(...realCoverages);
 
+  // Openly carrier defaults: dwelling limit never parses from AL3, and medical payments
+  // (Coverage F) is automatically included in all Openly policies
+  if (/openly/i.test(transaction.header.carrierName || '')) {
+    if (!coverages.some(c => c.type === 'dwelling')) {
+      coverages.push({
+        code: 'DWELL',
+        type: 'dwelling',
+        description: 'Dwelling (Openly — up to $5M)',
+        limitAmount: 5000000,
+      });
+    }
+    if (!coverages.some(c => c.type === 'medical_payments')) {
+      coverages.push({
+        code: 'MED',
+        type: 'medical_payments',
+        description: 'Medical Payments (Coverage F — included in all Openly policies)',
+        limitAmount: 10000,
+      });
+    }
+  }
+
   // Calculate total premium
   // PRIMARY: Use 5BPI record premium (authoritative policy-level)
   // FALLBACK: Sum coverage premiums if 5BPI not available
