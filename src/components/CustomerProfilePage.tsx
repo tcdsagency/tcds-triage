@@ -1722,7 +1722,7 @@ function OverviewTab({
                     </>
                   )}
                   <span>•</span>
-                  <span>{new Date(note.createdAt).toLocaleDateString()}</span>
+                  <span>{formatDate(note.createdAt)}</span>
                 </div>
               </div>
             ))}
@@ -2440,7 +2440,21 @@ function ClaimsTab({
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
-      year: "numeric"
+      year: "numeric",
+      timeZone: "America/Chicago",
+    });
+  };
+
+  // Helper to format date + time in CST
+  const formatDateTime = (dateString?: string) => {
+    if (!dateString) return "—";
+    return new Date(dateString).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "America/Chicago",
     });
   };
 
@@ -2654,7 +2668,7 @@ function NotesTab({
                     <span>•</span>
                   </>
                 )}
-                <span>{new Date(note.createdAt).toLocaleString()}</span>
+                <span>{formatDateTime(note.createdAt)}</span>
                 <span>•</span>
                 <Badge variant="outline" className="text-xs">
                   {note.source}
@@ -2727,7 +2741,7 @@ function ActivityTab({
                     {item.type}
                   </Badge>
                   <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {new Date(item.createdAt).toLocaleString()}
+                    {formatDateTime(item.createdAt)}
                   </span>
                 </div>
                 {item.subject && (
