@@ -138,6 +138,30 @@ const STATUS_COLORS: Record<string, string> = {
 // COVERAGE SCREEN HELPERS
 // =============================================================================
 
+/** Format a date string for display in Central time */
+function formatDateCST(dateString?: string) {
+  if (!dateString) return "—";
+  return new Date(dateString).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "America/Chicago",
+  });
+}
+
+/** Format a date+time string for display in Central time */
+function formatDateTimeCST(dateString?: string) {
+  if (!dateString) return "—";
+  return new Date(dateString).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Chicago",
+  });
+}
+
 /**
  * Transform a policy from the customer profile format to the CoverageScreen format
  */
@@ -1722,7 +1746,7 @@ function OverviewTab({
                     </>
                   )}
                   <span>•</span>
-                  <span>{formatDate(note.createdAt)}</span>
+                  <span>{formatDateCST(note.createdAt)}</span>
                 </div>
               </div>
             ))}
@@ -2668,7 +2692,7 @@ function NotesTab({
                     <span>•</span>
                   </>
                 )}
-                <span>{formatDateTime(note.createdAt)}</span>
+                <span>{formatDateTimeCST(note.createdAt)}</span>
                 <span>•</span>
                 <Badge variant="outline" className="text-xs">
                   {note.source}
@@ -2741,7 +2765,7 @@ function ActivityTab({
                     {item.type}
                   </Badge>
                   <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {formatDateTime(item.createdAt)}
+                    {formatDateTimeCST(item.createdAt)}
                   </span>
                 </div>
                 {item.subject && (
