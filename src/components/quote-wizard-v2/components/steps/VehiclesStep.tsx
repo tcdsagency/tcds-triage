@@ -9,8 +9,9 @@
 import React from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import { useQuoteWizard } from '../../QuoteWizardProvider';
-import { VehicleCard } from '../shared';
+import { VehicleCard, PrefillButton } from '../shared';
 import { CanopyConnectSMS } from '@/components/CanopyConnectSMS';
+import { usePrefill } from '../../hooks/usePrefill';
 import { Plus, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -30,9 +31,38 @@ const NEW_VEHICLE = {
 
 export function VehiclesStep() {
   const { watch, formState: { errors } } = useFormContext();
-  useQuoteWizard();
+  const { ezlynxApplicantId } = useQuoteWizard();
 
-  const { fields, append, remove } = useFieldArray({ name: 'vehicles' });
+  const { fields, append, remove, replace } = useFieldArray({ name: 'vehicles' });
+  const { status: prefillStatus, summary: prefillSummary, error: prefillError, runVehiclesPrefill } = usePrefill();
+
+  const handlePrefillVehicles = async () => {
+    if (!ezlynxApplicantId) return;
+    const address = {
+      streetAddress: watch('address'),
+      city: watch('city'),
+      state: watch('state'),
+      zipCode: watch('zip'),
+    };
+    const vehicles = await runVehiclesPrefill(ezlynxApplicantId, address);
+    if (vehicles.length > 0) {
+      const mapped = vehicles.map((v: any) => ({
+        id: crypto.randomUUID(),
+        vin: v.vin || '',
+        year: v.year ? String(v.year) : '',
+        make: v.make || '',
+        model: v.model || '',
+        ownership: v.ownership?.toLowerCase() || 'owned',
+        primaryUse: v.usage?.toLowerCase() || 'commute',
+        annualMileage: v.annualMiles ? String(v.annualMiles) : '',
+        garageLocation: 'same',
+        compDeductible: '500',
+        collDeductible: '500',
+        _prefilled: true,
+      }));
+      replace(mapped);
+    }
+  };
 
   const handleAddVehicle = () => {
     append({ ...NEW_VEHICLE, id: crypto.randomUUID() });
@@ -49,12 +79,23 @@ export function VehiclesStep() {
           Add all vehicles you want to insure. Enter the VIN for automatic year,
           make, and model lookup.
         </p>
-        <CanopyConnectSMS
-          customerPhone={watch('phone')}
-          customerName={watch('firstName')}
-          variant="outline"
-          size="sm"
-        />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {ezlynxApplicantId && (
+            <PrefillButton
+              label="Prefill Vehicles"
+              status={prefillStatus}
+              summary={prefillSummary}
+              error={prefillError}
+              onClick={handlePrefillVehicles}
+            />
+          )}
+          <CanopyConnectSMS
+            customerPhone={watch('phone')}
+            customerName={watch('firstName')}
+            variant="outline"
+            size="sm"
+          />
+        </div>
       </div>
 
       {/* Vehicle list */}

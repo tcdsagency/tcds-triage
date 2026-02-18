@@ -9,7 +9,8 @@
 import React, { useState, useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useQuoteWizard } from '../../QuoteWizardProvider';
-import { AddressFields } from '../shared';
+import { AddressFields, PrefillButton } from '../shared';
+import { usePrefill } from '../../hooks/usePrefill';
 import {
   FormInput,
   FormSelect,
@@ -46,7 +47,8 @@ const STORIES_OPTIONS = [
 
 export function PropertyStep() {
   const { watch, setValue, formState: { errors } } = useFormContext();
-  useQuoteWizard();
+  const { ezlynxApplicantId } = useQuoteWizard();
+  const { status: msbStatus, summary: msbSummary, error: msbError, runHomePrefill } = usePrefill();
 
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -206,6 +208,38 @@ export function PropertyStep() {
           prefix="property"
           disabled={propertySameAsMailing}
         />
+
+        {/* MSB Prefill button (EZLynx) */}
+        {ezlynxApplicantId && (
+          <PrefillButton
+            label="Prefill Property (MSB)"
+            status={msbStatus}
+            summary={msbSummary}
+            error={msbError}
+            onClick={async () => {
+              const firstName = watch('firstName');
+              const lastName = watch('lastName');
+              const addr = {
+                streetAddress: watch('propertyAddress') || watch('address'),
+                city: watch('propertyCity') || watch('city'),
+                state: watch('propertyState') || watch('state'),
+                zipCode: watch('propertyZip') || watch('zip'),
+              };
+              const result = await runHomePrefill(ezlynxApplicantId, firstName, lastName, addr);
+              if (result) {
+                if (result.yearBuilt != null) setValue('yearBuilt', result.yearBuilt);
+                if (result.squareFootage != null) setValue('squareFootage', result.squareFootage);
+                if (result.stories != null) setValue('stories', String(result.stories));
+                if (result.constructionType) setValue('constructionType', result.constructionType);
+                if (result.roofMaterial) setValue('roofMaterial', result.roofMaterial);
+                if (result.foundationType) setValue('foundationType', result.foundationType);
+                if (result.fullBathrooms != null) setValue('fullBathrooms', String(result.fullBathrooms));
+                if (result.halfBathrooms != null) setValue('halfBathrooms', String(result.halfBathrooms));
+                if (result.heatingType) setValue('heatingType', result.heatingType);
+              }
+            }}
+          />
+        )}
 
         {/* RPR Lookup button */}
         <div className="flex items-center gap-3">

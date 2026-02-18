@@ -37,6 +37,8 @@ interface QuoteWizardContextType {
   lastSaved: Date | null;
   customerId: string | null;
   setCustomerId: (id: string | null) => void;
+  ezlynxApplicantId: string | null;
+  setEzlynxApplicantId: (id: string | null) => void;
 }
 
 const QuoteWizardContext = createContext<QuoteWizardContextType | null>(null);
@@ -76,6 +78,7 @@ export function QuoteWizardProvider({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  const [ezlynxApplicantId, setEzlynxApplicantId] = useState<string | null>(null);
 
   const watchedValues = watch();
 
@@ -357,6 +360,8 @@ export function QuoteWizardProvider({
     lastSaved,
     customerId,
     setCustomerId,
+    ezlynxApplicantId,
+    setEzlynxApplicantId,
   };
 
   return (

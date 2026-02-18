@@ -316,6 +316,126 @@ class EzlynxBotClient {
   async getLogs(limit: number = 50): Promise<ActivityLog[]> {
     return this.request(`/api/logs?limit=${limit}`);
   }
+
+  // ---------------------------------------------------------------------------
+  // PREFILL (LexisNexis / MSB)
+  // ---------------------------------------------------------------------------
+
+  async prefillDrivers(params: {
+    applicantId: string;
+    address: { streetAddress?: string; city?: string; state?: string; zipCode?: string };
+  }): Promise<any[]> {
+    const result = await this.request<{ success: boolean; results: any[] }>('/api/prefill/drivers', {
+      method: 'POST',
+      body: params,
+      timeout: 30000,
+    });
+    return result.results || [];
+  }
+
+  async prefillVehicles(params: {
+    applicantId: string;
+    address: { streetAddress?: string; city?: string; state?: string; zipCode?: string };
+  }): Promise<any[]> {
+    const result = await this.request<{ success: boolean; results: any[] }>('/api/prefill/vehicles', {
+      method: 'POST',
+      body: params,
+      timeout: 30000,
+    });
+    return result.results || [];
+  }
+
+  async prefillHome(params: {
+    applicantId: string;
+    firstName: string;
+    lastName: string;
+    address: { streetAddress?: string; city?: string; state?: string; zipCode?: string };
+  }): Promise<any> {
+    const result = await this.request<{ success: boolean; result: any }>('/api/prefill/home', {
+      method: 'POST',
+      body: params,
+      timeout: 30000,
+    });
+    return result.result;
+  }
+
+  async vinLookup(vin: string): Promise<any> {
+    const result = await this.request<{ success: boolean; result: any }>(`/api/prefill/vin/${encodeURIComponent(vin)}`);
+    return result.result;
+  }
+
+  async checkPrefillAccess(): Promise<any> {
+    return this.request('/api/prefill/access');
+  }
+
+  // ---------------------------------------------------------------------------
+  // APPLICATIONS
+  // ---------------------------------------------------------------------------
+
+  async getOpenApplications(applicantId: string): Promise<any[]> {
+    const result = await this.request<{ success: boolean; applications: any[] }>(
+      `/api/application/${applicantId}/list`
+    );
+    return result.applications || [];
+  }
+
+  async getAutoApplication(openAppId: string): Promise<any> {
+    return this.request(`/api/application/auto/${openAppId}`);
+  }
+
+  async saveAutoApplication(openAppId: string, data: any): Promise<void> {
+    await this.request(`/api/application/auto/${openAppId}`, {
+      method: 'POST',
+      body: data,
+      timeout: 30000,
+    });
+  }
+
+  async getHomeApplication(openAppId: string): Promise<any> {
+    return this.request(`/api/application/home/${openAppId}`);
+  }
+
+  async saveHomeApplication(openAppId: string, data: any): Promise<void> {
+    await this.request(`/api/application/home/${openAppId}`, {
+      method: 'POST',
+      body: data,
+      timeout: 30000,
+    });
+  }
+
+  async createAutoApplication(applicantId: string): Promise<{ openAppId: string }> {
+    return this.request(`/api/application/auto/create/${applicantId}`, {
+      method: 'POST',
+      timeout: 30000,
+    });
+  }
+
+  async createHomeApplication(applicantId: string): Promise<{ openAppId: string }> {
+    return this.request(`/api/application/home/create/${applicantId}`, {
+      method: 'POST',
+      timeout: 30000,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // REFERENCE DATA
+  // ---------------------------------------------------------------------------
+
+  async getReferenceData(category: string): Promise<any[]> {
+    return this.request(`/api/reference-data/${encodeURIComponent(category)}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // GENERIC PROXY
+  // ---------------------------------------------------------------------------
+
+  async proxyCall(path: string, method?: string, body?: any): Promise<any> {
+    return this.request('/api/ezlynx-proxy', {
+      method: 'POST',
+      body: { path, method, body },
+      timeout: 30000,
+    });
+  }
 }
 
 // Singleton instance

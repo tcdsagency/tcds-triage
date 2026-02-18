@@ -25,7 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useQuoteWizard } from '../../QuoteWizardProvider';
 import { CanopyConnectSMS } from '@/components/CanopyConnectSMS';
-import { CurrentInsuranceFields, DiscountFields, SubmissionFields } from '../shared';
+import { CurrentInsuranceFields, DiscountFields, SubmissionFields, PrefillButton } from '../shared';
 import { FormSection } from '../../fields';
 
 // =============================================================================
@@ -102,7 +102,67 @@ function CollapsibleCard({
 
 export function ReviewStep() {
   const { watch } = useFormContext();
-  const { eligibility, goToStep } = useQuoteWizard();
+  const { eligibility, goToStep, ezlynxApplicantId, quoteType } = useQuoteWizard();
+  const [ezlynxSyncStatus, setEzlynxSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [ezlynxSyncError, setEzlynxSyncError] = useState<string | null>(null);
+
+  const handleSyncToEzlynx = async () => {
+    if (!ezlynxApplicantId) return;
+    setEzlynxSyncStatus('syncing');
+    setEzlynxSyncError(null);
+    try {
+      const formData = watch();
+      const appType = quoteType === 'personal_auto' || quoteType === 'recreational' ? 'auto' : 'home';
+
+      // Create application
+      const createRes = await fetch('/api/ezlynx/application', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          type: appType,
+          applicantId: ezlynxApplicantId,
+        }),
+      });
+      const createData = await createRes.json();
+      if (!createRes.ok) throw new Error(createData.error || 'Failed to create application');
+
+      const openAppId = createData.openAppId;
+      if (!openAppId) throw new Error('No openAppId returned');
+
+      // Get the application template
+      const getRes = await fetch('/api/ezlynx/application', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'get',
+          type: appType,
+          openAppId,
+        }),
+      });
+      const appData = await getRes.json();
+      if (!getRes.ok) throw new Error(appData.error || 'Failed to get application');
+
+      // Save form data into the application
+      const saveRes = await fetch('/api/ezlynx/application', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save',
+          type: appType,
+          openAppId,
+          data: { ...appData.application, _formData: formData },
+        }),
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) throw new Error(saveData.error || 'Failed to save application');
+
+      setEzlynxSyncStatus('synced');
+    } catch (err) {
+      setEzlynxSyncError(err instanceof Error ? err.message : 'EZLynx sync failed');
+      setEzlynxSyncStatus('error');
+    }
+  };
 
   // Local expanded state for collapsible sections
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -394,6 +454,29 @@ export function ReviewStep() {
       {discounts && (
         <FormSection title="Discounts" icon={Check}>
           <DiscountFields />
+        </FormSection>
+      )}
+
+      {/* ================================================================= */}
+      {/* EZLYNX SYNC                                                      */}
+      {/* ================================================================= */}
+      {ezlynxApplicantId && (
+        <FormSection title="EZLynx Application" icon={Shield}>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+            Save this quote data directly to an EZLynx application for rating.
+          </p>
+          <PrefillButton
+            label={ezlynxSyncStatus === 'synced' ? 'Saved to EZLynx' : 'Save to EZLynx Application'}
+            status={
+              ezlynxSyncStatus === 'syncing' ? 'loading'
+              : ezlynxSyncStatus === 'synced' ? 'loaded'
+              : ezlynxSyncStatus === 'error' ? 'error'
+              : 'idle'
+            }
+            summary={ezlynxSyncStatus === 'synced' ? 'Application saved' : null}
+            error={ezlynxSyncError}
+            onClick={handleSyncToEzlynx}
+          />
         </FormSection>
       )}
 

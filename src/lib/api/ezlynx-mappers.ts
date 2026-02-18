@@ -695,6 +695,98 @@ export function findCanopyCoverage(coverages: any[], names: string[]): any | und
 }
 
 // =============================================================================
+// APPLICATION MAPPERS (for new Application Save API)
+// =============================================================================
+
+/**
+ * Map Canopy pull data into an EZLynx AutoRiskApplication structure.
+ * Merges onto an existing application template from the API.
+ */
+export function canopyPullToAutoApplication(pull: any, appTemplate: any): any {
+  const app = { ...appTemplate };
+  const quoteData = canopyPullToAutoQuote(pull);
+
+  // Map drivers into application structure
+  if (quoteData.drivers && quoteData.drivers.length > 0 && app.drivers) {
+    app.drivers = quoteData.drivers.map((d: any, idx: number) => ({
+      ...(app.drivers[idx] || {}),
+      firstName: d.firstName,
+      lastName: d.lastName,
+      dateOfBirth: d.dateOfBirth,
+      gender: d.gender != null ? { value: d.gender } : undefined,
+      maritalStatus: d.maritalStatus != null ? { value: d.maritalStatus } : undefined,
+      driversLicenseNumber: d.licenseNumber,
+      driversLicenseState: d.licenseState,
+      relationship: d.relationship != null ? { value: d.relationship } : undefined,
+    }));
+  }
+
+  // Map vehicles into application structure
+  if (quoteData.vehicles && quoteData.vehicles.length > 0 && app.vehicles) {
+    app.vehicles = quoteData.vehicles.map((v: any, idx: number) => ({
+      ...(app.vehicles[idx] || {}),
+      year: v.year,
+      make: v.make,
+      model: v.model,
+      vin: v.vin,
+      usage: v.use,
+      annualMiles: v.annualMiles,
+      ownership: v.ownership,
+    }));
+  }
+
+  // Map general coverage
+  if (quoteData.generalCoverage && app.generalCoverage) {
+    Object.assign(app.generalCoverage, quoteData.generalCoverage);
+  }
+
+  // Map policy info
+  if (quoteData.effectiveDate && app.policyInformation) {
+    app.policyInformation.effectiveDate = quoteData.effectiveDate;
+  }
+  if (quoteData.priorCarrier && app.policyInformation) {
+    app.policyInformation.priorCarrier = quoteData.priorCarrier;
+  }
+
+  return app;
+}
+
+/**
+ * Map Canopy pull data into an EZLynx HomeRiskApplication structure.
+ * Merges onto an existing application template from the API.
+ */
+export function canopyPullToHomeApplication(pull: any, appTemplate: any): any {
+  const app = { ...appTemplate };
+  const quoteData = canopyPullToHomeQuote(pull);
+
+  // Map dwelling info
+  if (app.dwellingInfo) {
+    if (quoteData.yearBuilt) app.dwellingInfo.yearBuilt = quoteData.yearBuilt;
+    if (quoteData.squareFootage) app.dwellingInfo.squareFootage = quoteData.squareFootage;
+    if (quoteData.exteriorWall) app.dwellingInfo.exteriorWall = quoteData.exteriorWall;
+    if (quoteData.roofType) app.dwellingInfo.roofType = quoteData.roofType;
+    if (quoteData.roofingUpdateYear) app.dwellingInfo.roofingUpdateYear = quoteData.roofingUpdateYear;
+    if (quoteData.residenceType) app.dwellingInfo.residenceType = quoteData.residenceType;
+  }
+
+  // Map coverage
+  if (app.coverage) {
+    if (quoteData.dwellingLimit) app.coverage.dwellingLimit = quoteData.dwellingLimit;
+    if (quoteData.personalLiabilityLimit) app.coverage.personalLiabilityLimit = quoteData.personalLiabilityLimit;
+    if (quoteData.medicalPaymentsLimit) app.coverage.medicalPaymentsLimit = quoteData.medicalPaymentsLimit;
+    if (quoteData.allPerilDeductible) app.coverage.allPerilDeductible = quoteData.allPerilDeductible;
+  }
+
+  // Map policy info
+  if (app.policyInformation) {
+    if (quoteData.effectiveDate) app.policyInformation.effectiveDate = quoteData.effectiveDate;
+    if (quoteData.priorCarrier) app.policyInformation.priorCarrier = quoteData.priorCarrier;
+  }
+
+  return app;
+}
+
+// =============================================================================
 // HELPERS (internal)
 // =============================================================================
 

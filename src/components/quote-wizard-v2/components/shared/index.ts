@@ -6,3 +6,4 @@ export { PropertyDetailsFields } from './PropertyDetailsFields';
 export { CurrentInsuranceFields } from './CurrentInsuranceFields';
 export { DiscountFields } from './DiscountFields';
 export { SubmissionFields } from './SubmissionFields';
+export { PrefillButton } from './PrefillButton';

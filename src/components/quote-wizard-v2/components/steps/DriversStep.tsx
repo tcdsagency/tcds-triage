@@ -9,8 +9,9 @@
 import React from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import { useQuoteWizard } from '../../QuoteWizardProvider';
-import { DriverCard } from '../shared';
+import { DriverCard, PrefillButton } from '../shared';
 import { CanopyConnectSMS } from '@/components/CanopyConnectSMS';
+import { usePrefill } from '../../hooks/usePrefill';
 import { Plus, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -29,10 +30,39 @@ const NEW_DRIVER = {
 };
 
 export function DriversStep() {
-  const { watch, formState: { errors } } = useFormContext();
-  useQuoteWizard();
+  const { watch, setValue, formState: { errors } } = useFormContext();
+  const { ezlynxApplicantId } = useQuoteWizard();
 
-  const { fields, append, remove } = useFieldArray({ name: 'drivers' });
+  const { fields, append, remove, replace } = useFieldArray({ name: 'drivers' });
+  const { status: prefillStatus, summary: prefillSummary, error: prefillError, runDriversPrefill } = usePrefill();
+
+  const handlePrefillDrivers = async () => {
+    if (!ezlynxApplicantId) return;
+    const address = {
+      streetAddress: watch('address'),
+      city: watch('city'),
+      state: watch('state'),
+      zipCode: watch('zip'),
+    };
+    const drivers = await runDriversPrefill(ezlynxApplicantId, address);
+    if (drivers.length > 0) {
+      const mapped = drivers.map((d: any) => ({
+        id: crypto.randomUUID(),
+        firstName: d.firstName || d.first_name || '',
+        lastName: d.lastName || d.last_name || '',
+        dob: d.dateOfBirth || d.date_of_birth || '',
+        gender: d.gender || '',
+        relationship: d.relationship || 'self',
+        licenseNumber: d.licenseNumber || d.drivers_license || '',
+        licenseState: d.licenseState || d.license_state || '',
+        yearsLicensed: '',
+        hasAccidents: false,
+        hasViolations: false,
+        _prefilled: true,
+      }));
+      replace(mapped);
+    }
+  };
 
   const handleAddDriver = () => {
     append({ ...NEW_DRIVER, id: crypto.randomUUID() });
@@ -49,12 +79,23 @@ export function DriversStep() {
           Add all licensed drivers in your household, including those who
           don&apos;t drive regularly.
         </p>
-        <CanopyConnectSMS
-          customerPhone={watch('phone')}
-          customerName={watch('firstName')}
-          variant="outline"
-          size="sm"
-        />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {ezlynxApplicantId && (
+            <PrefillButton
+              label="Prefill Drivers"
+              status={prefillStatus}
+              summary={prefillSummary}
+              error={prefillError}
+              onClick={handlePrefillDrivers}
+            />
+          )}
+          <CanopyConnectSMS
+            customerPhone={watch('phone')}
+            customerName={watch('firstName')}
+            variant="outline"
+            size="sm"
+          />
+        </div>
       </div>
 
       {/* Driver list */}

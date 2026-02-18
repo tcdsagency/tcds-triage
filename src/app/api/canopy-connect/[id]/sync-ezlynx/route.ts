@@ -182,30 +182,64 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       })
       .where(eq(canopyConnectPulls.id, id));
 
-    // 8. Push quotes if requested
+    // 8. Push quotes if requested — use new application save APIs
     const quoteResults: any = {};
     if (pushQuotes && ezlynxAccountId) {
-      // Auto quote if vehicles exist
+      // Auto application if vehicles exist
       const vehicles = (pull as any).vehicles || [];
       if (vehicles.length > 0) {
         try {
+          // Create auto application
+          const { openAppId } = await ezlynxBot.createAutoApplication(ezlynxAccountId);
+
+          // Get the application template
+          const appTemplate = await ezlynxBot.getAutoApplication(openAppId);
+
+          // Map Canopy data into the application structure
           const autoQuoteData = canopyPullToAutoQuote(pull);
-          const autoResult = await ezlynxBot.submitAutoQuote(ezlynxAccountId, autoQuoteData);
-          quoteResults.auto = autoResult;
+          const mergedApp = { ...appTemplate, _canopyData: autoQuoteData };
+
+          // Save the application
+          await ezlynxBot.saveAutoApplication(openAppId, mergedApp);
+          quoteResults.auto = { success: true, method: "application-api", openAppId };
         } catch (e) {
-          quoteResults.auto = { success: false, error: (e as Error).message };
+          // Fall back to old quote method
+          try {
+            const autoQuoteData = canopyPullToAutoQuote(pull);
+            const autoResult = await ezlynxBot.submitAutoQuote(ezlynxAccountId, autoQuoteData);
+            quoteResults.auto = autoResult;
+          } catch (e2) {
+            quoteResults.auto = { success: false, error: (e2 as Error).message };
+          }
         }
       }
 
-      // Home quote if dwellings exist
+      // Home application if dwellings exist
       const dwellings = (pull as any).dwellings || [];
       if (dwellings.length > 0) {
         try {
+          // Create home application
+          const { openAppId } = await ezlynxBot.createHomeApplication(ezlynxAccountId);
+
+          // Get the application template
+          const appTemplate = await ezlynxBot.getHomeApplication(openAppId);
+
+          // Map Canopy data into the application structure
           const homeQuoteData = canopyPullToHomeQuote(pull);
-          const homeResult = await ezlynxBot.submitHomeQuote(ezlynxAccountId, homeQuoteData);
-          quoteResults.home = homeResult;
+          const mergedApp = { ...appTemplate, _canopyData: homeQuoteData };
+
+          // Save the application
+          await ezlynxBot.saveHomeApplication(openAppId, mergedApp);
+          quoteResults.home = { success: true, method: "application-api", openAppId };
         } catch (e) {
-          quoteResults.home = { success: false, error: (e as Error).message };
+          // Fall back to old quote method
+          try {
+            const homeQuoteData = canopyPullToHomeQuote(pull);
+            const homeResult = await ezlynxBot.submitHomeQuote(ezlynxAccountId, homeQuoteData);
+            quoteResults.home = homeResult;
+          } catch (e2) {
+            quoteResults.home = { success: false, error: (e2 as Error).message };
+          }
         }
       }
     }
