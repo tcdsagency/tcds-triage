@@ -499,8 +499,25 @@ export function canopyPullToAutoQuote(pull: any): any {
  * Maps dwelling info and home coverages.
  */
 export function canopyPullToHomeQuote(pull: any): any {
-  const dwelling = (pull.dwellings || [])[0] || {};
-  const coverages = pull.coverages || dwelling.coverages || [];
+  // Canopy home data can be at pull-level dwellings, or nested under a home policy
+  // Try pull.dwellings first, then look through policies for one with dwellings
+  let dwelling = (pull.dwellings || [])[0];
+  let coverages = pull.coverages || [];
+
+  if (!dwelling) {
+    const policies = pull.policies || [];
+    // Find the home policy (has dwellings) — prefer the renewal (latest effective date)
+    const homePolicy = policies
+      .filter((p: any) => p.dwellings?.length > 0)
+      .sort((a: any, b: any) => new Date(b.effective_date || 0).getTime() - new Date(a.effective_date || 0).getTime())[0];
+    if (homePolicy) {
+      dwelling = homePolicy.dwellings[0];
+      coverages = dwelling?.coverages || homePolicy.coverages || [];
+    }
+  } else {
+    coverages = dwelling.coverages || coverages;
+  }
+  dwelling = dwelling || {};
 
   // Dwelling info
   const dwellingInfo: any = {};
@@ -546,11 +563,14 @@ export function canopyPullToHomeQuote(pull: any): any {
   if (windHailCov?.deductible_cents) homeCoverage.windHailDeductible = Math.round(windHailCov.deductible_cents / 100);
   if (hurricaneCov?.deductible_cents) homeCoverage.hurricaneDeductible = Math.round(hurricaneCov.deductible_cents / 100);
 
-  // Policy info
-  const policy = (pull.policies || []).find((p: any) => (p.type || '').toLowerCase().includes('home')) || (pull.policies || [])[0];
+  // Policy info — find the home policy (has dwellings, or type includes 'home')
+  const policies = pull.policies || [];
+  const homePolicy = policies.find((p: any) => p.dwellings?.length > 0)
+    || policies.find((p: any) => (p.type || p.product_type || '').toLowerCase().includes('home'))
+    || policies[0];
   const policyInfo: any = {};
-  if (policy?.effective_date) policyInfo.effectiveDate = toEzlynxDate(policy.effective_date);
-  if (policy?.expiry_date) policyInfo.priorPolicyExpirationDate = toEzlynxDate(policy.expiry_date);
+  if (homePolicy?.effective_date) policyInfo.effectiveDate = toEzlynxDate(homePolicy.effective_date);
+  if (homePolicy?.expiry_date) policyInfo.priorPolicyExpirationDate = toEzlynxDate(homePolicy.expiry_date);
   if (pull.insurance_provider_name) policyInfo.priorCarrier = pull.insurance_provider_name;
 
   return {
@@ -718,6 +738,68 @@ export function canopyCentsToDeductible(cents?: number | null): EzEnum | undefin
   const name = `Item${dollars}`;
   return findEnum(DEDUCTIBLE_ENUMS, name);
 }
+
+// =============================================================================
+// HOME COVERAGE ENUM TABLES
+// =============================================================================
+
+const HOME_LIABILITY_ENUMS: EzEnum[] = [
+  { value: 0, name: 'Item25000', description: '25000' },
+  { value: 1, name: 'Item50000', description: '50000' },
+  { value: 2, name: 'Item100000', description: '100000' },
+  { value: 3, name: 'Item200000', description: '200000' },
+  { value: 4, name: 'Item300000', description: '300000' },
+  { value: 5, name: 'Item400000', description: '400000' },
+  { value: 6, name: 'Item500000', description: '500000' },
+  { value: 7, name: 'Item1000000', description: '1000000' },
+];
+
+const HOME_MEDPAY_ENUMS: EzEnum[] = [
+  { value: 0, name: 'Item1000', description: '1000' },
+  { value: 1, name: 'Item2000', description: '2000' },
+  { value: 2, name: 'Item3000', description: '3000' },
+  { value: 3, name: 'Item4000', description: '4000' },
+  { value: 4, name: 'Item5000', description: '5000' },
+];
+
+const HOME_PERILS_DEDUCTIBLE_ENUMS: EzEnum[] = [
+  { value: 2, name: 'Item100', description: '100' },
+  { value: 3, name: 'Item250', description: '250' },
+  { value: 4, name: 'Item500', description: '500' },
+  { value: 5, name: 'Item750', description: '750' },
+  { value: 6, name: 'Item1000', description: '1000' },
+  { value: 7, name: 'Item1500', description: '1500' },
+  { value: 8, name: 'Item2000', description: '2000' },
+  { value: 9, name: 'Item2500', description: '2500' },
+  { value: 10, name: 'Item3000', description: '3000' },
+  { value: 11, name: 'Item4000', description: '4000' },
+  { value: 12, name: 'Item5000', description: '5000' },
+  { value: 13, name: 'Item10000', description: '10000' },
+];
+
+const HOME_WIND_DEDUCTIBLE_ENUMS: EzEnum[] = [
+  { value: 0, name: 'Item100', description: '100' },
+  { value: 1, name: 'Item250', description: '250' },
+  { value: 2, name: 'Item500', description: '500' },
+  { value: 3, name: 'Item1000', description: '1000' },
+  { value: 4, name: 'Item1500', description: '1500' },
+  { value: 5, name: 'Item2000', description: '2000' },
+  { value: 6, name: 'Item2500', description: '2500' },
+  { value: 7, name: 'Item5000', description: '5000' },
+  { value: 8, name: 'Item10000', description: '10000' },
+];
+
+const HOME_HURRICANE_DEDUCTIBLE_ENUMS: EzEnum[] = [
+  { value: 0, name: 'Item100', description: '100' },
+  { value: 1, name: 'Item250', description: '250' },
+  { value: 2, name: 'Item500', description: '500' },
+  { value: 3, name: 'Item1000', description: '1000' },
+  { value: 4, name: 'Item1500', description: '1500' },
+  { value: 5, name: 'Item2000', description: '2000' },
+  { value: 6, name: 'Item2500', description: '2500' },
+  { value: 7, name: 'Item5000', description: '5000' },
+  { value: 8, name: 'Item10000', description: '10000' },
+];
 
 /** Map Canopy roof type to EZLynx enum */
 export function mapCanopyRoofType(type?: string | null): string | undefined {
@@ -1168,17 +1250,34 @@ export function canopyPullToHomeApplication(pull: any, appTemplate: any): { app:
     if (quoteData.residenceType) { app.dwellingInfo.residenceType = quoteData.residenceType; syncReport.dwelling.updated.push(`residenceType → ${quoteData.residenceType}`); }
   }
 
-  // Map coverages — also map additional coverage types from Canopy
-  if (app.coverage) {
-    if (quoteData.dwellingLimit) { app.coverage.dwellingLimit = quoteData.dwellingLimit; syncReport.coverages.updated.push(`Dwelling → $${quoteData.dwellingLimit}`); }
-    if (quoteData.personalLiabilityLimit) { app.coverage.personalLiabilityLimit = quoteData.personalLiabilityLimit; syncReport.coverages.updated.push(`Liability → $${quoteData.personalLiabilityLimit}`); }
-    if (quoteData.medicalPaymentsLimit) { app.coverage.medicalPaymentsLimit = quoteData.medicalPaymentsLimit; syncReport.coverages.updated.push(`MedPay → $${quoteData.medicalPaymentsLimit}`); }
-    if (quoteData.allPerilDeductible) { app.coverage.allPerilDeductible = quoteData.allPerilDeductible; syncReport.coverages.updated.push(`All Peril Ded → $${quoteData.allPerilDeductible}`); }
-    if (quoteData.otherStructuresLimit) { app.coverage.otherStructuresLimit = quoteData.otherStructuresLimit; syncReport.coverages.updated.push(`Other Structures → $${quoteData.otherStructuresLimit}`); }
-    if (quoteData.personalPropertyLimit) { app.coverage.personalPropertyLimit = quoteData.personalPropertyLimit; syncReport.coverages.updated.push(`Personal Property → $${quoteData.personalPropertyLimit}`); }
-    if (quoteData.lossOfUseLimit) { app.coverage.lossOfUseLimit = quoteData.lossOfUseLimit; syncReport.coverages.updated.push(`Loss of Use → $${quoteData.lossOfUseLimit}`); }
-    if (quoteData.windHailDeductible) { app.coverage.windHailDeductible = quoteData.windHailDeductible; syncReport.coverages.updated.push(`Wind/Hail Ded → $${quoteData.windHailDeductible}`); }
-    if (quoteData.hurricaneDeductible) { app.coverage.hurricaneDeductible = quoteData.hurricaneDeductible; syncReport.coverages.updated.push(`Hurricane Ded → $${quoteData.hurricaneDeductible}`); }
+  // Map coverages to app.generalCoverage (EZLynx home app structure)
+  // dwelling, personalProperty, lossOfUse are plain strings (dollar amounts)
+  // personalLiability, medicalPayments, perilsDeductible, windDeductible, hurricaneDeductible are enum objects
+  if (app.generalCoverage) {
+    const gc = app.generalCoverage;
+    if (quoteData.dwellingLimit) { gc.dwelling = String(quoteData.dwellingLimit); syncReport.coverages.updated.push(`Dwelling → $${quoteData.dwellingLimit}`); }
+    if (quoteData.personalPropertyLimit) { gc.personalProperty = String(quoteData.personalPropertyLimit); syncReport.coverages.updated.push(`Personal Property → $${quoteData.personalPropertyLimit}`); }
+    if (quoteData.lossOfUseLimit) { gc.lossOfUse = String(quoteData.lossOfUseLimit); syncReport.coverages.updated.push(`Loss of Use → $${quoteData.lossOfUseLimit}`); }
+    if (quoteData.personalLiabilityLimit) {
+      const e = findEnum(HOME_LIABILITY_ENUMS, `Item${quoteData.personalLiabilityLimit}`);
+      if (e) { gc.personalLiability = e; syncReport.coverages.updated.push(`Liability → $${e.description}`); }
+    }
+    if (quoteData.medicalPaymentsLimit) {
+      const e = findEnum(HOME_MEDPAY_ENUMS, `Item${quoteData.medicalPaymentsLimit}`);
+      if (e) { gc.medicalPayments = e; syncReport.coverages.updated.push(`MedPay → $${e.description}`); }
+    }
+    if (quoteData.allPerilDeductible) {
+      const e = findEnum(HOME_PERILS_DEDUCTIBLE_ENUMS, `Item${quoteData.allPerilDeductible}`);
+      if (e) { gc.perilsDeductible = e; syncReport.coverages.updated.push(`All Peril Ded → $${e.description}`); }
+    }
+    if (quoteData.windHailDeductible) {
+      const e = findEnum(HOME_WIND_DEDUCTIBLE_ENUMS, `Item${quoteData.windHailDeductible}`);
+      if (e) { gc.windDeductible = e; syncReport.coverages.updated.push(`Wind/Hail Ded → ${e.description}`); }
+    }
+    if (quoteData.hurricaneDeductible) {
+      const e = findEnum(HOME_HURRICANE_DEDUCTIBLE_ENUMS, `Item${quoteData.hurricaneDeductible}`);
+      if (e) { gc.hurricaneDeductible = e; syncReport.coverages.updated.push(`Hurricane Ded → ${e.description}`); }
+    }
   }
 
   // Map property address
