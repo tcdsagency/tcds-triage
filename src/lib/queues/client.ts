@@ -343,6 +343,7 @@ export interface RenewalBatchJobData {
   storagePath: string;
   fileBuffer?: string; // Base64 encoded for in-memory processing
   originalFileName?: string;
+  forceAsRenewal?: boolean; // Bypass date check — treat all transactions as renewals
 }
 
 export interface RenewalCandidateJobData {

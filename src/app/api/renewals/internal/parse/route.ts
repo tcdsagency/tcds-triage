@@ -63,10 +63,12 @@ export async function POST(request: NextRequest) {
       }
 
       case 'partition-transactions-v2': {
-        const { renewals: v2Renewals, baselines: v2Baselines, archived: v2Archived } = partitionTransactionsV2(body.transactions);
+        const { renewals: v2Renewals, baselines: v2Baselines, archived: v2Archived } = body.forceAsRenewal
+          ? { renewals: body.transactions, baselines: [] as any[], archived: [] as any[] }
+          : partitionTransactionsV2(body.transactions);
         const { unique: v2Deduped, duplicatesRemoved: v2DuplicatesRemoved } = deduplicateRenewals(v2Renewals);
 
-        console.log(`[Parse] partition-transactions-v2 — total=${body.transactions.length} renewals=${v2Deduped.length} baselines=${v2Baselines.length} archived=${v2Archived.length} duplicatesRemoved=${v2DuplicatesRemoved}`);
+        console.log(`[Parse] partition-transactions-v2 — total=${body.transactions.length} renewals=${v2Deduped.length} baselines=${v2Baselines.length} archived=${v2Archived.length} duplicatesRemoved=${v2DuplicatesRemoved}${body.forceAsRenewal ? ' (forceAsRenewal)' : ''}`);
         return NextResponse.json({
           success: true,
           renewals: v2Deduped,

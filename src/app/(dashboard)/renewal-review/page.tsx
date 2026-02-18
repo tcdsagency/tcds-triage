@@ -77,6 +77,7 @@ export default function RenewalReviewPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [showUploadZone, setShowUploadZone] = useState(false);
+  const [forceAsRenewal, setForceAsRenewal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Category tab
@@ -204,6 +205,7 @@ export default function RenewalReviewPage() {
       const formData = new FormData();
       formData.append('file', file);
       if (user?.id) formData.append('uploadedById', user.id);
+      if (forceAsRenewal) formData.append('forceAsRenewal', 'true');
 
       const res = await fetch('/api/renewals/upload', {
         method: 'POST',
@@ -380,6 +382,15 @@ export default function RenewalReviewPage() {
             >
               {uploading ? 'Uploading...' : 'Select File'}
             </button>
+            <label className="mt-3 flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={forceAsRenewal}
+                onChange={(e) => setForceAsRenewal(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600"
+              />
+              Force as renewal (bypass date check)
+            </label>
             {uploadError && (
               <div className="mt-3 flex items-center justify-center gap-2 text-sm text-red-600 dark:text-red-400">
                 <span>{uploadError}</span>

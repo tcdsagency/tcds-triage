@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const uploadedById = formData.get('uploadedById') as string | null;
+    const forceAsRenewal = formData.get('forceAsRenewal') === 'true';
 
     if (!file) {
       return NextResponse.json(
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
         storagePath,
         fileBuffer: buffer.toString('base64'), // Pass buffer for in-memory processing
         originalFileName: file.name,
+        forceAsRenewal,
       });
     } catch (queueError) {
       console.error('[Upload] Failed to queue batch processing:', queueError);

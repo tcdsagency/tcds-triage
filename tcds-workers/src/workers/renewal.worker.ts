@@ -159,7 +159,7 @@ async function processBatch(data: RenewalBatchJobData): Promise<void> {
       // Partition into renewals, baselines, and archived
       const partitionRes = await internalFetch('/api/renewals/internal/parse', {
         method: 'POST',
-        body: JSON.stringify({ action: 'partition-transactions-v2', transactions: parseData.transactions }),
+        body: JSON.stringify({ action: 'partition-transactions-v2', transactions: parseData.transactions, forceAsRenewal: data.forceAsRenewal }),
       });
       const partitionData = await partitionRes.json() as {
         success: boolean;
