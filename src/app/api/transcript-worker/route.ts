@@ -1073,7 +1073,125 @@ async function pollSQLForMissedCalls(): Promise<{ found: number; processed: numb
             }).where(eq(calls.id, extMatch.id));
             console.log(`[TranscriptWorker] Enriched call ${extMatch.id.slice(0, 8)} with phone ${customerPhone} from MSSQL`);
           }
-          console.log(`[TranscriptWorker] Call exists by extension+time for ${transcript.extension} (call ${extMatch.id.slice(0, 8)}), skipping SQL record ${transcript.id}`);
+
+          // Check if this call already has a wrapup with completed AI processing
+          const [existingWrapup] = await db
+            .select({ id: wrapupDrafts.id, aiProcessingStatus: wrapupDrafts.aiProcessingStatus })
+            .from(wrapupDrafts)
+            .where(eq(wrapupDrafts.callId, extMatch.id))
+            .limit(1);
+
+          if (existingWrapup && existingWrapup.aiProcessingStatus === "completed") {
+            console.log(`[TranscriptWorker] Call exists with completed wrapup for ${transcript.extension} (call ${extMatch.id.slice(0, 8)}), skipping SQL record ${transcript.id}`);
+            continue;
+          }
+
+          // Call exists but has no wrapup (or wrapup has failed AI) — process the transcript
+          console.log(`[TranscriptWorker] Call ${extMatch.id.slice(0, 8)} exists but needs wrapup — processing SQL record ${transcript.id}`);
+
+          // Store transcript on call record
+          await db.update(calls).set({
+            transcription: transcript.transcript,
+            transcriptionStatus: "completed",
+            directionFinal: transcript.direction as "inbound" | "outbound",
+            updatedAt: new Date(),
+          }).where(eq(calls.id, extMatch.id));
+
+          // Run AI extraction
+          const aiResult = await extractCallDataWithAI(transcript.transcript, {
+            direction: transcript.direction,
+            agentExtension: transcript.extension,
+            callerNumber: transcript.callerNumber,
+            duration: transcript.duration,
+          });
+
+          if (aiResult.isHangup) {
+            console.log(`[TranscriptWorker] Hangup detected for call ${extMatch.id.slice(0, 8)}, skipping wrapup`);
+            continue;
+          }
+
+          // Update call with AI results
+          await db.update(calls).set({
+            aiSummary: aiResult.summary,
+            aiActionItems: aiResult.actionItems,
+            aiSentiment: { overall: aiResult.sentiment, score: 0, timeline: [] },
+            aiTopics: aiResult.topics,
+            updatedAt: new Date(),
+          }).where(eq(calls.id, extMatch.id));
+
+          // Create/update wrapup
+          const resolvedPhone = realPhone.length >= 7 ? customerPhone : extMatch.fromNumber;
+          const [wrapup] = await db
+            .insert(wrapupDrafts)
+            .values({
+              tenantId,
+              callId: extMatch.id,
+              status: "pending_review" as const,
+              summary: aiResult.summary,
+              customerName: aiResult.customerName,
+              customerPhone: resolvedPhone || null,
+              policyNumbers: aiResult.policyNumbers,
+              insuranceType: aiResult.insuranceType,
+              requestType: aiResult.requestType,
+              direction: (transcript.direction === "inbound" ? "Inbound" : "Outbound") as "Inbound" | "Outbound",
+              agentExtension: transcript.extension || null,
+              matchStatus: "unmatched",
+              aiExtraction: {
+                ...aiResult,
+                transcriptSource: "mssql_poll_enriched",
+                sqlRecordId: transcript.id,
+                polledAt: new Date().toISOString(),
+              },
+              aiProcessingStatus: "completed",
+              aiProcessedAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: wrapupDrafts.callId,
+              set: {
+                summary: aiResult.summary,
+                customerName: aiResult.customerName,
+                customerPhone: resolvedPhone || null,
+                aiExtraction: {
+                  ...aiResult,
+                  transcriptSource: "mssql_poll_enriched",
+                  sqlRecordId: transcript.id,
+                  polledAt: new Date().toISOString(),
+                },
+                aiProcessingStatus: "completed",
+                aiProcessedAt: new Date(),
+                status: "pending_review",
+                updatedAt: new Date(),
+              },
+            })
+            .returning({ id: wrapupDrafts.id });
+
+          console.log(`[TranscriptWorker] Created wrapup ${wrapup.id} for existing call ${extMatch.id.slice(0, 8)} from MSSQL poll`);
+
+          // Auto-create service ticket for inbound calls
+          if (transcript.direction === "inbound" && wrapup?.id) {
+            try {
+              const [agent] = transcript.extension ? await db
+                .select({ id: users.id })
+                .from(users)
+                .where(eq(users.extension, transcript.extension))
+                .limit(1) : [];
+
+              await createAutoTicketForPollCall({
+                tenantId,
+                callId: extMatch.id,
+                agentId: agent?.id || null,
+                customerPhone: resolvedPhone || null,
+                customerName: aiResult.customerName || null,
+                aiResult,
+                transcript: transcript.transcript,
+                wrapupId: wrapup.id,
+                durationSeconds: parseDuration(transcript.duration),
+              });
+            } catch (ticketError) {
+              console.error(`[TranscriptWorker] Failed to create auto-ticket for enriched call:`, ticketError instanceof Error ? ticketError.message : ticketError);
+            }
+          }
+
           continue;
         }
       }
