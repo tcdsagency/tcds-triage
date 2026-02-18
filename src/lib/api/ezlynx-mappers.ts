@@ -703,49 +703,91 @@ export function findCanopyCoverage(coverages: any[], names: string[]): any | und
  * Merges onto an existing application template from the API.
  */
 export function canopyPullToAutoApplication(pull: any, appTemplate: any): any {
-  const app = { ...appTemplate };
+  const app = JSON.parse(JSON.stringify(appTemplate)); // deep clone
   const quoteData = canopyPullToAutoQuote(pull);
 
-  // Map drivers into application structure
+  // Map drivers — merge Canopy data onto existing driver slots
   if (quoteData.drivers && quoteData.drivers.length > 0 && app.drivers) {
-    app.drivers = quoteData.drivers.map((d: any, idx: number) => ({
-      ...(app.drivers[idx] || {}),
-      firstName: d.firstName,
-      lastName: d.lastName,
-      dateOfBirth: d.dateOfBirth,
-      gender: d.gender != null ? { value: d.gender } : undefined,
-      maritalStatus: d.maritalStatus != null ? { value: d.maritalStatus } : undefined,
-      driversLicenseNumber: d.licenseNumber,
-      driversLicenseState: d.licenseState,
-      relationship: d.relationship != null ? { value: d.relationship } : undefined,
-    }));
+    for (let idx = 0; idx < quoteData.drivers.length; idx++) {
+      const d = quoteData.drivers[idx];
+      const existing = app.drivers[idx];
+      if (!existing) continue; // Don't add new drivers beyond what the app already has
+
+      if (d.firstName) existing.firstName = d.firstName;
+      if (d.lastName) existing.lastName = d.lastName;
+      if (d.dateOfBirth) existing.dateOfBirth = d.dateOfBirth;
+      if (d.licenseNumber) existing.driversLicenseNumber = d.licenseNumber;
+      if (d.licenseState && existing.driversLicenseState) {
+        // Keep existing format (could be enum value like "AL" or { value, name })
+        existing.driversLicenseState = d.licenseState;
+      }
+      // Preserve existing enum objects for gender/maritalStatus/relationship
+      // — Canopy data is often null for these and EZLynx already has them
+      if (d.gender != null && existing.gender) {
+        existing.gender = { ...existing.gender, value: d.gender };
+      }
+      if (d.maritalStatus != null && existing.maritalStatus) {
+        existing.maritalStatus = { ...existing.maritalStatus, value: d.maritalStatus };
+      }
+    }
   }
 
-  // Map vehicles into application structure
-  if (quoteData.vehicles && quoteData.vehicles.length > 0 && app.vehicles) {
-    app.vehicles = quoteData.vehicles.map((v: any, idx: number) => ({
-      ...(app.vehicles[idx] || {}),
-      year: v.year,
-      make: v.make,
-      model: v.model,
-      vin: v.vin,
-      usage: v.use,
-      annualMiles: v.annualMiles,
-      ownership: v.ownership,
-    }));
+  // Map vehicles — vehicleCollection is nested inside app.vehicles
+  const vehicleCollection = app.vehicles?.vehicleCollection || [];
+  if (quoteData.vehicles && quoteData.vehicles.length > 0 && vehicleCollection.length > 0) {
+    for (let idx = 0; idx < quoteData.vehicles.length; idx++) {
+      const v = quoteData.vehicles[idx];
+      const existing = vehicleCollection[idx];
+      if (!existing) continue;
+
+      if (v.vin) existing.vin = v.vin;
+      if (v.make) existing.make = v.make;
+      if (v.model) existing.model = v.model;
+      if (v.year != null) {
+        // year in EZLynx is an enum like { value: 3, name: "Item2023", description: "2023" }
+        // Update the description; the save API may accept just the year number too
+        if (existing.year && typeof existing.year === 'object') {
+          existing.year = { ...existing.year, description: String(v.year) };
+        } else {
+          existing.year = v.year;
+        }
+      }
+      if (v.annualMiles != null) existing.annualMiles = v.annualMiles;
+    }
+
+    // Also map per-vehicle coverages from Canopy
+    if (quoteData.vehicleCoverages) {
+      for (const vc of quoteData.vehicleCoverages) {
+        const existing = vehicleCollection[vc.vehicleIndex];
+        if (!existing?.coverage) continue;
+        if (vc.compDeductible != null) existing.coverage.comprehensive = vc.compDeductible;
+        if (vc.collDeductible != null) existing.coverage.collision = vc.collDeductible;
+        if (vc.towing != null) existing.coverage.towing = vc.towing;
+        if (vc.rental != null) existing.coverage.rental = vc.rental;
+      }
+    }
   }
 
-  // Map general coverage
-  if (quoteData.generalCoverage && app.generalCoverage) {
-    Object.assign(app.generalCoverage, quoteData.generalCoverage);
+  // Map general coverage — merge onto existing coverage structure
+  if (quoteData.generalCoverage && app.coverage?.generalCoverage) {
+    const gc = app.coverage.generalCoverage;
+    if (quoteData.generalCoverage.bodilyInjury != null) gc.bodilyInjury = quoteData.generalCoverage.bodilyInjury;
+    if (quoteData.generalCoverage.propertyDamage != null) gc.propertyDamage = quoteData.generalCoverage.propertyDamage;
+    if (quoteData.generalCoverage.uninsuredMotorist != null) gc.uninsuredMotorist = quoteData.generalCoverage.uninsuredMotorist;
+    if (quoteData.generalCoverage.underinsuredMotorist != null) gc.underinsuredMotorist = quoteData.generalCoverage.underinsuredMotorist;
+    if (quoteData.generalCoverage.medicalPayments != null) gc.medicalPayments = quoteData.generalCoverage.medicalPayments;
   }
 
-  // Map policy info
-  if (quoteData.effectiveDate && app.policyInformation) {
-    app.policyInformation.effectiveDate = quoteData.effectiveDate;
-  }
-  if (quoteData.priorCarrier && app.policyInformation) {
-    app.policyInformation.priorCarrier = quoteData.priorCarrier;
+  // Map policy info — effective date, prior carrier
+  if (app.policyInformation) {
+    if (quoteData.effectiveDate) {
+      app.policyInformation.effectiveDate = quoteData.effectiveDate;
+    }
+    if (quoteData.priorPolicyExpirationDate) {
+      app.policyInformation.priorPolicyExpirationDate = quoteData.priorPolicyExpirationDate;
+    }
+    // priorCarrier from Canopy is a string like "allstate" — try to match existing enum
+    // or leave as-is for manual review. Don't overwrite a good enum with a raw string.
   }
 
   return app;
