@@ -415,19 +415,29 @@ export class MortgageePaymentScheduler {
 
     // Address zip may be at top level or nested under street (HawkSoft sync variant)
     const addr = property?.address as any;
-    const zipCode =
+    let zipCode =
       addr?.zip || addr?.street?.zip || "";
     const loanNumber = mortgagee.loanNumber || policy?.policyNumber || "";
 
-    // Get customer last name for MCI lookup
+    // Get customer last name and address fallback for MCI lookup
     let lastName = "";
     if (mortgagee.customerId) {
       const [customer] = await db
-        .select({ lastName: customers.lastName })
+        .select({ lastName: customers.lastName, address: customers.address })
         .from(customers)
         .where(eq(customers.id, mortgagee.customerId))
         .limit(1);
       lastName = customer?.lastName || "";
+      // Fallback to customer address ZIP if property ZIP is missing
+      if (!zipCode) {
+        const custAddr = customer?.address as any;
+        zipCode = custAddr?.zip || "";
+      }
+    }
+
+    // Final fallback to mortgagee's own ZIP
+    if (!zipCode) {
+      zipCode = mortgagee.zipCode || "";
     }
 
     // Skip companies that don't use MCI
