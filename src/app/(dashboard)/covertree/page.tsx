@@ -28,6 +28,8 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import CustomerSearchModal from '@/components/features/CustomerSearchModal';
+import LoanPdfUpload from '@/components/features/covertree/LoanPdfUpload';
+import type { CoverTreeFormData } from '@/lib/pdf/covertree-extraction';
 
 // =============================================================================
 // TYPES
@@ -507,6 +509,56 @@ export default function CoverTreePage() {
     setSearchModalOpen(true);
   }, [form.firstName, form.lastName]);
 
+  // ---------------------------------------------------------------------------
+  // PDF extraction auto-fill — only fills empty/default fields
+  // ---------------------------------------------------------------------------
+  const handlePdfExtracted = useCallback(
+    (extracted: Partial<CoverTreeFormData>, _confidence: number) => {
+      setForm((prev) => {
+        const updated = { ...prev };
+        const fillIfEmpty = (key: keyof FormData, value: string | boolean | undefined) => {
+          if (value == null) return;
+          const current = updated[key];
+          // Only fill if field is empty/default
+          if (typeof current === 'string' && current === '') {
+            (updated as any)[key] = value;
+          } else if (typeof current === 'boolean' && key === 'sameAsMailing' && value === false) {
+            // Special case: uncheck sameAsMailing when addresses differ
+            updated.sameAsMailing = false;
+          }
+        };
+
+        fillIfEmpty('firstName', extracted.firstName);
+        fillIfEmpty('middleName', extracted.middleName);
+        fillIfEmpty('lastName', extracted.lastName);
+        fillIfEmpty('email', extracted.email);
+        fillIfEmpty('phone', extracted.phone);
+        fillIfEmpty('dateOfBirth', extracted.dateOfBirth);
+        fillIfEmpty('mailingStreet', extracted.mailingStreet);
+        fillIfEmpty('mailingCity', extracted.mailingCity);
+        fillIfEmpty('mailingState', extracted.mailingState);
+        fillIfEmpty('mailingZip', extracted.mailingZip);
+        fillIfEmpty('propertyStreet', extracted.propertyStreet);
+        fillIfEmpty('propertyCity', extracted.propertyCity);
+        fillIfEmpty('propertyState', extracted.propertyState);
+        fillIfEmpty('propertyZip', extracted.propertyZip);
+        fillIfEmpty('propertyCounty', extracted.propertyCounty);
+        if (extracted.sameAsMailing === false) updated.sameAsMailing = false;
+        fillIfEmpty('homeType', extracted.homeType);
+        fillIfEmpty('manufacturer', extracted.manufacturer);
+        fillIfEmpty('modelYear', extracted.modelYear);
+        fillIfEmpty('totalSquareFootage', extracted.totalSquareFootage);
+        fillIfEmpty('roofShape', extracted.roofShape);
+        fillIfEmpty('effectiveDate', extracted.effectiveDate);
+        fillIfEmpty('isNewPurchase', extracted.isNewPurchase);
+        fillIfEmpty('purchaseDate', extracted.purchaseDate);
+
+        return updated;
+      });
+    },
+    []
+  );
+
   const handleCustomerSelect = useCallback((customer: any) => {
     setForm((prev) => {
       const updated = { ...prev };
@@ -788,6 +840,9 @@ export default function CoverTreePage() {
       {/* ================================================================== */}
       {step === 0 && (
         <div className="space-y-6">
+          {/* PDF Upload Auto-Fill */}
+          <LoanPdfUpload onExtracted={handlePdfExtracted} />
+
           {/* Linked customer badge */}
           {linkedCustomer && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
