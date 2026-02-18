@@ -52,6 +52,17 @@ export default function LoanPdfUpload({ onExtracted }: LoanPdfUploadProps) {
           body: formData,
         });
 
+        if (!res.ok) {
+          // Try to parse error, but handle non-JSON responses (e.g. Vercel 413)
+          try {
+            const errData = await res.json();
+            toast.error(errData.error || `Extraction failed (${res.status})`);
+          } catch {
+            toast.error(`Extraction failed: ${res.status} ${res.statusText}`);
+          }
+          return;
+        }
+
         const data = await res.json();
         if (!data.success) {
           toast.error(data.error || 'Extraction failed');
