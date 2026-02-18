@@ -354,9 +354,6 @@ export async function POST(request: NextRequest) {
           const effectiveDate = matchedPolicy?.expirationDate || null;
           const resolvedPolicyNumber = matchedPolicy?.policyNumber || policyNumber;
 
-          // Skip if we can't determine either a customer or policy number — too ambiguous
-          if (!customerId && !resolvedPolicyNumber) continue;
-
           // Check if a comparison already exists for this policy + effective date
           // (or for this AZ ticket ID)
           const existingChecks = [];
@@ -407,6 +404,10 @@ export async function POST(request: NextRequest) {
 
           const assignedAgentId = matchedPolicy?.producerId || customerInfo?.producerId || (ticket.csr ? csrToUserId.get(ticket.csr) : null) || null;
 
+          // Build customer display name from ticket or customer record
+          const ticketCustomerName = [ticket.householdFirstname, ticket.householdLastname]
+            .filter(Boolean).join(' ') || ticket.name || null;
+
           // Create pending_manual_renewal placeholder
           const [comparison] = await db
             .insert(renewalComparisons)
@@ -424,6 +425,9 @@ export async function POST(request: NextRequest) {
               renewalSource: 'pending',
               assignedAgentId,
               agencyzoomSrId: ticket.id,
+              renewalSnapshot: {
+                insuredName: ticketCustomerName,
+              },
               comparisonSummary: {
                 note: 'AZ renewal ticket created — awaiting renewal data. Upload PDF dec page or wait for AL3 file.',
                 azTicketSubject: ticket.subject,

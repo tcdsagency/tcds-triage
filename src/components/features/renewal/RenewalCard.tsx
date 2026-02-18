@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, Calendar } from 'lucide-react';
+import { AlertTriangle, Calendar, ExternalLink, Clock } from 'lucide-react';
 import { analyzeReasons, buildReasonSuffix, REASON_COLORS } from '@/lib/renewal-reasons';
 import AZStatusBadge from './AZStatusBadge';
 import type { RenewalComparison } from './types';
@@ -139,6 +139,28 @@ export default function RenewalCard({ renewal, onClick }: RenewalCardProps) {
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Warning banner for pending manual renewals */}
+      {isPendingManualRenewal && (
+        <div className="flex items-center gap-2 mb-2 px-2 py-1.5 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+          <Clock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <span className="text-xs text-amber-700 dark:text-amber-300">
+            Renewal data not received yet
+          </span>
+          {renewal.agencyzoomSrId && (
+            <a
+              href={`https://app.agencyzoom.com/service-center/${renewal.agencyzoomSrId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="ml-auto flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline shrink-0"
+            >
+              AZ #{renewal.agencyzoomSrId}
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
       )}
 
