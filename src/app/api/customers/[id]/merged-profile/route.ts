@@ -713,6 +713,8 @@ export async function GET(
             .select({
               hawksoftClientCode: customers.hawksoftClientCode,
               agencyzoomId: customers.agencyzoomId,
+              ezlynxAccountId: customers.ezlynxAccountId,
+              ezlynxSyncedAt: customers.ezlynxSyncedAt,
             })
             .from(customers)
             .where(eq(customers.id, customerId))
@@ -724,6 +726,8 @@ export async function GET(
             .select({
               hawksoftClientCode: customers.hawksoftClientCode,
               agencyzoomId: customers.agencyzoomId,
+              ezlynxAccountId: customers.ezlynxAccountId,
+              ezlynxSyncedAt: customers.ezlynxSyncedAt,
             })
             .from(customers)
             .where(eq(customers.agencyzoomId, customerId))
@@ -736,6 +740,8 @@ export async function GET(
               .select({
                 hawksoftClientCode: customers.hawksoftClientCode,
                 agencyzoomId: customers.agencyzoomId,
+                ezlynxAccountId: customers.ezlynxAccountId,
+                ezlynxSyncedAt: customers.ezlynxSyncedAt,
               })
               .from(customers)
               .where(eq(customers.hawksoftClientCode, customerId))

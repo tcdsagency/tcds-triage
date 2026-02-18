@@ -419,6 +419,10 @@ export interface MergedProfile {
   // External Links
   agencyzoomUrl?: string;
   hawksoftUrl?: string;
+
+  // EZLynx integration
+  ezlynxAccountId?: string;
+  ezlynxSyncedAt?: string;
   
   // Agent Assignment
   producer?: {
