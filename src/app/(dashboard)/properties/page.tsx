@@ -53,7 +53,29 @@ interface PropertyLookup {
   historicalSurveys: Array<{ date: string; imageUrl: string }>;
   historicalComparison?: HistoricalComparison;
   createdAt: string;
+  orion180Data: Orion180Data | null;
   reportCard?: any;
+}
+
+interface Orion180Data {
+  hurricaneGrade: string | null;
+  floodGrade: string | null;
+  tornadoGrade: string | null;
+  wildfireGrade: string | null;
+  convectionStormGrade: string | null;
+  lightningGrade: string | null;
+  yearBuilt: number | null;
+  sqft: number | null;
+  construction: string | null;
+  roofMaterial: string | null;
+  roofShape: string | null;
+  numFloors: number | null;
+  distanceToCoast: number | null;
+  protectionClass: string | null;
+  femaFloodZone: string | null;
+  lat: number | null;
+  lng: number | null;
+  raw: Array<{ fieldName: string; value: string }>;
 }
 
 interface FeaturePolygon {
@@ -855,6 +877,98 @@ export default function PropertyIntelligencePage() {
                         )}
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Orion180 Risk Report */}
+                {lookup.orion180Data && (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                    <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-amber-600" />
+                      Orion180 Risk Report
+                      <SourceBadge source="orion180" />
+                    </h3>
+
+                    {/* Risk Grades */}
+                    <div className="mb-5">
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Risk Grades</h4>
+                      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                        <RiskGradeCard label="Hurricane" grade={lookup.orion180Data.hurricaneGrade} />
+                        <RiskGradeCard label="Flood" grade={lookup.orion180Data.floodGrade} />
+                        <RiskGradeCard label="Tornado" grade={lookup.orion180Data.tornadoGrade} />
+                        <RiskGradeCard label="Wildfire" grade={lookup.orion180Data.wildfireGrade} />
+                        <RiskGradeCard label="Conv. Storm" grade={lookup.orion180Data.convectionStormGrade} />
+                        <RiskGradeCard label="Lightning" grade={lookup.orion180Data.lightningGrade} />
+                      </div>
+                    </div>
+
+                    {/* Property Details & Location/Hazard */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm mb-5">
+                      <div className="space-y-2">
+                        <h4 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700 pb-1">Property Details</h4>
+                        {lookup.orion180Data.yearBuilt != null && (
+                          <InfoRow label="Year Built" value={String(lookup.orion180Data.yearBuilt)} icon="📅" />
+                        )}
+                        {lookup.orion180Data.sqft != null && (
+                          <InfoRow label="Sqft" value={lookup.orion180Data.sqft.toLocaleString()} icon="📐" />
+                        )}
+                        {lookup.orion180Data.construction && (
+                          <InfoRow label="Construction" value={lookup.orion180Data.construction} icon="🏗️" />
+                        )}
+                        {lookup.orion180Data.roofMaterial && (
+                          <InfoRow label="Roof Material" value={lookup.orion180Data.roofMaterial} icon="🏠" />
+                        )}
+                        {lookup.orion180Data.roofShape && (
+                          <InfoRow label="Roof Shape" value={lookup.orion180Data.roofShape} icon="🔺" />
+                        )}
+                        {lookup.orion180Data.numFloors != null && (
+                          <InfoRow label="Floors" value={String(lookup.orion180Data.numFloors)} icon="🏢" />
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <h4 className="font-medium text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700 pb-1">Location &amp; Hazard</h4>
+                        {lookup.orion180Data.distanceToCoast != null && (
+                          <InfoRow label="Dist. to Coast" value={`${lookup.orion180Data.distanceToCoast.toLocaleString()} mi`} icon="🌊" />
+                        )}
+                        {lookup.orion180Data.protectionClass && (
+                          <InfoRow label="Protection Class" value={lookup.orion180Data.protectionClass} icon="🚒" />
+                        )}
+                        {lookup.orion180Data.femaFloodZone && (
+                          <InfoRow label="FEMA Flood Zone" value={lookup.orion180Data.femaFloodZone} icon="🌊" />
+                        )}
+                        {lookup.orion180Data.lat != null && lookup.orion180Data.lng != null && (
+                          <InfoRow label="Coordinates" value={`${lookup.orion180Data.lat.toFixed(5)}, ${lookup.orion180Data.lng.toFixed(5)}`} icon="📍" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* All Raw Fields (collapsible) */}
+                    {lookup.orion180Data.raw && lookup.orion180Data.raw.length > 0 && (
+                      <details className="mt-3">
+                        <summary className="text-sm font-medium text-gray-600 dark:text-gray-400 cursor-pointer hover:text-gray-900 dark:hover:text-gray-200">
+                          All Fields ({lookup.orion180Data.raw.length})
+                        </summary>
+                        <div className="mt-2 max-h-64 overflow-y-auto border border-gray-100 dark:border-gray-700 rounded-lg">
+                          <table className="w-full text-xs">
+                            <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                              <tr>
+                                <th className="text-left px-3 py-1.5 font-medium text-gray-600 dark:text-gray-300">Field</th>
+                                <th className="text-left px-3 py-1.5 font-medium text-gray-600 dark:text-gray-300">Value</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                              {lookup.orion180Data.raw.map((field, i) => (
+                                <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                  <td className="px-3 py-1 text-gray-600 dark:text-gray-400 font-mono">{field.fieldName}</td>
+                                  <td className="px-3 py-1 text-gray-900 dark:text-gray-100">{field.value}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                    )}
                   </div>
                 )}
               </div>
@@ -1937,8 +2051,8 @@ function HazardCard({ label, detected, confidence, detail }: { label: string; de
   );
 }
 
-function SourceBadge({ source }: { source: 'RPR' | 'Nearmap' | 'Nearmap AI' | 'Claude AI' | 'MMI' | 'Google' | 'PropertyAPI' }) {
-  const colors = {
+function SourceBadge({ source }: { source: 'RPR' | 'Nearmap' | 'Nearmap AI' | 'Claude AI' | 'MMI' | 'Google' | 'PropertyAPI' | 'orion180' }) {
+  const colors: Record<string, string> = {
     'RPR': 'bg-purple-50 text-purple-600 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800',
     'Nearmap': 'bg-sky-50 text-sky-600 border-sky-200 dark:bg-sky-900/30 dark:text-sky-400 dark:border-sky-800',
     'Nearmap AI': 'bg-sky-50 text-sky-600 border-sky-200 dark:bg-sky-900/30 dark:text-sky-400 dark:border-sky-800',
@@ -1946,11 +2060,31 @@ function SourceBadge({ source }: { source: 'RPR' | 'Nearmap' | 'Nearmap AI' | 'C
     'MMI': 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800',
     'Google': 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800',
     'PropertyAPI': 'bg-teal-50 text-teal-600 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800',
+    'orion180': 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800',
   };
+  const displayName = source === 'orion180' ? 'Orion180' : source;
   return (
     <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-medium', colors[source])}>
-      {source}
+      {displayName}
     </span>
+  );
+}
+
+function RiskGradeCard({ label, grade }: { label: string; grade: string | null }) {
+  if (!grade) return null;
+  const gradeColors: Record<string, string> = {
+    A: 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700',
+    B: 'bg-lime-100 text-lime-800 border-lime-300 dark:bg-lime-900/40 dark:text-lime-300 dark:border-lime-700',
+    C: 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-700',
+    D: 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-700',
+    F: 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700',
+  };
+  const colorClass = gradeColors[grade.toUpperCase()] || 'bg-gray-100 text-gray-800 border-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600';
+  return (
+    <div className={cn('rounded-lg border p-3 text-center', colorClass)}>
+      <div className="text-2xl font-bold">{grade}</div>
+      <div className="text-[10px] font-medium mt-1 opacity-80">{label}</div>
+    </div>
   );
 }
 
