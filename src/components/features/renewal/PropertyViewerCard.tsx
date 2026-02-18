@@ -151,14 +151,15 @@ export default function PropertyViewerCard({ renewalId, lineOfBusiness, address 
   })();
 
   // Street view
-  const fullAddress = address ? [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ') : '';
+  const fullAddress = address ? [address.street, address.city, address.state, address.zip].filter(Boolean).join(' ') : '';
   const encodedAddress = encodeURIComponent(fullAddress);
+  const commaAddress = address ? [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ') : '';
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const streetViewEmbedUrl = fullAddress && apiKey
     ? `https://www.google.com/maps/embed/v1/streetview?key=${apiKey}&location=${encodedAddress}&heading=0&pitch=0&fov=90`
     : null;
-  const mapEmbedUrl = fullAddress && apiKey
-    ? `https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodedAddress}&zoom=18&maptype=satellite`
+  const mapEmbedUrl = commaAddress && apiKey
+    ? `https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodeURIComponent(commaAddress)}&zoom=18&maptype=satellite`
     : null;
 
   // Filter overlays based on toggles
