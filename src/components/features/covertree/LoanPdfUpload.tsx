@@ -89,7 +89,8 @@ export default function LoanPdfUpload({ onExtracted }: LoanPdfUploadProps) {
         toast.success(`Extracted ${fieldsExtracted.length} fields from ${file.name}`);
       } catch (err) {
         console.error('PDF extraction error:', err);
-        toast.error('Failed to extract data from PDF');
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(`PDF extraction error: ${msg}`);
       } finally {
         setUploading(false);
       }
