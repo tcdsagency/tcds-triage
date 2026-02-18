@@ -8,7 +8,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useFormContext } from 'react-hook-form';
 import type { QuoteType } from './schemas';
 import type { StepConfig } from './config/types';
@@ -71,6 +71,7 @@ export function QuoteWizardProvider({
   callId,
 }: QuoteWizardProviderProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { trigger, handleSubmit, watch, reset, getValues, setValue } = useFormContext();
 
   const [currentStep, setCurrentStep] = useState(0);
@@ -78,7 +79,10 @@ export function QuoteWizardProvider({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
-  const [ezlynxApplicantId, setEzlynxApplicantId] = useState<string | null>(null);
+  const [ezlynxApplicantId, setEzlynxApplicantId] = useState<string | null>(
+    searchParams.get('ezlynxId') || null
+  );
+  const ezlynxSearchedRef = useRef(false);
 
   const watchedValues = watch();
 
@@ -86,6 +90,31 @@ export function QuoteWizardProvider({
   const eligibility = useEligibility(quoteType, watchedValues as unknown as Record<string, unknown>, {
     evaluateOnMount: true,
   });
+
+  // ---------------------------------------------------------------------------
+  // Auto-search EZLynx when advancing past contact step
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (currentStep < 1 || ezlynxApplicantId || ezlynxSearchedRef.current) return;
+    ezlynxSearchedRef.current = true;
+
+    const firstName = getValues('firstName');
+    const lastName = getValues('lastName');
+    if (!firstName && !lastName) return;
+
+    const params = new URLSearchParams();
+    if (firstName) params.set('firstName', firstName);
+    if (lastName) params.set('lastName', lastName);
+
+    fetch(`/api/ezlynx/search?${params}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.results?.length > 0) {
+          setEzlynxApplicantId(data.results[0].accountId || data.results[0].applicantId);
+        }
+      })
+      .catch(() => {}); // Silently fail — prefill is optional
+  }, [currentStep, ezlynxApplicantId, getValues]);
 
   // Storage key for auto-save
   const storageKey = useMemo(
