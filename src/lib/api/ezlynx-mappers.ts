@@ -325,20 +325,51 @@ export function leadToApplicant(lead: any): CreateApplicantData {
  * Maps personal info, address, phones, co-applicant from the pull record.
  */
 export function canopyPullToApplicant(pull: any): CreateApplicantData {
-  const primaryDriver = (pull.drivers || []).find((d: any) => d.is_primary) || (pull.drivers || [])[0];
+  const drivers = pull.drivers || [];
+  // Find primary driver — try is_primary flag, then match by first/last name, then first entry
+  const primaryDriver = drivers.find((d: any) => d.is_primary)
+    || drivers.find((d: any) =>
+      (d.first_name || '').toLowerCase() === (pull.firstName || '').toLowerCase()
+      && (d.last_name || '').toLowerCase() === (pull.lastName || '').toLowerCase()
+    )
+    || drivers[0];
+
+  // DOB: try pull-level first, then primary driver's date_of_birth_str
+  const dob = pull.date_of_birth || pull.dateOfBirth
+    || primaryDriver?.date_of_birth_str || primaryDriver?.date_of_birth || primaryDriver?.dateOfBirth;
+
+  // Address: pull.address may be empty {} — fall back to first vehicle's garaging address
+  const pullAddr = pull.address && Object.keys(pull.address).length > 0 ? pull.address : null;
+  const garagingAddr = (pull.vehicles || [])[0]?.garaging_address || (pull.vehicles || [])[0]?.GaragingAddress;
+  const addr = pullAddr || garagingAddr;
+  // Garaging address uses "full_address" format "71 OAKHALLA RD, HAYDEN, AL, 35079"
+  // or individual fields: number+street+type, city, state, zip
+  let addrLine1: string | undefined;
+  let addrCity: string | undefined;
+  let addrState: string | undefined;
+  let addrZip: string | undefined;
+
+  if (addr) {
+    addrLine1 = addr.street_one || addr.street || addr.address1
+      || (addr.full_address ? addr.full_address.split(',')[0]?.trim() : undefined)
+      || (addr.number && addr.street ? `${addr.number} ${addr.street} ${addr.type || ''}`.trim() : undefined);
+    addrCity = addr.city || undefined;
+    addrState = addr.state || undefined;
+    addrZip = addr.zip || addr.zipCode || undefined;
+  }
 
   const data: CreateApplicantData = {
     firstName: pull.first_name || pull.firstName || '',
     lastName: pull.last_name || pull.lastName || '',
-    dateOfBirth: toEzlynxDate(pull.date_of_birth || pull.dateOfBirth),
+    dateOfBirth: toEzlynxDate(dob),
     email: pull.email || pull.account_email || undefined,
     phone: formatPhoneEzlynx(pull.phone || pull.mobile_phone),
-    addressLine1: pull.address?.street_one || pull.address?.street || undefined,
-    addressCity: pull.address?.city || undefined,
-    addressState: pull.address?.state || undefined,
-    addressZip: pull.address?.zip || undefined,
+    addressLine1: addrLine1,
+    addressCity: addrCity,
+    addressState: addrState,
+    addressZip: addrZip,
     gender: mapGender(primaryDriver?.gender),
-    maritalStatus: mapMaritalStatus(primaryDriver?.marital_status),
+    maritalStatus: mapMaritalStatus(primaryDriver?.marital_status || primaryDriver?.maritalStatus),
   };
 
   // Co-applicant from secondary insured
@@ -347,7 +378,7 @@ export function canopyPullToApplicant(pull: any): CreateApplicantData {
     data.coApplicant = {
       firstName: si.firstName || si.first_name || '',
       lastName: si.lastName || si.last_name || pull.last_name || pull.lastName || '',
-      dateOfBirth: toEzlynxDate(si.dateOfBirth || si.date_of_birth),
+      dateOfBirth: toEzlynxDate(si.dateOfBirth || si.date_of_birth || si.date_of_birth_str),
       relationship: mapCanopyRelationshipToCoApplicant(si.relationship),
     };
   }
@@ -370,26 +401,48 @@ export function canopyPullToAutoQuote(pull: any): any {
     ownership: mapCanopyOwnership(v.ownership),
   }));
 
-  const drivers = (pull.drivers || []).map((d: any) => ({
+  // Deduplicate drivers: same person can appear from CARRIER + CONSUMER sources.
+  // Merge by matching first_name. Prefer CONSUMER data (has DOB, DL#) over CARRIER.
+  const rawDrivers = pull.drivers || [];
+  const driverMap = new Map<string, any>();
+  for (const d of rawDrivers) {
+    const key = (d.first_name || '').toLowerCase().trim();
+    const existing = driverMap.get(key);
+    if (!existing) {
+      driverMap.set(key, { ...d });
+    } else {
+      // Merge: non-null fields from this entry fill in gaps
+      for (const [k, v] of Object.entries(d)) {
+        if (v != null && v !== '' && (existing[k] == null || existing[k] === '')) {
+          existing[k] = v;
+        }
+      }
+    }
+  }
+
+  const drivers = Array.from(driverMap.values()).map((d: any) => ({
     firstName: (d.first_name || d.firstName || '').toUpperCase(),
     lastName: (d.last_name || d.lastName || '').toUpperCase(),
-    dateOfBirth: toEzlynxDate(d.date_of_birth || d.dateOfBirth),
+    dateOfBirth: toEzlynxDate(d.date_of_birth_str || d.date_of_birth || d.dateOfBirth),
     gender: mapCanopyAutoDriverGender(d.gender),
     maritalStatus: mapCanopyAutoDriverMarital(d.marital_status || d.maritalStatus),
-    licenseNumber: d.license_number || d.licenseNumber || undefined,
+    licenseNumber: d.drivers_license || d.license_number || d.licenseNumber || undefined,
     licenseState: d.license_state || d.licenseState || undefined,
     licenseStatus: mapCanopyLicenseStatus(d.license_status || d.licenseStatus),
     relationship: mapCanopyRelationshipToDriver(d.relationship),
     isPrimary: d.is_primary || d.isPrimary || false,
   }));
 
-  // General coverages
-  const coverages = pull.coverages || [];
-  const biCov = findCanopyCoverage(coverages, ['bodily_injury', 'bi']);
-  const pdCov = findCanopyCoverage(coverages, ['property_damage', 'pd']);
-  const umCov = findCanopyCoverage(coverages, ['uninsured_motorist', 'um']);
-  const uimCov = findCanopyCoverage(coverages, ['underinsured_motorist', 'uim']);
-  const mpCov = findCanopyCoverage(coverages, ['medical_payments', 'med_pay']);
+  // General coverages — collect from pull.coverages AND from vehicle-level coverages (first vehicle)
+  // Canopy uses names like BODILY_INJURY_LIABILITY, PROPERTY_DAMAGE_LIABILITY, etc.
+  const pullCoverages = pull.coverages || [];
+  const firstVehicleCovs = (pull.vehicles || [])[0]?.coverages || [];
+  const allCoverages = [...pullCoverages, ...firstVehicleCovs];
+  const biCov = findCanopyCoverage(allCoverages, ['bodily_injury', 'bi', 'bodily_injury_liability']);
+  const pdCov = findCanopyCoverage(allCoverages, ['property_damage', 'pd', 'property_damage_liability']);
+  const umCov = findCanopyCoverage(allCoverages, ['uninsured_motorist', 'um', 'uninsured_and_underinsured_motorist_bodily_injury_liability', 'uninsured_motorist_bodily_injury']);
+  const uimCov = findCanopyCoverage(allCoverages, ['underinsured_motorist', 'uim', 'underinsured_motorist_bodily_injury']);
+  const mpCov = findCanopyCoverage(allCoverages, ['medical_payments', 'med_pay', 'medical_payments_coverage']);
 
   const generalCoverage: any = {};
   if (biCov) {
@@ -403,10 +456,10 @@ export function canopyPullToAutoQuote(pull: any): any {
   // Per-vehicle coverages
   const vehicleCoverages = (pull.vehicles || []).map((v: any, idx: number) => {
     const vCovs = v.coverages || [];
-    const compCov = findCanopyCoverage(vCovs, ['comprehensive', 'comp']);
+    const compCov = findCanopyCoverage(vCovs, ['comprehensive', 'comp', 'other_than_collision']);
     const collCov = findCanopyCoverage(vCovs, ['collision', 'coll']);
-    const towCov = findCanopyCoverage(vCovs, ['towing', 'roadside']);
-    const rentalCov = findCanopyCoverage(vCovs, ['rental', 'rental_reimbursement']);
+    const towCov = findCanopyCoverage(vCovs, ['towing', 'roadside', 'towing_and_labor', 'roadside_assistance']);
+    const rentalCov = findCanopyCoverage(vCovs, ['rental', 'rental_reimbursement', 'transportation_expense']);
 
     return {
       vehicleIndex: idx,
