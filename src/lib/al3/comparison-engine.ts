@@ -194,36 +194,13 @@ export function compareSnapshots(
   // Compare policy-level coverages (BI, PD, UM, MedPay, etc.)
   allChanges.push(...compareCoverages(renewalCoverages, baselineCoverages, thresholds));
 
-  // Auto-only comparisons: vehicles, vehicle-level coverages, drivers
+  // Auto-only: compare vehicle-level coverages (Comp, Coll, Roadside, Rental)
   const isAutoPolicy = !lineOfBusiness || /auto|vehicle|car/i.test(lineOfBusiness);
   if (isAutoPolicy) {
-    // Compare vehicle-level coverages at aggregate level (Comp, Coll, Roadside, Rental)
-    // HawkSoft stores these at policy level, AL3 puts them on vehicles
     const renewalVehicleCovs = collectVehicleLevelCoverages(renewal.coverages, renewal.vehicles);
     const baselineVehicleCovs = collectVehicleLevelCoverages(baseline.coverages, baseline.vehicles);
     allChanges.push(...compareVehicleLevelCoverages(renewalVehicleCovs, baselineVehicleCovs));
-
-    // Compare vehicles (includes vehicle-level coverage comparison)
-    allChanges.push(...compareVehicles(renewal.vehicles, baseline.vehicles, thresholds));
-
-    // Compare drivers
-    allChanges.push(...compareDrivers(renewal.drivers, baseline.drivers));
   }
-
-  // Compare discounts
-  allChanges.push(...compareDiscounts(renewal.discounts, baseline.discounts));
-
-  // Compare endorsements
-  allChanges.push(...compareEndorsements(renewal.endorsements, baseline.endorsements));
-
-  // Compare claims
-  allChanges.push(...compareClaims(renewal.claims, baseline.claims));
-
-  // Compare mortgagees
-  allChanges.push(...compareMortgagees(renewal.mortgagees || [], baseline.mortgagees || []));
-
-  // Flag property concerns (homeowners)
-  allChanges.push(...flagPropertyConcerns(renewal, baseline));
 
   // When baseline is stale (current_term), downgrade coverage/detail changes
   // to non-material since same-term comparisons are unreliable for those.

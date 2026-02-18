@@ -108,29 +108,6 @@ export function runCheckEngine(
     }
   }
 
-  // Add skip-count meta-check if a significant portion of rules were skipped
-  const skipPercent = evaluatedCount > 0 ? Math.round((skippedCount / evaluatedCount) * 100) : 0;
-  if (skippedCount > 0) {
-    allResults.push({
-      ruleId: 'META-001',
-      field: 'Rule Coverage',
-      previousValue: evaluatedCount,
-      renewalValue: evaluatedCount - skippedCount,
-      change: `${skippedCount} skipped (${skipPercent}%)`,
-      severity: skipPercent >= 50 ? 'warning' : 'info',
-      message: `${skippedCount} of ${evaluatedCount} rules skipped due to missing data (${skipPercent}%)`,
-      agentAction: skipPercent >= 50
-        ? 'Over half of rules skipped — snapshot may be incomplete, verify data quality'
-        : 'Some rules skipped due to missing data — normal for partial snapshots',
-      reviewed: false,
-      reviewedBy: null,
-      reviewedAt: null,
-      checkType: 'existence',
-      category: 'Meta',
-      isBlocking: false,
-    });
-  }
-
   // Compute summary
   const blockers = allResults.filter(r => r.isBlocking && r.severity === 'critical');
   const criticalCount = allResults.filter(r => r.severity === 'critical').length;

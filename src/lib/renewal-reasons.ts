@@ -2,6 +2,8 @@
  * Shared renewal reason analysis utility.
  * Used by RenewalCard (list view), PremiumChangeSummary (detail view),
  * and comparison-engine (headline generation).
+ *
+ * Core reasons only: coverage limits, deductibles, and premium.
  */
 
 import type { MaterialChange, RenewalSnapshot, BaselineSnapshot } from '@/types/renewal.types';
@@ -11,21 +13,11 @@ export type ReasonTag =
   | 'Rate Increase'
   | 'Rate Decrease'
   | 'Rate Adjustment'
-  | 'Vehicle Added'
-  | 'Vehicle Removed'
-  | 'Young Driver Added'
-  | 'Driver Added'
-  | 'Driver Removed'
-  | 'Discount Removed'
-  | 'Discount Added'
   | 'Inflation Guard'
   | 'Coverage Removed'
   | 'Coverage Added'
   | 'Coverage Limits Changed'
-  | 'Deductible Changed'
-  | 'New Claim'
-  | 'Property Concern'
-  | 'Endorsement Changed';
+  | 'Deductible Changed';
 
 export interface Reason {
   tag: ReasonTag;
@@ -55,83 +47,6 @@ export function analyzeReasons(
     lineOfBusiness?.toLowerCase().includes('ho3') ||
     lineOfBusiness?.toLowerCase().includes('ho5');
 
-  // Vehicle changes
-  const vehiclesAdded = materialChanges.filter(m => m.category === 'vehicle_added');
-  const vehiclesRemoved = materialChanges.filter(m => m.category === 'vehicle_removed');
-  if (vehiclesAdded.length > 0) {
-    reasons.push({
-      tag: 'Vehicle Added',
-      detail: vehiclesAdded.length > 1 ? `${vehiclesAdded.length} vehicles` : vehiclesAdded[0].description,
-      color: 'red',
-    });
-  }
-  if (vehiclesRemoved.length > 0) {
-    reasons.push({
-      tag: 'Vehicle Removed',
-      detail: vehiclesRemoved.length > 1 ? `${vehiclesRemoved.length} vehicles` : vehiclesRemoved[0].description,
-      color: 'green',
-    });
-  }
-
-  // Driver changes — check for young drivers
-  const driversAdded = materialChanges.filter(m => m.category === 'driver_added');
-  const driversRemoved = materialChanges.filter(m => m.category === 'driver_removed');
-  if (driversAdded.length > 0) {
-    const hasYoung = driversAdded.some(m => {
-      const addedTokens = (m.description?.toLowerCase() || '').split(/\s+/).filter(t => t.length > 1);
-      if (addedTokens.length === 0) return false;
-      const driver = renewalSnapshot?.drivers?.find(d => {
-        if (!d.dateOfBirth || !d.name) return false;
-        const driverTokens = d.name.toLowerCase().split(/\s+/);
-        const overlap = addedTokens.filter(t => driverTokens.includes(t));
-        return overlap.length >= Math.min(2, addedTokens.length);
-      });
-      if (driver?.dateOfBirth) {
-        const age = Math.floor((Date.now() - new Date(driver.dateOfBirth).getTime()) / (365.25 * 86400000));
-        return age < 26;
-      }
-      return false;
-    });
-    if (hasYoung) {
-      reasons.push({ tag: 'Young Driver Added', color: 'red' });
-    } else {
-      reasons.push({
-        tag: 'Driver Added',
-        detail: driversAdded.length > 1 ? `${driversAdded.length} drivers` : driversAdded[0].description,
-        color: 'amber',
-      });
-    }
-  }
-  if (driversRemoved.length > 0) {
-    reasons.push({
-      tag: 'Driver Removed',
-      detail: driversRemoved.length > 1 ? `${driversRemoved.length} drivers` : driversRemoved[0].description,
-      color: 'amber',
-    });
-  }
-
-  // Discount changes
-  const discountsRemoved = materialChanges.filter(m => m.category === 'discount_removed');
-  const discountsAdded = materialChanges.filter(m => m.category === 'discount_added');
-  if (discountsRemoved.length > 0) {
-    reasons.push({
-      tag: 'Discount Removed',
-      detail: discountsRemoved.length > 1
-        ? `${discountsRemoved.length} discounts`
-        : discountsRemoved[0].description,
-      color: 'red',
-    });
-  }
-  if (discountsAdded.length > 0) {
-    reasons.push({
-      tag: 'Discount Added',
-      detail: discountsAdded.length > 1
-        ? `${discountsAdded.length} discounts`
-        : discountsAdded[0].description,
-      color: 'green',
-    });
-  }
-
   // Inflation guard — dwelling limit increased on home policies
   if (isHome) {
     const dwellingLimitChange = materialChanges.find(m =>
@@ -139,7 +54,7 @@ export function analyzeReasons(
       (m.field?.toLowerCase().includes('dwelling') || m.field?.toLowerCase().includes('cov a'))
     );
     const dwellingCheck = checkResults.find(r =>
-      (r.ruleId === 'H-046' || r.field?.toLowerCase().includes('dwelling')) &&
+      r.field?.toLowerCase().includes('dwelling') &&
       r.severity !== 'unchanged' &&
       r.change !== 'No change'
     );
@@ -192,40 +107,6 @@ export function analyzeReasons(
       detail: deductibleChanges.length > 1
         ? `${deductibleChanges.length} deductibles`
         : deductibleChanges[0].description,
-      color: 'amber',
-    });
-  }
-
-  // Claims
-  const claimChanges = materialChanges.filter(m => m.category === 'claim');
-  if (claimChanges.length > 0) {
-    reasons.push({
-      tag: 'New Claim',
-      detail: claimChanges.length > 1 ? `${claimChanges.length} claims` : claimChanges[0].description,
-      color: 'red',
-    });
-  }
-
-  // Property concern (H-043 roof age)
-  if (isHome) {
-    const roofCheck = checkResults.find(r =>
-      r.ruleId === 'H-043' && (r.severity === 'critical' || r.severity === 'warning')
-    );
-    if (roofCheck) {
-      reasons.push({ tag: 'Property Concern', detail: roofCheck.message, color: 'red' });
-    }
-  }
-
-  // Endorsement changes
-  const endorsementChanges = materialChanges.filter(m =>
-    m.category === 'endorsement_removed' || m.category === 'endorsement_added' || m.category === 'endorsement'
-  );
-  if (endorsementChanges.length > 0) {
-    reasons.push({
-      tag: 'Endorsement Changed',
-      detail: endorsementChanges.length > 1
-        ? `${endorsementChanges.length} endorsements`
-        : endorsementChanges[0].description,
       color: 'amber',
     });
   }
