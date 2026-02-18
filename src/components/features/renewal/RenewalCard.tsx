@@ -151,7 +151,7 @@ export default function RenewalCard({ renewal, onClick }: RenewalCardProps) {
           </span>
           {renewal.agencyzoomSrId && (
             <a
-              href={`https://app.agencyzoom.com/service-center/${renewal.agencyzoomSrId}`}
+              href="https://app.agencyzoom.com/pipeline/service-pipeline"
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}

@@ -74,7 +74,7 @@ export default function ServiceTicketBadge({
   className,
 }: ServiceTicketBadgeProps) {
   const style = STATUS_STYLES[ticket.status];
-  const azUrl = `https://app.agencyzoom.com/service-center/${ticket.azTicketId}`;
+  const azUrl = `https://app.agencyzoom.com/pipeline/service-pipeline`;
 
   return (
     <div className={cn('inline-flex items-center gap-2', className)}>
@@ -125,7 +125,7 @@ export function ServiceTicketBadgeCompact({
   className?: string;
 }) {
   const style = STATUS_STYLES[ticket.status];
-  const azUrl = `https://app.agencyzoom.com/service-center/${ticket.azTicketId}`;
+  const azUrl = `https://app.agencyzoom.com/pipeline/service-pipeline`;
 
   return (
     <a
@@ -157,7 +157,7 @@ export function ServiceTicketCard({
   className?: string;
 }) {
   const style = STATUS_STYLES[ticket.status];
-  const azUrl = `https://app.agencyzoom.com/service-center/${ticket.azTicketId}`;
+  const azUrl = `https://app.agencyzoom.com/pipeline/service-pipeline`;
 
   return (
     <div
