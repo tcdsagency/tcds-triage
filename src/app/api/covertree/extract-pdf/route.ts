@@ -13,6 +13,8 @@ import {
   mapExtractionToFormData,
 } from '@/lib/pdf/covertree-extraction';
 
+export const maxDuration = 120; // Allow up to 2 minutes for Claude PDF extraction
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
