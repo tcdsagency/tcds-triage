@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
 async function handlePullCompleted(
   tenantId: string,
   data: ReturnType<typeof CanopyClient.extractPullData>,
-  rawPayload: CanopyWebhookPayload
+  rawPayload: Record<string, unknown>
 ) {
   // Check if we already have this pull
   const [existing] = await db
@@ -219,7 +219,7 @@ async function handlePullCompleted(
 async function handlePullFailed(
   tenantId: string,
   data: ReturnType<typeof CanopyClient.extractPullData>,
-  rawPayload: CanopyWebhookPayload
+  rawPayload: Record<string, unknown>
 ) {
   // Check if we already have this pull
   const [existing] = await db
@@ -256,7 +256,7 @@ async function handlePullFailed(
 async function handlePullExpired(
   tenantId: string,
   data: ReturnType<typeof CanopyClient.extractPullData>,
-  rawPayload: CanopyWebhookPayload
+  rawPayload: Record<string, unknown>
 ) {
   // Check if we already have this pull
   const [existing] = await db
