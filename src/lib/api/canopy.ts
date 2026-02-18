@@ -107,8 +107,13 @@ export interface CanopyPull {
   first_name?: string;
   last_name?: string;
   email?: string;
+  account_email?: string;
   phone?: string;
+  mobile_phone?: string;
+  home_phone?: string;
+  work_phone?: string;
   date_of_birth?: string;
+  date_of_birth_str?: string;
 
   // Address
   primary_address?: CanopyAddress;
@@ -130,8 +135,15 @@ export interface CanopyPull {
 }
 
 export interface CanopyWebhookPayload {
-  event_type: 'pull.completed' | 'pull.failed' | 'pull.expired';
+  event_type: string; // DATA_UPDATED, INITIAL_DATA_PULLED, MONITORING_DATA_UPDATED, etc.
   pull_id: string;
+  status?: string;
+  team_id?: string;
+  widget_id?: string;
+  is_monitored?: boolean;
+  account_identifier?: string;
+  meta_data?: any;
+  data?: any; // Event-specific data (e.g., updates array)
   pull?: CanopyPull;
   // Legacy field names (some webhooks use these)
   primaryInsured?: any;
@@ -191,9 +203,11 @@ export class CanopyClient {
 
   /**
    * Get a specific pull by ID
+   * API returns { success: true, pull: {...} } wrapper
    */
   async getPull(pullId: string): Promise<CanopyPull> {
-    return this.request<CanopyPull>(`/teams/${this.teamId}/pulls/${pullId}`);
+    const resp = await this.request<{ pull?: CanopyPull } & CanopyPull>(`/teams/${this.teamId}/pulls/${pullId}`);
+    return resp.pull || resp;
   }
 
   /**
@@ -324,9 +338,9 @@ export class CanopyClient {
     const primaryInsured = webhookData.primaryInsured || {};
     const firstName = data.first_name || primaryInsured.firstName || primaryInsured.first_name;
     const lastName = data.last_name || primaryInsured.lastName || primaryInsured.last_name;
-    const email = data.email || primaryInsured.email;
-    const phone = data.phone || primaryInsured.phone;
-    const dateOfBirth = data.date_of_birth || primaryInsured.dateOfBirth || primaryInsured.date_of_birth;
+    const email = data.email || data.account_email || primaryInsured.email;
+    const phone = data.phone || data.mobile_phone || data.home_phone || data.work_phone || primaryInsured.phone;
+    const dateOfBirth = data.date_of_birth || data.date_of_birth_str || primaryInsured.dateOfBirth || primaryInsured.date_of_birth;
 
     // Address
     const addr = data.primary_address || webhookData.primaryAddress || {};

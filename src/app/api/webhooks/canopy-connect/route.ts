@@ -5,17 +5,16 @@
  *
  * POST /api/webhooks/canopy-connect
  *
- * Events:
- * - pull.completed: Customer successfully imported their policy data
- * - pull.failed: Customer failed to complete the import
- * - pull.expired: The pull link expired
+ * Canopy sends notification events (DATA_UPDATED, INITIAL_DATA_PULLED, etc.)
+ * that contain only a pull_id — the actual policy data must be fetched
+ * from the Canopy API via GET /pulls/{pullId}.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { canopyConnectPulls, customers } from "@/db/schema";
-import { eq, or, ilike } from "drizzle-orm";
-import { getCanopyClient, CanopyClient, CanopyWebhookPayload } from "@/lib/api/canopy";
+import { eq, or } from "drizzle-orm";
+import { getCanopyClient, CanopyClient } from "@/lib/api/canopy";
 
 // =============================================================================
 // POST - Receive Webhook
@@ -50,29 +49,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
-    // Parse payload
-    const payload: CanopyWebhookPayload = JSON.parse(rawBody);
-    console.log(`[Canopy Webhook] Received event: ${payload.event_type}, pull_id: ${payload.pull_id}`);
+    // Parse payload — Canopy sends notification events, not full data
+    const payload = JSON.parse(rawBody);
+    const pullId = payload.pull_id;
+    const eventType = payload.event_type || payload.status;
+    console.log(`[Canopy Webhook] Received event: ${eventType}, pull_id: ${pullId}`);
 
-    // Extract normalized data
-    const extractedData = CanopyClient.extractPullData(payload);
+    if (!pullId) {
+      console.warn("[Canopy Webhook] No pull_id in payload");
+      return NextResponse.json({ success: true, skipped: true });
+    }
 
-    // Handle different event types
-    switch (payload.event_type) {
-      case "pull.completed":
-        await handlePullCompleted(tenantId, extractedData, payload);
-        break;
+    // Fetch the full pull data from the Canopy API
+    const pullData = await client.getPull(pullId);
+    console.log(`[Canopy Webhook] Fetched pull ${pullId}: status=${pullData.status}, policies=${pullData.policies?.length || 0}`);
 
-      case "pull.failed":
-        await handlePullFailed(tenantId, extractedData, payload);
-        break;
+    // Extract normalized data from the full pull
+    const extractedData = CanopyClient.extractPullData(pullData);
 
-      case "pull.expired":
-        await handlePullExpired(tenantId, extractedData, payload);
-        break;
-
-      default:
-        console.warn(`[Canopy Webhook] Unknown event type: ${payload.event_type}`);
+    // Store/update based on pull status
+    if (pullData.status === "SUCCESS") {
+      await handlePullCompleted(tenantId, extractedData, payload);
+    } else if (pullData.status === "FAILED") {
+      await handlePullFailed(tenantId, extractedData, payload);
+    } else if (pullData.status === "EXPIRED") {
+      await handlePullExpired(tenantId, extractedData, payload);
+    } else {
+      // PENDING or unknown — store what we have
+      console.log(`[Canopy Webhook] Pull ${pullId} status=${pullData.status}, storing as pending`);
+      await handlePullCompleted(tenantId, extractedData, payload);
     }
 
     const duration = Date.now() - startTime;
@@ -80,8 +85,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      pull_id: payload.pull_id,
-      event: payload.event_type
+      pull_id: pullId,
+      event: eventType,
     });
   } catch (error) {
     console.error("[Canopy Webhook] Error:", error);
