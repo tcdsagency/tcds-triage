@@ -194,17 +194,21 @@ export function compareSnapshots(
   // Compare policy-level coverages (BI, PD, UM, MedPay, etc.)
   allChanges.push(...compareCoverages(renewalCoverages, baselineCoverages, thresholds));
 
-  // Compare vehicle-level coverages at aggregate level (Comp, Coll, Roadside, Rental)
-  // HawkSoft stores these at policy level, AL3 puts them on vehicles
-  const renewalVehicleCovs = collectVehicleLevelCoverages(renewal.coverages, renewal.vehicles);
-  const baselineVehicleCovs = collectVehicleLevelCoverages(baseline.coverages, baseline.vehicles);
-  allChanges.push(...compareVehicleLevelCoverages(renewalVehicleCovs, baselineVehicleCovs));
+  // Auto-only comparisons: vehicles, vehicle-level coverages, drivers
+  const isAutoPolicy = !lineOfBusiness || /auto|vehicle|car/i.test(lineOfBusiness);
+  if (isAutoPolicy) {
+    // Compare vehicle-level coverages at aggregate level (Comp, Coll, Roadside, Rental)
+    // HawkSoft stores these at policy level, AL3 puts them on vehicles
+    const renewalVehicleCovs = collectVehicleLevelCoverages(renewal.coverages, renewal.vehicles);
+    const baselineVehicleCovs = collectVehicleLevelCoverages(baseline.coverages, baseline.vehicles);
+    allChanges.push(...compareVehicleLevelCoverages(renewalVehicleCovs, baselineVehicleCovs));
 
-  // Compare vehicles (includes vehicle-level coverage comparison)
-  allChanges.push(...compareVehicles(renewal.vehicles, baseline.vehicles, thresholds));
+    // Compare vehicles (includes vehicle-level coverage comparison)
+    allChanges.push(...compareVehicles(renewal.vehicles, baseline.vehicles, thresholds));
 
-  // Compare drivers
-  allChanges.push(...compareDrivers(renewal.drivers, baseline.drivers));
+    // Compare drivers
+    allChanges.push(...compareDrivers(renewal.drivers, baseline.drivers));
+  }
 
   // Compare discounts
   allChanges.push(...compareDiscounts(renewal.discounts, baseline.discounts));
