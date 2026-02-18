@@ -22,6 +22,9 @@ out/
 *.temp
 tmp_*.json
 tmp_*.txt
+tmp_*.js
+scripts/tmp-*
+scripts/_tmp_*
 
 # IDE
 .idea/
