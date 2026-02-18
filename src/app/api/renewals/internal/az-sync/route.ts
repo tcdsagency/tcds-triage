@@ -312,7 +312,10 @@ export async function POST(request: NextRequest) {
               .limit(1);
             matchedPolicy = policy || null;
           } else if (customerId) {
-            // Household match only — find active policies expiring soonest
+            // Household match only — find the soonest-expiring active policy
+            // (most likely the one the renewal ticket is about)
+            const { asc: ascOrder, gte } = await import('drizzle-orm');
+            const now = new Date();
             const [policy] = await db
               .select({
                 id: policies.id,
@@ -328,26 +331,13 @@ export async function POST(request: NextRequest) {
                 and(
                   eq(policies.tenantId, tenantId),
                   eq(policies.customerId, customerId),
-                  eq(policies.status, 'active')
+                  eq(policies.status, 'active'),
+                  gte(policies.expirationDate, now)
                 )
               )
+              .orderBy(ascOrder(policies.expirationDate))
               .limit(1);
-            // Only auto-assign if there's exactly one active policy for this customer,
-            // otherwise we'd be guessing which policy the ticket is for
-            const allActive = await db
-              .select({ id: policies.id })
-              .from(policies)
-              .where(
-                and(
-                  eq(policies.tenantId, tenantId),
-                  eq(policies.customerId, customerId),
-                  eq(policies.status, 'active')
-                )
-              );
-            if (allActive.length === 1) {
-              matchedPolicy = policy || null;
-            }
-            // If multiple policies, we still create a placeholder but without policy details
+            matchedPolicy = policy || null;
           }
 
           // Use policy data if found, otherwise use what we have from the ticket
