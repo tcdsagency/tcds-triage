@@ -78,9 +78,27 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       // 4. Search EZLynx by name + DOB
       const firstName = pull.firstName || customer.firstName || "";
       const lastName = pull.lastName || customer.lastName || "";
-      const dob = pull.dateOfBirth
-        ? new Date(pull.dateOfBirth).toISOString().split("T")[0]
-        : undefined;
+
+      // DOB: pull-level is often null. Fall back to matching driver's DOB.
+      let dob: string | undefined;
+      if (pull.dateOfBirth) {
+        dob = new Date(pull.dateOfBirth).toISOString().split("T")[0];
+      } else {
+        // Find the driver that matches the applicant name
+        const drivers = (pull as any).drivers || [];
+        const matchingDriver = drivers.find((d: any) =>
+          (d.first_name || "").toLowerCase() === firstName.toLowerCase()
+          && (d.last_name || "").toLowerCase() === lastName.toLowerCase()
+        ) || drivers.find((d: any) => d.is_primary) || drivers[0];
+        const rawDob = matchingDriver?.date_of_birth_str || matchingDriver?.date_of_birth;
+        if (rawDob) {
+          // Convert MM/DD/YYYY to YYYY-MM-DD if needed
+          const parts = rawDob.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+          dob = parts
+            ? `${parts[3]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`
+            : rawDob.includes("T") ? rawDob.split("T")[0] : rawDob;
+        }
+      }
 
       try {
         const searchResult = await ezlynxBot.searchApplicant({

@@ -342,17 +342,25 @@ export function canopyPullToApplicant(pull: any): CreateApplicantData {
   const pullAddr = pull.address && Object.keys(pull.address).length > 0 ? pull.address : null;
   const garagingAddr = (pull.vehicles || [])[0]?.garaging_address || (pull.vehicles || [])[0]?.GaragingAddress;
   const addr = pullAddr || garagingAddr;
-  // Garaging address uses "full_address" format "71 OAKHALLA RD, HAYDEN, AL, 35079"
-  // or individual fields: number+street+type, city, state, zip
+  const isGaragingFormat = !pullAddr && !!garagingAddr; // garaging has number/street/type instead of street_one
+
   let addrLine1: string | undefined;
   let addrCity: string | undefined;
   let addrState: string | undefined;
   let addrZip: string | undefined;
 
   if (addr) {
-    addrLine1 = addr.street_one || addr.street || addr.address1
-      || (addr.full_address ? addr.full_address.split(',')[0]?.trim() : undefined)
-      || (addr.number && addr.street ? `${addr.number} ${addr.street} ${addr.type || ''}`.trim() : undefined);
+    if (isGaragingFormat) {
+      // Garaging address: compose from full_address or number+street+type parts
+      if (addr.full_address) {
+        addrLine1 = addr.full_address.split(',')[0]?.trim();
+      } else if (addr.number) {
+        addrLine1 = `${addr.number} ${addr.street || ''} ${addr.type || ''}`.trim();
+      }
+    } else {
+      // Standard Canopy address: street_one or address1
+      addrLine1 = addr.street_one || addr.address1 || addr.street || undefined;
+    }
     addrCity = addr.city || undefined;
     addrState = addr.state || undefined;
     addrZip = addr.zip || addr.zipCode || undefined;
