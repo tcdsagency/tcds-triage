@@ -18,6 +18,8 @@ import {
   canopyPullToAutoApplication,
   canopyPullToHomeApplication,
   customerToUpdatePayload,
+  type AutoSyncReport,
+  type HomeSyncReport,
 } from "@/lib/api/ezlynx-mappers";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -184,6 +186,9 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     // 8. Always update open applications with Canopy data
     const quoteResults: any = {};
+    let autoSyncReport: AutoSyncReport | undefined;
+    let homeSyncReport: HomeSyncReport | undefined;
+
     if (ezlynxAccountId) {
       // Check for existing open applications
       let openApps: any[] = [];
@@ -210,12 +215,35 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           }
 
           const appTemplate = await ezlynxBot.getAutoApplication(openAppId);
-          const mergedApp = canopyPullToAutoApplication(pull, appTemplate);
+          const { app: mergedApp, syncReport } = canopyPullToAutoApplication(pull, appTemplate);
+          autoSyncReport = syncReport;
+
           await ezlynxBot.saveAutoApplication(openAppId, mergedApp);
-          quoteResults.auto = { success: true, method: "application-api", openAppId };
+
+          // Post-save verification: re-fetch and confirm key fields
+          let verification: any = {};
+          try {
+            const savedApp = await ezlynxBot.getAutoApplication(openAppId);
+            verification = {
+              driverCount: savedApp.drivers?.length ?? 0,
+              vehicleCount: savedApp.vehicles?.vehicleCollection?.length ?? 0,
+              effectiveDate: savedApp.policyInformation?.effectiveDate,
+              biLimit: savedApp.coverage?.generalCoverage?.bodilyInjury,
+            };
+          } catch (verifyErr) {
+            console.log("[Canopy Sync] Post-save verify failed:", (verifyErr as Error).message);
+          }
+
+          quoteResults.auto = {
+            success: true,
+            method: "application-api",
+            openAppId,
+            syncReport,
+            verification,
+          };
         } catch (e) {
           console.log("[Canopy Sync] Auto application update failed:", (e as Error).message);
-          quoteResults.auto = { success: false, error: (e as Error).message };
+          quoteResults.auto = { success: false, error: (e as Error).message, syncReport: autoSyncReport };
         }
       }
 
@@ -232,18 +260,40 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           }
 
           const appTemplate = await ezlynxBot.getHomeApplication(openAppId);
-          const mergedApp = canopyPullToHomeApplication(pull, appTemplate);
+          const { app: mergedApp, syncReport } = canopyPullToHomeApplication(pull, appTemplate);
+          homeSyncReport = syncReport;
+
           await ezlynxBot.saveHomeApplication(openAppId, mergedApp);
-          quoteResults.home = { success: true, method: "application-api", openAppId };
+
+          // Post-save verification
+          let verification: any = {};
+          try {
+            const savedApp = await ezlynxBot.getHomeApplication(openAppId);
+            verification = {
+              effectiveDate: savedApp.policyInformation?.effectiveDate,
+              dwellingLimit: savedApp.coverage?.dwellingLimit,
+            };
+          } catch (verifyErr) {
+            console.log("[Canopy Sync] Home post-save verify failed:", (verifyErr as Error).message);
+          }
+
+          quoteResults.home = {
+            success: true,
+            method: "application-api",
+            openAppId,
+            syncReport,
+            verification,
+          };
         } catch (e) {
           console.log("[Canopy Sync] Home application update failed:", (e as Error).message);
-          quoteResults.home = { success: false, error: (e as Error).message };
+          quoteResults.home = { success: false, error: (e as Error).message, syncReport: homeSyncReport };
         }
       }
     }
 
     console.log(
-      `[Canopy Sync] ${operation} EZLynx applicant ${ezlynxAccountId} from pull ${pull.pullId || id}`
+      `[Canopy Sync] ${operation} EZLynx applicant ${ezlynxAccountId} from pull ${pull.pullId || id}`,
+      autoSyncReport ? `| Auto: ${autoSyncReport.drivers.matched.length} drivers matched, ${autoSyncReport.drivers.added.length} added, ${autoSyncReport.vehicles.matched.length} vehicles matched, ${autoSyncReport.vehicles.unmatched.length} unmatched` : '',
     );
 
     return NextResponse.json({

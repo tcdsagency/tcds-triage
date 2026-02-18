@@ -524,12 +524,16 @@ export function canopyPullToHomeQuote(pull: any): any {
 
   // Home coverages
   const dwellingCov = findCanopyCoverage(coverages, ['dwelling', 'dwelling_coverage']);
-  const liabCov = findCanopyCoverage(coverages, ['personal_liability', 'liability']);
+  const otherStructCov = findCanopyCoverage(coverages, ['other_structures', 'other_structure']);
+  const personalPropCov = findCanopyCoverage(coverages, ['personal_property', 'contents']);
+  const liabCov = findCanopyCoverage(coverages, ['personal_liability', 'liability', 'family_liability_protection']);
   const medCov = findCanopyCoverage(coverages, ['medical_payments', 'med_pay']);
-  const deductCov = findCanopyCoverage(coverages, ['all_peril', 'all_perils', 'deductible']);
+  const deductCov = findCanopyCoverage(coverages, ['all_peril', 'all_perils', 'all_other_perils', 'deductible']);
 
   const homeCoverage: any = {};
   if (dwellingCov?.per_incident_limit_cents) homeCoverage.dwellingLimit = Math.round(dwellingCov.per_incident_limit_cents / 100);
+  if (otherStructCov?.per_incident_limit_cents) homeCoverage.otherStructuresLimit = Math.round(otherStructCov.per_incident_limit_cents / 100);
+  if (personalPropCov?.per_incident_limit_cents) homeCoverage.personalPropertyLimit = Math.round(personalPropCov.per_incident_limit_cents / 100);
   if (liabCov?.per_incident_limit_cents) homeCoverage.personalLiabilityLimit = Math.round(liabCov.per_incident_limit_cents / 100);
   if (medCov?.per_incident_limit_cents || medCov?.per_person_limit_cents) {
     homeCoverage.medicalPaymentsLimit = Math.round((medCov.per_incident_limit_cents || medCov.per_person_limit_cents) / 100);
@@ -701,131 +705,320 @@ export function findCanopyCoverage(coverages: any[], names: string[]): any | und
 /**
  * Map Canopy pull data into an EZLynx AutoRiskApplication structure.
  * Merges onto an existing application template from the API.
+ *
+ * Uses identity-based matching:
+ * - Drivers matched by DL# or first name (not by array index)
+ * - Vehicles matched by VIN (not by array index)
+ * - Null Canopy fields never overwrite existing good EZLynx data
+ *
+ * Returns { app, syncReport } where syncReport details what was matched/unmatched.
  */
-export function canopyPullToAutoApplication(pull: any, appTemplate: any): any {
+export function canopyPullToAutoApplication(pull: any, appTemplate: any): { app: any; syncReport: AutoSyncReport } {
   const app = JSON.parse(JSON.stringify(appTemplate)); // deep clone
   const quoteData = canopyPullToAutoQuote(pull);
 
-  // Map drivers — merge Canopy data onto existing driver slots
-  if (quoteData.drivers && quoteData.drivers.length > 0 && app.drivers) {
-    for (let idx = 0; idx < quoteData.drivers.length; idx++) {
-      const d = quoteData.drivers[idx];
-      const existing = app.drivers[idx];
-      if (!existing) continue; // Don't add new drivers beyond what the app already has
+  const syncReport: AutoSyncReport = {
+    drivers: { matched: [], unmatched: [], added: [] },
+    vehicles: { matched: [], unmatched: [] },
+    coverages: { updated: [] },
+    policyInfo: {},
+  };
 
-      if (d.firstName) existing.firstName = d.firstName;
-      if (d.lastName) existing.lastName = d.lastName;
-      if (d.dateOfBirth) existing.dateOfBirth = d.dateOfBirth;
-      if (d.licenseNumber) existing.driversLicenseNumber = d.licenseNumber;
-      if (d.licenseState && existing.driversLicenseState) {
-        // Keep existing format (could be enum value like "AL" or { value, name })
-        existing.driversLicenseState = d.licenseState;
+  // =========================================================================
+  // DRIVER MATCHING — by DL# or firstName, NOT by index
+  // =========================================================================
+  const existingDrivers: any[] = app.drivers || [];
+  const canopyDrivers: any[] = quoteData.drivers || [];
+  const usedExistingIndices = new Set<number>();
+
+  for (const cd of canopyDrivers) {
+    let matchIdx = -1;
+    let matchMethod = '';
+
+    // 1. Try match by DL#
+    if (cd.licenseNumber) {
+      matchIdx = existingDrivers.findIndex((ed, i) =>
+        !usedExistingIndices.has(i)
+        && ed.driversLicenseNumber
+        && ed.driversLicenseNumber.replace(/\D/g, '') === cd.licenseNumber.replace(/\D/g, '')
+      );
+      if (matchIdx >= 0) matchMethod = 'dl_number';
+    }
+
+    // 2. If no DL match, try by firstName (case-insensitive)
+    if (matchIdx < 0 && cd.firstName) {
+      matchIdx = existingDrivers.findIndex((ed, i) =>
+        !usedExistingIndices.has(i)
+        && (ed.firstName || '').toUpperCase() === cd.firstName.toUpperCase()
+      );
+      if (matchIdx >= 0) matchMethod = 'first_name';
+    }
+
+    if (matchIdx >= 0) {
+      // MATCHED — update only non-null Canopy fields
+      usedExistingIndices.add(matchIdx);
+      const existing = existingDrivers[matchIdx];
+
+      if (cd.firstName) existing.firstName = cd.firstName;
+      if (cd.lastName) existing.lastName = cd.lastName;
+      if (cd.dateOfBirth) existing.dateOfBirth = cd.dateOfBirth;
+      if (cd.licenseNumber) existing.driversLicenseNumber = cd.licenseNumber;
+      if (cd.licenseState) {
+        existing.driversLicenseState = cd.licenseState;
       }
-      // Preserve existing enum objects for gender/maritalStatus/relationship
-      // — Canopy data is often null for these and EZLynx already has them
-      if (d.gender != null && existing.gender) {
-        existing.gender = { ...existing.gender, value: d.gender };
+      // Only update gender/maritalStatus if Canopy has a real value (not null)
+      if (cd.gender != null && existing.gender) {
+        existing.gender = { ...existing.gender, value: cd.gender };
       }
-      if (d.maritalStatus != null && existing.maritalStatus) {
-        existing.maritalStatus = { ...existing.maritalStatus, value: d.maritalStatus };
+      if (cd.maritalStatus != null && existing.maritalStatus) {
+        existing.maritalStatus = { ...existing.maritalStatus, value: cd.maritalStatus };
       }
+
+      syncReport.drivers.matched.push({
+        canopyName: `${cd.firstName} ${cd.lastName}`,
+        ezlynxName: `${existing.firstName} ${existing.lastName}`,
+        matchMethod,
+        ezlynxIndex: matchIdx,
+      });
+    } else {
+      // UNMATCHED — add as a new driver
+      const newDriver: any = {};
+      if (cd.firstName) newDriver.firstName = cd.firstName;
+      if (cd.lastName) newDriver.lastName = cd.lastName;
+      if (cd.dateOfBirth) newDriver.dateOfBirth = cd.dateOfBirth;
+      if (cd.licenseNumber) newDriver.driversLicenseNumber = cd.licenseNumber;
+      if (cd.licenseState) newDriver.driversLicenseState = cd.licenseState;
+      if (cd.gender != null) newDriver.gender = { value: cd.gender };
+      if (cd.maritalStatus != null) newDriver.maritalStatus = { value: cd.maritalStatus };
+      if (cd.relationship != null) newDriver.relationship = { value: cd.relationship };
+
+      existingDrivers.push(newDriver);
+      syncReport.drivers.added.push({
+        canopyName: `${cd.firstName} ${cd.lastName}`,
+        licenseNumber: cd.licenseNumber || 'N/A',
+      });
     }
   }
+  app.drivers = existingDrivers;
 
-  // Map vehicles — vehicleCollection is nested inside app.vehicles
-  const vehicleCollection = app.vehicles?.vehicleCollection || [];
-  if (quoteData.vehicles && quoteData.vehicles.length > 0 && vehicleCollection.length > 0) {
-    for (let idx = 0; idx < quoteData.vehicles.length; idx++) {
-      const v = quoteData.vehicles[idx];
-      const existing = vehicleCollection[idx];
-      if (!existing) continue;
+  // =========================================================================
+  // VEHICLE MATCHING — by VIN, NOT by index
+  // =========================================================================
+  const vehicleCollection: any[] = app.vehicles?.vehicleCollection || [];
+  const canopyVehicles: any[] = quoteData.vehicles || [];
+  const usedVehicleIndices = new Set<number>();
 
-      if (v.vin) existing.vin = v.vin;
-      if (v.make) existing.make = v.make;
-      if (v.model) existing.model = v.model;
-      if (v.year != null) {
-        // year in EZLynx is an enum like { value: 3, name: "Item2023", description: "2023" }
-        // Update the description; the save API may accept just the year number too
+  // Build a map of Canopy vehicle index → EZLynx vehicle index for coverage mapping
+  const canopyToEzlynxVehicleIdx = new Map<number, number>();
+
+  canopyVehicles.forEach((cv, canopyIdx) => {
+    let matchIdx = -1;
+
+    // Match by VIN
+    if (cv.vin) {
+      matchIdx = vehicleCollection.findIndex((ev, i) =>
+        !usedVehicleIndices.has(i)
+        && ev.vin
+        && ev.vin.toUpperCase() === cv.vin.toUpperCase()
+      );
+    }
+
+    if (matchIdx >= 0) {
+      usedVehicleIndices.add(matchIdx);
+      canopyToEzlynxVehicleIdx.set(canopyIdx, matchIdx);
+      const existing = vehicleCollection[matchIdx];
+
+      // Update non-null fields only
+      if (cv.vin) existing.vin = cv.vin;
+      if (cv.make) existing.make = cv.make;
+      if (cv.model) existing.model = cv.model;
+      if (cv.year != null) {
         if (existing.year && typeof existing.year === 'object') {
-          existing.year = { ...existing.year, description: String(v.year) };
+          existing.year = { ...existing.year, description: String(cv.year) };
         } else {
-          existing.year = v.year;
+          existing.year = cv.year;
         }
       }
-      if (v.annualMiles != null) existing.annualMiles = v.annualMiles;
-    }
+      if (cv.annualMiles != null) existing.annualMiles = cv.annualMiles;
 
-    // Also map per-vehicle coverages from Canopy
-    if (quoteData.vehicleCoverages) {
-      for (const vc of quoteData.vehicleCoverages) {
-        const existing = vehicleCollection[vc.vehicleIndex];
-        if (!existing?.coverage) continue;
-        if (vc.compDeductible != null) existing.coverage.comprehensive = vc.compDeductible;
-        if (vc.collDeductible != null) existing.coverage.collision = vc.collDeductible;
-        if (vc.towing != null) existing.coverage.towing = vc.towing;
-        if (vc.rental != null) existing.coverage.rental = vc.rental;
+      syncReport.vehicles.matched.push({
+        vin: cv.vin,
+        canopyDesc: `${cv.year || ''} ${cv.make || ''} ${cv.model || ''}`.trim(),
+        ezlynxDesc: `${existing.year?.description || existing.year || ''} ${existing.make || ''} ${existing.model || ''}`.trim(),
+        ezlynxIndex: matchIdx,
+      });
+    } else {
+      syncReport.vehicles.unmatched.push({
+        vin: cv.vin || 'N/A',
+        canopyDesc: `${cv.year || ''} ${cv.make || ''} ${cv.model || ''}`.trim(),
+        reason: cv.vin ? 'VIN not found in EZLynx app' : 'No VIN provided',
+      });
+    }
+  });
+
+  // Map per-vehicle coverages — using VIN-matched indices
+  if (quoteData.vehicleCoverages) {
+    for (const vc of quoteData.vehicleCoverages) {
+      const ezlynxIdx = canopyToEzlynxVehicleIdx.get(vc.vehicleIndex);
+      if (ezlynxIdx == null) continue; // skip unmatched vehicles
+      const existing = vehicleCollection[ezlynxIdx];
+      if (!existing?.coverage) continue;
+      if (vc.compDeductible != null) {
+        existing.coverage.comprehensive = vc.compDeductible;
+        syncReport.coverages.updated.push(`Vehicle ${ezlynxIdx}: Comp deductible → ${vc.compDeductible}`);
       }
+      if (vc.collDeductible != null) {
+        existing.coverage.collision = vc.collDeductible;
+        syncReport.coverages.updated.push(`Vehicle ${ezlynxIdx}: Coll deductible → ${vc.collDeductible}`);
+      }
+      if (vc.towing != null) existing.coverage.towing = vc.towing;
+      if (vc.rental != null) existing.coverage.rental = vc.rental;
     }
   }
 
-  // Map general coverage — merge onto existing coverage structure
+  // =========================================================================
+  // GENERAL COVERAGE
+  // =========================================================================
   if (quoteData.generalCoverage && app.coverage?.generalCoverage) {
     const gc = app.coverage.generalCoverage;
-    if (quoteData.generalCoverage.bodilyInjury != null) gc.bodilyInjury = quoteData.generalCoverage.bodilyInjury;
-    if (quoteData.generalCoverage.propertyDamage != null) gc.propertyDamage = quoteData.generalCoverage.propertyDamage;
-    if (quoteData.generalCoverage.uninsuredMotorist != null) gc.uninsuredMotorist = quoteData.generalCoverage.uninsuredMotorist;
-    if (quoteData.generalCoverage.underinsuredMotorist != null) gc.underinsuredMotorist = quoteData.generalCoverage.underinsuredMotorist;
-    if (quoteData.generalCoverage.medicalPayments != null) gc.medicalPayments = quoteData.generalCoverage.medicalPayments;
+    if (quoteData.generalCoverage.bodilyInjury != null) {
+      gc.bodilyInjury = quoteData.generalCoverage.bodilyInjury;
+      syncReport.coverages.updated.push(`BI → ${quoteData.generalCoverage.bodilyInjury}`);
+    }
+    if (quoteData.generalCoverage.propertyDamage != null) {
+      gc.propertyDamage = quoteData.generalCoverage.propertyDamage;
+      syncReport.coverages.updated.push(`PD → ${quoteData.generalCoverage.propertyDamage}`);
+    }
+    if (quoteData.generalCoverage.uninsuredMotorist != null) {
+      gc.uninsuredMotorist = quoteData.generalCoverage.uninsuredMotorist;
+      syncReport.coverages.updated.push(`UM → ${quoteData.generalCoverage.uninsuredMotorist}`);
+    }
+    if (quoteData.generalCoverage.underinsuredMotorist != null) {
+      gc.underinsuredMotorist = quoteData.generalCoverage.underinsuredMotorist;
+      syncReport.coverages.updated.push(`UIM → ${quoteData.generalCoverage.underinsuredMotorist}`);
+    }
+    if (quoteData.generalCoverage.medicalPayments != null) {
+      gc.medicalPayments = quoteData.generalCoverage.medicalPayments;
+      syncReport.coverages.updated.push(`MedPay → ${quoteData.generalCoverage.medicalPayments}`);
+    }
   }
 
-  // Map policy info — effective date, prior carrier
+  // =========================================================================
+  // POLICY INFO
+  // =========================================================================
   if (app.policyInformation) {
     if (quoteData.effectiveDate) {
       app.policyInformation.effectiveDate = quoteData.effectiveDate;
+      syncReport.policyInfo.effectiveDate = quoteData.effectiveDate;
     }
     if (quoteData.priorPolicyExpirationDate) {
       app.policyInformation.priorPolicyExpirationDate = quoteData.priorPolicyExpirationDate;
+      syncReport.policyInfo.priorPolicyExpirationDate = quoteData.priorPolicyExpirationDate;
     }
-    // priorCarrier from Canopy is a string like "allstate" — try to match existing enum
-    // or leave as-is for manual review. Don't overwrite a good enum with a raw string.
+    if (quoteData.priorCarrier) {
+      syncReport.policyInfo.priorCarrier = quoteData.priorCarrier;
+      // Don't overwrite a good enum with a raw string — log for awareness only
+    }
   }
 
-  return app;
+  return { app, syncReport };
+}
+
+/** Sync report type for auto application mapping */
+export interface AutoSyncReport {
+  drivers: {
+    matched: Array<{ canopyName: string; ezlynxName: string; matchMethod: string; ezlynxIndex: number }>;
+    unmatched: Array<{ canopyName: string; licenseNumber: string; reason?: string }>;
+    added: Array<{ canopyName: string; licenseNumber: string }>;
+  };
+  vehicles: {
+    matched: Array<{ vin: string; canopyDesc: string; ezlynxDesc: string; ezlynxIndex: number }>;
+    unmatched: Array<{ vin: string; canopyDesc: string; reason: string }>;
+  };
+  coverages: {
+    updated: string[];
+  };
+  policyInfo: {
+    effectiveDate?: string;
+    priorPolicyExpirationDate?: string;
+    priorCarrier?: string;
+  };
 }
 
 /**
  * Map Canopy pull data into an EZLynx HomeRiskApplication structure.
  * Merges onto an existing application template from the API.
+ * Deep clones to avoid mutating the original template.
+ *
+ * Maps dwelling coverages from Canopy (cents) to EZLynx dollar values:
+ * - DWELLING → dwelling limit
+ * - OTHER_STRUCTURES → other structures limit
+ * - PERSONAL_PROPERTY → personal property limit
+ * - FAMILY_LIABILITY_PROTECTION / PERSONAL_LIABILITY → personal liability
+ * - MEDICAL_PAYMENTS → medical payments
+ * - ALL_OTHER_PERILS deductible → all peril deductible
  */
-export function canopyPullToHomeApplication(pull: any, appTemplate: any): any {
-  const app = { ...appTemplate };
+export function canopyPullToHomeApplication(pull: any, appTemplate: any): { app: any; syncReport: HomeSyncReport } {
+  const app = JSON.parse(JSON.stringify(appTemplate)); // deep clone
   const quoteData = canopyPullToHomeQuote(pull);
+
+  const syncReport: HomeSyncReport = {
+    coverages: { updated: [] },
+    dwelling: { updated: [] },
+    policyInfo: {},
+  };
 
   // Map dwelling info
   if (app.dwellingInfo) {
-    if (quoteData.yearBuilt) app.dwellingInfo.yearBuilt = quoteData.yearBuilt;
-    if (quoteData.squareFootage) app.dwellingInfo.squareFootage = quoteData.squareFootage;
-    if (quoteData.exteriorWall) app.dwellingInfo.exteriorWall = quoteData.exteriorWall;
-    if (quoteData.roofType) app.dwellingInfo.roofType = quoteData.roofType;
-    if (quoteData.roofingUpdateYear) app.dwellingInfo.roofingUpdateYear = quoteData.roofingUpdateYear;
-    if (quoteData.residenceType) app.dwellingInfo.residenceType = quoteData.residenceType;
+    if (quoteData.yearBuilt) { app.dwellingInfo.yearBuilt = quoteData.yearBuilt; syncReport.dwelling.updated.push(`yearBuilt → ${quoteData.yearBuilt}`); }
+    if (quoteData.squareFootage) { app.dwellingInfo.squareFootage = quoteData.squareFootage; syncReport.dwelling.updated.push(`sqft → ${quoteData.squareFootage}`); }
+    if (quoteData.exteriorWall) { app.dwellingInfo.exteriorWall = quoteData.exteriorWall; syncReport.dwelling.updated.push(`exteriorWall → ${quoteData.exteriorWall}`); }
+    if (quoteData.roofType) { app.dwellingInfo.roofType = quoteData.roofType; syncReport.dwelling.updated.push(`roofType → ${quoteData.roofType}`); }
+    if (quoteData.roofingUpdateYear) { app.dwellingInfo.roofingUpdateYear = quoteData.roofingUpdateYear; syncReport.dwelling.updated.push(`roofYear → ${quoteData.roofingUpdateYear}`); }
+    if (quoteData.residenceType) { app.dwellingInfo.residenceType = quoteData.residenceType; syncReport.dwelling.updated.push(`residenceType → ${quoteData.residenceType}`); }
   }
 
-  // Map coverage
+  // Map coverages — also map additional coverage types from Canopy
   if (app.coverage) {
-    if (quoteData.dwellingLimit) app.coverage.dwellingLimit = quoteData.dwellingLimit;
-    if (quoteData.personalLiabilityLimit) app.coverage.personalLiabilityLimit = quoteData.personalLiabilityLimit;
-    if (quoteData.medicalPaymentsLimit) app.coverage.medicalPaymentsLimit = quoteData.medicalPaymentsLimit;
-    if (quoteData.allPerilDeductible) app.coverage.allPerilDeductible = quoteData.allPerilDeductible;
+    if (quoteData.dwellingLimit) { app.coverage.dwellingLimit = quoteData.dwellingLimit; syncReport.coverages.updated.push(`Dwelling → $${quoteData.dwellingLimit}`); }
+    if (quoteData.personalLiabilityLimit) { app.coverage.personalLiabilityLimit = quoteData.personalLiabilityLimit; syncReport.coverages.updated.push(`Liability → $${quoteData.personalLiabilityLimit}`); }
+    if (quoteData.medicalPaymentsLimit) { app.coverage.medicalPaymentsLimit = quoteData.medicalPaymentsLimit; syncReport.coverages.updated.push(`MedPay → $${quoteData.medicalPaymentsLimit}`); }
+    if (quoteData.allPerilDeductible) { app.coverage.allPerilDeductible = quoteData.allPerilDeductible; syncReport.coverages.updated.push(`All Peril Ded → $${quoteData.allPerilDeductible}`); }
+    if (quoteData.otherStructuresLimit) { app.coverage.otherStructuresLimit = quoteData.otherStructuresLimit; syncReport.coverages.updated.push(`Other Structures → $${quoteData.otherStructuresLimit}`); }
+    if (quoteData.personalPropertyLimit) { app.coverage.personalPropertyLimit = quoteData.personalPropertyLimit; syncReport.coverages.updated.push(`Personal Property → $${quoteData.personalPropertyLimit}`); }
+  }
+
+  // Map property address
+  if (app.propertyAddress || app.property) {
+    const target = app.propertyAddress || app.property || {};
+    if (quoteData.propertyAddress) target.propertyAddress = quoteData.propertyAddress;
+    if (quoteData.propertyCity) target.propertyCity = quoteData.propertyCity;
+    if (quoteData.propertyState) target.propertyState = quoteData.propertyState;
+    if (quoteData.propertyZip) target.propertyZip = quoteData.propertyZip;
   }
 
   // Map policy info
   if (app.policyInformation) {
-    if (quoteData.effectiveDate) app.policyInformation.effectiveDate = quoteData.effectiveDate;
-    if (quoteData.priorCarrier) app.policyInformation.priorCarrier = quoteData.priorCarrier;
+    if (quoteData.effectiveDate) {
+      app.policyInformation.effectiveDate = quoteData.effectiveDate;
+      syncReport.policyInfo.effectiveDate = quoteData.effectiveDate;
+    }
+    if (quoteData.priorCarrier) {
+      syncReport.policyInfo.priorCarrier = quoteData.priorCarrier;
+    }
   }
 
-  return app;
+  return { app, syncReport };
+}
+
+/** Sync report type for home application mapping */
+export interface HomeSyncReport {
+  coverages: { updated: string[] };
+  dwelling: { updated: string[] };
+  policyInfo: {
+    effectiveDate?: string;
+    priorCarrier?: string;
+  };
 }
 
 // =============================================================================

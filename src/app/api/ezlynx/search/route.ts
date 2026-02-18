@@ -18,11 +18,25 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await ezlynxBot.searchApplicant({ firstName, lastName, dateOfBirth, state });
+
+    // Pass through full result objects including address, DOB, city, state, zip
+    // The SearchResult interface already includes these fields from the bot API
     return NextResponse.json(result);
   } catch (err: any) {
+    // Distinguish bot connection errors from other failures
+    const message = err.message || 'Unknown error';
+    const isConnectionError =
+      message.includes('ECONNREFUSED') ||
+      message.includes('timeout') ||
+      message.includes('connect') ||
+      message.includes('socket');
+
     return NextResponse.json(
-      { success: false, error: err.message },
-      { status: 500 }
+      {
+        success: false,
+        error: isConnectionError ? `Bot connection failed: ${message}` : message,
+      },
+      { status: isConnectionError ? 502 : 500 }
     );
   }
 }

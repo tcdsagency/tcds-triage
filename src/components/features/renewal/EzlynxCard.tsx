@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { Zap, ExternalLink, Search, Loader2, Link2, RefreshCw } from 'lucide-react';
+import { Zap, ExternalLink, Search, Loader2, Link2, RefreshCw, AlertTriangle } from 'lucide-react';
 
 interface EzlynxCardProps {
   /** EZLynx account ID if already linked */
@@ -33,9 +33,11 @@ export default function EzlynxCard({
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searched, setSearched] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [linkedId, setLinkedId] = useState(ezlynxAccountId);
+  const autoSearchedRef = useRef(false);
 
   const ezlynxUrl = (id: string) => `https://app.ezlynx.com/web/account/${id}/details`;
 
@@ -43,6 +45,7 @@ export default function EzlynxCard({
     if (!insuredName) return;
     setSearching(true);
     setSearched(true);
+    setSearchError(null);
     try {
       const parts = insuredName.trim().split(/\s+/);
       const firstName = parts[0] || '';
@@ -53,13 +56,44 @@ export default function EzlynxCard({
 
       const res = await fetch(`/api/ezlynx/search?${params}`);
       const data = await res.json();
+
+      if (!res.ok || data.error) {
+        const errMsg = data.error || `Search failed (${res.status})`;
+        // Detect bot connection / auth errors
+        if (
+          errMsg.toLowerCase().includes('auth') ||
+          errMsg.toLowerCase().includes('connect') ||
+          errMsg.toLowerCase().includes('econnrefused') ||
+          errMsg.toLowerCase().includes('timeout') ||
+          errMsg.toLowerCase().includes('bot') ||
+          res.status === 502 ||
+          res.status === 503
+        ) {
+          setSearchError('bot_disconnected');
+        } else {
+          setSearchError(errMsg);
+        }
+        setSearchResults([]);
+        return;
+      }
+
       setSearchResults(data.results || []);
     } catch (err: any) {
+      setSearchError('bot_disconnected');
+      setSearchResults([]);
       toast.error('EZLynx search failed', { description: err.message });
     } finally {
       setSearching(false);
     }
   }, [insuredName]);
+
+  // Auto-search on mount when insuredName is present and not already linked
+  useEffect(() => {
+    if (insuredName && !linkedId && !autoSearchedRef.current) {
+      autoSearchedRef.current = true;
+      handleSearch();
+    }
+  }, [insuredName, linkedId, handleSearch]);
 
   const handleLink = useCallback(async (accountId: string) => {
     if (!customerId) return;
@@ -213,22 +247,44 @@ export default function EzlynxCard({
         EZLynx
       </h4>
 
-      {/* Search results */}
-      {searched && searchResults.length > 0 && (
-        <div className="space-y-1 mb-2 max-h-32 overflow-y-auto">
+      {/* Bot disconnected warning */}
+      {searchError === 'bot_disconnected' && (
+        <div className="flex items-center gap-1.5 p-2 mb-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>Bot not connected — start EZLynx bot and retry</span>
+        </div>
+      )}
+
+      {/* Generic error */}
+      {searchError && searchError !== 'bot_disconnected' && (
+        <p className="text-xs text-red-500 mb-2">{searchError}</p>
+      )}
+
+      {/* Search results with richer details */}
+      {searched && !searchError && searchResults.length > 0 && (
+        <div className="space-y-1 mb-2 max-h-40 overflow-y-auto">
           {searchResults.map((r: any) => (
             <button
               key={r.accountId}
               onClick={() => handleLink(r.accountId)}
               className="w-full text-left p-2 text-xs bg-white rounded border hover:bg-blue-50 transition-colors"
             >
-              <span className="font-medium">{r.applicantFirstName} {r.applicantLastName}</span>
-              <span className="text-gray-400 ml-1 font-mono">#{r.accountId}</span>
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{r.applicantFirstName} {r.applicantLastName}</span>
+                <span className="text-gray-400 font-mono text-[10px]">#{r.accountId}</span>
+              </div>
+              {(r.address || r.dateOfBirth) && (
+                <div className="text-[10px] text-gray-400 mt-0.5">
+                  {r.dateOfBirth && <span>DOB: {r.dateOfBirth}</span>}
+                  {r.dateOfBirth && r.address && <span className="mx-1">|</span>}
+                  {r.address && <span>{r.address}{r.city ? `, ${r.city}` : ''}{r.state ? ` ${r.state}` : ''}</span>}
+                </div>
+              )}
             </button>
           ))}
         </div>
       )}
-      {searched && searchResults.length === 0 && (
+      {searched && !searchError && searchResults.length === 0 && !searching && (
         <p className="text-xs text-gray-400 mb-2">No matches found in EZLynx</p>
       )}
 
