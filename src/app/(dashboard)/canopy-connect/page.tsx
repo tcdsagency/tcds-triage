@@ -214,6 +214,46 @@ export default function CanopyConnectPage() {
     }
   };
 
+  // EZLynx sync state
+  const [syncingEzlynx, setSyncingEzlynx] = useState(false);
+  const [ezlynxSyncResult, setEzlynxSyncResult] = useState<any>(null);
+
+  // Sync to EZLynx
+  const handleSyncEzlynx = async (pushQuotes: boolean = false) => {
+    if (!selectedPull) return;
+
+    setSyncingEzlynx(true);
+    setEzlynxSyncResult(null);
+    try {
+      const response = await fetch(`/api/canopy-connect/${selectedPull.id}/sync-ezlynx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: selectedPull.matchedCustomerId,
+          pushQuotes,
+        }),
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        setEzlynxSyncResult(data);
+        await fetchPulls();
+        await fetchPullDetail(selectedPull.id);
+        alert(
+          `EZLynx sync successful! ${data.operation === 'created' ? 'Created' : 'Updated'} applicant ${data.ezlynxAccountId}` +
+          (data.quoteResults ? `\nQuotes: ${JSON.stringify(data.quoteResults)}` : '')
+        );
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error syncing to EZLynx:', error);
+      alert('Failed to sync to EZLynx');
+    } finally {
+      setSyncingEzlynx(false);
+    }
+  };
+
   // Sync to AgencyZoom
   const handleSyncNote = async () => {
     if (!selectedPull) return;
@@ -557,6 +597,41 @@ export default function CanopyConnectPage() {
                     >
                       Update Customer Data
                     </button>
+                  )}
+
+                  {/* Sync to EZLynx */}
+                  {selectedPull.matchedCustomerId && (selectedPull.matchStatus === 'matched' || selectedPull.matchStatus === 'created') && (
+                    <>
+                      <button
+                        onClick={() => handleSyncEzlynx(false)}
+                        disabled={syncingEzlynx}
+                        className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {syncingEzlynx ? 'Syncing...' : 'Sync to EZLynx'}
+                      </button>
+                      {((selectedPull.vehicles && selectedPull.vehicles.length > 0) ||
+                        ((selectedPull as any).dwellings && (selectedPull as any).dwellings?.length > 0)) && (
+                        <button
+                          onClick={() => handleSyncEzlynx(true)}
+                          disabled={syncingEzlynx}
+                          className="w-full px-4 py-2 border border-purple-600 text-purple-600 dark:text-purple-400 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {syncingEzlynx ? 'Syncing...' : 'Sync to EZLynx + Push Quotes'}
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {/* EZLynx link badge */}
+                  {ezlynxSyncResult?.ezlynxAccountId && (
+                    <a
+                      href={`https://app.ezlynx.com/web/account/${ezlynxSyncResult.ezlynxAccountId}/details`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full text-center px-4 py-2 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 text-sm"
+                    >
+                      Open in EZLynx (ID: {ezlynxSyncResult.ezlynxAccountId})
+                    </a>
                   )}
 
                   {selectedPull.matchStatus === 'matched' && !selectedPull.agencyzoomNoteSynced && (

@@ -317,6 +317,323 @@ export function leadToApplicant(lead: any): CreateApplicantData {
 }
 
 // =============================================================================
+// CANOPY CONNECT → EZLYNX APPLICANT
+// =============================================================================
+
+/**
+ * Convert a Canopy Connect pull record → EZLynx CreateApplicantData.
+ * Maps personal info, address, phones, co-applicant from the pull record.
+ */
+export function canopyPullToApplicant(pull: any): CreateApplicantData {
+  const primaryDriver = (pull.drivers || []).find((d: any) => d.is_primary) || (pull.drivers || [])[0];
+
+  const data: CreateApplicantData = {
+    firstName: pull.first_name || pull.firstName || '',
+    lastName: pull.last_name || pull.lastName || '',
+    dateOfBirth: toEzlynxDate(pull.date_of_birth || pull.dateOfBirth),
+    email: pull.email || pull.account_email || undefined,
+    phone: formatPhoneEzlynx(pull.phone || pull.mobile_phone),
+    addressLine1: pull.address?.street_one || pull.address?.street || undefined,
+    addressCity: pull.address?.city || undefined,
+    addressState: pull.address?.state || undefined,
+    addressZip: pull.address?.zip || undefined,
+    gender: mapGender(primaryDriver?.gender),
+    maritalStatus: mapMaritalStatus(primaryDriver?.marital_status),
+  };
+
+  // Co-applicant from secondary insured
+  const si = pull.secondaryInsured || pull.secondary_insured;
+  if (si?.firstName || si?.first_name) {
+    data.coApplicant = {
+      firstName: si.firstName || si.first_name || '',
+      lastName: si.lastName || si.last_name || pull.last_name || pull.lastName || '',
+      dateOfBirth: toEzlynxDate(si.dateOfBirth || si.date_of_birth),
+      relationship: mapCanopyRelationshipToCoApplicant(si.relationship),
+    };
+  }
+
+  return data;
+}
+
+/**
+ * Convert a Canopy pull → EZLynx Auto Quote data.
+ * Maps vehicles, drivers, and coverages using EZLynx auto-specific enums.
+ */
+export function canopyPullToAutoQuote(pull: any): any {
+  const vehicles = (pull.vehicles || []).map((v: any) => ({
+    year: v.year,
+    make: (v.make || '').toUpperCase(),
+    model: (v.model || '').toUpperCase(),
+    vin: v.vin || undefined,
+    use: mapCanopyVehicleUsage(v.usage),
+    annualMiles: v.annual_mileage || v.annualMileage || undefined,
+    ownership: mapCanopyOwnership(v.ownership),
+  }));
+
+  const drivers = (pull.drivers || []).map((d: any) => ({
+    firstName: (d.first_name || d.firstName || '').toUpperCase(),
+    lastName: (d.last_name || d.lastName || '').toUpperCase(),
+    dateOfBirth: toEzlynxDate(d.date_of_birth || d.dateOfBirth),
+    gender: mapCanopyAutoDriverGender(d.gender),
+    maritalStatus: mapCanopyAutoDriverMarital(d.marital_status || d.maritalStatus),
+    licenseNumber: d.license_number || d.licenseNumber || undefined,
+    licenseState: d.license_state || d.licenseState || undefined,
+    licenseStatus: mapCanopyLicenseStatus(d.license_status || d.licenseStatus),
+    relationship: mapCanopyRelationshipToDriver(d.relationship),
+    isPrimary: d.is_primary || d.isPrimary || false,
+  }));
+
+  // General coverages
+  const coverages = pull.coverages || [];
+  const biCov = findCanopyCoverage(coverages, ['bodily_injury', 'bi']);
+  const pdCov = findCanopyCoverage(coverages, ['property_damage', 'pd']);
+  const umCov = findCanopyCoverage(coverages, ['uninsured_motorist', 'um']);
+  const uimCov = findCanopyCoverage(coverages, ['underinsured_motorist', 'uim']);
+  const mpCov = findCanopyCoverage(coverages, ['medical_payments', 'med_pay']);
+
+  const generalCoverage: any = {};
+  if (biCov) {
+    generalCoverage.bodilyInjury = canopyCentsToBILimit(biCov.per_person_limit_cents, biCov.per_incident_limit_cents);
+  }
+  if (pdCov) generalCoverage.propertyDamage = canopyCentsToLimit(pdCov.per_incident_limit_cents);
+  if (umCov) generalCoverage.uninsuredMotorist = canopyCentsToBILimit(umCov.per_person_limit_cents, umCov.per_incident_limit_cents);
+  if (uimCov) generalCoverage.underinsuredMotorist = canopyCentsToBILimit(uimCov.per_person_limit_cents, uimCov.per_incident_limit_cents);
+  if (mpCov) generalCoverage.medicalPayments = canopyCentsToLimit(mpCov.per_person_limit_cents || mpCov.per_incident_limit_cents);
+
+  // Per-vehicle coverages
+  const vehicleCoverages = (pull.vehicles || []).map((v: any, idx: number) => {
+    const vCovs = v.coverages || [];
+    const compCov = findCanopyCoverage(vCovs, ['comprehensive', 'comp']);
+    const collCov = findCanopyCoverage(vCovs, ['collision', 'coll']);
+    const towCov = findCanopyCoverage(vCovs, ['towing', 'roadside']);
+    const rentalCov = findCanopyCoverage(vCovs, ['rental', 'rental_reimbursement']);
+
+    return {
+      vehicleIndex: idx,
+      compDeductible: compCov ? canopyCentsToDeductible(compCov.deductible_cents) : undefined,
+      collDeductible: collCov ? canopyCentsToDeductible(collCov.deductible_cents) : undefined,
+      towing: towCov ? canopyCentsToLimit(towCov.per_incident_limit_cents) : undefined,
+      rental: rentalCov ? canopyCentsToLimit(rentalCov.per_incident_limit_cents) : undefined,
+    };
+  });
+
+  // Policy info
+  const policy = (pull.policies || [])[0];
+  const policyInfo: any = {};
+  if (policy?.effective_date) policyInfo.effectiveDate = toEzlynxDate(policy.effective_date);
+  if (policy?.expiry_date) policyInfo.priorPolicyExpirationDate = toEzlynxDate(policy.expiry_date);
+  if (pull.insurance_provider_name) policyInfo.priorCarrier = pull.insurance_provider_name;
+
+  return {
+    vehicles,
+    drivers,
+    generalCoverage,
+    vehicleCoverages,
+    ...policyInfo,
+  };
+}
+
+/**
+ * Convert a Canopy pull → EZLynx Home Quote data.
+ * Maps dwelling info and home coverages.
+ */
+export function canopyPullToHomeQuote(pull: any): any {
+  const dwelling = (pull.dwellings || [])[0] || {};
+  const coverages = pull.coverages || dwelling.coverages || [];
+
+  // Dwelling info
+  const dwellingInfo: any = {};
+  if (dwelling.year_built) dwellingInfo.yearBuilt = String(dwelling.year_built);
+  if (dwelling.square_feet) dwellingInfo.squareFootage = String(dwelling.square_feet);
+  if (dwelling.construction_type) dwellingInfo.exteriorWall = mapCanopyConstruction(dwelling.construction_type);
+  if (dwelling.roof_type) dwellingInfo.roofType = mapCanopyRoofType(dwelling.roof_type);
+  if (dwelling.roof_year) dwellingInfo.roofingUpdateYear = String(dwelling.roof_year);
+  if (dwelling.heating_type) dwellingInfo.heatingFuelType = dwelling.heating_type;
+  if (dwelling.dwelling_type) dwellingInfo.residenceType = dwelling.dwelling_type;
+
+  // Property address
+  const propAddr = dwelling.address || pull.address;
+  const propertyAddress: any = {};
+  if (propAddr) {
+    propertyAddress.propertyAddress = propAddr.street_one || propAddr.street;
+    propertyAddress.propertyCity = propAddr.city;
+    propertyAddress.propertyState = propAddr.state;
+    propertyAddress.propertyZip = propAddr.zip;
+  }
+
+  // Home coverages
+  const dwellingCov = findCanopyCoverage(coverages, ['dwelling', 'dwelling_coverage']);
+  const liabCov = findCanopyCoverage(coverages, ['personal_liability', 'liability']);
+  const medCov = findCanopyCoverage(coverages, ['medical_payments', 'med_pay']);
+  const deductCov = findCanopyCoverage(coverages, ['all_peril', 'all_perils', 'deductible']);
+
+  const homeCoverage: any = {};
+  if (dwellingCov?.per_incident_limit_cents) homeCoverage.dwellingLimit = Math.round(dwellingCov.per_incident_limit_cents / 100);
+  if (liabCov?.per_incident_limit_cents) homeCoverage.personalLiabilityLimit = Math.round(liabCov.per_incident_limit_cents / 100);
+  if (medCov?.per_incident_limit_cents || medCov?.per_person_limit_cents) {
+    homeCoverage.medicalPaymentsLimit = Math.round((medCov.per_incident_limit_cents || medCov.per_person_limit_cents) / 100);
+  }
+  if (deductCov?.deductible_cents) homeCoverage.allPerilDeductible = Math.round(deductCov.deductible_cents / 100);
+
+  // Policy info
+  const policy = (pull.policies || []).find((p: any) => (p.type || '').toLowerCase().includes('home')) || (pull.policies || [])[0];
+  const policyInfo: any = {};
+  if (policy?.effective_date) policyInfo.effectiveDate = toEzlynxDate(policy.effective_date);
+  if (policy?.expiry_date) policyInfo.priorPolicyExpirationDate = toEzlynxDate(policy.expiry_date);
+  if (pull.insurance_provider_name) policyInfo.priorCarrier = pull.insurance_provider_name;
+
+  return {
+    ...dwellingInfo,
+    ...propertyAddress,
+    ...homeCoverage,
+    ...policyInfo,
+  };
+}
+
+// =============================================================================
+// CANOPY HELPER FUNCTIONS
+// =============================================================================
+
+/** Convert cents to EZLynx Item enum string (e.g. 50000 cents → "Item500") */
+export function canopyCentsToLimit(cents?: number | null): string | undefined {
+  if (!cents) return undefined;
+  const dollars = Math.round(cents / 100);
+  return `Item${dollars}`;
+}
+
+/** Convert BI per-person/per-accident cents to "Item{pp}{pa}" (e.g. Item50100) */
+function canopyCentsToBILimit(perPersonCents?: number | null, perAccidentCents?: number | null): string | undefined {
+  if (!perPersonCents || !perAccidentCents) return undefined;
+  const pp = Math.round(perPersonCents / 100000); // in thousands
+  const pa = Math.round(perAccidentCents / 100000);
+  return `Item${pp}${pa}`;
+}
+
+/** Convert deductible cents to EZLynx Item enum */
+export function canopyCentsToDeductible(cents?: number | null): string | undefined {
+  if (!cents) return undefined;
+  const dollars = Math.round(cents / 100);
+  return `Item${dollars}`;
+}
+
+/** Map Canopy roof type to EZLynx enum */
+export function mapCanopyRoofType(type?: string | null): string | undefined {
+  if (!type) return undefined;
+  const t = type.toLowerCase();
+  if (t.includes('shingle') || t.includes('asphalt')) return 'COMPOSITESHINGLES';
+  if (t.includes('architectural')) return 'ARCHITECTURALSHINGLES';
+  if (t.includes('metal')) return 'METAL';
+  if (t.includes('tile')) return 'TILE';
+  if (t.includes('slate')) return 'SLATE';
+  if (t.includes('wood') || t.includes('shake')) return 'WOODSHAKES';
+  return type;
+}
+
+/** Map Canopy construction type to EZLynx enum */
+export function mapCanopyConstruction(type?: string | null): string | undefined {
+  if (!type) return undefined;
+  const t = type.toLowerCase();
+  if (t.includes('wood') || t.includes('frame')) return 'Frame';
+  if (t.includes('brick')) return 'BrickonBlock';
+  if (t.includes('masonry')) return 'Masonry';
+  if (t.includes('stucco')) return 'Stucco';
+  return type;
+}
+
+/** Map Canopy vehicle usage to EZLynx enum */
+export function mapCanopyVehicleUsage(usage?: string | null): string | undefined {
+  if (!usage) return undefined;
+  const u = usage.toLowerCase();
+  if (u.includes('commute') || u.includes('work')) return 'CommuteWork';
+  if (u.includes('pleasure')) return 'Pleasure';
+  if (u.includes('business')) return 'Business';
+  if (u.includes('farm')) return 'Farm';
+  return usage;
+}
+
+/** Map Canopy ownership to EZLynx enum */
+export function mapCanopyOwnership(ownership?: string | null): string | undefined {
+  if (!ownership) return undefined;
+  const o = ownership.toLowerCase();
+  if (o === 'owned') return 'Owned';
+  if (o === 'leased') return 'Leased';
+  if (o === 'financed') return 'Financed';
+  return ownership;
+}
+
+/** Map Canopy relationship to auto driver enum value */
+export function mapCanopyRelationshipToDriver(rel?: string | null): number | undefined {
+  if (!rel) return undefined;
+  const r = rel.toLowerCase();
+  if (r === 'primary' || r === 'insured' || r === 'self') return 3; // Insured
+  if (r === 'spouse' || r === 'wife' || r === 'husband') return 7; // Spouse
+  if (r === 'child' || r === 'son' || r === 'daughter') return 4; // Child
+  if (r === 'parent' || r === 'mother' || r === 'father') return 6; // Parent
+  return 8; // Other
+}
+
+/** Map Canopy relationship to co-applicant relationship string */
+function mapCanopyRelationshipToCoApplicant(rel?: string | null): string {
+  if (!rel) return 'Relative';
+  const r = rel.toLowerCase();
+  if (r === 'spouse' || r === 'wife' || r === 'husband') return 'Spouse';
+  if (r === 'child' || r === 'son' || r === 'daughter') return 'Child';
+  if (r === 'parent' || r === 'mother' || r === 'father') return 'Parent';
+  if (r.includes('domestic') || r.includes('partner')) return 'Domestic Partner';
+  return 'Relative';
+}
+
+/** Map gender for AUTO driver (different enum from applicant!) */
+function mapCanopyAutoDriverGender(gender?: string | null): number | undefined {
+  if (!gender) return undefined;
+  const g = gender.toLowerCase();
+  if (g === 'male' || g === 'm') return 0;
+  if (g === 'female' || g === 'f') return 1;
+  return undefined;
+}
+
+/** Map marital status for AUTO driver (different enum from applicant!) */
+function mapCanopyAutoDriverMarital(status?: string | null): number | undefined {
+  if (!status) return undefined;
+  const s = status.toLowerCase();
+  if (s.includes('single') || s === 's') return 0;
+  if (s.includes('married') || s === 'm') return 1;
+  if (s.includes('divorced') || s === 'd') return 2;
+  if (s.includes('widowed') || s === 'w') return 3;
+  return undefined;
+}
+
+/** Map license status */
+function mapCanopyLicenseStatus(status?: string | null): string | undefined {
+  if (!status) return undefined;
+  const s = status.toLowerCase();
+  if (s === 'valid' || s === 'active') return 'Valid';
+  if (s === 'suspended') return 'Suspended';
+  if (s === 'revoked') return 'Revoked';
+  if (s === 'expired') return 'Expired';
+  if (s === 'permit') return 'Permit';
+  return status;
+}
+
+/** Format phone for EZLynx: (XXX) XXX-XXXX */
+function formatPhoneEzlynx(phone?: string | null): string | undefined {
+  const cleaned = cleanPhone(phone);
+  if (!cleaned || cleaned.length < 10) return undefined;
+  const digits = cleaned.slice(-10);
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+/** Search Canopy coverages array by name variants */
+export function findCanopyCoverage(coverages: any[], names: string[]): any | undefined {
+  if (!coverages || !Array.isArray(coverages)) return undefined;
+  const lowerNames = names.map(n => n.toLowerCase());
+  return coverages.find((c: any) => {
+    const name = (c.name || c.type || c.code || c.coverage_name || '').toLowerCase().replace(/\s+/g, '_');
+    return lowerNames.some(n => name.includes(n) || name === n);
+  });
+}
+
+// =============================================================================
 // HELPERS (internal)
 // =============================================================================
 

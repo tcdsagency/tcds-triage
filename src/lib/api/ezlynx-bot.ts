@@ -249,18 +249,33 @@ class EzlynxBotClient {
     return this.request(`/api/applicant/${accountId}/details-ezlynx`);
   }
 
-  async createApplicant(data: CreateApplicantData): Promise<CreateApplicantResult> {
+  async createApplicant(
+    data: CreateApplicantData,
+    meta?: { source?: string; sourceId?: string; performedBy?: string }
+  ): Promise<CreateApplicantResult> {
+    const body: any = { ...data };
+    if (meta?.source) body._source = meta.source;
+    if (meta?.sourceId) body._sourceId = meta.sourceId;
+    if (meta?.performedBy) body._performedBy = meta.performedBy;
     return this.request('/api/applicant/create-smart', {
       method: 'POST',
-      body: data,
+      body,
       timeout: 60000, // creation can take a while (Playwright fallback)
     });
   }
 
-  async updateApplicant(accountId: string, updates: UpdateApplicantData): Promise<UpdateApplicantResult> {
+  async updateApplicant(
+    accountId: string,
+    updates: UpdateApplicantData,
+    meta?: { source?: string; sourceId?: string; performedBy?: string }
+  ): Promise<UpdateApplicantResult> {
+    const body: any = { ...updates };
+    if (meta?.source) body._source = meta.source;
+    if (meta?.sourceId) body._sourceId = meta.sourceId;
+    if (meta?.performedBy) body._performedBy = meta.performedBy;
     return this.request(`/api/applicant/${accountId}`, {
       method: 'PUT',
-      body: updates,
+      body,
     });
   }
 
