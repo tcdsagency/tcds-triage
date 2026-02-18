@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { Zap, ExternalLink, Search, Loader2, Link2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Zap, ExternalLink, Search, Loader2, Link2, RefreshCw, AlertTriangle, X, Hash } from 'lucide-react';
 
 interface EzlynxCardProps {
   /** EZLynx account ID if already linked */
@@ -21,6 +21,20 @@ interface EzlynxCardProps {
   customerProfile?: any;
   /** Comparison ID for application API reshop */
   comparisonId?: string;
+}
+
+// Normalize bot search result field names (API returns different shapes)
+function normalizeResult(r: any) {
+  return {
+    accountId: String(r.accountId || r.applicantId || ''),
+    firstName: r.applicantFirstName || '',
+    lastName: r.applicantLastName || '',
+    address: r.address || r.addressLine1 || '',
+    city: r.city || '',
+    state: r.state || r.stateCode || '',
+    zip: r.zip || r.zipCode || '',
+    dateOfBirth: r.dateOfBirth || '',
+  };
 }
 
 export default function EzlynxCard({
@@ -42,7 +56,38 @@ export default function EzlynxCard({
   const [linkedId, setLinkedId] = useState(ezlynxAccountId);
   const autoSearchedRef = useRef(false);
 
+  // Manual search modal state
+  const [showManualSearch, setShowManualSearch] = useState(false);
+  const [manualFirstName, setManualFirstName] = useState('');
+  const [manualLastName, setManualLastName] = useState('');
+  const [manualAccountId, setManualAccountId] = useState('');
+  const [manualSearching, setManualSearching] = useState(false);
+  const [manualResults, setManualResults] = useState<any[]>([]);
+  const [manualSearched, setManualSearched] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
+
   const ezlynxUrl = (id: string) => `https://app.ezlynx.com/web/account/${id}/details`;
+
+  const doSearch = useCallback(async (params: URLSearchParams) => {
+    const res = await fetch(`/api/ezlynx/search?${params}`);
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      const errMsg = data.error || `Search failed (${res.status})`;
+      if (
+        errMsg.toLowerCase().includes('auth') ||
+        errMsg.toLowerCase().includes('connect') ||
+        errMsg.toLowerCase().includes('econnrefused') ||
+        errMsg.toLowerCase().includes('timeout') ||
+        errMsg.toLowerCase().includes('bot') ||
+        res.status === 502 ||
+        res.status === 503
+      ) {
+        throw new Error('bot_disconnected');
+      }
+      throw new Error(errMsg);
+    }
+    return (data.results || []).map(normalizeResult);
+  }, []);
 
   const handleSearch = useCallback(async () => {
     if (!insuredName) return;
@@ -56,45 +101,25 @@ export default function EzlynxCard({
       const params = new URLSearchParams();
       if (firstName) params.set('firstName', firstName);
       if (lastName) params.set('lastName', lastName);
-      // Pass address for fallback search (spouse under different name, etc.)
       const snap = renewalSnapshot as any;
       if (snap?.insuredAddress) params.set('address', snap.insuredAddress);
       if (snap?.insuredCity) params.set('city', snap.insuredCity);
       if (snap?.insuredState) params.set('state', snap.insuredState);
       if (snap?.insuredZip) params.set('zip', snap.insuredZip);
 
-      const res = await fetch(`/api/ezlynx/search?${params}`);
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        const errMsg = data.error || `Search failed (${res.status})`;
-        // Detect bot connection / auth errors
-        if (
-          errMsg.toLowerCase().includes('auth') ||
-          errMsg.toLowerCase().includes('connect') ||
-          errMsg.toLowerCase().includes('econnrefused') ||
-          errMsg.toLowerCase().includes('timeout') ||
-          errMsg.toLowerCase().includes('bot') ||
-          res.status === 502 ||
-          res.status === 503
-        ) {
-          setSearchError('bot_disconnected');
-        } else {
-          setSearchError(errMsg);
-        }
-        setSearchResults([]);
-        return;
-      }
-
-      setSearchResults(data.results || []);
+      const results = await doSearch(params);
+      setSearchResults(results);
     } catch (err: any) {
-      setSearchError('bot_disconnected');
+      if (err.message === 'bot_disconnected') {
+        setSearchError('bot_disconnected');
+      } else {
+        setSearchError(err.message);
+      }
       setSearchResults([]);
-      toast.error('EZLynx search failed', { description: err.message });
     } finally {
       setSearching(false);
     }
-  }, [insuredName, renewalSnapshot]);
+  }, [insuredName, renewalSnapshot, doSearch]);
 
   // Auto-search on mount when insuredName is present and not already linked
   useEffect(() => {
@@ -116,6 +141,8 @@ export default function EzlynxCard({
         setLinkedId(accountId);
         setSearchResults([]);
         setSearched(false);
+        setShowManualSearch(false);
+        setManualResults([]);
         toast.success('Linked to EZLynx', { description: `Account: ${accountId}` });
       }
     } catch {
@@ -129,7 +156,6 @@ export default function EzlynxCard({
       description: insuredName,
     });
     try {
-      // Build profile from customerProfile or fall back to renewalSnapshot fields
       const profile = customerProfile || (() => {
         if (!insuredName) return undefined;
         const parts = insuredName.trim().split(/\s+/);
@@ -152,10 +178,7 @@ export default function EzlynxCard({
       const res = await fetch('/api/ezlynx/applicant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          profile,
-          customerId,
-        }),
+        body: JSON.stringify({ profile, customerId }),
       });
       const data = await res.json();
       if (data.success && data.ezlynxId) {
@@ -195,7 +218,6 @@ export default function EzlynxCard({
       });
       const data = await res.json();
       if (data.success) {
-        // Build sync summary from report
         const report = data.syncReport;
         const parts: string[] = [];
         if (report?.drivers?.matched?.length) parts.push(`${report.drivers.matched.length} drivers matched`);
@@ -203,7 +225,6 @@ export default function EzlynxCard({
         if (report?.vehicles?.matched?.length) parts.push(`${report.vehicles.matched.length} vehicles matched`);
         if (report?.vehicles?.added?.length) parts.push(`${report.vehicles.added.length} vehicles added`);
         if (report?.coverages?.updated?.length) parts.push(`${report.coverages.updated.length} coverages updated`);
-        // Home-specific
         if (report?.dwelling?.updated?.length) parts.push(`${report.dwelling.updated.length} dwelling fields`);
         const summary = parts.length > 0 ? parts.join(', ') : `${type} application updated`;
 
@@ -225,6 +246,59 @@ export default function EzlynxCard({
       setUpdating(false);
     }
   }, [linkedId, comparisonId, lineOfBusiness, insuredName]);
+
+  // Manual search handler
+  const handleManualSearch = useCallback(async () => {
+    setManualSearching(true);
+    setManualSearched(true);
+    setManualError(null);
+    try {
+      // If account ID entered, link directly
+      if (manualAccountId.trim()) {
+        await handleLink(manualAccountId.trim());
+        return;
+      }
+      const params = new URLSearchParams();
+      if (manualFirstName.trim()) params.set('firstName', manualFirstName.trim());
+      if (manualLastName.trim()) params.set('lastName', manualLastName.trim());
+      if (!manualFirstName.trim() && !manualLastName.trim()) {
+        setManualError('Enter a name or account ID');
+        return;
+      }
+      const results = await doSearch(params);
+      setManualResults(results);
+    } catch (err: any) {
+      if (err.message === 'bot_disconnected') {
+        setManualError('Bot not connected');
+      } else {
+        setManualError(err.message);
+      }
+      setManualResults([]);
+    } finally {
+      setManualSearching(false);
+    }
+  }, [manualFirstName, manualLastName, manualAccountId, doSearch, handleLink]);
+
+  // Render a result row
+  const ResultRow = ({ r, onLink }: { r: any; onLink: (id: string) => void }) => (
+    <button
+      key={r.accountId}
+      onClick={() => onLink(r.accountId)}
+      className="w-full text-left p-2 text-xs bg-white rounded border hover:bg-blue-50 transition-colors"
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-medium">{r.firstName} {r.lastName}</span>
+        <span className="text-gray-400 font-mono text-[10px]">#{r.accountId}</span>
+      </div>
+      {(r.address || r.dateOfBirth) && (
+        <div className="text-[10px] text-gray-400 mt-0.5">
+          {r.dateOfBirth && <span>DOB: {r.dateOfBirth}</span>}
+          {r.dateOfBirth && r.address && <span className="mx-1">|</span>}
+          {r.address && <span>{r.address}{r.city ? `, ${r.city}` : ''}{r.state ? ` ${r.state}` : ''}</span>}
+        </div>
+      )}
+    </button>
+  );
 
   // === LINKED STATE ===
   if (linkedId) {
@@ -287,27 +361,11 @@ export default function EzlynxCard({
         <p className="text-xs text-red-500 mb-2">{searchError}</p>
       )}
 
-      {/* Search results with richer details */}
+      {/* Auto-search results */}
       {searched && !searchError && searchResults.length > 0 && (
         <div className="space-y-1 mb-2 max-h-40 overflow-y-auto">
-          {searchResults.map((r: any) => (
-            <button
-              key={r.accountId}
-              onClick={() => handleLink(r.accountId)}
-              className="w-full text-left p-2 text-xs bg-white rounded border hover:bg-blue-50 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{r.applicantFirstName} {r.applicantLastName}</span>
-                <span className="text-gray-400 font-mono text-[10px]">#{r.accountId}</span>
-              </div>
-              {(r.address || r.dateOfBirth) && (
-                <div className="text-[10px] text-gray-400 mt-0.5">
-                  {r.dateOfBirth && <span>DOB: {r.dateOfBirth}</span>}
-                  {r.dateOfBirth && r.address && <span className="mx-1">|</span>}
-                  {r.address && <span>{r.address}{r.city ? `, ${r.city}` : ''}{r.state ? ` ${r.state}` : ''}</span>}
-                </div>
-              )}
-            </button>
+          {searchResults.map((r) => (
+            <ResultRow key={r.accountId} r={r} onLink={handleLink} />
           ))}
         </div>
       )}
@@ -325,6 +383,21 @@ export default function EzlynxCard({
           Find
         </button>
         <button
+          onClick={() => {
+            setShowManualSearch(true);
+            setManualResults([]);
+            setManualSearched(false);
+            setManualError(null);
+            setManualFirstName('');
+            setManualLastName('');
+            setManualAccountId('');
+          }}
+          className="px-2 py-1.5 border border-gray-300 text-xs font-medium rounded-md hover:bg-gray-100 flex items-center justify-center gap-1"
+          title="Manual search"
+        >
+          <Link2 className="w-3 h-3" />
+        </button>
+        <button
           onClick={handleCreate}
           disabled={creating}
           className="flex-1 px-2 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-md hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1"
@@ -333,6 +406,91 @@ export default function EzlynxCard({
           Create
         </button>
       </div>
+
+      {/* Manual Search Modal */}
+      {showManualSearch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-800">Search EZLynx</h3>
+              <button
+                onClick={() => setShowManualSearch(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search by name */}
+            <div className="space-y-2 mb-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="First name"
+                  value={manualFirstName}
+                  onChange={(e) => setManualFirstName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
+                  className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <input
+                  type="text"
+                  placeholder="Last name"
+                  value={manualLastName}
+                  onChange={(e) => setManualLastName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
+                  className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                <div className="flex-1 border-t border-gray-200" />
+                <span>or enter ID directly</span>
+                <div className="flex-1 border-t border-gray-200" />
+              </div>
+
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Hash className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="EZLynx Account ID"
+                    value={manualAccountId}
+                    onChange={(e) => setManualAccountId(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
+                    className="w-full pl-6 pr-2 py-1.5 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={handleManualSearch}
+                disabled={manualSearching}
+                className="w-full px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1"
+              >
+                {manualSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                {manualAccountId.trim() ? 'Link Account' : 'Search'}
+              </button>
+            </div>
+
+            {/* Error */}
+            {manualError && (
+              <p className="text-xs text-red-500 mb-2">{manualError}</p>
+            )}
+
+            {/* Results */}
+            {manualSearched && !manualError && manualResults.length > 0 && (
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {manualResults.map((r) => (
+                  <ResultRow key={r.accountId} r={r} onLink={handleLink} />
+                ))}
+              </div>
+            )}
+            {manualSearched && !manualError && manualResults.length === 0 && !manualSearching && !manualAccountId.trim() && (
+              <p className="text-xs text-gray-400">No results</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
