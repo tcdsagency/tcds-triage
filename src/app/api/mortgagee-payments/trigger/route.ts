@@ -29,19 +29,15 @@ async function runTrigger(request: NextRequest) {
       );
     }
 
-    // Verify cron secret for automated triggers
-    const cronSecret = request.headers.get("x-cron-secret");
+    // Verify authorization: Vercel cron sends Authorization: Bearer <CRON_SECRET>
     const expectedSecret = process.env.CRON_SECRET;
+    const authHeader = request.headers.get("authorization");
+    const providedSecret = authHeader?.replace("Bearer ", "");
+    const isManual = request.headers.get("x-manual-trigger") === "true";
+    const isVercelCron = request.headers.get("x-vercel-cron") === "1";
 
-    // Allow if: cron secret matches, or no cron secret is configured (dev mode)
-    if (expectedSecret && cronSecret !== expectedSecret) {
-      // Check if this is a manual trigger from authenticated user
-      // For now, we'll allow manual triggers without secret
-      // In production, you may want to add authentication here
-      const isManual = request.headers.get("x-manual-trigger") === "true";
-      if (!isManual) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+    if (expectedSecret && providedSecret !== expectedSecret && !isManual && !isVercelCron) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const scheduler = createMortgageePaymentScheduler(tenantId);
