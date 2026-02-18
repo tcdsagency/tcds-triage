@@ -169,10 +169,10 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Strategy C: Subject contains policy number anywhere
-        const subjectUpper = ticket.subject.toUpperCase();
+        // Strategy C: Subject or description contains policy number
+        const ticketTextUpper = `${ticket.subject} ${(ticket as any).serviceDesc || ''}`.toUpperCase();
         for (const [policyNum, candidates] of policyToCandidates.entries()) {
-          if (subjectUpper.includes(policyNum)) {
+          if (ticketTextUpper.includes(policyNum)) {
             for (const c of candidates) {
               if (!matchedCandidateIds.has(c.id)) {
                 matched.push({ candidateId: c.id, tenantId: c.tenantId, batchId: c.batchId, azTicketId: ticket.id });
@@ -278,7 +278,7 @@ export async function POST(request: NextRequest) {
           }
 
           // Try to find a matching policy for richer placeholder data
-          let matchedPolicy: {
+          type PolicyRow = {
             id: string;
             policyNumber: string;
             carrier: string | null;
@@ -286,7 +286,8 @@ export async function POST(request: NextRequest) {
             expirationDate: Date;
             premium: string | null;
             producerId: string | null;
-          } | null = null;
+          };
+          let matchedPolicy: PolicyRow | null = null;
 
           if (policyNumber && customerId) {
             // Best match: policy number + customer
@@ -311,12 +312,14 @@ export async function POST(request: NextRequest) {
               )
               .limit(1);
             matchedPolicy = policy || null;
-          } else if (customerId) {
-            // Household match only — find the soonest-expiring active policy
-            // (most likely the one the renewal ticket is about)
+          }
+
+          // If no policy from subject, search for policy numbers in subject + description
+          // by cross-referencing the customer's active policies
+          if (!matchedPolicy && customerId) {
             const { asc: ascOrder, gte } = await import('drizzle-orm');
             const now = new Date();
-            const [policy] = await db
+            const customerPolicies = await db
               .select({
                 id: policies.id,
                 policyNumber: policies.policyNumber,
@@ -335,9 +338,20 @@ export async function POST(request: NextRequest) {
                   gte(policies.expirationDate, now)
                 )
               )
-              .orderBy(ascOrder(policies.expirationDate))
-              .limit(1);
-            matchedPolicy = policy || null;
+              .orderBy(ascOrder(policies.expirationDate));
+
+            // Check if any policy number appears in the subject or description
+            const searchText = `${ticket.subject} ${ticket.serviceDesc || ''}`.toUpperCase();
+            const foundByText = customerPolicies.find(p =>
+              searchText.includes(p.policyNumber.toUpperCase())
+            );
+
+            if (foundByText) {
+              matchedPolicy = foundByText;
+            } else if (customerPolicies.length > 0) {
+              // Fallback: pick soonest-expiring active policy
+              matchedPolicy = customerPolicies[0];
+            }
           }
 
           // Use policy data if found, otherwise use what we have from the ticket
