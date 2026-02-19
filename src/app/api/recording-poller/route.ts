@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
       notesPosted: 0,
       autoVoided: 0,
       errors: 0,
+      errorSamples: [] as string[],
     };
 
     let highestId = pollingState.lastSeenId;
@@ -104,8 +105,10 @@ export async function POST(req: NextRequest) {
 
         if (rec.Id > highestId) highestId = rec.Id;
       } catch (error) {
-        console.error(`[recording-poller] Error processing recording ${rec.Id}:`, error);
+        const errMsg = `Rec ${rec.Id}: ${error instanceof Error ? error.message : String(error)}`;
+        console.error(`[recording-poller] ${errMsg}`);
         results.errors++;
+        if (results.errorSamples.length < 3) results.errorSamples.push(errMsg);
         // Still advance past this recording to avoid re-processing
         if (rec.Id > highestId) highestId = rec.Id;
       }
