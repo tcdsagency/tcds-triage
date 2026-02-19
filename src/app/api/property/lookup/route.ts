@@ -1,5 +1,5 @@
 // API Route: /api/property/lookup
-// Main property lookup endpoint - orchestrates Nearmap + RPR + AI analysis
+// Main property lookup endpoint - orchestrates all 6 data sources + report card
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
@@ -9,6 +9,9 @@ import { nearmapClient } from "@/lib/nearmap";
 import { rprClient } from "@/lib/rpr";
 import { mmiClient } from "@/lib/mmi";
 import { propertyApiClient } from "@/lib/propertyapi";
+import { orion180Client } from "@/lib/orion180";
+import { getFloodZoneByCoordinates } from "@/lib/fema-flood";
+import { generateReportCard } from "@/lib/property-report-card";
 
 // =============================================================================
 // TYPES
@@ -35,14 +38,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
     }
 
-    if (!body.address || body.lat === undefined || body.lng === undefined) {
+    if (!body.address) {
       return NextResponse.json(
-        { error: "Address, lat, and lng are required" },
+        { error: "Address is required" },
         { status: 400 }
       );
     }
 
-    const { address, formattedAddress, lat, lng, forceRefresh } = body;
+    const { address, formattedAddress, forceRefresh } = body;
+
+    // Auto-geocode if lat/lng are missing or invalid
+    let lat = body.lat;
+    let lng = body.lng;
+    if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
+      const geocoded = await geocodeAddress(formattedAddress || address);
+      if (geocoded) {
+        lat = geocoded.lat;
+        lng = geocoded.lng;
+        console.log(`[PropertyLookup] Auto-geocoded "${address}" → ${lat},${lng}`);
+      } else {
+        return NextResponse.json(
+          { error: "Could not determine coordinates for this address" },
+          { status: 400 }
+        );
+      }
+    }
 
     // Check cache first (unless force refresh)
     if (!forceRefresh) {
@@ -56,13 +76,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Fetch data from all sources in parallel
-    const [nearmapData, rprData, mmiData, propertyApiData] = await Promise.all([
+    // Parse address components for Orion180 (needs street, city, state, zip separately)
+    const { street, city, state, zip } = parseAddressComponents(formattedAddress || address);
+
+    // Fetch data from all 6 sources in parallel
+    const [nearmapData, rprData, mmiData, propertyApiData, orion180Data, femaResult] = await Promise.all([
       fetchNearmapData(lat, lng),
       fetchRPRData(formattedAddress || address),
       fetchMMIData(formattedAddress || address),
       fetchPropertyAPIData(formattedAddress || address),
+      fetchOrion180Data(street, city, state, zip),
+      fetchFemaFloodData(lat, lng),
     ]);
+
+    // Extract FEMA flood data from result
+    const femaData = femaResult?.success ? (femaResult.data ?? null) : null;
+
+    // Generate report card from all sources
+    const reportCard = generateReportCard(
+      address, rprData, propertyApiData, orion180Data, nearmapData, mmiData, femaData
+    );
 
     // Create lookup record
     const expiresAt = new Date();
@@ -80,6 +113,8 @@ export async function POST(request: NextRequest) {
         rprData,
         mmiData,
         propertyApiData,
+        orion180Data,
+        reportCard,
         obliqueViews: null,
         historicalSurveys: [],
         expiresAt,
@@ -99,6 +134,8 @@ export async function POST(request: NextRequest) {
         rprData: lookup.rprData,
         mmiData: lookup.mmiData,
         propertyApiData: lookup.propertyApiData,
+        orion180Data: lookup.orion180Data,
+        reportCard: lookup.reportCard,
         obliqueViews: lookup.obliqueViews,
         historicalSurveys: lookup.historicalSurveys,
         aiAnalysis: lookup.aiAnalysis,
@@ -118,6 +155,61 @@ export async function POST(request: NextRequest) {
 // HELPERS
 // =============================================================================
 
+async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    console.error("[PropertyLookup] GOOGLE_MAPS_API_KEY not set, cannot geocode");
+    return null;
+  }
+
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === "OK" && data.results?.length > 0) {
+      const location = data.results[0].geometry.location;
+      return { lat: location.lat, lng: location.lng };
+    }
+
+    console.warn(`[PropertyLookup] Geocoding failed for "${address}": ${data.status}`);
+    return null;
+  } catch (error) {
+    console.error("[PropertyLookup] Geocoding error:", error);
+    return null;
+  }
+}
+
+function parseAddressComponents(address: string): { street: string; city: string; state: string; zip: string } {
+  // Expected format: "123 Main St, City, ST 12345" or "123 Main St, City, ST, 12345"
+  const parts = address.split(',').map(p => p.trim());
+
+  if (parts.length >= 3) {
+    const street = parts[0];
+    const city = parts[1];
+    // Last part(s) contain state and zip
+    const stateZipPart = parts.slice(2).join(' ').trim();
+    const stateZipMatch = stateZipPart.match(/^([A-Z]{2})\s*(\d{5}(?:-\d{4})?)$/i);
+    if (stateZipMatch) {
+      return { street, city, state: stateZipMatch[1].toUpperCase(), zip: stateZipMatch[2] };
+    }
+    // Try splitting on space
+    const tokens = stateZipPart.split(/\s+/);
+    if (tokens.length >= 2) {
+      return { street, city, state: tokens[0].toUpperCase(), zip: tokens[tokens.length - 1] };
+    }
+    return { street, city, state: stateZipPart, zip: '' };
+  }
+
+  // Fallback: try to extract from a single string
+  const match = address.match(/^(.+?),\s*(.+?),\s*([A-Z]{2})\s*(\d{5})/i);
+  if (match) {
+    return { street: match[1], city: match[2], state: match[3].toUpperCase(), zip: match[4] };
+  }
+
+  return { street: address, city: '', state: '', zip: '' };
+}
+
 async function checkCache(tenantId: string, address: string) {
   const [cached] = await db
     .select()
@@ -132,8 +224,23 @@ async function checkCache(tenantId: string, address: string) {
     .limit(1);
 
   if (cached) {
-    const lat = parseFloat(cached.latitude);
-    const lng = parseFloat(cached.longitude);
+    let lat = parseFloat(cached.latitude);
+    let lng = parseFloat(cached.longitude);
+
+    // Auto-geocode if cached coordinates are invalid
+    if (isNaN(lat) || isNaN(lng)) {
+      const geocoded = await geocodeAddress(cached.formattedAddress || cached.address);
+      if (geocoded) {
+        lat = geocoded.lat;
+        lng = geocoded.lng;
+        // Update the cache with valid coordinates
+        await db.update(propertyLookups).set({
+          latitude: lat.toString(),
+          longitude: lng.toString(),
+        }).where(eq(propertyLookups.id, cached.id));
+        console.log(`[PropertyLookup] Fixed cached coordinates for "${cached.address}" → ${lat},${lng}`);
+      }
+    }
 
     const nearmapData = cached.nearmapData || {
       surveyDate: new Date().toISOString().split('T')[0],
@@ -154,6 +261,8 @@ async function checkCache(tenantId: string, address: string) {
       rprData: cached.rprData,
       mmiData: cached.mmiData,
       propertyApiData: cached.propertyApiData,
+      orion180Data: cached.orion180Data,
+      reportCard: cached.reportCard,
       obliqueViews: cached.obliqueViews,
       historicalSurveys: cached.historicalSurveys,
       aiAnalysis: cached.aiAnalysis,
@@ -246,6 +355,38 @@ async function fetchMMIData(address: string) {
     return null;
   } catch (error) {
     console.error("MMI fetch error:", error);
+    return null;
+  }
+}
+
+async function fetchOrion180Data(street: string, city: string, state: string, zip: string) {
+  try {
+    if (!orion180Client.isConfigured()) {
+      console.log("Orion180 not configured - no credentials");
+      return null;
+    }
+    const data = await withTimeout(
+      orion180Client.lookupProperty(street, city, state, zip),
+      15000,
+      "Orion180"
+    );
+    return data;
+  } catch (error) {
+    console.error("Orion180 fetch error:", error);
+    return null;
+  }
+}
+
+async function fetchFemaFloodData(lat: number, lng: number) {
+  try {
+    const result = await withTimeout(
+      getFloodZoneByCoordinates(lat, lng),
+      10000,
+      "FEMA/Lightbox"
+    );
+    return result;
+  } catch (error) {
+    console.error("FEMA flood fetch error:", error);
     return null;
   }
 }
