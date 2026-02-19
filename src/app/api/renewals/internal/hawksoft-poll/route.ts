@@ -40,9 +40,10 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date();
-    const futureDate = new Date(now.getTime() + 45 * 24 * 60 * 60 * 1000); // 45 days
+    const days = body.days || 45;
+    const futureDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
-    // Find active policies expiring within 60 days
+    // Find active policies expiring within window
     const expiringPolicies = await db
       .select({
         id: policies.id,
