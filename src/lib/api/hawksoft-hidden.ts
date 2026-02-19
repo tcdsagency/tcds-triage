@@ -173,6 +173,27 @@ export class HawkSoftHiddenAPI {
       authenticatedAt: Date.now(),
     };
 
+    // Persist to DB so other serverless invocations can reuse this session
+    try {
+      await db
+        .insert(systemCache)
+        .values({
+          key: HawkSoftHiddenAPI.CACHE_KEY,
+          value: this.session,
+          expiresAt: new Date(Date.now() + HawkSoftHiddenAPI.COOKIE_TTL_MS),
+        })
+        .onConflictDoUpdate({
+          target: systemCache.key,
+          set: {
+            value: this.session,
+            expiresAt: new Date(Date.now() + HawkSoftHiddenAPI.COOKIE_TTL_MS),
+            updatedAt: new Date(),
+          },
+        });
+    } catch {
+      // DB write failed — still have in-memory session
+    }
+
     return this.session;
   }
 
@@ -206,31 +227,8 @@ export class HawkSoftHiddenAPI {
       // DB read failed — fall through to authenticate
     }
 
-    // 3. Fresh auth
-    const session = await this.authenticate();
-
-    // Persist to DB for other serverless invocations
-    try {
-      await db
-        .insert(systemCache)
-        .values({
-          key: HawkSoftHiddenAPI.CACHE_KEY,
-          value: session,
-          expiresAt: new Date(Date.now() + HawkSoftHiddenAPI.COOKIE_TTL_MS),
-        })
-        .onConflictDoUpdate({
-          target: systemCache.key,
-          set: {
-            value: session,
-            expiresAt: new Date(Date.now() + HawkSoftHiddenAPI.COOKIE_TTL_MS),
-            updatedAt: new Date(),
-          },
-        });
-    } catch {
-      // DB write failed — still have in-memory session
-    }
-
-    return session;
+    // 3. Fresh auth (authenticate() also persists to DB)
+    return this.authenticate();
   }
 
   // --------------------------------------------------------------------------
