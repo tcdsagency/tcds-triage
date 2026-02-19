@@ -35,17 +35,25 @@ function transformPolicy(hsPolicy: any, people?: any[]) {
     ? hsPolicy.carrier
     : (hsPolicy.carrier?.name || hsPolicy.carrierName || "Unknown");
 
-  // Separate policy-level vs vehicle-level coverages using parentType/parentId
+  // Separate policy-level vs vehicle-level coverages using parentId
+  // HawkSoft links per-vehicle coverages via parentId matching vehicle.id
+  // parentType is "Policy" for all (not "auto"), so we match by ID instead
   const allCoverages = hsPolicy.coverages || [];
-  const policyCoverages = allCoverages.filter((cov: any) => !cov.parentType || cov.parentType !== 'auto');
+  const vehicleIds = new Set(
+    (hsPolicy.autos || hsPolicy.vehicles || []).map((v: any) => String(v.vehicleId || v.id))
+  );
   const vehicleCoveragesByParent = new Map<string, any[]>();
   for (const cov of allCoverages) {
-    if (cov.parentType === 'auto' && cov.parentId) {
+    if (cov.parentId && vehicleIds.has(String(cov.parentId))) {
       const list = vehicleCoveragesByParent.get(String(cov.parentId)) || [];
       list.push(cov);
       vehicleCoveragesByParent.set(String(cov.parentId), list);
     }
   }
+  // Policy-level coverages = those NOT linked to a vehicle
+  const policyCoverages = allCoverages.filter((cov: any) =>
+    !cov.parentId || !vehicleIds.has(String(cov.parentId))
+  );
 
   const coverages = policyCoverages.map((cov: any) => ({
     type: cov.code || cov.coverageType || cov.type || "",
