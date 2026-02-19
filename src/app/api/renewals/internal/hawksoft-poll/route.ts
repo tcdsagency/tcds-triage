@@ -11,7 +11,7 @@ export const maxDuration = 300; // 5 minutes — iterates all customers with rat
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { policies, customers, hawksoftAttachmentLog, renewalBatches, renewalComparisons } from '@/db/schema';
-import { eq, and, gte, lte, sql, isNotNull } from 'drizzle-orm';
+import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import { getHawkSoftHiddenClient } from '@/lib/api/hawksoft-hidden';
 import { gunzipSync } from 'zlib';
 
@@ -42,6 +42,8 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     const days = body.days || 45;
     const futureDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+    const offset = body.offset || 0;
+    const batchSize = body.batchSize || 50;
 
     // Find active policies expiring within window
     const expiringPolicies = await db
@@ -66,8 +68,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, downloaded: 0, message: 'No expiring policies found' });
     }
 
-    // Deduplicate by customer
-    const customerIds = [...new Set(expiringPolicies.map((p) => p.customerId))];
+    // Deduplicate by customer and sort for stable ordering across batches
+    const allCustomerIds = [...new Set(expiringPolicies.map((p) => p.customerId))].sort();
+    const totalCustomers = allCustomerIds.length;
+
+    // Apply batching — slice the customer list
+    const customerIds = allCustomerIds.slice(offset, offset + batchSize);
+    const hasMore = offset + batchSize < totalCustomers;
+    const nextOffset = hasMore ? offset + batchSize : null;
+
+    if (customerIds.length === 0) {
+      return NextResponse.json({
+        success: true, downloaded: 0, skipped: 0, errors: 0,
+        totalCustomers, batchOffset: offset, batchSize, hasMore: false,
+      });
+    }
+
+    // Build a map of customerId → policy numbers (for resolving attachment hex IDs)
+    const policyByCustomer = new Map<string, Array<{ policyNumber: string; carrier: string | null }>>();
+    for (const p of expiringPolicies) {
+      if (!policyByCustomer.has(p.customerId)) policyByCustomer.set(p.customerId, []);
+      policyByCustomer.get(p.customerId)!.push({ policyNumber: p.policyNumber, carrier: p.carrier });
+    }
 
     // Fetch customer info for UUID resolution
     const customerRows = await db
@@ -114,12 +136,33 @@ export async function POST(request: NextRequest) {
         if (!cloudUuid) continue;
       }
 
-      // Get attachments
+      // Get attachments and client detail (for policy hex ID → number mapping) in parallel
       let attachments;
+      let policyHexMap = new Map<string, string>(); // hex ID → policy number
       try {
-        attachments = await hiddenClient.getAttachments(cloudUuid);
+        const clientCode = parseInt(customer.hawksoftClientCode, 10);
+        const [attachResult, clientResult] = await Promise.allSettled([
+          hiddenClient.getAttachments(cloudUuid),
+          !isNaN(clientCode) ? hiddenClient.getClient(clientCode) : Promise.resolve(null),
+        ]);
+
+        if (attachResult.status === 'rejected') {
+          console.error(`[hawksoft-poll] Failed to get attachments for ${cloudUuid}:`, attachResult.reason);
+          errors++;
+          continue;
+        }
+        attachments = attachResult.value;
+
+        // Build hex ID → policy number map from Cloud API client detail
+        if (clientResult.status === 'fulfilled' && clientResult.value?.policies) {
+          for (const p of clientResult.value.policies) {
+            if (p.id && p.number) {
+              policyHexMap.set(p.id, p.number);
+            }
+          }
+        }
       } catch (err) {
-        console.error(`[hawksoft-poll] Failed to get attachments for ${cloudUuid}:`, err);
+        console.error(`[hawksoft-poll] Failed to get data for ${cloudUuid}:`, err);
         errors++;
         continue;
       }
@@ -133,6 +176,19 @@ export async function POST(request: NextRequest) {
       );
 
       for (const attachment of al3Attachments) {
+        // Resolve policy number: attachment.policy (hex ID) → policy number via Cloud API
+        // Fallback: if customer has only one expiring policy, use that
+        let policyNumber: string | null = null;
+        if (attachment.policy) {
+          policyNumber = policyHexMap.get(attachment.policy) || null;
+        }
+        if (!policyNumber) {
+          const custPolicies = policyByCustomer.get(custId);
+          if (custPolicies?.length === 1) {
+            policyNumber = custPolicies[0].policyNumber;
+          }
+        }
+
         // Check if already processed
         const [existing] = await db
           .select({ id: hawksoftAttachmentLog.id })
@@ -173,7 +229,7 @@ export async function POST(request: NextRequest) {
               tenantId,
               hawksoftAttachmentId: String(attachment.id),
               hawksoftClientUuid: cloudUuid,
-              policyNumber: null,
+              policyNumber,
               al3Type: attachment.al3_type,
               fileExt: attachment.file_ext,
               fileSize: attachment.size,
@@ -190,6 +246,7 @@ export async function POST(request: NextRequest) {
             tenantId,
             hawksoftAttachmentId: String(attachment.id),
             hawksoftClientUuid: cloudUuid,
+            policyNumber,
             al3Type: attachment.al3_type,
             fileExt: attachment.file_ext,
             fileSize: attachment.size,
@@ -217,7 +274,7 @@ export async function POST(request: NextRequest) {
           tenantId,
           hawksoftAttachmentId: String(attachment.id),
           hawksoftClientUuid: cloudUuid,
-          policyNumber: null, // Will be populated during batch processing
+          policyNumber,
           al3Type: attachment.al3_type,
           fileExt: attachment.file_ext,
           fileSize: attachment.size,
@@ -226,7 +283,6 @@ export async function POST(request: NextRequest) {
           status: 'downloaded',
         });
 
-        // Return batch info for worker to queue process-batch
         downloaded++;
       }
     }
@@ -236,7 +292,11 @@ export async function POST(request: NextRequest) {
       downloaded,
       skipped,
       errors,
-      totalCustomersChecked: customerIds.length,
+      totalCustomers,
+      batchOffset: offset,
+      batchSize: customerIds.length,
+      hasMore,
+      nextOffset,
     });
   } catch (error) {
     console.error('[Internal API] hawksoft-poll error:', error);
