@@ -85,6 +85,7 @@ export interface HSCloudClientSummary {
 
 export interface HSCloudClient {
   number: number;
+  id: string; // UUID without dashes (e.g., "8ec75c14a2ae482c9bd8215857764c81")
   policies: HSCloudPolicy[];
 }
 
@@ -330,6 +331,7 @@ export class HawkSoftHiddenAPI {
 
     return {
       number: raw.number,
+      id: raw.id || '',
       policies,
     };
   }
@@ -420,14 +422,16 @@ export class HawkSoftHiddenAPI {
   // --------------------------------------------------------------------------
 
   /**
-   * Resolve a HawkSoft client code to a Cloud UUID.
+   * Resolve a HawkSoft client code to a Cloud UUID (with dashes).
    * The UUID is needed for rate change history and attachment endpoints.
-   * The client NUMBER is used for the client detail endpoint.
    *
+   * Strategy:
    * 1. Check DB for cached hawksoftCloudUuid
-   * 2. If missing, search Hidden API by last name initial
-   * 3. Match by client number from results
-   * 4. Cache UUID on customer record
+   * 2. If missing, call getClient(number) — the response `id` field is the UUID without dashes
+   * 3. Insert dashes to form standard UUID format
+   * 4. Cache on customer record
+   *
+   * This is much more reliable than search (which is capped at 20 results per letter).
    */
   async resolveCloudUuid(
     hawksoftClientCode: string,
@@ -447,34 +451,30 @@ export class HawkSoftHiddenAPI {
       return customer.hawksoftCloudUuid;
     }
 
-    // 2. Search by last name initial
-    const initial = lastName.charAt(0).toUpperCase();
-    if (!initial || initial < 'A' || initial > 'Z') {
-      return null;
-    }
+    // 2. Get client detail by number — extract UUID from `id` field
+    const clientNum = parseInt(hawksoftClientCode, 10);
+    if (isNaN(clientNum)) return null;
 
     try {
-      const results = await this.searchClients(initial);
+      const client = await this.getClient(clientNum);
 
-      // 3. Match by client number
-      const clientNum = parseInt(hawksoftClientCode, 10);
-      const match = results.find(
-        (r) => r.clientNumber === clientNum || String(r.clientNumber) === hawksoftClientCode
-      );
+      if (!client.id) return null;
 
-      if (!match) {
-        return null;
-      }
+      // 3. Format UUID: insert dashes into 32-char hex → 8-4-4-4-12
+      const hex = client.id.replace(/-/g, '');
+      const uuid = hex.length === 32
+        ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+        : client.id; // Already has dashes or unexpected format
 
-      // 4. Cache UUID
+      // 4. Cache UUID on customer record
       if (customer) {
         await db
           .update(customers)
-          .set({ hawksoftCloudUuid: match.uuid })
+          .set({ hawksoftCloudUuid: uuid })
           .where(eq(customers.id, customer.id));
       }
 
-      return match.uuid;
+      return uuid;
     } catch (error) {
       console.error(`[HawkSoftHidden] UUID resolution failed for ${hawksoftClientCode}:`, error);
       return null;
