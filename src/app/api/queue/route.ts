@@ -272,13 +272,14 @@ export async function GET(req: NextRequest) {
     // Stats (for pending view)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString();
 
     const [stats] = await db
       .select({
         pending: sql<number>`count(*) FILTER (WHERE ${wrapupDrafts.status} IN ('pending_review', 'pending_ai_processing'))::int`,
-        completed: sql<number>`count(*) FILTER (WHERE ${wrapupDrafts.status} IN ('completed', 'posted') AND ${wrapupDrafts.createdAt} >= ${today})::int`,
-        autoVoided: sql<number>`count(*) FILTER (WHERE ${wrapupDrafts.isAutoVoided} = true AND ${wrapupDrafts.createdAt} >= ${today})::int`,
-        ticketsCreated: sql<number>`count(*) FILTER (WHERE ${wrapupDrafts.agencyzoomTicketId} IS NOT NULL AND ${wrapupDrafts.createdAt} >= ${today})::int`,
+        completed: sql<number>`count(*) FILTER (WHERE ${wrapupDrafts.status} IN ('completed', 'posted') AND ${wrapupDrafts.createdAt} >= ${todayISO})::int`,
+        autoVoided: sql<number>`count(*) FILTER (WHERE ${wrapupDrafts.isAutoVoided} = true AND ${wrapupDrafts.createdAt} >= ${todayISO})::int`,
+        ticketsCreated: sql<number>`count(*) FILTER (WHERE ${wrapupDrafts.agencyzoomTicketId} IS NOT NULL AND ${wrapupDrafts.createdAt} >= ${todayISO})::int`,
       })
       .from(wrapupDrafts)
       .where(eq(wrapupDrafts.tenantId, TENANT_ID));
