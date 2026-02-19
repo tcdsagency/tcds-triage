@@ -35,8 +35,19 @@ function transformPolicy(hsPolicy: any, people?: any[]) {
     ? hsPolicy.carrier
     : (hsPolicy.carrier?.name || hsPolicy.carrierName || "Unknown");
 
-  // Coverages
-  const coverages = (hsPolicy.coverages || []).map((cov: any) => ({
+  // Separate policy-level vs vehicle-level coverages using parentType/parentId
+  const allCoverages = hsPolicy.coverages || [];
+  const policyCoverages = allCoverages.filter((cov: any) => !cov.parentType || cov.parentType !== 'auto');
+  const vehicleCoveragesByParent = new Map<string, any[]>();
+  for (const cov of allCoverages) {
+    if (cov.parentType === 'auto' && cov.parentId) {
+      const list = vehicleCoveragesByParent.get(String(cov.parentId)) || [];
+      list.push(cov);
+      vehicleCoveragesByParent.set(String(cov.parentId), list);
+    }
+  }
+
+  const coverages = policyCoverages.map((cov: any) => ({
     type: cov.code || cov.coverageType || cov.type || "",
     limit: cov.limits || cov.limit,
     deductible: cov.deductibles || cov.deductible,
@@ -44,20 +55,35 @@ function transformPolicy(hsPolicy: any, people?: any[]) {
     description: cov.description || cov.name || "",
   })).filter((c: any) => c.type || c.description);
 
-  // Vehicles
-  const vehicles = (hsPolicy.autos || hsPolicy.vehicles || []).map((veh: any) => ({
-    id: String(veh.vehicleId || veh.id),
-    year: veh.year,
-    make: veh.make,
-    model: veh.model,
-    vin: veh.vin,
-    annualMiles: veh.annualMiles,
-    coverages: (veh.coverages || []).map((cov: any) => ({
-      type: cov.coverageType || cov.type,
-      limit: cov.limit,
-      deductible: cov.deductible,
-    })),
-  }));
+  // Vehicles — merge in vehicle-level coverages from policy coverages array
+  const vehicles = (hsPolicy.autos || hsPolicy.vehicles || []).map((veh: any) => {
+    const vehId = String(veh.vehicleId || veh.id);
+    // Combine inline coverages (if any) with parent-linked coverages from policy level
+    const inlineCovs = (veh.coverages || []).map((cov: any) => ({
+      type: cov.code || cov.coverageType || cov.type,
+      limit: cov.limits || cov.limit,
+      deductible: cov.deductibles || cov.deductible,
+    }));
+    const parentCovs = (vehicleCoveragesByParent.get(vehId) || []).map((cov: any) => ({
+      type: cov.code || cov.coverageType || cov.type,
+      limit: cov.limits || cov.limit,
+      deductible: cov.deductibles || cov.deductible,
+    }));
+    // Deduplicate by type, preferring parent-linked (more complete)
+    const covByType = new Map<string, any>();
+    for (const c of [...inlineCovs, ...parentCovs]) {
+      if (c.type) covByType.set(c.type.toUpperCase(), c);
+    }
+    return {
+      id: vehId,
+      year: veh.year,
+      make: veh.make,
+      model: veh.model,
+      vin: veh.vin,
+      annualMiles: veh.annualMiles,
+      coverages: Array.from(covByType.values()),
+    };
+  });
 
   // Drivers — enrich with people data for license info
   const drivers = (hsPolicy.drivers || []).map((drv: any) => {
