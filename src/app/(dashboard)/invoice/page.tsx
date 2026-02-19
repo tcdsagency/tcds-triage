@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   FileText,
@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Sparkles,
   X,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,33 +32,6 @@ const LINES_OF_BUSINESS = [
   "General Liability",
   "Workers Comp",
   "Umbrella",
-  "Other",
-];
-
-const CARRIERS = [
-  "Travelers",
-  "Progressive",
-  "State Auto",
-  "Safeco",
-  "Foremost",
-  "National General",
-  "Dairyland",
-  "AICO",
-  "American Traditions",
-  "Openly",
-  "SageSure",
-  "Palomar",
-  "Universal Property",
-  "Citizens",
-  "Heritage",
-  "Slide",
-  "TypTap",
-  "Federated National",
-  "American Integrity",
-  "Security First",
-  "ASI",
-  "Tower Hill",
-  "Florida Peninsula",
   "Other",
 ];
 
@@ -121,6 +95,47 @@ export default function InvoiceGeneratorPage() {
     message: string;
   } | null>(null);
 
+  // Carrier/broker combobox state
+  const [carrierNames, setCarrierNames] = useState<string[]>([]);
+  const [brokerNames, setBrokerNames] = useState<string[]>([]);
+  const [carrierSearch, setCarrierSearch] = useState("");
+  const [carrierDropdownOpen, setCarrierDropdownOpen] = useState(false);
+  const carrierRef = useRef<HTMLDivElement>(null);
+
+  // Fetch carriers and brokers on mount
+  useEffect(() => {
+    const fetchCarriersAndBrokers = async () => {
+      try {
+        const [carriersRes, brokersRes] = await Promise.all([
+          fetch("/api/agency-carriers"),
+          fetch("/api/es-brokers"),
+        ]);
+        const carriersData = await carriersRes.json();
+        const brokersData = await brokersRes.json();
+        if (carriersData.success && carriersData.data) {
+          setCarrierNames(carriersData.data.map((c: { name: string }) => c.name).sort());
+        }
+        if (brokersData.success && brokersData.data) {
+          setBrokerNames(brokersData.data.map((b: { name: string }) => b.name).sort());
+        }
+      } catch (err) {
+        console.error("Failed to fetch carriers/brokers:", err);
+      }
+    };
+    fetchCarriersAndBrokers();
+  }, []);
+
+  // Close carrier dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (carrierRef.current && !carrierRef.current.contains(e.target as Node)) {
+        setCarrierDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   // Pre-fill from URL params
   useEffect(() => {
     // Support both 'customerName' and 'name' params
@@ -140,6 +155,7 @@ export default function InvoiceGeneratorPage() {
         premium: premium || prev.premium,
         lineOfBusiness: lineOfBusiness || prev.lineOfBusiness,
       }));
+      if (carrier) setCarrierSearch(carrier);
     }
 
     // Pre-fill email for send modal
@@ -197,6 +213,7 @@ export default function InvoiceGeneratorPage() {
           lineOfBusiness: data.data.lineOfBusiness || prev.lineOfBusiness,
           premium: data.data.premium ? String(data.data.premium) : prev.premium,
         }));
+        if (data.data.carrier) setCarrierSearch(data.data.carrier);
 
         setNotification({
           type: "success",
@@ -265,10 +282,19 @@ export default function InvoiceGeneratorPage() {
       // Company name
       page.drawText("TCDS Insurance Agency", {
         x: 50,
-        y: height - 45,
+        y: height - 40,
         size: 20,
         font: helveticaBold,
         color: rgb(1, 1, 1),
+      });
+
+      // Company contact info
+      page.drawText("205.847.5616  |  www.tcdsagency.com", {
+        x: 50,
+        y: height - 58,
+        size: 9,
+        font: helvetica,
+        color: rgb(0.85, 0.95, 0.9),
       });
 
       // Invoice title
@@ -493,6 +519,14 @@ export default function InvoiceGeneratorPage() {
         size: 11,
         font: helvetica,
         color: darkColor,
+      });
+      y -= 14;
+      page.drawText("205.847.5616  |  www.tcdsagency.com", {
+        x: 50,
+        y,
+        size: 10,
+        font: helvetica,
+        color: grayColor,
       });
 
       // Right side of stub
@@ -828,22 +862,112 @@ export default function InvoiceGeneratorPage() {
                 />
               </div>
 
-              <div>
+              <div ref={carrierRef} className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Carrier *
                 </label>
-                <select
-                  value={formData.carrier}
-                  onChange={(e) => updateField("carrier", e.target.value)}
-                  className="w-full h-10 px-3 rounded-md border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                >
-                  <option value="">Select Carrier</option>
-                  {CARRIERS.map((carrier) => (
-                    <option key={carrier} value={carrier}>
-                      {carrier}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={carrierDropdownOpen ? carrierSearch : formData.carrier}
+                    onChange={(e) => {
+                      setCarrierSearch(e.target.value);
+                      updateField("carrier", e.target.value);
+                      if (!carrierDropdownOpen) setCarrierDropdownOpen(true);
+                    }}
+                    onFocus={() => {
+                      setCarrierSearch(formData.carrier);
+                      setCarrierDropdownOpen(true);
+                    }}
+                    placeholder="Select or type carrier name"
+                    className="w-full h-10 px-3 pr-8 rounded-md border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setCarrierDropdownOpen(!carrierDropdownOpen)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+                </div>
+                {carrierDropdownOpen && (
+                  <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
+                    {(() => {
+                      const query = carrierSearch.toLowerCase();
+                      const filteredCarriers = carrierNames.filter((n) =>
+                        n.toLowerCase().includes(query)
+                      );
+                      const filteredBrokers = brokerNames.filter((n) =>
+                        n.toLowerCase().includes(query)
+                      );
+                      const hasResults = filteredCarriers.length > 0 || filteredBrokers.length > 0;
+
+                      return (
+                        <>
+                          {filteredCarriers.length > 0 && (
+                            <>
+                              <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 sticky top-0">
+                                Carriers
+                              </div>
+                              {filteredCarriers.map((name) => (
+                                <button
+                                  key={`carrier-${name}`}
+                                  type="button"
+                                  onClick={() => {
+                                    updateField("carrier", name);
+                                    setCarrierSearch(name);
+                                    setCarrierDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-2 text-sm hover:bg-emerald-50 hover:text-emerald-700",
+                                    formData.carrier === name && "bg-emerald-50 text-emerald-700 font-medium"
+                                  )}
+                                >
+                                  {name}
+                                </button>
+                              ))}
+                            </>
+                          )}
+                          {filteredBrokers.length > 0 && (
+                            <>
+                              <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 sticky top-0">
+                                E&S Brokers
+                              </div>
+                              {filteredBrokers.map((name) => (
+                                <button
+                                  key={`broker-${name}`}
+                                  type="button"
+                                  onClick={() => {
+                                    updateField("carrier", name);
+                                    setCarrierSearch(name);
+                                    setCarrierDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-2 text-sm hover:bg-emerald-50 hover:text-emerald-700",
+                                    formData.carrier === name && "bg-emerald-50 text-emerald-700 font-medium"
+                                  )}
+                                >
+                                  {name}
+                                </button>
+                              ))}
+                            </>
+                          )}
+                          {!hasResults && carrierSearch && (
+                            <div className="px-3 py-2 text-sm text-gray-500">
+                              No matches — custom name &ldquo;{carrierSearch}&rdquo; will be used
+                            </div>
+                          )}
+                          {!hasResults && !carrierSearch && (
+                            <div className="px-3 py-2 text-sm text-gray-500">
+                              No carriers or brokers found. Type a name to use it directly.
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
 
               <div>
