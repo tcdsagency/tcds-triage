@@ -1954,14 +1954,21 @@ export function hawksoftAutoToSnapshot(policy: any): { snapshot: any; comparison
     };
   });
 
-  // Map policy-level coverages
-  const coverages = (policy.coverages || []).map((cov: any) => {
+  // Map policy-level coverages — deduplicate by canonical type (HawkSoft may
+  // return both BI and BIPD which both map to bodily_injury, etc.)
+  const covMap = new Map<string, any>();
+  for (const cov of (policy.coverages || [])) {
     const code = (cov.type || '').toUpperCase();
     const canonicalType = HS_AUTO_COVERAGE_MAP[code];
-    if (!canonicalType) return null;
+    if (!canonicalType) continue;
     const { limit, limitAmount } = parseHsLimit(cov.limit);
-    return { type: canonicalType, limit, limitAmount };
-  }).filter(Boolean);
+    // Keep the entry with the highest limit (or first if equal)
+    const existing = covMap.get(canonicalType);
+    if (!existing || (limitAmount && (!existing.limitAmount || limitAmount > existing.limitAmount))) {
+      covMap.set(canonicalType, { type: canonicalType, limit, limitAmount });
+    }
+  }
+  const coverages = Array.from(covMap.values());
 
   return {
     snapshot: { drivers, vehicles, coverages },
@@ -1981,23 +1988,29 @@ export function hawksoftAutoToSnapshot(policy: any): { snapshot: any; comparison
  *   `renewalToHomeApplication(snapshot, comparison, appTemplate, baselineSnapshot)`.
  */
 export function hawksoftHomeToSnapshot(policy: any): { snapshot: any; comparison: any; baselineSnapshot: any } {
-  // Map coverages
-  const coverages = (policy.coverages || []).map((cov: any) => {
+  // Map coverages — deduplicate by canonical type
+  const homeCovMap = new Map<string, any>();
+  for (const cov of (policy.coverages || [])) {
     const code = (cov.type || '').toUpperCase();
     const canonicalType = HS_HOME_COVERAGE_MAP[code];
-    if (!canonicalType) return null;
+    if (!canonicalType) continue;
     const { limit, limitAmount } = parseHsLimit(cov.limit);
     const { deductible, deductibleAmount } = parseHsDeductible(cov.deductible);
-    return {
-      type: canonicalType,
-      code: code.toLowerCase(),
-      description: cov.description || '',
-      limit,
-      limitAmount: limitAmount || deductibleAmount,
-      deductible,
-      deductibleAmount,
-    };
-  }).filter(Boolean);
+    const amt = limitAmount || deductibleAmount || 0;
+    const existing = homeCovMap.get(canonicalType);
+    if (!existing || amt > (existing.limitAmount || existing.deductibleAmount || 0)) {
+      homeCovMap.set(canonicalType, {
+        type: canonicalType,
+        code: code.toLowerCase(),
+        description: cov.description || '',
+        limit,
+        limitAmount: limitAmount || deductibleAmount,
+        deductible,
+        deductibleAmount,
+      });
+    }
+  }
+  const coverages = Array.from(homeCovMap.values());
 
   // Build property context from policy.property
   const prop = policy.property;
