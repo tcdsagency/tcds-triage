@@ -49,6 +49,7 @@ interface SyncJob {
 // In-memory sync history (last 10 jobs)
 const syncHistory: SyncJob[] = [];
 let currentJob: SyncJob | null = null;
+let lastSuccessfulSyncAt: string | null = null;
 
 // =============================================================================
 // AGENCYZOOM API
@@ -315,10 +316,20 @@ async function runSync(tenantId: string, type: "full" | "incremental", months: n
 
     currentJob.threadsTotal = allThreads.length;
 
-    // For incremental sync, only process threads with recent activity
-    const threadsToProcess = type === "incremental"
-      ? allThreads.filter((t) => isWithinMonths(t.lastMessageDate, 1))
-      : allThreads;
+    // For incremental sync, process all threads changed since last successful sync
+    // Falls back to 24 hours if no previous sync is recorded
+    let threadsToProcess: SMSThread[];
+    if (type === "incremental") {
+      const sinceDate = lastSuccessfulSyncAt
+        ? new Date(lastSuccessfulSyncAt)
+        : new Date(Date.now() - 24 * 60 * 60 * 1000);
+      threadsToProcess = allThreads.filter((t) => {
+        const threadDate = new Date(t.lastMessageDateUTC || t.lastMessageDate);
+        return threadDate >= sinceDate;
+      });
+    } else {
+      threadsToProcess = allThreads;
+    }
 
     console.log(`[SMS Sync] Processing ${threadsToProcess.length} threads`);
 
@@ -337,8 +348,11 @@ async function runSync(tenantId: string, type: "full" | "incremental", months: n
     currentJob.status = "completed";
     currentJob.completedAt = new Date().toISOString();
 
+    // Record successful sync time so next incremental picks up from here
+    lastSuccessfulSyncAt = currentJob.startedAt;
+
     console.log(
-      `[SMS Sync] Complete. Threads: ${currentJob.threadsProcessed}, ` +
+      `[SMS Sync] Complete. Threads: ${currentJob.threadsProcessed}/${allThreads.length}, ` +
       `Imported: ${currentJob.messagesImported}, Skipped: ${currentJob.messagesSkipped}, ` +
       `Errors: ${currentJob.errors.length}`
     );
