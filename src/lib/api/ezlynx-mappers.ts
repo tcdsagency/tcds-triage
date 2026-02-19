@@ -461,6 +461,11 @@ export function canopyPullToAutoQuote(pull: any): any {
   if (uimCov) generalCoverage.underinsuredMotorist = canopyCentsToBILimit(uimCov.per_person_limit_cents, uimCov.per_incident_limit_cents, UM_ENUMS);
   if (mpCov) generalCoverage.medicalPayments = canopyCentsToLimit(mpCov.per_person_limit_cents || mpCov.per_incident_limit_cents, MEDPAY_ENUMS);
 
+  // Alabama: if UM is set but UIM is not, default UIM to match UM
+  if (generalCoverage.uninsuredMotorist && !generalCoverage.underinsuredMotorist) {
+    generalCoverage.underinsuredMotorist = { ...generalCoverage.uninsuredMotorist };
+  }
+
   // Per-vehicle coverages
   const vehicleCoverages = (pull.vehicles || []).map((v: any, idx: number) => {
     const vCovs = v.coverages || [];
@@ -1170,6 +1175,12 @@ export function canopyPullToAutoApplication(pull: any, appTemplate: any): { app:
       gc.medicalPayments = quoteData.generalCoverage.medicalPayments;
       syncReport.coverages.updated.push(`MedPay → ${quoteData.generalCoverage.medicalPayments.description}`);
     }
+
+    // Alabama: if UM is set but UIM is not, default UIM to match UM
+    if (gc.uninsuredMotorist && !gc.underinsuredMotorist) {
+      gc.underinsuredMotorist = { ...gc.uninsuredMotorist };
+      syncReport.coverages.updated.push(`UIM → ${gc.uninsuredMotorist.description} (matched UM)`);
+    }
   }
 
   // =========================================================================
@@ -1650,6 +1661,12 @@ export function renewalToAutoApplication(
         if (e) { gc.medicalPayments = e; syncReport.coverages.updated.push(`MedPay → ${e.description}`); }
       }
     }
+
+    // Alabama: if UM is set but UIM is not, default UIM to match UM
+    if (gc.uninsuredMotorist && !gc.underinsuredMotorist) {
+      gc.underinsuredMotorist = { ...gc.uninsuredMotorist };
+      syncReport.coverages.updated.push(`UIM → ${gc.uninsuredMotorist.description} (matched UM)`);
+    }
   }
 
   // =========================================================================
@@ -1679,6 +1696,27 @@ export function renewalToAutoApplication(
         app.policyInformation.priorPolicyExpirationDate = expDate;
         syncReport.policyInfo.priorPolicyExpirationDate = expDate;
       }
+    }
+
+    // Prior carrier — resolved enum passed in via comparison.priorCarrierEnum
+    if (comparison?.priorCarrierEnum) {
+      app.policyInformation.priorCarrier = comparison.priorCarrierEnum;
+      syncReport.policyInfo.priorCarrier = comparison.priorCarrierEnum.description;
+    }
+
+    // Prior liability limits — BI coverage from the current policy
+    if (comparison?.priorLiabilityBI) {
+      app.policyInformation.priorLiabilityLimits = comparison.priorLiabilityBI;
+    }
+
+    // Prior policy term — 6 or 12 months
+    if (comparison?.priorPolicyTerm) {
+      app.policyInformation.priorPolicyTerm = comparison.priorPolicyTerm;
+    }
+
+    // Prior policy premium
+    if (comparison?.priorPolicyPremium != null) {
+      app.policyInformation.priorPolicyPremium = String(comparison.priorPolicyPremium);
     }
   }
 
@@ -1957,7 +1995,15 @@ export function hawksoftAutoToSnapshot(policy: any): { snapshot: any; comparison
   // Map policy-level coverages — deduplicate by canonical type (HawkSoft may
   // return both BI and BIPD which both map to bodily_injury, etc.)
   const covMap = new Map<string, any>();
-  for (const cov of (policy.coverages || [])) {
+  // Include policy-level coverages AND vehicle coverages (HawkSoft sometimes
+  // puts policy-level types like BI/PD/UM under vehicle parentIds). Use the
+  // first vehicle that actually has coverages.
+  const firstVehWithCovs = (policy.vehicles || []).find((v: any) => v.coverages?.length > 0);
+  const allCovSources = [
+    ...(policy.coverages || []),
+    ...(firstVehWithCovs?.coverages || []),
+  ];
+  for (const cov of allCovSources) {
     const code = (cov.type || '').toUpperCase();
     const canonicalType = HS_AUTO_COVERAGE_MAP[code];
     if (!canonicalType) continue;
@@ -1970,11 +2016,36 @@ export function hawksoftAutoToSnapshot(policy: any): { snapshot: any; comparison
   }
   const coverages = Array.from(covMap.values());
 
+  // Compute prior policy term from effective→expiration date span
+  let priorPolicyTerm: { value: number; name: string; description: string } | undefined;
+  if (policy.effectiveDate && policy.expirationDate) {
+    const eff = new Date(policy.effectiveDate);
+    const exp = new Date(policy.expirationDate);
+    if (!isNaN(eff.getTime()) && !isNaN(exp.getTime())) {
+      const monthsDiff = (exp.getFullYear() - eff.getFullYear()) * 12 + (exp.getMonth() - eff.getMonth());
+      if (monthsDiff <= 7) {
+        priorPolicyTerm = { value: 1, name: 'Item6Months', description: '6 Months' };
+      } else {
+        priorPolicyTerm = { value: 2, name: 'Item12Months', description: '12 Months' };
+      }
+    }
+  }
+
+  // Find BI coverage for prior liability limits
+  const biCov = coverages.find((c: any) => c.type === 'bodily_injury');
+  const priorLiabilityBI = biCov
+    ? canonicalLimitToSplitEnum(biCov.limit, biCov.limitAmount, BI_ENUMS)
+    : undefined;
+
   return {
     snapshot: { drivers, vehicles, coverages },
     comparison: {
       renewalEffectiveDate: policy.effectiveDate,
       renewalExpirationDate: policy.expirationDate,
+      carrierName: policy.carrierName,
+      priorPolicyTerm,
+      priorLiabilityBI,
+      priorPolicyPremium: policy.premium,
     },
   };
 }

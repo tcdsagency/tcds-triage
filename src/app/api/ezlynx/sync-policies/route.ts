@@ -26,6 +26,7 @@ import {
 import {
   getPolicyTypeFromLineOfBusiness,
 } from "@/types/customer-profile";
+import { ezlynxReference } from "@/lib/api/ezlynx-reference";
 
 // Inline the same transform logic from merged-profile (kept minimal)
 function transformPolicy(hsPolicy: any, people?: any[]) {
@@ -143,6 +144,7 @@ function transformPolicy(hsPolicy: any, people?: any[]) {
     policyNumber: hsPolicy.policyNumber,
     effectiveDate: hsPolicy.effectiveDate,
     expirationDate: hsPolicy.expirationDate,
+    premium: hsPolicy.premium,
     coverages,
     vehicles,
     drivers,
@@ -288,6 +290,17 @@ export async function POST(request: NextRequest) {
           }
 
           const appTemplate = await ezlynxBot.getAutoApplication(openAppId);
+
+          // Resolve prior carrier name to EZLynx enum
+          if (policy.carrierName) {
+            try {
+              const carrierEnum = await ezlynxReference.resolve('PriorCarrier', policy.carrierName);
+              if (carrierEnum) comparison.priorCarrierEnum = carrierEnum;
+            } catch (e) {
+              console.log(`[SyncPolicies] Could not resolve prior carrier "${policy.carrierName}":`, (e as Error).message);
+            }
+          }
+
           const { app: mergedApp, syncReport } = renewalToAutoApplication(snapshot, comparison, appTemplate);
 
           // Build before/after diff
@@ -309,6 +322,18 @@ export async function POST(request: NextRequest) {
             beforeAfter.push({ field: 'Underinsured Motorist', before: gc?.underinsuredMotorist?.description || '(empty)', after: mgc?.underinsuredMotorist?.description || '(empty)' });
           if (gc?.medicalPayments?.description !== mgc?.medicalPayments?.description)
             beforeAfter.push({ field: 'Medical Payments', before: gc?.medicalPayments?.description || '(empty)', after: mgc?.medicalPayments?.description || '(empty)' });
+
+          // Prior carrier fields
+          const oldPI = appTemplate.policyInformation;
+          const newPI = mergedApp.policyInformation;
+          if (oldPI?.priorCarrier?.description !== newPI?.priorCarrier?.description)
+            beforeAfter.push({ field: 'Prior Carrier', before: oldPI?.priorCarrier?.description || '(empty)', after: newPI?.priorCarrier?.description || '(empty)' });
+          if (oldPI?.priorLiabilityLimits?.description !== newPI?.priorLiabilityLimits?.description)
+            beforeAfter.push({ field: 'Prior Liability Limits', before: oldPI?.priorLiabilityLimits?.description || '(empty)', after: newPI?.priorLiabilityLimits?.description || '(empty)' });
+          if (oldPI?.priorPolicyTerm?.description !== newPI?.priorPolicyTerm?.description)
+            beforeAfter.push({ field: 'Prior Policy Term', before: oldPI?.priorPolicyTerm?.description || '(empty)', after: newPI?.priorPolicyTerm?.description || '(empty)' });
+          if (String(oldPI?.priorPolicyPremium || '') !== String(newPI?.priorPolicyPremium || ''))
+            beforeAfter.push({ field: 'Prior Policy Premium', before: oldPI?.priorPolicyPremium || '(empty)', after: newPI?.priorPolicyPremium || '(empty)' });
 
           // Vehicle coverages
           const oldVehicles = appTemplate.vehicles?.vehicleCollection || [];
