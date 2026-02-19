@@ -39,6 +39,7 @@ interface QueueItem {
   insuranceType: string | null;
   policyNumbers: string[] | null;
   sentiment: string | null;
+  sentimentScore: number | null;
   // Outcome
   completionAction: string | null;
   outcome: string | null;
@@ -188,6 +189,7 @@ export async function GET(req: NextRequest) {
         callRecordingUrl: calls.recordingUrl,
         callTranscription: calls.transcription,
         callSentiment: calls.aiSentiment,
+        callSentimentScore: calls.threecxSentimentScore,
         // Customer fields
         customerId: customers.id,
       })
@@ -248,6 +250,7 @@ export async function GET(req: NextRequest) {
         insuranceType: row.insuranceType,
         policyNumbers: row.policyNumbers,
         sentiment: sentiment?.overall ?? null,
+        sentimentScore: row.callSentimentScore ?? null,
         completionAction: row.completionAction,
         outcome: row.outcome,
         isAutoVoided: row.isAutoVoided ?? false,

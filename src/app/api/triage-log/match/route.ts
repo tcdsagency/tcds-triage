@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { wrapupDrafts, calls, customers } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+import { formatSentimentEmoji } from "@/lib/format-ticket-description";
 
 export async function POST(request: NextRequest) {
   try {
@@ -81,6 +82,8 @@ export async function POST(request: NextRequest) {
         directionLive: calls.directionLive,
         startedAt: calls.startedAt,
         aiSummary: calls.aiSummary,
+        aiSentiment: calls.aiSentiment,
+        threecxSentimentScore: calls.threecxSentimentScore,
         agentId: calls.agentId,
       })
       .from(calls)
@@ -105,7 +108,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const noteText = `📞 ${direction === "inbound" ? "Inbound" : "Outbound"} Call - ${callDate} ${callTime}\n\n${summary}\n\nMatched manually via Triage Log`;
+    const sentiment = (call?.aiSentiment as { overall?: string } | null)?.overall ?? null;
+    const sentimentLine = formatSentimentEmoji(sentiment, call?.threecxSentimentScore ?? null);
+    const noteLines = [
+      `📞 ${direction === "inbound" ? "Inbound" : "Outbound"} Call - ${callDate} ${callTime}`,
+      '',
+      summary,
+    ];
+    if (sentimentLine) {
+      noteLines.push(`Customer Sentiment: ${sentimentLine}`);
+    }
+    noteLines.push('', 'Matched manually via Triage Log');
+    const noteText = noteLines.join('\n');
 
     const azId = parseInt(customer.agencyzoomId);
     const result = customer.isLead

@@ -37,7 +37,7 @@ import {
   EMPLOYEE_IDS,
   getDefaultDueDate,
 } from "@/lib/api/agencyzoom-service-tickets";
-import { formatInboundCallDescription } from "@/lib/format-ticket-description";
+import { formatInboundCallDescription, formatSentimentEmoji } from "@/lib/format-ticket-description";
 
 // =============================================================================
 // Config
@@ -526,6 +526,8 @@ async function autoCompleteInbound(
       durationSeconds: callData.durationSeconds,
       transcript: callData.transcription,
       isNCM,
+      sentiment: aiResult.sentiment,
+      sentimentScore: callData.sentimentScore,
     });
 
     // Deduplication
@@ -638,13 +640,17 @@ async function autoCompleteOutbound(
     const callDate = callData.startedAt.toLocaleDateString('en-US', { timeZone: 'America/Chicago' });
     const callTime = callData.startedAt.toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' });
 
-    const noteText = [
+    const sentimentLine = formatSentimentEmoji(aiResult.sentiment, callData.sentimentScore);
+    const noteLines = [
       `Outbound Call - ${callDate} ${callTime}`,
       '',
       aiResult.enhancedSummary || 'Outbound call completed.',
-      '',
-      `Agent: ${agentName}`,
-    ].join('\n');
+    ];
+    if (sentimentLine) {
+      noteLines.push(`Customer Sentiment: ${sentimentLine}`);
+    }
+    noteLines.push('', `Agent: ${agentName}`);
+    const noteText = noteLines.join('\n');
 
     // Post note to AgencyZoom (use lead endpoint if customer is a lead)
     const azClient = getAgencyZoomClient();

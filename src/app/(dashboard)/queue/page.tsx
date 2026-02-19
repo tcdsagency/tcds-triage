@@ -52,6 +52,7 @@ interface QueueItem {
   insuranceType: string | null;
   policyNumbers: string[] | null;
   sentiment: string | null;
+  sentimentScore: number | null;
   completionAction: string | null;
   outcome: string | null;
   isAutoVoided: boolean;
@@ -140,14 +141,21 @@ function getActionBadge(item: QueueItem) {
   return { label: item.status, color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" };
 }
 
-function getSentimentDot(sentiment: string | null) {
+const SENTIMENT_EMOJI: Record<string, Record<number, string>> = {
+  positive: { 5: "🤩 Thrilled", 4: "😄 Happy" },
+  neutral: { 3: "😐 Neutral" },
+  negative: { 2: "😢 Upset", 1: "🤬 Angry" },
+};
+const SENTIMENT_DEFAULTS: Record<string, string> = {
+  positive: "😄 Happy",
+  neutral: "😐 Neutral",
+  negative: "😢 Upset",
+};
+
+function getSentimentDisplay(sentiment: string | null, score: number | null): string | null {
   if (!sentiment) return null;
-  const colors: Record<string, string> = {
-    positive: "bg-green-400",
-    neutral: "bg-yellow-400",
-    negative: "bg-red-400",
-  };
-  return colors[sentiment] || null;
+  const key = sentiment.toLowerCase();
+  return (score != null && SENTIMENT_EMOJI[key]?.[score]) || SENTIMENT_DEFAULTS[key] || null;
 }
 
 // =============================================================================
@@ -556,7 +564,7 @@ function QueueItemRow({ item, isSelected, isChecked, onSelect, onCheck, isPendin
   isPending: boolean;
 }) {
   const badge = getActionBadge(item);
-  const sentimentDot = getSentimentDot(item.sentiment);
+  const sentimentDisplay = getSentimentDisplay(item.sentiment, item.sentimentScore);
 
   return (
     <div
@@ -591,8 +599,10 @@ function QueueItemRow({ item, isSelected, isChecked, onSelect, onCheck, isPendin
           <span className="text-sm font-medium truncate">
             {item.customerName || formatPhoneNumber(item.customerPhone) || "Unknown Caller"}
           </span>
-          {sentimentDot && (
-            <span className={`w-2 h-2 rounded-full ${sentimentDot}`} />
+          {sentimentDisplay && (
+            <span className="text-xs text-gray-500" title={`Sentiment: ${sentimentDisplay}`}>
+              {sentimentDisplay}
+            </span>
           )}
           {item.source === 'twilio_fallback' && (
             <span className="px-1.5 py-0.5 text-[10px] rounded bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
@@ -720,6 +730,11 @@ function DetailPanel({ item, onClose, onAction, onMatch, onCreateTicket, onCreat
           <span>{item.startedAt ? formatTime(item.startedAt) : "-"}</span>
           <span>{formatDate(item.createdAt)}</span>
         </div>
+        {getSentimentDisplay(item.sentiment, item.sentimentScore) && (
+          <div className="text-xs text-gray-500">
+            Sentiment: {getSentimentDisplay(item.sentiment, item.sentimentScore)}
+          </div>
+        )}
       </div>
 
       {/* Summary */}

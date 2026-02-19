@@ -27,6 +27,10 @@ export interface TicketDescriptionParams {
   transcript?: string;
   /** Whether this is an NCM (non-customer-match) ticket */
   isNCM?: boolean;
+  /** Sentiment classification (positive/neutral/negative) */
+  sentiment?: string;
+  /** Raw 3CX sentiment score (1-5) */
+  sentimentScore?: number;
 }
 
 /**
@@ -39,6 +43,14 @@ export function formatInboundCallDescription(params: TicketDescriptionParams): s
   parts.push(`<b>🛠️ Service Request Details</b>${BR}`);
   parts.push(esc(params.summary || 'No summary available'));
   parts.push(PBR);
+
+  // --- Customer Sentiment ---
+  const sentimentHtml = formatSentimentHtml(params.sentiment, params.sentimentScore);
+  if (sentimentHtml) {
+    parts.push(`<b>💬 Customer Sentiment</b>${BR}`);
+    parts.push(sentimentHtml);
+    parts.push(PBR);
+  }
 
   // --- Extracted Data ---
   const extractedParts: string[] = [];
@@ -244,6 +256,61 @@ export function formatQuoteSection(params: {
   }
 
   return parts.join('\n');
+}
+
+// =============================================================================
+// Sentiment Emoji Helpers
+// =============================================================================
+
+const SENTIMENT_MAP: Record<string, Record<number, { emoji: string; label: string }>> = {
+  positive: {
+    5: { emoji: '🤩', label: 'Thrilled' },
+    4: { emoji: '😄', label: 'Happy' },
+  },
+  neutral: {
+    3: { emoji: '😐', label: 'Neutral' },
+  },
+  negative: {
+    2: { emoji: '😢', label: 'Upset' },
+    1: { emoji: '🤬', label: 'Angry' },
+  },
+};
+
+/** Default emoji per sentiment when no score is available */
+const SENTIMENT_DEFAULTS: Record<string, { emoji: string; label: string }> = {
+  positive: { emoji: '😄', label: 'Happy' },
+  neutral: { emoji: '😐', label: 'Neutral' },
+  negative: { emoji: '😢', label: 'Upset' },
+};
+
+/**
+ * Map sentiment classification + raw score to an emoji + label string.
+ * Returns null if sentiment is missing.
+ */
+export function formatSentimentEmoji(
+  sentiment?: string | null,
+  score?: number | null,
+): string | null {
+  if (!sentiment) return null;
+  const key = sentiment.toLowerCase();
+  const entry = (score != null && SENTIMENT_MAP[key]?.[score])
+    || SENTIMENT_DEFAULTS[key];
+  if (!entry) return null;
+  return `${entry.emoji} ${entry.label}`;
+}
+
+/**
+ * HTML version of sentiment display for AZ ticket descriptions.
+ * Returns null if sentiment is missing.
+ */
+export function formatSentimentHtml(
+  sentiment?: string | null,
+  score?: number | null,
+): string | null {
+  const display = formatSentimentEmoji(sentiment, score);
+  if (!display) return null;
+  const scoreStr = score != null ? ` (Score: ${score}/5)` : '';
+  return `${display}${scoreStr}<br />`;
 }
 
 // =============================================================================
