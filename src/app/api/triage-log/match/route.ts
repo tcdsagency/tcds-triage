@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
         agencyzoomId: customers.agencyzoomId,
         firstName: customers.firstName,
         lastName: customers.lastName,
+        isLead: customers.isLead,
       })
       .from(customers)
       .where(eq(customers.id, customerId))
@@ -106,11 +107,14 @@ export async function POST(request: NextRequest) {
 
     const noteText = `📞 ${direction === "inbound" ? "Inbound" : "Outbound"} Call - ${callDate} ${callTime}\n\n${summary}\n\nMatched manually via Triage Log`;
 
-    const result = await azClient.addNote(parseInt(customer.agencyzoomId), noteText);
+    const azId = parseInt(customer.agencyzoomId);
+    const result = customer.isLead
+      ? await azClient.addLeadNote(azId, noteText)
+      : await azClient.addNote(azId, noteText);
 
     if (!result.success) {
       return NextResponse.json(
-        { success: false, error: "Failed to post note to AgencyZoom" },
+        { success: false, error: `Failed to post note to AgencyZoom ${customer.isLead ? 'lead' : 'customer'}` },
         { status: 500 }
       );
     }

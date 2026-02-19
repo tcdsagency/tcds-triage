@@ -646,12 +646,14 @@ async function autoCompleteOutbound(
       `Agent: ${agentName}`,
     ].join('\n');
 
-    // Post note to AgencyZoom
-    const azClient = await getAgencyZoomClient();
-    const noteResult = await azClient.addNote(azCustomerId, noteText);
+    // Post note to AgencyZoom (use lead endpoint if customer is a lead)
+    const azClient = getAgencyZoomClient();
+    const noteResult = customer.isLead
+      ? await azClient.addLeadNote(azCustomerId, noteText)
+      : await azClient.addNote(azCustomerId, noteText);
 
     if (!noteResult.success) {
-      console.error('[recording-poller] AZ note posting failed for outbound call');
+      console.error(`[recording-poller] AZ note posting failed for outbound call (${customer.isLead ? 'lead' : 'customer'} ${azCustomerId})`);
       return false;
     }
 
@@ -850,6 +852,7 @@ async function findCustomerByPhone(phone: string) {
       agencyzoomId: customers.agencyzoomId,
       firstName: customers.firstName,
       lastName: customers.lastName,
+      isLead: customers.isLead,
     })
     .from(customers)
     .where(and(
