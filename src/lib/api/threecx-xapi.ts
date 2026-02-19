@@ -13,21 +13,29 @@
 
 export interface ThreeCXRecording {
   Id: number;
-  StartTime: string;        // ISO datetime
-  EndTime: string;           // ISO datetime
-  CallType: string;          // "Inbound", "Outbound", "Internal", etc.
+  StartTime: string;           // ISO datetime UTC
+  EndTime: string;             // ISO datetime UTC
+  CallType: string;            // "InboundExternal", "OutboundExternal", "Internal", etc.
   FromDisplayName: string;
-  FromDn: string;            // Originating extension (e.g. "100")
-  FromCallerNumber: string;  // External phone number
+  FromDn: string;              // Originating extension (e.g. "101")
+  FromDnType: number;          // 0 = Extension, 1 = Trunk
+  FromCallerNumber: string;    // External phone or "Ext.101"
   ToDisplayName: string;
-  ToDn: string;              // Destination extension
-  ToCallerNumber: string;    // External phone number
-  Transcription: string;     // Full transcript text
-  Summary: string;           // 3CX-generated AI summary
-  SentimentScore: number;    // 1-5 scale
-  RecordingUrl: string;      // URL to recording file
-  IsTranscribed: boolean;    // Whether transcription is available
-  Duration: number;          // Duration in seconds
+  ToDn: string;                // Destination extension
+  ToDnType: number;            // 0 = Extension, 1 = Trunk
+  ToCallerNumber: string;      // External phone or "Ext.101"
+  Transcription: string | null; // Full transcript text (null if not yet available)
+  Summary: string | null;      // 3CX-generated AI summary (null if not yet available)
+  SentimentScore: number | null; // 1-5 scale (null if no summary)
+  TranscriptionResult: number; // 1 = success
+  RecordingUrl: string;        // Relative path to recording file
+  IsTranscribed: boolean;      // Whether transcription is available
+  CanBeTranscribed: boolean;   // Whether recording can be transcribed
+  IsArchived: boolean;
+  ArchivedUrl: string | null;
+  RefParticipantId: number;
+  FromIdParticipant: number;
+  ToIdParticipant: number;
 }
 
 export interface ThreeCXCallData {
@@ -81,7 +89,7 @@ export async function getAccessToken(): Promise<string> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      SecurityCode: XAPI_PASSWORD,
+      Password: XAPI_PASSWORD,
       Username: XAPI_USERNAME,
     }),
   });
@@ -115,7 +123,7 @@ export async function getAccessToken(): Promise<string> {
 export async function fetchNewRecordings(lastSeenId: number): Promise<ThreeCXRecording[]> {
   const token = await getAccessToken();
 
-  const filter = encodeURIComponent(`Id gt ${lastSeenId}`);
+  const filter = encodeURIComponent(`Id gt ${lastSeenId} and IsTranscribed eq true`);
   const url = `${XAPI_BASE_URL}/xapi/v1/Recordings?$filter=${filter}&$orderby=Id asc&$top=50`;
 
   const res = await fetch(url, {
@@ -209,7 +217,7 @@ export function mapRecordingToCallData(rec: ThreeCXRecording): ThreeCXCallData {
 
   const startedAt = new Date(rec.StartTime);
   const endedAt = new Date(rec.EndTime);
-  const durationSeconds = rec.Duration || Math.round((endedAt.getTime() - startedAt.getTime()) / 1000);
+  const durationSeconds = Math.round((endedAt.getTime() - startedAt.getTime()) / 1000);
 
   // Normalize phone numbers
   const fromNumber = direction === 'inbound'
