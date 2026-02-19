@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, Calendar, ExternalLink, Clock } from 'lucide-react';
+import { AlertTriangle, Calendar, ExternalLink, Clock, User } from 'lucide-react';
 import { analyzeReasons, buildReasonSuffix, REASON_COLORS } from '@/lib/renewal-reasons';
 import AZStatusBadge from './AZStatusBadge';
 import type { RenewalComparison } from './types';
@@ -69,9 +69,21 @@ export default function RenewalCard({ renewal, onClick }: RenewalCardProps) {
       {/* Top row: Customer + recommendation + date */}
       <div className="flex items-start justify-between mb-1">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-            {renewal.customerName || 'Unknown Customer'}
-          </p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+              {renewal.customerName || 'Unknown Customer'}
+            </p>
+            {renewal.customerId && (
+              <a
+                href={`/customers/${renewal.customerId}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 shrink-0"
+                title="View customer profile"
+              >
+                <User className="h-3.5 w-3.5" />
+              </a>
+            )}
+          </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
             {renewal.policyNumber}
           </p>
