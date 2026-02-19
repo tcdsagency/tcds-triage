@@ -49,6 +49,7 @@ import {
 const ROUTE_FEATURE_MAP: Record<string, string> = {
   // Core
   '/dashboard': 'dashboard',
+  '/queue': 'triageLog',
   '/triage-log': 'triageLog',
   '/after-hours': 'afterHours',
   '/messages': 'messages',
@@ -100,6 +101,7 @@ const dashboardNav = [
 // Intake & Reception section (base items - Supervisor added conditionally)
 const getIntakeNav = (canAccessSupervisor: boolean) => {
   const baseItems = [
+    { name: 'Queue', href: '/queue', icon: ClipboardList },
     { name: 'Triage Log', href: '/triage-log', icon: ScrollText },
     { name: 'Lead Queue', href: '/leads', icon: UserPlus },
   ];

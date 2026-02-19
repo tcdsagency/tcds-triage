@@ -65,7 +65,6 @@ export function CallProvider({ children }: CallProviderProps) {
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [isPopupVisible, setIsPopupVisible] = useState(false);
   const [isPopupMinimized, setIsPopupMinimized] = useState(false);
-  const [wsConnected, setWsConnected] = useState(false);
   const [myExtension, setMyExtension] = useState<string | null>(null);
   const [myUserInfo, setMyUserInfo] = useState<UserInfo | null>(null);
   const [usersByExtension, setUsersByExtension] = useState<Map<string, UserInfo>>(new Map());
@@ -203,78 +202,7 @@ export function CallProvider({ children }: CallProviderProps) {
       });
   }, []);
 
-  // WebSocket connection for call events
-  useEffect(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_REALTIME_WS_URL;
-    let ws: WebSocket | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 3;
-
-    // Skip WebSocket connection if no URL is configured
-    if (!wsUrl) {
-      console.debug("[CallProvider] No WebSocket URL configured, skipping realtime connection");
-      return;
-    }
-
-    const connect = () => {
-      // Stop reconnecting after max attempts
-      if (reconnectAttempts >= maxReconnectAttempts) {
-        console.debug("[CallProvider] Max reconnect attempts reached, stopping");
-        return;
-      }
-
-      try {
-        console.debug("[CallProvider] Connecting to", wsUrl);
-        ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-          console.debug("[CallProvider] WebSocket connected");
-          setWsConnected(true);
-          reconnectAttempts = 0;
-
-          // Subscribe to all call events (no specific session)
-          ws?.send(JSON.stringify({ type: "subscribe_all" }));
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            handleCallEvent(data);
-          } catch (e) {
-            console.debug("[CallProvider] Parse error:", e);
-          }
-        };
-
-        ws.onclose = () => {
-          setWsConnected(false);
-          reconnectAttempts++;
-
-          // Reconnect with backoff up to max attempts
-          if (reconnectAttempts < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
-            console.debug(`[CallProvider] Reconnecting in ${delay}ms`);
-            reconnectTimeout = setTimeout(connect, delay);
-          }
-        };
-
-        ws.onerror = () => {
-          // Silently handle errors - onclose will trigger reconnect
-        };
-      } catch (e) {
-        reconnectAttempts++;
-      }
-    };
-
-    connect();
-
-    return () => {
-      if (ws) ws.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    };
-  }, []);
-
-  // Polling fallback: Check call status AND presence every 10 seconds
+  // Polling: Check call status AND presence every 3 seconds
   // Since webhooks aren't reliable, we use presence as source of truth
   useEffect(() => {
     if (!activeCall || activeCall.status === "ended") {
@@ -831,14 +759,6 @@ export function CallProvider({ children }: CallProviderProps) {
         </div>
       )}
 
-      {/* Connection indicator (dev only) */}
-      {process.env.NODE_ENV === "development" && (
-        <div className="fixed bottom-4 left-4 text-xs">
-          <span className={wsConnected ? "text-green-500" : "text-red-500"}>
-            ● WS {wsConnected ? "Connected" : "Disconnected"}
-          </span>
-        </div>
-      )}
     </CallContext.Provider>
   );
 }

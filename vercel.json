@@ -5,6 +5,10 @@
       "schedule": "*/2 * * * *"
     },
     {
+      "path": "/api/recording-poller",
+      "schedule": "*/2 * * * *"
+    },
+    {
       "path": "/api/sync/cron",
       "schedule": "0 8 * * *"
     },

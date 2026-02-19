@@ -2,14 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { useCallWebSocket } from "@/hooks/useCallWebSocket";
-import TranscriptView from "./TranscriptView";
-import CoachingTip, { CoachingTipCompact } from "./CoachingTip";
-import LiveAssistCard, { LiveAssistCompact } from "./LiveAssistCard";
 import CustomerAssistCards from "./CustomerAssistCards";
 import LeadAssistCards from "./LeadAssistCards";
 import { MergedProfile } from "@/types/customer-profile";
-import { Playbook, AgentSuggestion, TelemetryFeedback } from "@/lib/agent-assist/types";
 import { AgentAvatar } from "@/components/ui/agent-avatar";
 import { AgencyZoomButton, getAgencyZoomUrl } from "@/components/ui/agencyzoom-link";
 import { HawkSoftButton } from "@/components/ui/hawksoft-link";
@@ -118,7 +113,7 @@ export default function CallPopup({
 }: CallPopupProps) {
   // UI State
   const [isMinimized, setIsMinimized] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "notes" | "assist">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "notes">("overview");
 
   // Calculate initial duration from startTime to maintain persistence across navigation
   const calculateDuration = useCallback(() => {
@@ -128,12 +123,6 @@ export default function CallPopup({
 
   const [callDuration, setCallDuration] = useState(calculateDuration);
 
-  // Live Assist State
-  const [matchedPlaybook, setMatchedPlaybook] = useState<Playbook | null>(null);
-  const [aiSuggestions, setAiSuggestions] = useState<AgentSuggestion[]>([]);
-  const [assistLoading, setAssistLoading] = useState(false);
-  const lastTranscriptLength = useRef(0);
-  
   // Data State - Uses same MergedProfile type as CustomerProfilePage
   const [customerLookup, setCustomerLookup] = useState<CustomerLookup | null>(null);
   const [profile, setProfile] = useState<MergedProfile | null>(null);
@@ -211,9 +200,6 @@ export default function CallPopup({
     aiExtraction?: any;
     aiConfidence?: number;
   } | null>(null);
-
-  // WebSocket for transcript and coaching
-  const { transcript, coaching, callStatus, isConnected } = useCallWebSocket(sessionId, isVisible);
 
   // =========================================================================
   // STEP 1: Lookup customer by phone number
@@ -333,8 +319,8 @@ export default function CallPopup({
     }
   }, [startTime, calculateDuration]);
 
-  // Use external call status if provided, otherwise use websocket status
-  const effectiveCallStatus = externalCallStatus || callStatus;
+  // Use external call status from CallProvider
+  const effectiveCallStatus = externalCallStatus || "connected";
 
   useEffect(() => {
     if (!isVisible || effectiveCallStatus === "ended") return;
@@ -432,146 +418,6 @@ export default function CallPopup({
 
     loadCustomerIntel();
   }, [customerLookup?.id, isVisible]);
-
-  // =========================================================================
-  // LIVE ASSIST: Fetch playbook and suggestions based on transcript
-  // Debounced to avoid excessive API calls
-  // =========================================================================
-  useEffect(() => {
-    if (!isVisible || callStatus === "ended") return;
-
-    // Convert transcript segments to text
-    const transcriptText = transcript.map(s => s.text).join(" ");
-
-    // Only process if we have new content (at least 100 chars more)
-    if (transcriptText.length - lastTranscriptLength.current < 100) return;
-    lastTranscriptLength.current = transcriptText.length;
-
-    // Debounce API calls
-    const timeoutId = setTimeout(async () => {
-      setAssistLoading(true);
-
-      try {
-        // Fetch playbook match
-        const playbookRes = await fetch("/api/agent-assist/playbook", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transcript: transcriptText,
-            callType: direction,
-          }),
-        });
-
-        const playbookData = await playbookRes.json();
-        if (playbookData.success && playbookData.playbook) {
-          setMatchedPlaybook(playbookData.playbook);
-
-          // Track playbook shown
-          fetch("/api/agent-assist/telemetry", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              suggestionType: "playbook",
-              playbookId: playbookData.playbook.id,
-              action: "shown",
-              callTranscriptSnippet: transcriptText.slice(-500),
-            }),
-          }).catch(console.error);
-        }
-
-        // Fetch AI suggestions
-        const suggestionsRes = await fetch("/api/agent-assist/suggestions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transcript: transcriptText,
-            customerProfile: profile ? {
-              name: profile.name,
-              policyTypes: profile.activePolicyTypes?.map(p => p.type),
-              tenure: profile.customerSince,
-            } : undefined,
-            currentPlaybook: playbookData.playbook?.id,
-          }),
-        });
-
-        const suggestionsData = await suggestionsRes.json();
-        if (suggestionsData.success && suggestionsData.suggestions) {
-          setAiSuggestions(suggestionsData.suggestions);
-
-          // Track suggestions shown
-          for (const suggestion of suggestionsData.suggestions) {
-            fetch("/api/agent-assist/telemetry", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                suggestionType: suggestion.type,
-                suggestionId: suggestion.id,
-                action: "shown",
-                content: suggestion.title,
-                callTranscriptSnippet: transcriptText.slice(-500),
-              }),
-            }).catch(console.error);
-          }
-        }
-      } catch (err) {
-        console.error("Live Assist fetch error:", err);
-      } finally {
-        setAssistLoading(false);
-      }
-    }, 500); // 500ms debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [transcript, isVisible, callStatus, direction, profile]);
-
-  // =========================================================================
-  // LIVE ASSIST: Handle suggestion usage and feedback
-  // =========================================================================
-  const handleUseSuggestion = useCallback((suggestion: AgentSuggestion) => {
-    // Track usage
-    fetch("/api/agent-assist/telemetry", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        suggestionType: suggestion.type,
-        suggestionId: suggestion.id,
-        action: "used",
-        content: suggestion.title,
-      }),
-    }).catch(console.error);
-
-    // Remove from list after use
-    setAiSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
-  }, []);
-
-  const handleDismissSuggestion = useCallback((suggestion: AgentSuggestion) => {
-    // Track dismissal
-    fetch("/api/agent-assist/telemetry", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        suggestionType: suggestion.type,
-        suggestionId: suggestion.id,
-        action: "dismissed",
-        content: suggestion.title,
-      }),
-    }).catch(console.error);
-
-    // Remove from list
-    setAiSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
-  }, []);
-
-  const handlePlaybookFeedback = useCallback((playbookId: string, feedback: TelemetryFeedback) => {
-    fetch("/api/agent-assist/telemetry", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        suggestionType: "playbook",
-        playbookId,
-        action: "used",
-        feedback,
-      }),
-    }).catch(console.error);
-  }, []);
 
   // =========================================================================
   // Post notes to HawkSoft and AgencyZoom
@@ -743,12 +589,12 @@ export default function CallPopup({
 
   // Update hold state when callStatus changes
   useEffect(() => {
-    if (externalCallStatus === "on_hold" || callStatus === "on_hold") {
+    if (externalCallStatus === "on_hold") {
       setIsOnHold(true);
     } else if (effectiveCallStatus === "connected") {
       setIsOnHold(false);
     }
-  }, [externalCallStatus, callStatus, effectiveCallStatus]);
+  }, [externalCallStatus, effectiveCallStatus]);
 
   // =========================================================================
   // Fetch Wrap-Up Data (from wrapupDrafts table - already has AI summary)
@@ -869,10 +715,6 @@ export default function CallPopup({
             </button>
           </div>
         </div>
-        {coaching && <CoachingTipCompact suggestion={coaching} />}
-        {(matchedPlaybook || aiSuggestions.length > 0) && (
-          <LiveAssistCompact playbook={matchedPlaybook} suggestionCount={aiSuggestions.length} />
-        )}
       </div>
     );
   }
@@ -953,7 +795,7 @@ export default function CallPopup({
               )}>
                 {isOnHold ? "ON HOLD" : effectiveCallStatus}
               </span>
-              {isConnected && <span className="text-green-400">● Live</span>}
+              {effectiveCallStatus === "connected" && <span className="text-green-400">● Live</span>}
             </div>
             {/* Call Control Error Display */}
             {callControlError && (
@@ -1401,21 +1243,7 @@ export default function CallPopup({
                   : "text-gray-500 hover:text-gray-700"
               )}
             >
-              📝 Transcript
-            </button>
-            <button
-              onClick={() => setActiveTab("assist")}
-              className={cn(
-                "flex-1 px-2 py-1.5 text-xs font-medium relative",
-                activeTab === "assist"
-                  ? "border-b-2 border-purple-500 text-purple-600"
-                  : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              🎯 Assist
-              {(matchedPlaybook || aiSuggestions.length > 0) && activeTab !== "assist" && (
-                <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-purple-500 rounded-full animate-pulse" />
-              )}
+              Overview
             </button>
             <button
               onClick={() => setActiveTab("notes")}
@@ -1426,31 +1254,48 @@ export default function CallPopup({
                   : "text-gray-500 hover:text-gray-700"
               )}
             >
-              📋 Notes
+              Notes
             </button>
           </div>
 
           {/* Tab Content */}
           <div className="flex-1 overflow-hidden">
             {activeTab === "overview" && (
-              <div className="h-full flex flex-col">
-                <TranscriptView segments={transcript} className="flex-1" />
-                {coaching && (
-                  <CoachingTip suggestion={coaching} onDismiss={() => {}} />
+              <div className="h-full overflow-y-auto p-2 space-y-2">
+                {aiOverview ? (
+                  <>
+                    <div className="text-[10px] font-semibold text-gray-500 uppercase">AI Overview</div>
+                    <p className="text-xs text-gray-700">{aiOverview.summary}</p>
+                    {aiOverview.keyFacts.length > 0 && (
+                      <div>
+                        <div className="text-[10px] font-semibold text-gray-500 uppercase mt-2">Key Facts</div>
+                        <ul className="text-xs text-gray-600 list-disc pl-3 space-y-0.5">
+                          {aiOverview.keyFacts.map((fact, i) => (
+                            <li key={i}>{fact}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {aiOverview.agentTips.length > 0 && (
+                      <div>
+                        <div className="text-[10px] font-semibold text-gray-500 uppercase mt-2">Agent Tips</div>
+                        <ul className="text-xs text-gray-600 list-disc pl-3 space-y-0.5">
+                          {aiOverview.agentTips.map((tip, i) => (
+                            <li key={i}>{tip}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                ) : profile ? (
+                  <div className="text-xs text-gray-500 text-center py-4">
+                    Loading AI overview...
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 text-center py-4">
+                    No customer matched yet
+                  </div>
                 )}
-              </div>
-            )}
-            
-            {activeTab === "assist" && (
-              <div className="h-full overflow-y-auto">
-                <LiveAssistCard
-                  playbook={matchedPlaybook}
-                  suggestions={aiSuggestions}
-                  isLoading={assistLoading}
-                  onUseSuggestion={handleUseSuggestion}
-                  onDismissSuggestion={handleDismissSuggestion}
-                  onPlaybookFeedback={handlePlaybookFeedback}
-                />
               </div>
             )}
 
