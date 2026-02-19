@@ -169,10 +169,10 @@ class NearmapClient {
   }
 
   /**
-   * Create bounding polygon from lat/lng (~100m radius)
+   * Create bounding polygon from lat/lng (~28m / ~90ft radius)
    * Polygon format: lon,lat pairs forming a closed ring
    */
-  private createBoundingPolygon(lat: number, lng: number, offsetDegrees: number = 0.001): string {
+  private createBoundingPolygon(lat: number, lng: number, offsetDegrees: number = 0.00025): string {
     const minLng = lng - offsetDegrees;
     const maxLng = lng + offsetDegrees;
     const minLat = lat - offsetDegrees;
@@ -231,7 +231,7 @@ class NearmapClient {
    */
   async getFeatures(lat: number, lng: number, packs?: string): Promise<NearmapFeatures | null> {
     try {
-      const polygon = this.createBoundingPolygon(lat, lng, 0.0005);
+      const polygon = this.createBoundingPolygon(lat, lng);
 
       const params = new URLSearchParams({
         polygon,

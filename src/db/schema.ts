@@ -919,6 +919,9 @@ export const propertyLookups = pgTable('property_lookups', {
   // Orion180 HazardHub Data (risk grades, property details)
   orion180Data: jsonb('orion180_data'),
 
+  // Property Report Card (cross-provider comparison)
+  reportCard: jsonb('report_card').$type<import('@/lib/property-report-card').PropertyReportCard>(),
+
   // Lookup Metadata
   lookupSource: varchar('lookup_source', { length: 20 }).default('manual'), // 'manual', 'quote', 'policy'
   linkedQuoteId: uuid('linked_quote_id').references(() => quotes.id, { onDelete: 'set null' }),
@@ -1019,7 +1022,20 @@ export const calls = pgTable('calls', {
   // Wrap-up
   disposition: varchar('disposition', { length: 50 }),
   followUpRequired: boolean('follow_up_required').default(false),
-  
+
+  // 3CX XAPI fields
+  threecxRecordingId: integer('threecx_recording_id'),
+  threecxSentimentScore: integer('threecx_sentiment_score').$type<number>(),
+  threecxSummary: text('threecx_summary'),
+  threecxTranscription: text('threecx_transcription'),
+  threecxRecordingUrl: text('threecx_recording_url'),
+  threecxCallType: varchar('threecx_call_type', { length: 30 }),
+  threecxFromDn: varchar('threecx_from_dn', { length: 10 }),
+  threecxToDn: varchar('threecx_to_dn', { length: 10 }),
+  threecxFromCallerNumber: varchar('threecx_from_caller_number', { length: 20 }),
+  threecxToCallerNumber: varchar('threecx_to_caller_number', { length: 20 }),
+  threecxPolledAt: timestamp('threecx_polled_at'),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
@@ -1880,6 +1896,12 @@ export const wrapupDrafts = pgTable('wrapup_drafts', {
   assignedToId: uuid('assigned_to_id').references(() => users.id),
   assignedAt: timestamp('assigned_at'),
   assignedById: uuid('assigned_by_id').references(() => users.id),
+
+  // 3CX XAPI fields
+  threecxRecordingId: integer('threecx_recording_id'),
+  threecxSummary: text('threecx_summary'),
+  threecxSentimentScore: integer('threecx_sentiment_score').$type<number>(),
+  source: varchar('source', { length: 20 }).default('threecx').$type<'threecx' | 'twilio_fallback' | 'manual' | 'legacy'>(),
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   completedAt: timestamp('completed_at'),
@@ -6142,6 +6164,21 @@ export const assistantDocuments = pgTable('assistant_documents', {
   tenantIdx: index('assistant_documents_tenant_idx').on(table.tenantId),
   statusIdx: index('assistant_documents_status_idx').on(table.status),
 }));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3CX XAPI POLLING STATE
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const threecxPollingState = pgTable('threecx_polling_state', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  lastSeenId: integer('last_seen_id').notNull().default(0),
+  lastPolledAt: timestamp('last_polled_at'),
+  pollErrors: integer('poll_errors').notNull().default(0),
+  lastError: text('last_error'),
+}, (table) => [
+  uniqueIndex('threecx_polling_state_tenant_unique').on(table.tenantId),
+]);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DEAD LETTER JOBS
