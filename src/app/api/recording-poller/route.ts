@@ -19,7 +19,7 @@ import {
   wrapupDrafts,
   threecxPollingState,
 } from "@/db/schema";
-import { eq, and, sql, or, ilike, gte, lt, isNull } from "drizzle-orm";
+import { eq, and, sql, or, ilike, gte, lte, lt, isNull } from "drizzle-orm";
 import {
   fetchNewRecordings,
   mapRecordingToCallData,
@@ -236,7 +236,7 @@ async function matchExistingCall(callData: ReturnType<typeof mapRecordingToCallD
     .where(and(
       eq(calls.tenantId, TENANT_ID),
       gte(calls.startedAt, windowStart),
-      sql`${calls.startedAt} <= ${windowEnd}`,
+      lte(calls.startedAt, windowEnd),
       or(
         ilike(calls.fromNumber, phoneSuffix),
         ilike(calls.toNumber, phoneSuffix),
