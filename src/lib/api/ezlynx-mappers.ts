@@ -1821,6 +1821,197 @@ export function renewalToHomeApplication(
 // HELPERS (internal)
 // =============================================================================
 
+// =============================================================================
+// HAWKSOFT POLICY → CANONICAL SNAPSHOT (for EZLynx sync without renewals)
+// =============================================================================
+
+/** HawkSoft coverage code → canonical auto coverage type */
+const HS_AUTO_COVERAGE_MAP: Record<string, string> = {
+  'BI': 'bodily_injury',
+  'BIPD': 'bodily_injury',
+  'PD': 'property_damage',
+  'UM': 'uninsured_motorist',
+  'UMBI': 'uninsured_motorist',
+  'UIM': 'underinsured_motorist',
+  'UIMBI': 'underinsured_motorist',
+  'MEDPM': 'medical_payments',
+  'MEDPAY': 'medical_payments',
+  'MP': 'medical_payments',
+  'PIP': 'personal_injury_protection',
+};
+
+/** HawkSoft coverage code → canonical home coverage type */
+const HS_HOME_COVERAGE_MAP: Record<string, string> = {
+  'DWELL': 'dwelling',
+  'DWEL': 'dwelling',
+  'PERS': 'personal_property',
+  'LOSS': 'loss_of_use',
+  'OSTR': 'other_structures',
+  'LIAB': 'personal_liability',
+  'MEDC': 'medical_payments',
+  'MEDPAY': 'medical_payments',
+  'DED': 'deductible',
+  'RPDED': 'all_peril',
+  'WNDSD': 'wind',
+  'WIND': 'wind',
+  'HURDED': 'hurricane',
+};
+
+/** HawkSoft vehicle coverage code → canonical type */
+const HS_VEHICLE_COVERAGE_MAP: Record<string, string> = {
+  'COMP': 'comprehensive',
+  'OTC': 'comprehensive',
+  'COLL': 'collision',
+};
+
+/**
+ * Parse a HawkSoft limit string like "$100,000/$300,000" or "100000/300000" or "$500,000"
+ * into { limit (string), limitAmount (number in dollars) }.
+ */
+function parseHsLimit(raw?: string | number | null): { limit?: string; limitAmount?: number } {
+  if (raw == null) return {};
+  const str = String(raw).replace(/\$/g, '').replace(/,/g, '').trim();
+  if (!str || str === '0') return {};
+
+  // Split limit "100000/300000"
+  if (str.includes('/')) {
+    const parts = str.split('/').map(s => parseInt(s.trim(), 10));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      return {
+        limit: `${parts[0].toLocaleString()}/${parts[1].toLocaleString()}`,
+        limitAmount: parts[1], // per-accident amount
+      };
+    }
+  }
+
+  const num = parseInt(str, 10);
+  if (!isNaN(num) && num > 0) {
+    return { limit: num.toLocaleString(), limitAmount: num };
+  }
+  return {};
+}
+
+/** Parse a HawkSoft deductible string/number into dollars */
+function parseHsDeductible(raw?: string | number | null): { deductible?: string; deductibleAmount?: number } {
+  if (raw == null) return {};
+  const str = String(raw).replace(/\$/g, '').replace(/,/g, '').trim();
+  if (!str || str === '0') return {};
+  const num = parseInt(str, 10);
+  if (!isNaN(num) && num > 0) {
+    return { deductible: `$${num.toLocaleString()}`, deductibleAmount: num };
+  }
+  return {};
+}
+
+/**
+ * Convert a transformed HawkSoft auto policy into the canonical snapshot format
+ * that `renewalToAutoApplication()` expects.
+ *
+ * Input: the `Policy` object from `transformHawkSoftPolicy()` (merged-profile format).
+ * Output: { snapshot, comparison } ready for `renewalToAutoApplication(snapshot, comparison, appTemplate)`.
+ */
+export function hawksoftAutoToSnapshot(policy: any): { snapshot: any; comparison: any } {
+  // Map drivers
+  const drivers = (policy.drivers || []).map((d: any) => ({
+    name: d.name || `${d.firstName || ''} ${d.lastName || ''}`.trim(),
+    dateOfBirth: d.dateOfBirth,
+    licenseNumber: d.licenseNumber,
+    licenseState: d.licenseState,
+    relationship: d.relationship,
+    isExcluded: d.excludedFromPolicy || false,
+  }));
+
+  // Map vehicles with per-vehicle coverages
+  const vehicles = (policy.vehicles || []).map((v: any) => {
+    const vehCoverages = (v.coverages || []).map((cov: any) => {
+      const code = (cov.type || cov.coverageType || '').toUpperCase();
+      const canonicalType = HS_VEHICLE_COVERAGE_MAP[code];
+      if (!canonicalType) return null;
+      const { deductible, deductibleAmount } = parseHsDeductible(cov.deductible);
+      return { type: canonicalType, deductible, deductibleAmount };
+    }).filter(Boolean);
+
+    return {
+      vin: v.vin,
+      year: v.year,
+      make: v.make,
+      model: v.model,
+      annualMileage: v.annualMiles,
+      coverages: vehCoverages,
+    };
+  });
+
+  // Map policy-level coverages
+  const coverages = (policy.coverages || []).map((cov: any) => {
+    const code = (cov.type || '').toUpperCase();
+    const canonicalType = HS_AUTO_COVERAGE_MAP[code];
+    if (!canonicalType) return null;
+    const { limit, limitAmount } = parseHsLimit(cov.limit);
+    return { type: canonicalType, limit, limitAmount };
+  }).filter(Boolean);
+
+  return {
+    snapshot: { drivers, vehicles, coverages },
+    comparison: {
+      renewalEffectiveDate: policy.effectiveDate,
+      renewalExpirationDate: policy.expirationDate,
+    },
+  };
+}
+
+/**
+ * Convert a transformed HawkSoft home policy into the canonical snapshot format
+ * that `renewalToHomeApplication()` expects.
+ *
+ * Input: the `Policy` object from `transformHawkSoftPolicy()` (merged-profile format).
+ * Output: { snapshot, comparison, baselineSnapshot } ready for
+ *   `renewalToHomeApplication(snapshot, comparison, appTemplate, baselineSnapshot)`.
+ */
+export function hawksoftHomeToSnapshot(policy: any): { snapshot: any; comparison: any; baselineSnapshot: any } {
+  // Map coverages
+  const coverages = (policy.coverages || []).map((cov: any) => {
+    const code = (cov.type || '').toUpperCase();
+    const canonicalType = HS_HOME_COVERAGE_MAP[code];
+    if (!canonicalType) return null;
+    const { limit, limitAmount } = parseHsLimit(cov.limit);
+    const { deductible, deductibleAmount } = parseHsDeductible(cov.deductible);
+    return {
+      type: canonicalType,
+      code: code.toLowerCase(),
+      description: cov.description || '',
+      limit,
+      limitAmount: limitAmount || deductibleAmount,
+      deductible,
+      deductibleAmount,
+    };
+  }).filter(Boolean);
+
+  // Build property context from policy.property
+  const prop = policy.property;
+  const baselineSnapshot: any = {};
+  if (prop) {
+    baselineSnapshot.propertyContext = {
+      yearBuilt: prop.yearBuilt,
+      squareFeet: prop.squareFeet,
+      roofType: prop.roofType,
+      constructionType: prop.constructionType,
+    };
+  }
+
+  return {
+    snapshot: { coverages },
+    comparison: {
+      renewalEffectiveDate: policy.effectiveDate,
+      renewalExpirationDate: policy.expirationDate,
+    },
+    baselineSnapshot,
+  };
+}
+
+// =============================================================================
+// HELPERS (internal)
+// =============================================================================
+
 function findCoverageLimit(coverages: any[], codes: string[]): string | undefined {
   const upperCodes = codes.map(c => c.toUpperCase());
   const cov = coverages.find((c: any) => {

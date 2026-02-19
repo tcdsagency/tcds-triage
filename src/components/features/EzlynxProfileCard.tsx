@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
   Zap, ExternalLink, Search, Loader2, RefreshCw,
-  AlertTriangle, X, Hash, Check, ArrowRight, Eye, Unlink,
+  AlertTriangle, X, Hash, Check, ArrowRight, Eye, Unlink, Upload,
 } from 'lucide-react';
 import { useUser } from '@/hooks/useUser';
 
@@ -62,13 +62,20 @@ export default function EzlynxProfileCard({
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  // Sync state
+  // Sync state (renewal-based)
   const [syncing, setSyncing] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<{
     comparisonId: string;
     lob: string;
     beforeAfter: { field: string; before: string; after: string }[];
     syncReport: any;
+  } | null>(null);
+
+  // Policy sync state (HawkSoft-direct, no renewal needed)
+  const [syncingPolicies, setSyncingPolicies] = useState(false);
+  const [policyPreview, setPolicyPreview] = useState<{
+    beforeAfter: { field: string; before: string; after: string }[];
+    policies: any[];
   } | null>(null);
 
   const ezlynxUrl = (id: string) => `https://app.ezlynx.com/web/account/${id}/details`;
@@ -284,6 +291,79 @@ export default function EzlynxProfileCard({
     }
   }, [customerId, linkedId, postNote, userName, onLinked]);
 
+  // Preview policy sync (dry run — fetches from HawkSoft directly)
+  const handlePreviewPolicySync = useCallback(async () => {
+    if (!customerId) return;
+    setSyncingPolicies(true);
+    try {
+      const res = await fetch('/api/ezlynx/sync-policies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId, dryRun: true }),
+      });
+      const data = await res.json();
+      if (data.success && data.beforeAfter) {
+        setPolicyPreview({ beforeAfter: data.beforeAfter, policies: data.policies || [] });
+      } else {
+        toast.error('Preview failed', { description: data.error || 'Could not generate preview' });
+      }
+    } catch (err: any) {
+      toast.error('Preview error', { description: err.message });
+    } finally {
+      setSyncingPolicies(false);
+    }
+  }, [customerId]);
+
+  // Confirm policy sync (actually apply)
+  const handleConfirmPolicySync = useCallback(async () => {
+    if (!customerId) return;
+    setSyncingPolicies(true);
+    const toastId = toast.loading('Syncing policies to EZLynx...');
+    try {
+      const res = await fetch('/api/ezlynx/sync-policies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const policies = data.policies || [];
+        const parts: string[] = [];
+        for (const p of policies) {
+          if (p.error) continue;
+          const report = p.syncReport;
+          if (p.type === 'auto') {
+            const items: string[] = [];
+            if (report?.drivers?.matched?.length) items.push(`${report.drivers.matched.length} drivers`);
+            if (report?.vehicles?.matched?.length) items.push(`${report.vehicles.matched.length} vehicles`);
+            if (report?.coverages?.updated?.length) items.push(`${report.coverages.updated.length} coverages`);
+            parts.push(`Auto: ${items.join(', ') || 'updated'}`);
+          } else {
+            const items: string[] = [];
+            if (report?.coverages?.updated?.length) items.push(`${report.coverages.updated.length} coverages`);
+            if (report?.dwelling?.updated?.length) items.push(`${report.dwelling.updated.length} dwelling fields`);
+            parts.push(`Home: ${items.join(', ') || 'updated'}`);
+          }
+        }
+        const summary = parts.join('; ') || 'Policies synced';
+        toast.success('Synced to EZLynx', {
+          id: toastId,
+          description: summary,
+          action: linkedId ? { label: 'Open', onClick: () => window.open(ezlynxUrl(linkedId), '_blank') } : undefined,
+          duration: 10000,
+        });
+        await postNote(`[TCDS] EZLynx policies synced from HawkSoft by ${userName}. ${summary}`);
+        setPolicyPreview(null);
+      } else {
+        toast.error('Sync failed', { id: toastId, description: data.error });
+      }
+    } catch (err: any) {
+      toast.error('Sync error', { id: toastId, description: err.message });
+    } finally {
+      setSyncingPolicies(false);
+    }
+  }, [customerId, linkedId, postNote, userName]);
+
   // === LINKED STATE ===
   if (linkedId) {
     return (
@@ -331,6 +411,22 @@ export default function EzlynxProfileCard({
             </button>
           )}
 
+          {/* Sync Policies from HawkSoft button (no renewal needed) */}
+          {customerId && (
+            <button
+              onClick={handlePreviewPolicySync}
+              disabled={syncingPolicies}
+              className="w-full mt-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-md hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-1"
+            >
+              {syncingPolicies ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Upload className="w-3 h-3" />
+              )}
+              {syncingPolicies ? 'Loading preview...' : 'Sync Policies to EZLynx'}
+            </button>
+          )}
+
           {/* Sync buttons per policy renewal */}
           {syncableRenewals && syncableRenewals.length > 0 && (
             <div className="space-y-1.5">
@@ -355,6 +451,73 @@ export default function EzlynxProfileCard({
             <p className="text-[10px] text-emerald-500">No renewal data available to sync</p>
           )}
         </div>
+
+        {/* Policy Sync Preview Modal (HawkSoft-direct) */}
+        {policyPreview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-5 max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                  <Upload className="w-4 h-4 text-amber-600" />
+                  Sync Policies Preview
+                </h3>
+                <button onClick={() => setPolicyPreview(null)} className="text-gray-400 hover:text-gray-600 p-0.5">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {policyPreview.beforeAfter.length === 0 ? (
+                <div className="py-8 text-center">
+                  <Check className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">EZLynx is already up to date</p>
+                  <p className="text-xs text-gray-400 mt-1">No changes needed</p>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto mb-4">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-1.5 px-2 text-gray-500 font-medium">Field</th>
+                        <th className="text-left py-1.5 px-2 text-gray-500 font-medium">Current (EZLynx)</th>
+                        <th className="text-center py-1.5 px-2 w-6"></th>
+                        <th className="text-left py-1.5 px-2 text-gray-500 font-medium">New (HawkSoft)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {policyPreview.beforeAfter.map((row, i) => (
+                        <tr key={i} className="border-b border-gray-100">
+                          <td className="py-1.5 px-2 font-medium text-gray-700">{row.field}</td>
+                          <td className="py-1.5 px-2 text-red-600 line-through">{row.before}</td>
+                          <td className="py-1.5 px-2 text-center"><ArrowRight className="w-3 h-3 text-gray-400 inline" /></td>
+                          <td className="py-1.5 px-2 text-amber-700 font-medium">{row.after}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPolicyPreview(null)}
+                  className="flex-1 px-3 py-2 border border-gray-300 text-sm font-medium rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                {policyPreview.beforeAfter.length > 0 && (
+                  <button
+                    onClick={handleConfirmPolicySync}
+                    disabled={syncingPolicies}
+                    className="flex-1 px-3 py-2 bg-amber-600 text-white text-sm font-medium rounded-md hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    {syncingPolicies ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    {syncingPolicies ? 'Syncing...' : 'Apply Changes'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Sync Preview Modal */}
         {previewData && (
