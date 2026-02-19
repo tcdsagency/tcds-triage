@@ -43,6 +43,8 @@ import { formatInboundCallDescription, formatSentimentEmoji } from "@/lib/format
 // Config
 // =============================================================================
 
+export const maxDuration = 300; // 5 minutes — matches other cron routes
+
 const TENANT_ID = process.env.DEFAULT_TENANT_ID!;
 const HANGUP_THRESHOLD_SECONDS = 35;
 const STALE_CALL_MINUTES = 30;
