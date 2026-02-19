@@ -101,14 +101,14 @@ interface AuthSession {
 
 const hiddenBreaker = new CircuitBreaker('HawkSoftHidden', 5, 60_000);
 
-// Rate limiter: 500ms minimum gap between requests
+// Rate limiter: 100ms minimum gap between requests
 let lastRequestTime = 0;
 
 async function rateLimit(): Promise<void> {
   const now = Date.now();
   const elapsed = now - lastRequestTime;
-  if (elapsed < 500) {
-    await new Promise((resolve) => setTimeout(resolve, 500 - elapsed));
+  if (elapsed < 100) {
+    await new Promise((resolve) => setTimeout(resolve, 100 - elapsed));
   }
   lastRequestTime = Date.now();
 }
