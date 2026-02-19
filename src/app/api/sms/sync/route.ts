@@ -185,8 +185,15 @@ function normalizePhone(phone: string): string {
   return `+${digits}`;
 }
 
+/** Parse AZ date strings as UTC (they omit the Z suffix) */
+function parseUTC(dateStr: string): Date {
+  const s = dateStr.trim();
+  if (s.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
+  return new Date(s + "Z");
+}
+
 function isWithinMonths(dateStr: string, months: number): boolean {
-  const date = new Date(dateStr);
+  const date = parseUTC(dateStr);
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - months);
   return date >= cutoff;
@@ -244,7 +251,7 @@ async function syncThread(
       // For incoming messages, also check for Twilio webhook duplicates
       // Twilio messages use SM... externalIds so won't match above
       if (isIncoming) {
-        const msgDate = new Date(msg.messageDate);
+        const msgDate = parseUTC(msg.messageDate);
         const windowMs = 5 * 60 * 1000; // 5 minute window
         const dupCheck = await db.query.messages.findFirst({
           where: (messages, { eq, and, between }) =>
@@ -279,7 +286,7 @@ async function syncThread(
           contactName: thread.contactName,
           contactType,
           isAcknowledged: true,
-          sentAt: new Date(msg.messageDate),
+          sentAt: parseUTC(msg.messageDate),
         });
         imported++;
       } catch (error) {
@@ -343,7 +350,7 @@ async function runSync(tenantId: string, type: "full" | "incremental", months: n
         ? new Date(lastSuccessfulSyncAt)
         : new Date(Date.now() - 24 * 60 * 60 * 1000);
       threadsToProcess = allThreads.filter((t) => {
-        const threadDate = new Date(t.lastMessageDateUTC || t.lastMessageDate);
+        const threadDate = parseUTC(t.lastMessageDateUTC || t.lastMessageDate);
         return threadDate >= sinceDate;
       });
     } else {
