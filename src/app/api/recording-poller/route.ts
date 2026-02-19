@@ -49,6 +49,7 @@ const TENANT_ID = process.env.DEFAULT_TENANT_ID!;
 const HANGUP_THRESHOLD_SECONDS = 35;
 const STALE_CALL_MINUTES = 30;
 const BACKLOG_THRESHOLD_HOURS = 1;
+const PER_RECORDING_TIMEOUT_MS = 60_000; // 60 seconds
 
 // =============================================================================
 // POST handler — called by Vercel cron every 2 minutes
@@ -98,26 +99,29 @@ export async function POST(req: NextRequest) {
 
     for (const rec of recordings) {
       try {
-        const outcome = await processRecording(rec);
+        const outcome = await withTimeout(
+          processRecording(rec),
+          PER_RECORDING_TIMEOUT_MS,
+          `Rec ${rec.Id}`,
+        );
         if (outcome === 'processed') results.processed++;
         else if (outcome === 'ticket') { results.processed++; results.ticketsCreated++; }
         else if (outcome === 'note') { results.processed++; results.notesPosted++; }
         else if (outcome === 'voided') { results.processed++; results.autoVoided++; }
         else results.skipped++;
-
-        if (rec.Id > highestId) highestId = rec.Id;
       } catch (error) {
         const errMsg = `Rec ${rec.Id}: ${error instanceof Error ? error.message : String(error)}`;
         console.error(`[recording-poller] ${errMsg}`);
         results.errors++;
         if (results.errorSamples.length < 3) results.errorSamples.push(errMsg);
-        // Still advance past this recording to avoid re-processing
-        if (rec.Id > highestId) highestId = rec.Id;
+      }
+
+      // Always advance past this recording (success or error)
+      if (rec.Id > highestId) {
+        highestId = rec.Id;
+        await updatePollingSuccess(pollingState.id, highestId);
       }
     }
-
-    // 4. Update polling state
-    await updatePollingSuccess(pollingState.id, highestId);
 
     // 5. Cleanup stale calls
     await cleanupStaleCalls();
@@ -145,13 +149,32 @@ export async function GET() {
     .where(eq(threecxPollingState.tenantId, TENANT_ID))
     .limit(1);
 
+  const minutesSincePoll = state?.lastPolledAt
+    ? Math.round((Date.now() - state.lastPolledAt.getTime()) / 60_000)
+    : null;
+  const isStale = minutesSincePoll !== null && minutesSincePoll > 10;
+
   return NextResponse.json({
-    status: 'ok',
+    status: isStale ? 'stale' : 'ok',
     lastSeenId: state?.lastSeenId ?? 0,
     lastPolledAt: state?.lastPolledAt?.toISOString() ?? null,
+    minutesSincePoll,
     pollErrors: state?.pollErrors ?? 0,
     lastError: state?.lastError ?? null,
   });
+}
+
+// =============================================================================
+// Per-Recording Timeout
+// =============================================================================
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout after ${ms}ms: ${label}`)), ms)
+    ),
+  ]);
 }
 
 // =============================================================================
