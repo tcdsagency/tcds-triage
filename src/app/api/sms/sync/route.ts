@@ -215,13 +215,6 @@ async function syncThread(
     const threadMessages = await fetchThreadMessages(thread.id);
 
     for (const msg of threadMessages) {
-      // IMPORTANT: Skip incoming messages - they arrive via Twilio webhook
-      // This prevents duplicates since Twilio webhook uses a different externalId
-      if (msg.direction === "incoming") {
-        skipped++;
-        continue;
-      }
-
       if (!isWithinMonths(msg.messageDate, months)) {
         skipped++;
         continue;
@@ -232,11 +225,13 @@ async function syncThread(
         continue;
       }
 
-      const direction = "outbound"; // Only outgoing messages reach here now
-      const fromPhone = agencyPhone;
-      const toPhone = contactPhone;
+      const isIncoming = msg.direction === "incoming";
+      const direction = isIncoming ? "inbound" : "outbound";
+      const fromPhone = isIncoming ? contactPhone : agencyPhone;
+      const toPhone = isIncoming ? agencyPhone : contactPhone;
       const externalId = `az_sms_${msg.id}`;
 
+      // Check if already imported via AZ sync (same externalId)
       const existing = await db.query.messages.findFirst({
         where: (messages, { eq }) => eq(messages.externalId, externalId),
       });
@@ -244,6 +239,30 @@ async function syncThread(
       if (existing) {
         skipped++;
         continue;
+      }
+
+      // For incoming messages, also check for Twilio webhook duplicates
+      // Twilio messages use SM... externalIds so won't match above
+      if (isIncoming) {
+        const msgDate = new Date(msg.messageDate);
+        const windowMs = 5 * 60 * 1000; // 5 minute window
+        const dupCheck = await db.query.messages.findFirst({
+          where: (messages, { eq, and, between }) =>
+            and(
+              eq(messages.direction, "inbound"),
+              eq(messages.body, msg.body),
+              between(
+                messages.sentAt,
+                new Date(msgDate.getTime() - windowMs),
+                new Date(msgDate.getTime() + windowMs)
+              )
+            ),
+        });
+
+        if (dupCheck) {
+          skipped++;
+          continue;
+        }
       }
 
       try {
