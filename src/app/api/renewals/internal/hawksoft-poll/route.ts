@@ -6,6 +6,8 @@
  * Called by the renewal worker's hawksoft-al3-poll scheduled job.
  */
 
+export const maxDuration = 300; // 5 minutes — iterates all customers with rate-limited API calls
+
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { policies, customers, hawksoftAttachmentLog, renewalBatches, renewalComparisons } from '@/db/schema';

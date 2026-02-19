@@ -1,3 +1,5 @@
+export const maxDuration = 300; // 5 minutes — iterates policies with HawkSoft API enrichment
+
 /**
  * POST /api/renewals/internal/check-non-al3
  * Daily check: find active policies expiring within 45 days that have no
