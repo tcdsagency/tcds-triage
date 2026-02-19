@@ -188,6 +188,8 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
           renewalSnapshot={detail.renewalSnapshot}
           lineOfBusiness={detail.lineOfBusiness ?? undefined}
           comparisonId={detail.id}
+          agencyzoomId={(detail as any).agencyzoomId}
+          hawksoftClientCode={(detail as any).hawksoftClientCode}
         />
       </div>
 

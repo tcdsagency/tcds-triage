@@ -9,6 +9,8 @@ import NotesPanel from './NotesPanel';
 import type { RenewalNote } from './types';
 import type { CheckResult, CheckSummary } from '@/types/check-rules.types';
 import type { MaterialChange, ComparisonSummary, CanonicalClaim } from '@/types/renewal.types';
+import { AgencyZoomLink, getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
+import { HawkSoftLink } from '@/components/ui/hawksoft-link';
 
 interface RightSidebarProps {
   checkResults: CheckResult[];
@@ -38,6 +40,8 @@ interface RightSidebarProps {
   lineOfBusiness?: string;
   customerProfile?: any;
   comparisonId?: string;
+  agencyzoomId?: string | null;
+  hawksoftClientCode?: string | null;
 }
 
 export default function RightSidebar({
@@ -61,6 +65,8 @@ export default function RightSidebar({
   lineOfBusiness,
   customerProfile,
   comparisonId,
+  agencyzoomId,
+  hawksoftClientCode,
 }: RightSidebarProps) {
   return (
     <div className="lg:w-[320px] lg:shrink-0 overflow-y-auto p-3 space-y-3 bg-white border-l border-gray-200 pb-24">
@@ -78,6 +84,24 @@ export default function RightSidebar({
 
       {/* AI Recommendations / Cross-Sell */}
       <AIRecommendationsCard policies={customerPolicies} />
+
+      {/* External Links */}
+      {(agencyzoomId || hawksoftClientCode || true) && (
+        <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+          <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Profiles</h4>
+          <div className="flex items-center gap-3">
+            {agencyzoomId && (
+              <AgencyZoomLink href={getAgencyZoomUrl(agencyzoomId, 'customer')} size="sm" />
+            )}
+            {hawksoftClientCode && (
+              <HawkSoftLink clientCode={hawksoftClientCode} showText size="sm" />
+            )}
+            {!agencyzoomId && !hawksoftClientCode && (
+              <p className="text-xs text-gray-400">No linked profiles</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* EZLynx Integration */}
       <EzlynxCard
