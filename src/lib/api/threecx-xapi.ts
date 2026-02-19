@@ -123,7 +123,7 @@ export async function getAccessToken(): Promise<string> {
 export async function fetchNewRecordings(lastSeenId: number): Promise<ThreeCXRecording[]> {
   const token = await getAccessToken();
 
-  const filter = encodeURIComponent(`Id gt ${lastSeenId} and IsTranscribed eq true`);
+  const filter = encodeURIComponent(`Id gt ${lastSeenId}`);
   const url = `${XAPI_BASE_URL}/xapi/v1/Recordings?$filter=${filter}&$orderby=Id asc&$top=50`;
 
   const res = await fetch(url, {

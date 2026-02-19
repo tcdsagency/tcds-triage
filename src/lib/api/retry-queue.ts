@@ -257,6 +257,9 @@ async function executeRetryOperation(
         pipelineId: payload.pipelineId as number,
         stageId: payload.stageId as number,
         priorityId: payload.priorityId as number,
+        categoryId: payload.categoryId as number | undefined,
+        csrId: payload.csrId as number | undefined,
+        dueDate: payload.dueDate as string | undefined,
       });
 
       return {

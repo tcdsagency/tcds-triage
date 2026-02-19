@@ -6203,6 +6203,7 @@ export const threecxPollingState = pgTable('threecx_polling_state', {
   lastPolledAt: timestamp('last_polled_at'),
   pollErrors: integer('poll_errors').notNull().default(0),
   lastError: text('last_error'),
+  processingStartedAt: timestamp('processing_started_at'),
 }, (table) => [
   uniqueIndex('threecx_polling_state_tenant_unique').on(table.tenantId),
 ]);

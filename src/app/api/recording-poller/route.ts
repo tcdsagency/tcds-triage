@@ -38,6 +38,7 @@ import {
   getDefaultDueDate,
 } from "@/lib/api/agencyzoom-service-tickets";
 import { formatInboundCallDescription, formatSentimentEmoji } from "@/lib/format-ticket-description";
+import { addToRetryQueue } from "@/lib/api/retry-queue";
 
 // =============================================================================
 // Config
@@ -46,10 +47,14 @@ import { formatInboundCallDescription, formatSentimentEmoji } from "@/lib/format
 export const maxDuration = 300; // 5 minutes — matches other cron routes
 
 const TENANT_ID = process.env.DEFAULT_TENANT_ID!;
+const CRON_SECRET = process.env.CRON_SECRET;
+const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL;
 const HANGUP_THRESHOLD_SECONDS = 35;
 const STALE_CALL_MINUTES = 30;
 const BACKLOG_THRESHOLD_HOURS = 1;
 const PER_RECORDING_TIMEOUT_MS = 60_000; // 60 seconds
+const OVERLAP_STALE_MINUTES = 5; // Lock older than this is considered stale
+const OVERLAP_ACTIVE_MINUTES = 4; // Lock younger than this means still processing
 
 // =============================================================================
 // POST handler — called by Vercel cron every 2 minutes
@@ -58,16 +63,51 @@ const PER_RECORDING_TIMEOUT_MS = 60_000; // 60 seconds
 export async function POST(req: NextRequest) {
   const startMs = Date.now();
 
+  // CRON_SECRET auth — allow Vercel cron header or Bearer token
+  if (CRON_SECRET) {
+    const authHeader = req.headers.get('authorization');
+    const isVercelCron = req.headers.get('x-vercel-cron') === '1';
+    if (!isVercelCron && authHeader !== `Bearer ${CRON_SECRET}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  }
+
   try {
     // 1. Get or create polling state
     const pollingState = await getOrCreatePollingState();
 
-    // 2. Fetch new recordings from 3CX XAPI
+    // 2. Overlap protection — prevent concurrent invocations
+    if (pollingState.processingStartedAt) {
+      const lockAgeMs = Date.now() - pollingState.processingStartedAt.getTime();
+      const lockAgeMinutes = lockAgeMs / 60_000;
+
+      if (lockAgeMinutes < OVERLAP_ACTIVE_MINUTES) {
+        return NextResponse.json({
+          success: true,
+          skipped: true,
+          reason: 'already_processing',
+          lockAgeSeconds: Math.round(lockAgeMs / 1000),
+        });
+      }
+
+      // Lock is stale (> 5 min) — dead process, proceed and take over
+      if (lockAgeMinutes >= OVERLAP_STALE_MINUTES) {
+        console.warn(`[recording-poller] Stale lock detected (${Math.round(lockAgeMinutes)}m old), taking over`);
+      }
+    }
+
+    // Set processing lock
+    await db.update(threecxPollingState).set({
+      processingStartedAt: new Date(),
+    }).where(eq(threecxPollingState.id, pollingState.id));
+
+    // 3. Fetch new recordings from 3CX XAPI
     let recordings: ThreeCXRecording[];
     try {
       recordings = await fetchNewRecordings(pollingState.lastSeenId);
     } catch (error) {
       await updatePollingError(pollingState.id, error);
+      await clearProcessingLock(pollingState.id);
       return NextResponse.json({
         success: false,
         error: 'Failed to fetch recordings from 3CX XAPI',
@@ -84,13 +124,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 3. Process each recording
+    // 4. Process each recording
     const results = {
       processed: 0,
       skipped: 0,
       ticketsCreated: 0,
       notesPosted: 0,
       autoVoided: 0,
+      awaitingTranscription: 0,
       errors: 0,
       errorSamples: [] as string[],
     };
@@ -98,6 +139,37 @@ export async function POST(req: NextRequest) {
     let highestId = pollingState.lastSeenId;
 
     for (const rec of recordings) {
+      // Fix 2: Transcription gap prevention
+      if (!rec.IsTranscribed) {
+        if (!rec.CanBeTranscribed) {
+          // Permanently untranscribable — skip and advance
+          results.skipped++;
+          if (rec.Id > highestId) {
+            highestId = rec.Id;
+            await updatePollingSuccess(pollingState.id, highestId);
+          }
+          continue;
+        }
+
+        const recAge = Date.now() - new Date(rec.StartTime).getTime();
+        const recAgeHours = recAge / (60 * 60_000);
+
+        if (recAgeHours > 24) {
+          // Stale untranscribed — give up waiting, skip and advance
+          console.warn(`[recording-poller] Rec ${rec.Id} untranscribed after 24h, skipping`);
+          results.skipped++;
+          if (rec.Id > highestId) {
+            highestId = rec.Id;
+            await updatePollingSuccess(pollingState.id, highestId);
+          }
+          continue;
+        }
+
+        // Fresh untranscribed — skip but do NOT advance highestId (retry next poll)
+        results.awaitingTranscription++;
+        continue;
+      }
+
       try {
         const outcome = await withTimeout(
           processRecording(rec),
@@ -126,6 +198,11 @@ export async function POST(req: NextRequest) {
     // 5. Cleanup stale calls
     await cleanupStaleCalls();
 
+    // 6. Proactive alerting on high error batches
+    if (results.errors >= 3) {
+      await sendAlert(`[recording-poller] ${results.errors} errors in batch. Samples: ${results.errorSamples.join('; ')}`);
+    }
+
     return NextResponse.json({
       success: true,
       ...results,
@@ -153,6 +230,12 @@ export async function GET() {
     ? Math.round((Date.now() - state.lastPolledAt.getTime()) / 60_000)
     : null;
   const isStale = minutesSincePoll !== null && minutesSincePoll > 10;
+  const isProcessing = !!state?.processingStartedAt;
+
+  // Proactive alerting on stale + errors
+  if (isStale && (state?.pollErrors ?? 0) >= 3) {
+    await sendAlert(`[recording-poller] Health check: stale (${minutesSincePoll}m) with ${state!.pollErrors} errors. Last: ${state!.lastError}`);
+  }
 
   return NextResponse.json({
     status: isStale ? 'stale' : 'ok',
@@ -161,6 +244,8 @@ export async function GET() {
     minutesSincePoll,
     pollErrors: state?.pollErrors ?? 0,
     lastError: state?.lastError ?? null,
+    isProcessing,
+    processingStartedAt: state?.processingStartedAt?.toISOString() ?? null,
   });
 }
 
@@ -168,6 +253,8 @@ export async function GET() {
 // Per-Recording Timeout
 // =============================================================================
 
+// Note: timeout does not cancel the underlying promise. The work may complete
+// in background, which is acceptable — DB unique constraints prevent duplicates.
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     promise,
@@ -184,9 +271,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 type ProcessOutcome = 'skipped' | 'processed' | 'ticket' | 'note' | 'voided';
 
 async function processRecording(rec: ThreeCXRecording): Promise<ProcessOutcome> {
-  // Skip if not transcribed
-  if (!rec.IsTranscribed) return 'skipped';
-
   // Skip internal calls
   if (isInternalCall(rec)) return 'skipped';
 
@@ -251,26 +335,51 @@ async function matchExistingCall(callData: ReturnType<typeof mapRecordingToCallD
   const windowEnd = new Date(callData.startedAt.getTime() + 5 * 60_000);
   const phone = normalizePhone(callData.externalNumber);
 
-  if (!phone) return null;
+  if (phone) {
+    // Phone-based matching
+    const phoneSuffix = `%${phone.slice(-10)}`;
 
-  const phoneSuffix = `%${phone.slice(-10)}`;
+    const [match] = await db
+      .select({ id: calls.id })
+      .from(calls)
+      .where(and(
+        eq(calls.tenantId, TENANT_ID),
+        gte(calls.startedAt, windowStart),
+        lte(calls.startedAt, windowEnd),
+        or(
+          ilike(calls.fromNumber, phoneSuffix),
+          ilike(calls.toNumber, phoneSuffix),
+          ilike(calls.externalNumber, phoneSuffix),
+        ),
+      ))
+      .orderBy(sql`ABS(EXTRACT(EPOCH FROM ${calls.startedAt} - ${callData.startedAt}::timestamp))`)
+      .limit(1);
 
-  const [match] = await db
-    .select({ id: calls.id })
-    .from(calls)
-    .where(and(
-      eq(calls.tenantId, TENANT_ID),
-      gte(calls.startedAt, windowStart),
-      lte(calls.startedAt, windowEnd),
-      or(
-        ilike(calls.fromNumber, phoneSuffix),
-        ilike(calls.toNumber, phoneSuffix),
-        ilike(calls.externalNumber, phoneSuffix),
-      ),
-    ))
-    .limit(1);
+    if (match) return match;
+  }
 
-  return match ?? null;
+  // Fallback: extension-based matching for calls with no/short phone (e.g. CDR "Unknown")
+  if (callData.extension) {
+    const [match] = await db
+      .select({ id: calls.id })
+      .from(calls)
+      .where(and(
+        eq(calls.tenantId, TENANT_ID),
+        gte(calls.startedAt, windowStart),
+        lte(calls.startedAt, windowEnd),
+        isNull(calls.threecxRecordingId),
+        or(
+          eq(calls.extension, callData.extension),
+          eq(calls.toNumber, callData.extension),
+        ),
+      ))
+      .orderBy(sql`ABS(EXTRACT(EPOCH FROM ${calls.startedAt} - ${callData.startedAt}::timestamp))`)
+      .limit(1);
+
+    if (match) return match;
+  }
+
+  return null;
 }
 
 // =============================================================================
@@ -556,7 +665,7 @@ async function autoCompleteInbound(
     });
 
     // Deduplication
-    const isDup = await checkTicketDedup(wrapupId, phone);
+    const isDup = await checkTicketDedup(wrapupId, phone, customer?.id ?? null);
     if (isDup) {
       await markWrapupCompleted(wrapupId, 'skipped', 'dedup');
       return false;
@@ -577,7 +686,25 @@ async function autoCompleteInbound(
     });
 
     if (!ticketResult.success || !ticketResult.serviceTicketId) {
-      console.error('[recording-poller] AZ ticket creation failed:', ticketResult.error);
+      const errorMsg = ticketResult.error || 'AZ ticket creation failed';
+      console.error('[recording-poller] AZ ticket creation failed:', errorMsg);
+      await addToRetryQueue(TENANT_ID, {
+        operationType: 'agencyzoom_ticket',
+        targetService: 'agencyzoom',
+        requestPayload: {
+          subject: ticketSubject,
+          description: ticketDescription,
+          customerId: azCustomerId,
+          pipelineId: SERVICE_PIPELINES.POLICY_SERVICE,
+          stageId: PIPELINE_STAGES.POLICY_SERVICE_NEW,
+          priorityId: SERVICE_PRIORITIES.STANDARD,
+          categoryId: SERVICE_CATEGORIES.GENERAL_SERVICE,
+          csrId: csrInfo.csrId,
+          dueDate: getDefaultDueDate(),
+        },
+        wrapupDraftId: wrapupId,
+        callId,
+      }, errorMsg);
       return false;
     }
 
@@ -684,7 +811,18 @@ async function autoCompleteOutbound(
       : await azClient.addNote(azCustomerId, noteText);
 
     if (!noteResult.success) {
-      console.error(`[recording-poller] AZ note posting failed for outbound call (${customer.isLead ? 'lead' : 'customer'} ${azCustomerId})`);
+      const errorMsg = `AZ note posting failed for outbound call (${customer.isLead ? 'lead' : 'customer'} ${azCustomerId})`;
+      console.error(`[recording-poller] ${errorMsg}`);
+      await addToRetryQueue(TENANT_ID, {
+        operationType: 'agencyzoom_note',
+        targetService: 'agencyzoom',
+        requestPayload: {
+          customerId: azCustomerId,
+          noteText,
+        },
+        wrapupDraftId: wrapupId,
+        callId,
+      }, errorMsg);
       return false;
     }
 
@@ -755,7 +893,7 @@ function generateTicketSubject(aiResult: Awaited<ReturnType<typeof extractCallDa
 // Ticket Deduplication (from transcript-worker)
 // =============================================================================
 
-async function checkTicketDedup(wrapupId: string, phone: string | null): Promise<boolean> {
+async function checkTicketDedup(wrapupId: string, phone: string | null, customerId: string | null): Promise<boolean> {
   // Check 1: Wrapup already has ticket
   const [existingWrapup] = await db
     .select({ ticketId: wrapupDrafts.agencyzoomTicketId })
@@ -774,18 +912,17 @@ async function checkTicketDedup(wrapupId: string, phone: string | null): Promise
 
   if (existingTicket) return true;
 
-  // Check 3: Phone-based dedup (same phone in last hour)
-  if (phone && phone.length >= 7) {
+  // Check 3: Customer-based dedup (same customer in last hour)
+  if (customerId) {
     const oneHourAgo = new Date(Date.now() - 60 * 60_000);
-    const phoneSuffix = `%${phone.slice(-10)}%`;
 
     const [recentTicket] = await db
       .select({ id: serviceTickets.id })
       .from(serviceTickets)
       .where(and(
         eq(serviceTickets.tenantId, TENANT_ID),
+        eq(serviceTickets.customerId, customerId),
         gte(serviceTickets.createdAt, oneHourAgo),
-        sql`${serviceTickets.subject} ILIKE ${phoneSuffix}`,
       ))
       .limit(1);
 
@@ -856,6 +993,13 @@ async function updatePollingSuccess(stateId: string, lastSeenId: number) {
     lastPolledAt: new Date(),
     pollErrors: 0,
     lastError: null,
+    processingStartedAt: null,
+  }).where(eq(threecxPollingState.id, stateId));
+}
+
+async function clearProcessingLock(stateId: string) {
+  await db.update(threecxPollingState).set({
+    processingStartedAt: null,
   }).where(eq(threecxPollingState.id, stateId));
 }
 
@@ -1015,4 +1159,23 @@ function normalizePhone(phone: string | null | undefined): string | null {
   const digits = phone.replace(/\D/g, '');
   if (digits.length < 7) return null;
   return digits.slice(-10);
+}
+
+// =============================================================================
+// Helper: Alerting
+// =============================================================================
+
+async function sendAlert(message: string): Promise<void> {
+  if (!ALERT_WEBHOOK_URL) return;
+
+  try {
+    await fetch(ALERT_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: message }),
+    });
+  } catch (error) {
+    // Fire-and-forget — don't let alert failure break the poller
+    console.error('[recording-poller] Alert send failed:', error);
+  }
 }
