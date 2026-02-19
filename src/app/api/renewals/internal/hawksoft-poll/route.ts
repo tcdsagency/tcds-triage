@@ -261,13 +261,13 @@ async function handleUuidSync(
       const results = await hiddenClient.searchClients(letter);
       total += results.length;
 
-      // Build a map of client_number → uuid for batch matching
+      // Build a map of clientNumber (as string) → uuid for batch matching
       const uuidMap = new Map(
-        results.map((r) => [r.client_number, r.uuid])
+        results.map((r) => [String(r.clientNumber), r.uuid])
       );
 
       // Find local customers with matching HawkSoft client codes that lack a cloud UUID
-      const clientCodes = results.map((r) => r.client_number).filter(Boolean);
+      const clientCodes = results.map((r) => String(r.clientNumber)).filter(Boolean);
       if (clientCodes.length === 0) continue;
 
       const CHUNK = 500;
@@ -327,8 +327,9 @@ async function handleTasksSync(
   }
 
   // Filter for renewal-related tasks
+  // Task fields use short names: c=category, t=title, s=status, p=priority, dd=due_date(ms)
   const renewalTasks = tasks.filter(
-    (t) => t.category && t.category.toLowerCase().includes('renewal')
+    (t) => t.c && t.c.toLowerCase().includes('renewal')
   );
 
   let matched = 0;
@@ -364,11 +365,11 @@ async function handleTasksSync(
           comparisonSummary: {
             ...existingSummary,
             hawksoftAlert: {
-              category: task.category,
-              status: task.status,
-              priority: task.priority,
-              title: task.title,
-              dueDate: task.due_date,
+              category: task.c,
+              status: task.s,
+              priority: task.p,
+              title: task.t,
+              dueDate: task.dd,
               carrier: task.carrier,
               syncedAt: new Date().toISOString(),
             },

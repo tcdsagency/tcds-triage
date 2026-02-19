@@ -13,6 +13,22 @@ import { eq } from 'drizzle-orm';
 import type { PremiumVerification } from '@/types/renewal.types';
 
 /**
+ * Parse MM/DD/YYYY or YYYY-MM-DD to YYYY-MM-DD for comparison.
+ */
+function normalizeDate(dateStr: string): string {
+  // If already YYYY-MM-DD or ISO
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    return dateStr.split('T')[0];
+  }
+  // MM/DD/YYYY
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+  }
+  return dateStr;
+}
+
+/**
  * Verify a renewal premium against HawkSoft Cloud rate change history.
  *
  * Returns null if verification is not possible (no UUID, no matching policy,
@@ -41,16 +57,21 @@ export async function verifyRenewalPremium(params: {
     return null;
   }
 
-  // 1. Resolve cloud UUID
+  // 1. Resolve cloud UUID (needed for rate change history endpoint)
   const uuid = await hiddenClient.resolveCloudUuid(hawksoftClientCode, customerLastName);
   if (!uuid) {
     return null;
   }
 
-  // 2. Get client with policies
+  // 2. Get client with policies (uses client number)
+  const clientNum = parseInt(hawksoftClientCode, 10);
+  if (isNaN(clientNum)) {
+    return null;
+  }
+
   let client;
   try {
-    client = await hiddenClient.getClient(uuid);
+    client = await hiddenClient.getClient(clientNum);
   } catch (error) {
     console.error('[PremiumVerification] Failed to get client:', error);
     return null;
@@ -68,7 +89,7 @@ export async function verifyRenewalPremium(params: {
     return null;
   }
 
-  // 4. Get rate change history
+  // 4. Get rate change history (uses UUID + policy hex ID)
   let rateChanges;
   try {
     rateChanges = await hiddenClient.getRateChangeHistory(uuid, matchingPolicy.id);
@@ -82,11 +103,10 @@ export async function verifyRenewalPremium(params: {
   }
 
   // 5. Find matching rate change entry
-  // Normalize effective date for comparison (YYYY-MM-DD)
-  const normalizedEffective = effectiveDate.split('T')[0];
+  const normalizedEffective = normalizeDate(effectiveDate);
 
   const matchingEntry = rateChanges.find((rc) => {
-    const rcDate = rc.effective.split('T')[0];
+    const rcDate = normalizeDate(rc.effective);
     return rcDate === normalizedEffective && (rc.al3_type === 40 || rc.al3_type === 41);
   });
 
@@ -110,11 +130,10 @@ export async function verifyRenewalPremium(params: {
       discrepancyPercent = (discrepancy / hiddenApiPremium) * 100;
     }
   } else if (al3Premium == null && hiddenApiPremium != null) {
-    // AL3 had no premium but Hidden API does — still useful
     premiumMatch = false;
     discrepancy = hiddenApiPremium;
   } else {
-    premiumMatch = true; // Both undefined = nothing to compare
+    premiumMatch = true;
   }
 
   return {

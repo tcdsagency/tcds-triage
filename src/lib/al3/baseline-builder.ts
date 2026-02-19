@@ -654,13 +654,16 @@ export async function enrichBaselineWithHiddenApi(
 
     if (!customer?.hawksoftClientCode) return snapshot;
 
+    const clientNum = parseInt(customer.hawksoftClientCode, 10);
+    if (isNaN(clientNum)) return snapshot;
+
     const cloudUuid = await hiddenClient.resolveCloudUuid(
       customer.hawksoftClientCode,
       customer.lastName
     );
     if (!cloudUuid) return snapshot;
 
-    const cloudClient = await hiddenClient.getClient(cloudUuid);
+    const cloudClient = await hiddenClient.getClient(clientNum);
     const matchingPolicy = cloudClient.policies?.find(
       (p) => p.number === policyNumber
     );
@@ -673,13 +676,25 @@ export async function enrichBaselineWithHiddenApi(
     if (!rateChanges?.length) return snapshot;
 
     // Find the CURRENT term entry (effective before renewal date)
+    // HawkSoft dates are MM/DD/YYYY, normalize to YYYY-MM-DD for comparison
     const renewalDate = renewalEffectiveDate.split('T')[0];
     const currentTermEntry = rateChanges
       .filter((rc) => {
-        const rcDate = rc.effective.split('T')[0];
+        // Normalize MM/DD/YYYY to YYYY-MM-DD
+        const parts = rc.effective.split('/');
+        const rcDate = parts.length === 3
+          ? `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`
+          : rc.effective.split('T')[0];
         return rcDate < renewalDate;
       })
-      .sort((a, b) => b.effective.localeCompare(a.effective))[0];
+      .sort((a, b) => {
+        // Sort by normalized date descending
+        const aParts = a.effective.split('/');
+        const bParts = b.effective.split('/');
+        const aDate = aParts.length === 3 ? `${aParts[2]}-${aParts[0].padStart(2, '0')}-${aParts[1].padStart(2, '0')}` : a.effective;
+        const bDate = bParts.length === 3 ? `${bParts[2]}-${bParts[0].padStart(2, '0')}-${bParts[1].padStart(2, '0')}` : b.effective;
+        return bDate.localeCompare(aDate);
+      })[0];
 
     if (!currentTermEntry) return snapshot;
 

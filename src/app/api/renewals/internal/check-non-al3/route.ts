@@ -211,13 +211,14 @@ export async function POST(request: NextRequest) {
           .limit(1);
 
         if (customerInfo?.hawksoftClientCode) {
+          const clientNum = parseInt(customerInfo.hawksoftClientCode, 10);
           const cloudUuid = await hiddenClient.resolveCloudUuid(
             customerInfo.hawksoftClientCode,
             customerInfo.lastName
           );
 
-          if (cloudUuid) {
-            const cloudClient = await hiddenClient.getClient(cloudUuid);
+          if (cloudUuid && !isNaN(clientNum)) {
+            const cloudClient = await hiddenClient.getClient(clientNum);
             const matchingPolicy = cloudClient.policies?.find(
               (p) => p.number === policy.policyNumber
             );
@@ -229,9 +230,14 @@ export async function POST(request: NextRequest) {
               );
 
               // Find renewal entry matching expiration date
-              const expirationStr = policy.expirationDate.toISOString().split('T')[0];
+              // HawkSoft dates are MM/DD/YYYY, our dates are ISO
+              const expirationStr = policy.expirationDate.toISOString().split('T')[0]; // YYYY-MM-DD
               const renewalEntry = rateChanges?.find((rc) => {
-                const rcDate = rc.effective.split('T')[0];
+                // Normalize MM/DD/YYYY to YYYY-MM-DD for comparison
+                const parts = rc.effective.split('/');
+                const rcDate = parts.length === 3
+                  ? `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`
+                  : rc.effective.split('T')[0];
                 return rcDate === expirationStr && (rc.al3_type === 40 || rc.al3_type === 41);
               });
 

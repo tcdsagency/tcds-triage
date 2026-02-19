@@ -7,84 +7,90 @@
  * Auth: Cookie-based via Basic Auth → session cookies (50-min TTL, auto-refresh)
  * Separate from hawksoft.ts — different auth mechanism, different base URLs.
  *
- * Provides: client search, policy details with rate change history,
- * AL3 attachment download, renewal alert tasks.
+ * API patterns discovered via testing:
+ * - Client search: POST with structured Search body, results use lettered fields
+ * - Client detail: GET by client NUMBER → /api/client/{number}
+ * - Rate change/attachments: GET by client UUID → /api/client/{uuid}/...
+ * - Tasks: POST with {command: 152}, results in data[0].models
  */
 
 import { CircuitBreaker } from './circuit-breaker';
 import { db } from '@/db';
 import { customers } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 export interface HSCloudPolicy {
-  id: number;
+  id: string; // Hex string like "000008f06400ff000000000000000e48"
   number: string;
-  status: string; // "Renewal", "Active", "Cancelled", etc.
+  status: string; // "Renewal", "Active", "Cancelled", "Replaced", etc.
   carrier: string;
   rate: number;
   annualized_premium: number;
-  effective: string; // ISO date
-  expiration: string; // ISO date
-  lobs: string[];
+  effective_date: string; // "MM/DD/YYYY"
+  expiration_date: string; // "MM/DD/YYYY"
+  lobs: Array<{ description: string }>;
+  is_active: boolean;
 }
 
 export interface HSCloudRateChange {
-  effective: string; // ISO date
-  al3_type: number; // 40=Renewal, 41=Quote, 42=Endorsement
+  effective: string; // "MM/DD/YYYY"
+  al3_type: number; // 40=Renewal, 41=Quote, 27=Endorsement
   premium_amt: number;
   premium_amt_chg: number;
-  premium_pct_chg: number; // decimal, e.g., 0.12 = 12%
+  premium_pct_chg: number; // decimal, e.g., 0.5033 = 50.33%
 }
 
 export interface HSCloudAttachment {
-  id: number;
-  policy_link?: number;
+  id: string; // UUID hex
+  policy: string; // Links to policy id
   description: string;
   file_ext: string;
+  effective?: string;
   al3_type?: number;
+  al3_type_name?: string;
   premium_amt?: number;
   premium_amt_chg?: number;
   premium_pct_chg?: number;
   size: number;
+  uploaded: boolean;
 }
 
 export interface HSCloudTask {
-  category: string;
-  status: string;
-  priority: string;
-  title: string;
-  due_date: string;
+  id: string;
+  c: string; // category, e.g., "Renewal w/Uprate Alert"
+  s: number; // status (3=Not Started)
+  p: number; // priority (3=Medium)
+  t: string; // title, e.g., "Rate Increase 20%>"
+  dd: number; // due date (unix ms)
   client_name: string;
-  client_number: string;
+  client_number: number;
   pol_num: string;
   carrier: string;
+  client_attach: string; // client UUID (no dashes)
 }
 
 export interface HSCloudClientSummary {
-  uuid: string;
-  client_number: string;
-  name: string;
-  first_name?: string;
-  last_name?: string;
+  clientNumber: number; // field "A" in search results
+  uuid: string; // field "U" — UUID with dashes
+  firstName: string; // field "E.F"
+  lastName: string; // field "E.L"
+  address: string; // field "C"
+  email: string; // field "M"
+  phone: string; // field "N"
 }
 
 export interface HSCloudClient {
-  uuid: string;
-  client_number: string;
-  name: string;
-  first_name?: string;
-  last_name?: string;
-  policies?: HSCloudPolicy[];
+  number: number;
+  policies: HSCloudPolicy[];
 }
 
 interface AuthSession {
   cookies: string;
-  csBaseUrl: string;
-  tasksBaseUrl: string;
+  agencyId: number;
   authenticatedAt: number;
 }
 
@@ -134,11 +140,11 @@ export class HawkSoftHiddenAPI {
       method: 'GET',
       headers: {
         Authorization: authHeader,
+        source: 'LANDING',
       },
-      redirect: 'manual',
     });
 
-    if (!response.ok && response.status !== 302) {
+    if (!response.ok) {
       throw new Error(`HawkSoft Cloud auth failed: ${response.status}`);
     }
 
@@ -152,10 +158,13 @@ export class HawkSoftHiddenAPI {
       throw new Error('HawkSoft Cloud auth returned no cookies');
     }
 
+    // Extract agency ID from auth response
+    const authBody = await response.json().catch(() => null) as any;
+    const agencyId = authBody?.office?.agencyId || authBody?.claims?.agencyId || 0;
+
     this.session = {
       cookies: cookieStr,
-      csBaseUrl: this.csUrl,
-      tasksBaseUrl: this.tasksUrl,
+      agencyId,
       authenticatedAt: Date.now(),
     };
 
@@ -236,16 +245,57 @@ export class HawkSoftHiddenAPI {
   /**
    * Search clients by last name initial letter.
    * POST cs.hawksoft.app/api/client-search
+   *
+   * Request body uses structured Search object with Fields array.
+   * Field 6 = LastName, Criteria 1 = StartsWith.
+   * Response: { Search: [{ Results: [{ A: number, U: uuid, E: {F, L}, ... }] }] }
    */
   async searchClients(letter: string): Promise<HSCloudClientSummary[]> {
-    return this.request<HSCloudClientSummary[]>(
+    const session = await this.ensureAuth();
+
+    const raw = await this.request<any>(
       this.csUrl,
       '/api/client-search',
       {
         method: 'POST',
-        body: JSON.stringify({ letter: letter.toUpperCase() }),
+        body: JSON.stringify({
+          Search: {
+            AgencyId: session.agencyId,
+            TypeAndStatusFilters: 0,
+            LimitNameSearchToProfile: false,
+            IncludeSummary: true,
+            IncludeDetail: true,
+            Existence: 1, // Active clients only
+            Log: false,
+            Fields: [
+              { Field: 6, Value: letter.toUpperCase(), Criteria: 1 }
+            ]
+          },
+          Verbose: false
+        }),
       }
     );
+
+    // Extract results from nested structure
+    const searchBucket = raw.Search?.[0];
+    if (!searchBucket?.Results) {
+      return [];
+    }
+
+    // Handle pagination — if More=true, there are additional pages
+    // For now, return what we have (the API default page is typically the full letter set)
+    const results: any[] = searchBucket.Results;
+
+    // Map lettered fields to named properties
+    return results.map((r: any) => ({
+      clientNumber: r.A as number,
+      uuid: r.U as string, // UUID with dashes
+      firstName: r.E?.F || '',
+      lastName: r.E?.L || '',
+      address: r.C || '',
+      email: r.M || '',
+      phone: r.N || '',
+    }));
   }
 
   // --------------------------------------------------------------------------
@@ -254,13 +304,34 @@ export class HawkSoftHiddenAPI {
 
   /**
    * Get client with policies expanded.
-   * GET cs.hawksoft.app/api/client/{uuid}?enums&expand=policy
+   * Uses client NUMBER (not UUID): GET cs.hawksoft.app/api/client/{number}?enums&expand=policy
+   *
+   * Returns client data with policies array containing status.value, carrier, rate, etc.
    */
-  async getClient(uuid: string): Promise<HSCloudClient> {
-    return this.request<HSCloudClient>(
+  async getClient(clientNumber: number): Promise<HSCloudClient> {
+    const raw = await this.request<any>(
       this.csUrl,
-      `/api/client/${uuid}?enums&expand=policy`
+      `/api/client/${clientNumber}?enums&expand=policy`
     );
+
+    // Normalize policy data — status comes as { value: "Renewal" } object
+    const policies: HSCloudPolicy[] = (raw.policies || []).map((p: any) => ({
+      id: p.id,
+      number: p.number,
+      status: p.status?.value || p.status || '',
+      carrier: p.carrier || p.writing_carrier || '',
+      rate: p.rate || 0,
+      annualized_premium: p.annualized_premium || p.rate || 0,
+      effective_date: p.effective_date || '',
+      expiration_date: p.expiration_date || '',
+      lobs: p.lobs || [],
+      is_active: p.is_active ?? true,
+    }));
+
+    return {
+      number: raw.number,
+      policies,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -269,12 +340,15 @@ export class HawkSoftHiddenAPI {
 
   /**
    * Get rate change history for a policy.
-   * GET cs.hawksoft.app/api/client/{uuid}/policy/{id}/ratechangehistory
+   * Uses client UUID (not number): GET cs.hawksoft.app/api/client/{uuid}/policy/{id}/ratechangehistory
+   *
+   * @param clientUuid - Client UUID with dashes (from search "U" field)
+   * @param policyId - Policy hex ID (from policy.id in client detail)
    */
-  async getRateChangeHistory(uuid: string, policyId: number): Promise<HSCloudRateChange[]> {
+  async getRateChangeHistory(clientUuid: string, policyId: string): Promise<HSCloudRateChange[]> {
     return this.request<HSCloudRateChange[]>(
       this.csUrl,
-      `/api/client/${uuid}/policy/${policyId}/ratechangehistory`
+      `/api/client/${clientUuid}/policy/${policyId}/ratechangehistory`
     );
   }
 
@@ -284,25 +358,25 @@ export class HawkSoftHiddenAPI {
 
   /**
    * Get attachment metadata for a client.
-   * GET cs.hawksoft.app/api/client/{uuid}/attachment?&enums
+   * Uses client UUID: GET cs.hawksoft.app/api/client/{uuid}/attachment?&enums
    */
-  async getAttachments(uuid: string): Promise<HSCloudAttachment[]> {
+  async getAttachments(clientUuid: string): Promise<HSCloudAttachment[]> {
     return this.request<HSCloudAttachment[]>(
       this.csUrl,
-      `/api/client/${uuid}/attachment?&enums`
+      `/api/client/${clientUuid}/attachment?&enums`
     );
   }
 
   /**
-   * Download attachment content (gzip-compressed).
-   * GET cs.hawksoft.app/api/client/{uuid}/attachment/{id}/content
+   * Download attachment content (may be gzip-compressed).
+   * Uses client UUID: GET cs.hawksoft.app/api/client/{uuid}/attachment/{id}/content
    */
-  async downloadAttachment(uuid: string, attachmentId: number): Promise<Buffer> {
+  async downloadAttachment(clientUuid: string, attachmentId: string): Promise<Buffer> {
     await rateLimit();
     const session = await this.ensureAuth();
 
     const response = await fetch(
-      `${this.csUrl}/api/client/${uuid}/attachment/${attachmentId}/content`,
+      `${this.csUrl}/api/client/${clientUuid}/attachment/${attachmentId}/content`,
       {
         headers: {
           Cookie: session.cookies,
@@ -325,9 +399,11 @@ export class HawkSoftHiddenAPI {
   /**
    * Get all tasks.
    * POST tasksapi.hawksoft.app/tasks with {command: 152}
+   * Response: { data: [{ models: [...tasks] }] }
+   * Task fields use short names: c=category, t=title, s=status, p=priority, dd=due_date(ms)
    */
   async getTasks(): Promise<HSCloudTask[]> {
-    return this.request<HSCloudTask[]>(
+    const raw = await this.request<any>(
       this.tasksUrl,
       '/tasks',
       {
@@ -335,6 +411,8 @@ export class HawkSoftHiddenAPI {
         body: JSON.stringify({ command: 152 }),
       }
     );
+
+    return raw?.data?.[0]?.models || [];
   }
 
   // --------------------------------------------------------------------------
@@ -343,9 +421,12 @@ export class HawkSoftHiddenAPI {
 
   /**
    * Resolve a HawkSoft client code to a Cloud UUID.
+   * The UUID is needed for rate change history and attachment endpoints.
+   * The client NUMBER is used for the client detail endpoint.
+   *
    * 1. Check DB for cached hawksoftCloudUuid
    * 2. If missing, search Hidden API by last name initial
-   * 3. Match by client number
+   * 3. Match by client number from results
    * 4. Cache UUID on customer record
    */
   async resolveCloudUuid(
@@ -376,8 +457,9 @@ export class HawkSoftHiddenAPI {
       const results = await this.searchClients(initial);
 
       // 3. Match by client number
+      const clientNum = parseInt(hawksoftClientCode, 10);
       const match = results.find(
-        (r) => r.client_number === hawksoftClientCode
+        (r) => r.clientNumber === clientNum || String(r.clientNumber) === hawksoftClientCode
       );
 
       if (!match) {
