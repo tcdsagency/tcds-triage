@@ -383,8 +383,9 @@ async function handleTasksSync(
   try {
     tasks = await hiddenClient.getTasks();
   } catch (err) {
-    console.error('[tasks-sync] Failed to get tasks:', err);
-    return NextResponse.json({ success: false, error: 'Failed to get tasks' }, { status: 500 });
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error('[tasks-sync] Failed to get tasks:', errMsg);
+    return NextResponse.json({ success: false, error: `Failed to get tasks: ${errMsg}` }, { status: 500 });
   }
 
   // Filter for renewal-related tasks
