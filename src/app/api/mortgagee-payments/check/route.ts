@@ -83,7 +83,8 @@ export async function POST(request: NextRequest) {
       .where(eq(properties.policyId, mortgagee.policyId))
       .limit(1);
 
-    let zipCode = property?.address?.zip || "";
+    // Property address may be nested: address.zip or address.street.zip (HawkSoft import quirk)
+    let zipCode = property?.address?.zip || (property?.address as any)?.street?.zip || "";
     let lastName = "";
 
     // Get customer info (address fallback and last name for MCI lookup)
@@ -101,6 +102,11 @@ export async function POST(request: NextRequest) {
         zipCode = customer?.address?.zip || "";
       }
       lastName = customer?.lastName || "";
+    }
+
+    // Final fallback to mortgagee's own ZIP
+    if (!zipCode) {
+      zipCode = mortgagee.zipCode || "";
     }
 
     if (!zipCode) {

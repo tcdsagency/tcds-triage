@@ -145,6 +145,7 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
           allMortgagees={allMortgagees}
           mciPaymentData={mciPaymentData}
           customerPolicies={customerPolicies}
+          ezlynxAccountId={(detail as any).ezlynxAccountId}
         />
 
         {/* Center Column */}
@@ -190,6 +191,7 @@ function RenewalDetailPageInner({ renewalId }: RenewalDetailPageProps) {
           comparisonId={detail.id}
           agencyzoomId={(detail as any).agencyzoomId}
           hawksoftClientCode={(detail as any).hawksoftClientCode}
+          onRefresh={fetchDetail}
         />
       </div>
 

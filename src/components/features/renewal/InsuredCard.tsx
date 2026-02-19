@@ -11,6 +11,7 @@ interface InsuredCardProps {
 
 export default function InsuredCard({ detail, snapshot }: InsuredCardProps) {
   const name = detail.customerName || snapshot?.insuredName || 'Unknown';
+  const customerId = detail.customerId;
   const address = [
     snapshot?.insuredAddress,
     snapshot?.insuredCity && snapshot?.insuredState
@@ -24,9 +25,19 @@ export default function InsuredCard({ detail, snapshot }: InsuredCardProps) {
         <User className="h-3.5 w-3.5" />
         Insured
       </h4>
-      <p className="text-sm font-semibold text-gray-900 mb-1" style={{ fontFamily: 'var(--font-heading)' }}>
-        {name}
-      </p>
+      {customerId ? (
+        <a
+          href={`/customers/${customerId}`}
+          className="text-sm font-semibold text-blue-700 hover:text-blue-800 hover:underline mb-1 block"
+          style={{ fontFamily: 'var(--font-heading)' }}
+        >
+          {name}
+        </a>
+      ) : (
+        <p className="text-sm font-semibold text-gray-900 mb-1" style={{ fontFamily: 'var(--font-heading)' }}>
+          {name}
+        </p>
+      )}
       {address && (
         <div className="flex items-start gap-1.5 text-xs text-gray-500 mb-2">
           <MapPin className="h-3 w-3 mt-0.5 shrink-0" />

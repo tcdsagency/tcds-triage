@@ -1,10 +1,10 @@
 // API Route: GET /api/customers/[id]/policies
-// Returns all active/pending policies for a customer
+// Returns all active/pending policies for a customer, with linked renewal comparison IDs
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { policies } from '@/db/schema';
-import { eq, and, inArray, gte, sql } from 'drizzle-orm';
+import { policies, renewalComparisons } from '@/db/schema';
+import { eq, and, inArray, desc, sql } from 'drizzle-orm';
 
 export async function GET(
   _request: NextRequest,
@@ -44,7 +44,39 @@ export async function GET(
         )
       );
 
-    return NextResponse.json({ success: true, policies: results });
+    // For each policy, find the latest renewal comparison (if any)
+    const policyIds = results.map(p => p.id);
+    let renewalMap: Record<string, string> = {};
+
+    if (policyIds.length > 0) {
+      const renewals = await db
+        .select({
+          policyId: renewalComparisons.policyId,
+          comparisonId: renewalComparisons.id,
+          createdAt: renewalComparisons.createdAt,
+        })
+        .from(renewalComparisons)
+        .where(
+          and(
+            sql`${renewalComparisons.policyId} IN (${sql.join(policyIds.map(id => sql`${id}`), sql`, `)})`,
+          )
+        )
+        .orderBy(desc(renewalComparisons.createdAt));
+
+      // Keep only the latest comparison per policy
+      for (const r of renewals) {
+        if (r.policyId && !renewalMap[r.policyId]) {
+          renewalMap[r.policyId] = r.comparisonId;
+        }
+      }
+    }
+
+    const enriched = results.map(p => ({
+      ...p,
+      renewalComparisonId: renewalMap[p.id] || null,
+    }));
+
+    return NextResponse.json({ success: true, policies: enriched });
   } catch (error) {
     console.error('[Customer Policies] Error:', error);
     return NextResponse.json(

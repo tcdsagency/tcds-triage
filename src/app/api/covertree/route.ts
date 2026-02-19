@@ -62,14 +62,14 @@ export async function POST(request: NextRequest) {
       }
 
       case 'createQuote': {
-        const { input, policyLocator } = params;
-        if (!input) {
+        const { policyholderInput, policyInput } = params;
+        if (!policyholderInput || !policyInput) {
           return NextResponse.json(
-            { success: false, error: 'Missing input (CreateQuoteInput)' },
+            { success: false, error: 'Missing policyholderInput or policyInput' },
             { status: 400 }
           );
         }
-        const result = await client.createQuote(input, policyLocator);
+        const result = await client.createQuote({ policyholderInput, policyInput });
         return NextResponse.json({ success: true, result });
       }
 

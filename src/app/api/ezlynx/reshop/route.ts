@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { comparisonId } = body;
+    const { comparisonId, dryRun } = body;
 
     if (!comparisonId) {
       return NextResponse.json({ error: "comparisonId is required" }, { status: 400 });
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
       console.log("[Reshop] Could not fetch open applications:", (e as Error).message);
     }
 
-    const result: any = { success: true, ezlynxAccountId };
+    const result: any = { success: true, ezlynxAccountId, dryRun: !!dryRun };
 
     if (isAuto) {
       // =====================================================================
@@ -109,6 +109,8 @@ export async function POST(request: NextRequest) {
       let openAppId: string;
       if (existingAutoApp) {
         openAppId = existingAutoApp.openAppID;
+      } else if (dryRun) {
+        return NextResponse.json({ error: "No existing auto application to preview" }, { status: 400 });
       } else {
         const created = await ezlynxBot.createAutoApplication(ezlynxAccountId);
         openAppId = created.openAppId;
@@ -117,22 +119,62 @@ export async function POST(request: NextRequest) {
       const appTemplate = await ezlynxBot.getAutoApplication(openAppId);
       const { app: mergedApp, syncReport } = renewalToAutoApplication(snapshot, comparison, appTemplate);
 
+      // Build before/after diff for preview
+      const beforeAfter: { field: string; before: string; after: string }[] = [];
+      const gc = appTemplate.coverage?.generalCoverage;
+      const mgc = mergedApp.coverage?.generalCoverage;
+      // Policy dates
+      const oldEff = appTemplate.policyInformation?.effectiveDate || '';
+      const newEff = mergedApp.policyInformation?.effectiveDate || '';
+      if (oldEff !== newEff) beforeAfter.push({ field: 'Effective Date', before: oldEff || '(empty)', after: newEff });
+      // General coverages
+      if (gc?.bodilyInjury?.description !== mgc?.bodilyInjury?.description)
+        beforeAfter.push({ field: 'Bodily Injury', before: gc?.bodilyInjury?.description || '(empty)', after: mgc?.bodilyInjury?.description || '(empty)' });
+      if (gc?.propertyDamage?.description !== mgc?.propertyDamage?.description)
+        beforeAfter.push({ field: 'Property Damage', before: gc?.propertyDamage?.description || '(empty)', after: mgc?.propertyDamage?.description || '(empty)' });
+      if (gc?.uninsuredMotorist?.description !== mgc?.uninsuredMotorist?.description)
+        beforeAfter.push({ field: 'Uninsured Motorist', before: gc?.uninsuredMotorist?.description || '(empty)', after: mgc?.uninsuredMotorist?.description || '(empty)' });
+      if (gc?.underinsuredMotorist?.description !== mgc?.underinsuredMotorist?.description)
+        beforeAfter.push({ field: 'Underinsured Motorist', before: gc?.underinsuredMotorist?.description || '(empty)', after: mgc?.underinsuredMotorist?.description || '(empty)' });
+      if (gc?.medicalPayments?.description !== mgc?.medicalPayments?.description)
+        beforeAfter.push({ field: 'Medical Payments', before: gc?.medicalPayments?.description || '(empty)', after: mgc?.medicalPayments?.description || '(empty)' });
+      // Vehicle coverages
+      const oldVehicles = appTemplate.vehicles?.vehicleCollection || [];
+      const newVehicles = mergedApp.vehicles?.vehicleCollection || [];
+      for (let i = 0; i < newVehicles.length; i++) {
+        const nv = newVehicles[i];
+        const ov = oldVehicles[i];
+        const label = `${nv.year || ''} ${nv.make || ''} ${nv.model || ''}`.trim() || `Vehicle ${i + 1}`;
+        if (ov?.coverage?.comprehensive?.description !== nv.coverage?.comprehensive?.description)
+          beforeAfter.push({ field: `${label} Comp Ded`, before: ov?.coverage?.comprehensive?.description || '(empty)', after: nv.coverage?.comprehensive?.description || '(empty)' });
+        if (ov?.coverage?.collision?.description !== nv.coverage?.collision?.description)
+          beforeAfter.push({ field: `${label} Coll Ded`, before: ov?.coverage?.collision?.description || '(empty)', after: nv.coverage?.collision?.description || '(empty)' });
+      }
+      // Drivers
+      for (const d of syncReport.drivers.added) {
+        beforeAfter.push({ field: `Driver: ${d}`, before: '(new)', after: 'Added' });
+      }
+
+      if (dryRun) {
+        return NextResponse.json({ success: true, dryRun: true, type: 'auto', syncReport, beforeAfter, ezlynxAccountId });
+      }
+
       await ezlynxBot.saveAutoApplication(openAppId, mergedApp);
 
       // Post-save verification
       let verification: any = {};
       try {
         const savedApp = await ezlynxBot.getAutoApplication(openAppId);
-        const gc = savedApp.coverage?.generalCoverage;
+        const sgc = savedApp.coverage?.generalCoverage;
         verification = {
           driverCount: savedApp.drivers?.length ?? 0,
           vehicleCount: savedApp.vehicles?.vehicleCollection?.length ?? 0,
           effectiveDate: savedApp.policyInformation?.effectiveDate,
           coverages: {
-            bodilyInjury: gc?.bodilyInjury?.description ?? null,
-            propertyDamage: gc?.propertyDamage?.description ?? null,
-            uninsuredMotorist: gc?.uninsuredMotorist?.description ?? null,
-            medicalPayments: gc?.medicalPayments?.description ?? null,
+            bodilyInjury: sgc?.bodilyInjury?.description ?? null,
+            propertyDamage: sgc?.propertyDamage?.description ?? null,
+            uninsuredMotorist: sgc?.uninsuredMotorist?.description ?? null,
+            medicalPayments: sgc?.medicalPayments?.description ?? null,
           },
           vehicleCoverages: (savedApp.vehicles?.vehicleCollection || []).map((v: any) => ({
             vin: v.vin,
@@ -144,10 +186,10 @@ export async function POST(request: NextRequest) {
         const expected = syncReport.coverages.updated;
         const mismatches: string[] = [];
         const has = (prefix: string) => expected.some((s: string) => s.startsWith(prefix));
-        if (has('BI') && !gc?.bodilyInjury?.description) mismatches.push('bodilyInjury');
-        if (has('PD') && !gc?.propertyDamage?.description) mismatches.push('propertyDamage');
-        if (has('UM') && !gc?.uninsuredMotorist?.description) mismatches.push('uninsuredMotorist');
-        if (has('MedPay') && !gc?.medicalPayments?.description) mismatches.push('medicalPayments');
+        if (has('BI') && !sgc?.bodilyInjury?.description) mismatches.push('bodilyInjury');
+        if (has('PD') && !sgc?.propertyDamage?.description) mismatches.push('propertyDamage');
+        if (has('UM') && !sgc?.uninsuredMotorist?.description) mismatches.push('uninsuredMotorist');
+        if (has('MedPay') && !sgc?.medicalPayments?.description) mismatches.push('medicalPayments');
         if (mismatches.length > 0) {
           verification.mismatches = mismatches;
           console.log(`[Reshop] Auto coverage mismatches: ${mismatches.join(', ')}`);
@@ -159,6 +201,7 @@ export async function POST(request: NextRequest) {
       result.type = 'auto';
       result.syncReport = syncReport;
       result.verification = verification;
+      result.beforeAfter = beforeAfter;
 
       console.log(
         `[Reshop] Auto sync for ${ezlynxAccountId}:`,
@@ -175,6 +218,8 @@ export async function POST(request: NextRequest) {
       let openAppId: string;
       if (existingHomeApp) {
         openAppId = existingHomeApp.openAppID;
+      } else if (dryRun) {
+        return NextResponse.json({ error: "No existing home application to preview" }, { status: 400 });
       } else {
         const created = await ezlynxBot.createHomeApplication(ezlynxAccountId);
         openAppId = created.openAppId;
@@ -184,33 +229,63 @@ export async function POST(request: NextRequest) {
       const baseline = comparison.baselineSnapshot as any;
       const { app: mergedApp, syncReport } = renewalToHomeApplication(snapshot, comparison, appTemplate, baseline);
 
+      // Build before/after diff for preview
+      const beforeAfter: { field: string; before: string; after: string }[] = [];
+      const hgc = appTemplate.generalCoverage;
+      const hmgc = mergedApp.generalCoverage;
+      const oldEff = appTemplate.policyInformation?.effectiveDate || '';
+      const newEff = mergedApp.policyInformation?.effectiveDate || '';
+      if (oldEff !== newEff) beforeAfter.push({ field: 'Effective Date', before: oldEff || '(empty)', after: newEff });
+      if (String(hgc?.dwelling || '') !== String(hmgc?.dwelling || ''))
+        beforeAfter.push({ field: 'Dwelling', before: hgc?.dwelling ? `$${Number(hgc.dwelling).toLocaleString()}` : '(empty)', after: hmgc?.dwelling ? `$${Number(hmgc.dwelling).toLocaleString()}` : '(empty)' });
+      if (String(hgc?.personalProperty || '') !== String(hmgc?.personalProperty || ''))
+        beforeAfter.push({ field: 'Personal Property', before: hgc?.personalProperty ? `$${Number(hgc.personalProperty).toLocaleString()}` : '(empty)', after: hmgc?.personalProperty ? `$${Number(hmgc.personalProperty).toLocaleString()}` : '(empty)' });
+      if (String(hgc?.lossOfUse || '') !== String(hmgc?.lossOfUse || ''))
+        beforeAfter.push({ field: 'Loss of Use', before: hgc?.lossOfUse ? `$${Number(hgc.lossOfUse).toLocaleString()}` : '(empty)', after: hmgc?.lossOfUse ? `$${Number(hmgc.lossOfUse).toLocaleString()}` : '(empty)' });
+      if (String(hgc?.otherStructures || '') !== String(hmgc?.otherStructures || ''))
+        beforeAfter.push({ field: 'Other Structures', before: hgc?.otherStructures ? `$${Number(hgc.otherStructures).toLocaleString()}` : '(empty)', after: hmgc?.otherStructures ? `$${Number(hmgc.otherStructures).toLocaleString()}` : '(empty)' });
+      if (hgc?.personalLiability?.description !== hmgc?.personalLiability?.description)
+        beforeAfter.push({ field: 'Personal Liability', before: hgc?.personalLiability?.description || '(empty)', after: hmgc?.personalLiability?.description || '(empty)' });
+      if (hgc?.medicalPayments?.description !== hmgc?.medicalPayments?.description)
+        beforeAfter.push({ field: 'Medical Payments', before: hgc?.medicalPayments?.description || '(empty)', after: hmgc?.medicalPayments?.description || '(empty)' });
+      if (hgc?.perilsDeductible?.description !== hmgc?.perilsDeductible?.description)
+        beforeAfter.push({ field: 'All Perils Deductible', before: hgc?.perilsDeductible?.description || '(empty)', after: hmgc?.perilsDeductible?.description || '(empty)' });
+      if (hgc?.windDeductible?.description !== hmgc?.windDeductible?.description)
+        beforeAfter.push({ field: 'Wind/Hail Deductible', before: hgc?.windDeductible?.description || '(empty)', after: hmgc?.windDeductible?.description || '(empty)' });
+      if (hgc?.hurricaneDeductible?.description !== hmgc?.hurricaneDeductible?.description)
+        beforeAfter.push({ field: 'Hurricane Deductible', before: hgc?.hurricaneDeductible?.description || '(empty)', after: hmgc?.hurricaneDeductible?.description || '(empty)' });
+
+      if (dryRun) {
+        return NextResponse.json({ success: true, dryRun: true, type: 'home', syncReport, beforeAfter, ezlynxAccountId });
+      }
+
       await ezlynxBot.saveHomeApplication(openAppId, mergedApp);
 
       // Post-save verification
       let verification: any = {};
       try {
         const savedApp = await ezlynxBot.getHomeApplication(openAppId);
-        const gc = savedApp.generalCoverage;
+        const sgc = savedApp.generalCoverage;
         verification = {
           effectiveDate: savedApp.policyInformation?.effectiveDate,
           coverages: {
-            dwelling: gc?.dwelling ?? null,
-            personalProperty: gc?.personalProperty ?? null,
-            lossOfUse: gc?.lossOfUse ?? null,
-            personalLiability: gc?.personalLiability?.description ?? null,
-            medicalPayments: gc?.medicalPayments?.description ?? null,
-            perilsDeductible: gc?.perilsDeductible?.description ?? null,
-            windDeductible: gc?.windDeductible?.description ?? null,
-            hurricaneDeductible: gc?.hurricaneDeductible?.description ?? null,
+            dwelling: sgc?.dwelling ?? null,
+            personalProperty: sgc?.personalProperty ?? null,
+            lossOfUse: sgc?.lossOfUse ?? null,
+            personalLiability: sgc?.personalLiability?.description ?? null,
+            medicalPayments: sgc?.medicalPayments?.description ?? null,
+            perilsDeductible: sgc?.perilsDeductible?.description ?? null,
+            windDeductible: sgc?.windDeductible?.description ?? null,
+            hurricaneDeductible: sgc?.hurricaneDeductible?.description ?? null,
           },
         };
         // Check for mismatches
         const expected = syncReport.coverages.updated;
         const mismatches: string[] = [];
         const has = (prefix: string) => expected.some((s: string) => s.startsWith(prefix));
-        if (has('Dwelling') && !gc?.dwelling) mismatches.push('dwelling');
-        if (has('Liability') && !gc?.personalLiability?.description) mismatches.push('personalLiability');
-        if (has('All Peril') && !gc?.perilsDeductible?.description) mismatches.push('perilsDeductible');
+        if (has('Dwelling') && !sgc?.dwelling) mismatches.push('dwelling');
+        if (has('Liability') && !sgc?.personalLiability?.description) mismatches.push('personalLiability');
+        if (has('All Peril') && !sgc?.perilsDeductible?.description) mismatches.push('perilsDeductible');
         if (mismatches.length > 0) {
           verification.mismatches = mismatches;
           console.log(`[Reshop] Home coverage mismatches: ${mismatches.join(', ')}`);
@@ -222,6 +297,7 @@ export async function POST(request: NextRequest) {
       result.type = 'home';
       result.syncReport = syncReport;
       result.verification = verification;
+      result.beforeAfter = beforeAfter;
 
       console.log(
         `[Reshop] Home sync for ${ezlynxAccountId}:`,

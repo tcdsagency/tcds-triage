@@ -13,6 +13,7 @@ interface LeftSidebarProps {
   allMortgagees: { name: string; type?: string; loanNumber?: string }[];
   mciPaymentData: any;
   customerPolicies: any[];
+  ezlynxAccountId?: string | null;
 }
 
 export default function LeftSidebar({
@@ -21,6 +22,7 @@ export default function LeftSidebar({
   allMortgagees,
   mciPaymentData,
   customerPolicies,
+  ezlynxAccountId,
 }: LeftSidebarProps) {
   return (
     <div className="lg:w-[260px] lg:shrink-0 overflow-y-auto p-3 space-y-3 bg-gray-50 border-r border-gray-200">
@@ -70,6 +72,7 @@ export default function LeftSidebar({
       <CustomerPoliciesSection
         policies={customerPolicies}
         currentPolicyId={detail.policyId}
+        ezlynxAccountId={ezlynxAccountId}
       />
     </div>
   );

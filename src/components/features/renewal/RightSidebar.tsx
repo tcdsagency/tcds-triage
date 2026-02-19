@@ -43,6 +43,7 @@ interface RightSidebarProps {
   comparisonId?: string;
   agencyzoomId?: string | null;
   hawksoftClientCode?: string | null;
+  onRefresh?: () => void;
 }
 
 export default function RightSidebar({
@@ -68,6 +69,7 @@ export default function RightSidebar({
   comparisonId,
   agencyzoomId,
   hawksoftClientCode,
+  onRefresh,
 }: RightSidebarProps) {
   return (
     <div className="lg:w-[320px] lg:shrink-0 overflow-y-auto p-3 space-y-3 bg-white border-l border-gray-200 pb-24">
@@ -123,6 +125,7 @@ export default function RightSidebar({
         lineOfBusiness={lineOfBusiness}
         customerProfile={customerProfile}
         comparisonId={comparisonId}
+        onUnlinked={onRefresh}
       />
 
       {/* Talk Points */}

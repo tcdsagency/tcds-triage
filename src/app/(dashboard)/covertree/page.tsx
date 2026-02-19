@@ -622,37 +622,30 @@ export default function CoverTreePage() {
       const propZip = form.sameAsMailing ? form.mailingZip : form.propertyZip;
       const propCounty = form.sameAsMailing ? '' : form.propertyCounty;
 
-      const input = {
-        effectiveDate: form.effectiveDate,
-        policyUsage: form.policyUsage,
-        isNewPurchase: form.isNewPurchase === 'yes',
-        purchaseDate: form.purchaseDate,
-        priorInsurance: form.priorInsurance,
-        ...(form.priorInsurance === 'Yes' && form.priorCarrierName ? { priorCarrierName: form.priorCarrierName } : {}),
-        ...(form.priorInsurance === 'Yes' && form.priorPolicyExpirationDate ? { priorPolicyExpirationDate: form.priorPolicyExpirationDate } : {}),
-        policyholder: {
-          firstName: form.firstName,
-          ...(form.middleName ? { middleName: form.middleName } : {}),
-          lastName: form.lastName,
-          emailAddress: form.email,
-          primaryContactNumber: form.phone.replace(/\D/g, ''),
-          type: 'Person',
-          dateOfBirth: form.dateOfBirth,
-          mailingAddress: {
-            streetAddress: form.mailingStreet,
-            city: form.mailingCity,
-            state: form.mailingState,
-            zipCode: form.mailingZip,
-          },
+      const policyholderInput = {
+        type: 'Person',
+        firstName: form.firstName,
+        ...(form.middleName ? { middleName: form.middleName } : {}),
+        lastName: form.lastName,
+        emailAddress: form.email,
+        primaryContactNumber: form.phone.replace(/\D/g, ''),
+        mailingAddress: {
+          streetAddress: form.mailingStreet,
+          city: form.mailingCity,
+          state: form.mailingState,
+          zipCode: form.mailingZip,
         },
-        unit: {
+      };
+
+      const policyInput = {
+        effectiveDate: form.effectiveDate,
+        insuredDateOfBirth: form.dateOfBirth,
+        units: [{
           address: {
             streetAddress: propStreet,
             city: propCity,
             state: propState,
             zipCode: propZip,
-            ...(propCounty ? { county: propCounty } : {}),
-            countryCode: 'US',
           },
           construction: {
             homeType: form.homeType,
@@ -661,39 +654,14 @@ export default function CoverTreePage() {
             roofShape: form.roofShape,
             totalSquareFootage: parseInt(form.totalSquareFootage),
             modelYear: parseInt(form.modelYear),
-            location: form.location,
           },
-        },
-        underwritingAnswers: {
-          burglarAlarm: form.burglarAlarm,
-          hasFireHydrantWithin1000Feet: form.hasFireHydrantWithin1000Feet,
-          hasFireStationWithin5Miles: form.hasFireStationWithin5Miles,
-          hasSmokersInHome: form.hasSmokersInHome,
-          hasTrampolineOnPremises: form.hasTrampolineOnPremises,
-          hasPoolOnPremises: form.hasPoolOnPremises,
-          hasAnimalOrPetOnPremises: form.hasAnimalOrPetOnPremises,
-          hasBusinessOnPremises: form.hasBusinessOnPremises,
-          hasOpenOrKnownCodeViolation: form.hasOpenOrKnownCodeViolation,
-          hasUncorrectedFireOrBuildingCodeViolation: form.hasUncorrectedFireOrBuildingCodeViolation,
-          isInForeclosure: form.isInForeclosure,
-          hasOpenInsuranceClaim: form.hasOpenInsuranceClaim,
-          hasAnimalOrPetCausedInjury: form.hasAnimalOrPetCausedInjury,
-          hasAnimalOrPetIsRestrictedBreed: form.hasAnimalOrPetIsRestrictedBreed,
-          hasWoodBurningStove: form.hasWoodBurningStove,
-          hasKnobAndTubeWiring: form.hasKnobAndTubeWiring,
-          isHitchedOrOnWheels: form.isHitchedOrOnWheels,
-          isInFloodZone: form.isInFloodZone,
-          hasAluminumWiring: form.hasAluminumWiring,
-          hasFederalPacificElectricalPanel: form.hasFederalPacificElectricalPanel,
-          hasPolybutylenePiping: form.hasPolybutylenePiping,
-          hasGalvanizedPlumbing: form.hasGalvanizedPlumbing,
-          hasZinscoElectricalPanel: form.hasZinscoElectricalPanel,
-          hasSumpPump: form.hasSumpPump,
-          hasBackupGenerator: form.hasBackupGenerator,
-        },
+          usage: {
+            policyUsage: form.policyUsage,
+          },
+        }],
       };
 
-      const data = await coverTreeApi('createQuote', { input });
+      const data = await coverTreeApi('createQuote', { policyholderInput, policyInput });
       const result = data.result;
       setOffers(result.offers || []);
       setPolicyLocator(result.policyLocator);

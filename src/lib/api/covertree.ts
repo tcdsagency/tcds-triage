@@ -168,39 +168,32 @@ export interface CoverTreePolicy {
   underwritingNotes?: string[];
 }
 
-/** Input for CreateOrUpdateBasicPolicyDetailsWithHolder */
-export interface CreateQuoteInput {
+/** Shared address input — maps to GeoCodeInput in CoverTree schema */
+export interface CoverTreeAddressInput {
+  streetAddress: string;
+  city: string;
+  state: string;
+  zipCode: string;
+}
+
+/** CreateOrUpdatePolicyholderInput */
+export interface CreateQuotePolicyholderInput {
+  type: string; // Person
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  emailAddress: string;
+  primaryContactNumber: string;
+  mailingAddress: CoverTreeAddressInput;
+}
+
+/** CreateOrUpdateBasicPolicyDetailsInput */
+export interface CreateQuotePolicyInput {
   effectiveDate: string;
-  policyUsage: string; // Owner, Vacant, Seasonal, Tenant
-  isNewPurchase: boolean;
-  purchaseDate: string; // InBuyingProcess, LessThan1Year, 1To3Years, 3To5Years, MoreThan5Years
-  priorInsurance: string; // Yes, No
-  priorCarrierName?: string;
-  priorPolicyExpirationDate?: string;
-  policyholder: {
-    firstName: string;
-    middleName?: string;
-    lastName: string;
-    emailAddress: string;
-    primaryContactNumber: string;
-    type: string; // Person
-    dateOfBirth: string;
-    mailingAddress: {
-      streetAddress: string;
-      city: string;
-      state: string;
-      zipCode: string;
-    };
-  };
-  unit: {
-    address: {
-      streetAddress: string;
-      city: string;
-      state: string;
-      zipCode: string;
-      county?: string;
-      countryCode?: string;
-    };
+  policyLocator?: string;
+  insuredDateOfBirth?: string;
+  units: Array<{
+    address: CoverTreeAddressInput;
     construction: {
       homeType: string; // SingleWide, DoubleWide, TripleWide, ParkModel, TinyHome, ADU, StationaryTravelTrailer
       manufacturerName: string;
@@ -208,36 +201,18 @@ export interface CreateQuoteInput {
       roofShape: string; // Gable, Hip, Flat, Gambrel, Mansard, Shed
       totalSquareFootage: number;
       modelYear: number;
-      location: string; // OwnLand, MobileHomePark, RentedLand
     };
-  };
-  underwritingAnswers: {
-    burglarAlarm: string; // None, Local, Central
-    hasFireHydrantWithin1000Feet: boolean;
-    hasFireStationWithin5Miles: boolean;
-    hasSmokersInHome: boolean;
-    hasTrampolineOnPremises: boolean;
-    hasPoolOnPremises: boolean;
-    hasAnimalOrPetOnPremises: boolean;
-    hasBusinessOnPremises: boolean;
-    hasOpenOrKnownCodeViolation: boolean;
-    hasUncorrectedFireOrBuildingCodeViolation: boolean;
-    isInForeclosure: boolean;
-    hasOpenInsuranceClaim: boolean;
-    hasAnimalOrPetCausedInjury: boolean;
-    hasAnimalOrPetIsRestrictedBreed: boolean;
-    hasWoodBurningStove: boolean;
-    hasKnobAndTubeWiring: boolean;
-    isHitchedOrOnWheels: boolean;
-    isInFloodZone: boolean;
-    hasAluminumWiring: boolean;
-    hasFederalPacificElectricalPanel: boolean;
-    hasPolybutylenePiping: boolean;
-    hasGalvanizedPlumbing: boolean;
-    hasZinscoElectricalPanel: boolean;
-    hasSumpPump: boolean;
-    hasBackupGenerator: boolean;
-  };
+    unitId?: string;
+    usage?: {
+      policyUsage: string; // Owner, Vacant, Seasonal, Tenant
+    };
+  }>;
+}
+
+/** Combined input for the createQuote convenience method */
+export interface CreateQuoteInput {
+  policyholderInput: CreateQuotePolicyholderInput;
+  policyInput: CreateQuotePolicyInput;
 }
 
 // =============================================================================
@@ -443,17 +418,16 @@ export class CoverTreeClient {
 
   /**
    * Core quote creation — CreateOrUpdateBasicPolicyDetailsWithHolder
-   * Accepts all property details, policyholder info, and UW answers in one call.
+   * Accepts policyholder + policy details as two separate input args.
    * Returns three plan offers (Silver, Gold, Platinum) with pricing.
    */
   async createQuote(
-    input: CreateQuoteInput,
-    policyLocator?: string
+    input: CreateQuoteInput
   ): Promise<CoverTreeQuoteResult> {
     const data = await this.graphqlRequest(
       'CreateOrUpdateBasicPolicyDetailsWithHolder',
-      `mutation CreateOrUpdateBasicPolicyDetailsWithHolder($policyLocator: ID, $input: CreateOrUpdatePolicyInput!) {
-        createOrUpdateBasicPolicyDetailsWithHolder(policyLocator: $policyLocator, input: $input) {
+      `mutation CreateOrUpdateBasicPolicyDetailsWithHolder($policyholderInput: CreateOrUpdatePolicyholderInput!, $policyInput: CreateOrUpdateBasicPolicyDetailsInput!) {
+        createOrUpdateBasicPolicyDetailsWithHolder(policyholderInput: $policyholderInput, policyInput: $policyInput) {
           policyLocator step selectedQuoteLocator
           offers {
             quoteLocator plan
@@ -463,7 +437,10 @@ export class CoverTreeClient {
           }
         }
       }`,
-      { policyLocator: policyLocator || null, input }
+      {
+        policyholderInput: input.policyholderInput,
+        policyInput: input.policyInput,
+      }
     );
     return data.createOrUpdateBasicPolicyDetailsWithHolder;
   }

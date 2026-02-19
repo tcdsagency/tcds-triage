@@ -2,7 +2,8 @@
 
 import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Zap, ExternalLink, Search, Loader2, RefreshCw, AlertTriangle, X, Hash } from 'lucide-react';
+import { Zap, ExternalLink, Search, Loader2, RefreshCw, AlertTriangle, X, Hash, Eye, ArrowRight, Check, Unlink } from 'lucide-react';
+import { useUser } from '@/hooks/useUser';
 
 interface EzlynxCardProps {
   ezlynxAccountId?: string | null;
@@ -13,6 +14,7 @@ interface EzlynxCardProps {
   lineOfBusiness?: string;
   customerProfile?: any;
   comparisonId?: string;
+  onUnlinked?: () => void;
 }
 
 function normalizeResult(r: any) {
@@ -37,10 +39,20 @@ export default function EzlynxCard({
   lineOfBusiness,
   customerProfile,
   comparisonId,
+  onUnlinked,
 }: EzlynxCardProps) {
+  const { user } = useUser();
+  const userName = user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : 'System';
+
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [linkedId, setLinkedId] = useState(ezlynxAccountId);
+
+  // Preview state
+  const [previewData, setPreviewData] = useState<{
+    beforeAfter: { field: string; before: string; after: string }[];
+    syncReport: any;
+  } | null>(null);
 
   // Search modal state
   const [showSearch, setShowSearch] = useState(false);
@@ -182,9 +194,31 @@ export default function EzlynxCard({
     }
   }, [insuredName, customerProfile, customerId, renewalSnapshot]);
 
-  const handleUpdateForReshop = useCallback(async () => {
+  const handlePreviewReshop = useCallback(async () => {
+    if (!linkedId || !comparisonId) return;
+    setUpdating(true);
+    try {
+      const res = await fetch('/api/ezlynx/reshop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comparisonId, dryRun: true }),
+      });
+      const data = await res.json();
+      if (data.success && data.beforeAfter) {
+        setPreviewData({ beforeAfter: data.beforeAfter, syncReport: data.syncReport });
+      } else {
+        toast.error('Preview failed', { description: data.error || 'Could not generate preview' });
+      }
+    } catch (err: any) {
+      toast.error('Preview error', { description: err.message });
+    } finally {
+      setUpdating(false);
+    }
+  }, [linkedId, comparisonId]);
+
+  const handleConfirmReshop = useCallback(async () => {
     const accountId = linkedId;
-    if (!accountId) return;
+    if (!accountId || !comparisonId) return;
     setUpdating(true);
     const type = lineOfBusiness?.toLowerCase().includes('auto') ? 'auto' : 'home';
     const toastId = toast.loading(`Pushing ${type} data to EZLynx for reshop...`, {
@@ -217,6 +251,7 @@ export default function EzlynxCard({
           },
           duration: 10000,
         });
+        setPreviewData(null);
       } else {
         toast.error('Push failed', { id: toastId, description: data.error });
       }
@@ -227,43 +262,141 @@ export default function EzlynxCard({
     }
   }, [linkedId, comparisonId, lineOfBusiness, insuredName]);
 
+  const handleUnlink = useCallback(async () => {
+    if (!customerId) return;
+    if (!confirm('Unlink this EZLynx account? This does not delete the EZLynx account.')) return;
+    try {
+      const res = await fetch(`/api/customers/${customerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ezlynxAccountId: null, ezlynxSyncedAt: null }),
+      });
+      if (res.ok) {
+        setLinkedId(null);
+        toast.success('EZLynx account unlinked');
+        onUnlinked?.();
+      }
+    } catch {
+      toast.error('Failed to unlink');
+    }
+  }, [customerId, onUnlinked]);
+
   // === LINKED STATE ===
   if (linkedId) {
     return (
-      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="text-xs font-medium text-emerald-700 uppercase flex items-center gap-1">
-            <Zap className="w-3 h-3" />
-            EZLynx
-          </h4>
-          <a
-            href={ezlynxUrl(linkedId)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-emerald-600 hover:text-emerald-800 flex items-center gap-0.5"
-          >
-            Open <ExternalLink className="w-3 h-3" />
-          </a>
-        </div>
-        <p className="text-xs text-emerald-600 font-mono mb-1">{linkedId}</p>
-        {ezlynxSyncedAt && (
-          <p className="text-[10px] text-emerald-500 mb-2">
-            Synced: {new Date(ezlynxSyncedAt).toLocaleString()}
-          </p>
-        )}
-        <button
-          onClick={handleUpdateForReshop}
-          disabled={updating}
-          className="w-full mt-1 px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-md hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1"
-        >
-          {updating ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
-          ) : (
-            <RefreshCw className="w-3 h-3" />
+      <>
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-medium text-emerald-700 uppercase flex items-center gap-1">
+              <Zap className="w-3 h-3" />
+              EZLynx
+            </h4>
+            <a
+              href={ezlynxUrl(linkedId)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-emerald-600 hover:text-emerald-800 flex items-center gap-0.5"
+            >
+              Open <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-emerald-600 font-mono">{linkedId}</p>
+            <button
+              onClick={handleUnlink}
+              className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-0.5"
+              title="Unlink EZLynx account"
+            >
+              <Unlink className="w-3 h-3" />
+              Unlink
+            </button>
+          </div>
+          {ezlynxSyncedAt && (
+            <p className="text-[10px] text-emerald-500 mb-2">
+              Synced: {new Date(ezlynxSyncedAt).toLocaleString()}
+            </p>
           )}
-          {updating ? 'Pushing...' : 'Update for Reshop'}
-        </button>
-      </div>
+          <button
+            onClick={handlePreviewReshop}
+            disabled={updating}
+            className="w-full mt-1 px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-md hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1"
+          >
+            {updating ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Eye className="w-3 h-3" />
+            )}
+            {updating ? 'Loading preview...' : 'Preview Reshop Sync'}
+          </button>
+        </div>
+
+        {/* Preview Modal */}
+        {previewData && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-5 max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                  <RefreshCw className="w-4 h-4 text-emerald-600" />
+                  Sync Preview
+                </h3>
+                <button onClick={() => setPreviewData(null)} className="text-gray-400 hover:text-gray-600 p-0.5">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {previewData.beforeAfter.length === 0 ? (
+                <div className="py-8 text-center">
+                  <Check className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">EZLynx is already up to date</p>
+                  <p className="text-xs text-gray-400 mt-1">No changes needed</p>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto mb-4">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-1.5 px-2 text-gray-500 font-medium">Field</th>
+                        <th className="text-left py-1.5 px-2 text-gray-500 font-medium">Current</th>
+                        <th className="text-center py-1.5 px-2 w-6"></th>
+                        <th className="text-left py-1.5 px-2 text-gray-500 font-medium">New</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewData.beforeAfter.map((row, i) => (
+                        <tr key={i} className="border-b border-gray-100">
+                          <td className="py-1.5 px-2 font-medium text-gray-700">{row.field}</td>
+                          <td className="py-1.5 px-2 text-red-600 line-through">{row.before}</td>
+                          <td className="py-1.5 px-2 text-center"><ArrowRight className="w-3 h-3 text-gray-400 inline" /></td>
+                          <td className="py-1.5 px-2 text-emerald-700 font-medium">{row.after}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPreviewData(null)}
+                  className="flex-1 px-3 py-2 border border-gray-300 text-sm font-medium rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                {previewData.beforeAfter.length > 0 && (
+                  <button
+                    onClick={handleConfirmReshop}
+                    disabled={updating}
+                    className="flex-1 px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-md hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    {updating ? 'Syncing...' : 'Apply Changes'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
