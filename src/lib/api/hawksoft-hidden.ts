@@ -16,7 +16,7 @@
 
 import { CircuitBreaker } from './circuit-breaker';
 import { db } from '@/db';
-import { customers } from '@/db/schema';
+import { customers, systemCache } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
 // ============================================================================
@@ -176,14 +176,61 @@ export class HawkSoftHiddenAPI {
     return this.session;
   }
 
+  private static readonly CACHE_KEY = 'hawksoft_cloud_session';
+
   private async ensureAuth(): Promise<AuthSession> {
+    // 1. In-memory cache (same serverless invocation)
     if (
       this.session &&
       Date.now() - this.session.authenticatedAt < HawkSoftHiddenAPI.COOKIE_TTL_MS
     ) {
       return this.session;
     }
-    return this.authenticate();
+
+    // 2. DB cache (shared across serverless invocations)
+    try {
+      const [cached] = await db
+        .select()
+        .from(systemCache)
+        .where(eq(systemCache.key, HawkSoftHiddenAPI.CACHE_KEY))
+        .limit(1);
+
+      if (cached?.value && cached.expiresAt && new Date() < cached.expiresAt) {
+        const val = cached.value as { cookies: string; agencyId: number; authenticatedAt: number };
+        if (val.cookies && Date.now() - val.authenticatedAt < HawkSoftHiddenAPI.COOKIE_TTL_MS) {
+          this.session = val;
+          return this.session;
+        }
+      }
+    } catch {
+      // DB read failed — fall through to authenticate
+    }
+
+    // 3. Fresh auth
+    const session = await this.authenticate();
+
+    // Persist to DB for other serverless invocations
+    try {
+      await db
+        .insert(systemCache)
+        .values({
+          key: HawkSoftHiddenAPI.CACHE_KEY,
+          value: session,
+          expiresAt: new Date(Date.now() + HawkSoftHiddenAPI.COOKIE_TTL_MS),
+        })
+        .onConflictDoUpdate({
+          target: systemCache.key,
+          set: {
+            value: session,
+            expiresAt: new Date(Date.now() + HawkSoftHiddenAPI.COOKIE_TTL_MS),
+            updatedAt: new Date(),
+          },
+        });
+    } catch {
+      // DB write failed — still have in-memory session
+    }
+
+    return session;
   }
 
   // --------------------------------------------------------------------------
@@ -224,9 +271,12 @@ export class HawkSoftHiddenAPI {
 
       clearTimeout(timeoutId);
 
-      // Re-auth on 401
+      // Re-auth on 401 — invalidate both in-memory and DB cache
       if (response.status === 401 && retry401) {
         this.session = null;
+        try {
+          await db.delete(systemCache).where(eq(systemCache.key, HawkSoftHiddenAPI.CACHE_KEY));
+        } catch { /* best effort */ }
         return this.request<T>(baseUrl, endpoint, options, false);
       }
 
