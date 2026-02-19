@@ -19,7 +19,7 @@ import {
   wrapupDrafts,
   threecxPollingState,
 } from "@/db/schema";
-import { eq, and, sql, or, ilike, gte } from "drizzle-orm";
+import { eq, and, sql, or, ilike, gte, isNull } from "drizzle-orm";
 import {
   fetchNewRecordings,
   mapRecordingToCallData,
@@ -776,7 +776,7 @@ async function cleanupStaleCalls() {
         eq(calls.status, 'in_progress'),
       ),
       sql`${calls.startedAt} < ${staleThreshold}`,
-      sql`${calls.durationSeconds} IS NULL`,
+      isNull(calls.durationSeconds),
     ))
     .limit(20);
 
