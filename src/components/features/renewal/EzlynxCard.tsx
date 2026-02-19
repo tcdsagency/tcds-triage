@@ -1,29 +1,20 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Zap, ExternalLink, Search, Loader2, Link2, RefreshCw, AlertTriangle, X, Hash } from 'lucide-react';
+import { Zap, ExternalLink, Search, Loader2, RefreshCw, AlertTriangle, X, Hash } from 'lucide-react';
 
 interface EzlynxCardProps {
-  /** EZLynx account ID if already linked */
   ezlynxAccountId?: string | null;
-  /** Customer name for search */
   insuredName?: string;
-  /** Customer ID in TCDS for linking */
   customerId?: string;
-  /** Last sync timestamp */
   ezlynxSyncedAt?: string | null;
-  /** Renewal snapshot data for reshop push */
   renewalSnapshot?: any;
-  /** Line of business */
   lineOfBusiness?: string;
-  /** Customer profile data for creating/updating applicant */
   customerProfile?: any;
-  /** Comparison ID for application API reshop */
   comparisonId?: string;
 }
 
-// Normalize bot search result field names (API returns different shapes)
 function normalizeResult(r: any) {
   return {
     accountId: String(r.accountId || r.applicantId || ''),
@@ -47,87 +38,79 @@ export default function EzlynxCard({
   customerProfile,
   comparisonId,
 }: EzlynxCardProps) {
+  const [creating, setCreating] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [linkedId, setLinkedId] = useState(ezlynxAccountId);
+
+  // Search modal state
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchFirstName, setSearchFirstName] = useState('');
+  const [searchLastName, setSearchLastName] = useState('');
+  const [searchAccountId, setSearchAccountId] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [updating, setUpdating] = useState(false);
-  const [linkedId, setLinkedId] = useState(ezlynxAccountId);
-  const autoSearchedRef = useRef(false);
-
-  // Manual search modal state
-  const [showManualSearch, setShowManualSearch] = useState(false);
-  const [manualFirstName, setManualFirstName] = useState('');
-  const [manualLastName, setManualLastName] = useState('');
-  const [manualAccountId, setManualAccountId] = useState('');
-  const [manualSearching, setManualSearching] = useState(false);
-  const [manualResults, setManualResults] = useState<any[]>([]);
-  const [manualSearched, setManualSearched] = useState(false);
-  const [manualError, setManualError] = useState<string | null>(null);
 
   const ezlynxUrl = (id: string) => `https://app.ezlynx.com/web/account/${id}/details`;
 
-  const doSearch = useCallback(async (params: URLSearchParams) => {
-    const res = await fetch(`/api/ezlynx/search?${params}`);
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      const errMsg = data.error || `Search failed (${res.status})`;
-      if (
-        errMsg.toLowerCase().includes('auth') ||
-        errMsg.toLowerCase().includes('connect') ||
-        errMsg.toLowerCase().includes('econnrefused') ||
-        errMsg.toLowerCase().includes('timeout') ||
-        errMsg.toLowerCase().includes('bot') ||
-        res.status === 502 ||
-        res.status === 503
-      ) {
-        throw new Error('bot_disconnected');
-      }
-      throw new Error(errMsg);
-    }
-    return (data.results || []).map(normalizeResult);
-  }, []);
+  const openSearch = useCallback(() => {
+    // Pre-fill with insured name
+    const parts = (insuredName || '').trim().split(/\s+/);
+    setSearchFirstName(parts[0] || '');
+    setSearchLastName(parts.slice(1).join(' ') || '');
+    setSearchAccountId('');
+    setSearchResults([]);
+    setSearched(false);
+    setSearchError(null);
+    setShowSearch(true);
+  }, [insuredName]);
 
   const handleSearch = useCallback(async () => {
-    if (!insuredName) return;
     setSearching(true);
     setSearched(true);
     setSearchError(null);
     try {
-      const parts = insuredName.trim().split(/\s+/);
-      const firstName = parts[0] || '';
-      const lastName = parts.slice(1).join(' ') || '';
-      const params = new URLSearchParams();
-      if (firstName) params.set('firstName', firstName);
-      if (lastName) params.set('lastName', lastName);
-      const snap = renewalSnapshot as any;
-      if (snap?.insuredAddress) params.set('address', snap.insuredAddress);
-      if (snap?.insuredCity) params.set('city', snap.insuredCity);
-      if (snap?.insuredState) params.set('state', snap.insuredState);
-      if (snap?.insuredZip) params.set('zip', snap.insuredZip);
-
-      const results = await doSearch(params);
-      setSearchResults(results);
-    } catch (err: any) {
-      if (err.message === 'bot_disconnected') {
-        setSearchError('bot_disconnected');
-      } else {
-        setSearchError(err.message);
+      // Direct link by account ID
+      if (searchAccountId.trim()) {
+        await handleLink(searchAccountId.trim());
+        return;
       }
+      const params = new URLSearchParams();
+      if (searchFirstName.trim()) params.set('firstName', searchFirstName.trim());
+      if (searchLastName.trim()) params.set('lastName', searchLastName.trim());
+      if (!searchFirstName.trim() && !searchLastName.trim()) {
+        setSearchError('Enter a name or account ID');
+        return;
+      }
+      const res = await fetch(`/api/ezlynx/search?${params}`);
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        const errMsg = data.error || `Search failed (${res.status})`;
+        if (
+          errMsg.toLowerCase().includes('auth') ||
+          errMsg.toLowerCase().includes('connect') ||
+          errMsg.toLowerCase().includes('econnrefused') ||
+          errMsg.toLowerCase().includes('timeout') ||
+          errMsg.toLowerCase().includes('bot') ||
+          res.status === 502 ||
+          res.status === 503
+        ) {
+          setSearchError('Bot not connected — start EZLynx bot and retry');
+        } else {
+          setSearchError(errMsg);
+        }
+        setSearchResults([]);
+        return;
+      }
+      setSearchResults((data.results || []).map(normalizeResult));
+    } catch (err: any) {
+      setSearchError(err.message || 'Search failed');
       setSearchResults([]);
     } finally {
       setSearching(false);
     }
-  }, [insuredName, renewalSnapshot, doSearch]);
-
-  // Auto-search on mount when insuredName is present and not already linked
-  useEffect(() => {
-    if (insuredName && !linkedId && !autoSearchedRef.current) {
-      autoSearchedRef.current = true;
-      handleSearch();
-    }
-  }, [insuredName, linkedId, handleSearch]);
+  }, [searchFirstName, searchLastName, searchAccountId]);
 
   const handleLink = useCallback(async (accountId: string) => {
     if (!customerId) return;
@@ -139,10 +122,7 @@ export default function EzlynxCard({
       });
       if (res.ok) {
         setLinkedId(accountId);
-        setSearchResults([]);
-        setSearched(false);
-        setShowManualSearch(false);
-        setManualResults([]);
+        setShowSearch(false);
         toast.success('Linked to EZLynx', { description: `Account: ${accountId}` });
       }
     } catch {
@@ -247,59 +227,6 @@ export default function EzlynxCard({
     }
   }, [linkedId, comparisonId, lineOfBusiness, insuredName]);
 
-  // Manual search handler
-  const handleManualSearch = useCallback(async () => {
-    setManualSearching(true);
-    setManualSearched(true);
-    setManualError(null);
-    try {
-      // If account ID entered, link directly
-      if (manualAccountId.trim()) {
-        await handleLink(manualAccountId.trim());
-        return;
-      }
-      const params = new URLSearchParams();
-      if (manualFirstName.trim()) params.set('firstName', manualFirstName.trim());
-      if (manualLastName.trim()) params.set('lastName', manualLastName.trim());
-      if (!manualFirstName.trim() && !manualLastName.trim()) {
-        setManualError('Enter a name or account ID');
-        return;
-      }
-      const results = await doSearch(params);
-      setManualResults(results);
-    } catch (err: any) {
-      if (err.message === 'bot_disconnected') {
-        setManualError('Bot not connected');
-      } else {
-        setManualError(err.message);
-      }
-      setManualResults([]);
-    } finally {
-      setManualSearching(false);
-    }
-  }, [manualFirstName, manualLastName, manualAccountId, doSearch, handleLink]);
-
-  // Render a result row
-  const ResultRow = ({ r, onLink }: { r: any; onLink: (id: string) => void }) => (
-    <button
-      key={r.accountId}
-      onClick={() => onLink(r.accountId)}
-      className="w-full text-left p-2 text-xs bg-white rounded border hover:bg-blue-50 transition-colors"
-    >
-      <div className="flex items-center justify-between">
-        <span className="font-medium">{r.firstName} {r.lastName}</span>
-        <span className="text-gray-400 font-mono text-[10px]">#{r.accountId}</span>
-      </div>
-      {(r.address || r.dateOfBirth) && (
-        <div className="text-[10px] text-gray-400 mt-0.5">
-          {r.dateOfBirth && <span>DOB: {r.dateOfBirth}</span>}
-          {r.dateOfBirth && r.address && <span className="mx-1">|</span>}
-          {r.address && <span>{r.address}{r.city ? `, ${r.city}` : ''}{r.state ? ` ${r.state}` : ''}</span>}
-        </div>
-      )}
-    </button>
-  );
-
   // === LINKED STATE ===
   if (linkedId) {
     return (
@@ -348,54 +275,13 @@ export default function EzlynxCard({
         EZLynx
       </h4>
 
-      {/* Bot disconnected warning */}
-      {searchError === 'bot_disconnected' && (
-        <div className="flex items-center gap-1.5 p-2 mb-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
-          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-          <span>Bot not connected — start EZLynx bot and retry</span>
-        </div>
-      )}
-
-      {/* Generic error */}
-      {searchError && searchError !== 'bot_disconnected' && (
-        <p className="text-xs text-red-500 mb-2">{searchError}</p>
-      )}
-
-      {/* Auto-search results */}
-      {searched && !searchError && searchResults.length > 0 && (
-        <div className="space-y-1 mb-2 max-h-40 overflow-y-auto">
-          {searchResults.map((r) => (
-            <ResultRow key={r.accountId} r={r} onLink={handleLink} />
-          ))}
-        </div>
-      )}
-      {searched && !searchError && searchResults.length === 0 && !searching && (
-        <p className="text-xs text-gray-400 mb-2">No matches found in EZLynx</p>
-      )}
-
       <div className="flex gap-2">
         <button
-          onClick={handleSearch}
-          disabled={searching || !insuredName}
-          className="flex-1 px-2 py-1.5 border border-gray-300 text-xs font-medium rounded-md hover:bg-gray-100 disabled:opacity-50 flex items-center justify-center gap-1"
+          onClick={openSearch}
+          className="flex-1 px-2 py-1.5 border border-gray-300 text-xs font-medium rounded-md hover:bg-gray-100 flex items-center justify-center gap-1"
         >
-          {searching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+          <Search className="w-3 h-3" />
           Find
-        </button>
-        <button
-          onClick={() => {
-            setShowManualSearch(true);
-            setManualResults([]);
-            setManualSearched(false);
-            setManualError(null);
-            setManualFirstName('');
-            setManualLastName('');
-            setManualAccountId('');
-          }}
-          className="px-2 py-1.5 border border-gray-300 text-xs font-medium rounded-md hover:bg-gray-100 flex items-center justify-center gap-1"
-          title="Manual search"
-        >
-          <Link2 className="w-3 h-3" />
         </button>
         <button
           onClick={handleCreate}
@@ -407,86 +293,117 @@ export default function EzlynxCard({
         </button>
       </div>
 
-      {/* Manual Search Modal */}
-      {showManualSearch && (
+      {/* Search Modal */}
+      {showSearch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-800">Search EZLynx</h3>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                <Search className="w-4 h-4 text-gray-500" />
+                Search EZLynx
+              </h3>
               <button
-                onClick={() => setShowManualSearch(false)}
-                className="text-gray-400 hover:text-gray-600"
+                onClick={() => setShowSearch(false)}
+                className="text-gray-400 hover:text-gray-600 p-0.5"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Search by name */}
+            {/* Name fields — stacked for more room */}
             <div className="space-y-2 mb-3">
-              <div className="flex gap-2">
+              <div>
+                <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1">First Name</label>
                 <input
                   type="text"
-                  placeholder="First name"
-                  value={manualFirstName}
-                  onChange={(e) => setManualFirstName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
-                  className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  placeholder="e.g. Daryl"
+                  value={searchFirstName}
+                  onChange={(e) => setSearchFirstName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  autoFocus
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
                 />
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1">Last Name</label>
                 <input
                   type="text"
-                  placeholder="Last name"
-                  value={manualLastName}
-                  onChange={(e) => setManualLastName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
-                  className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  placeholder="e.g. Caddell"
+                  value={searchLastName}
+                  onChange={(e) => setSearchLastName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
                 />
               </div>
-
-              <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                <div className="flex-1 border-t border-gray-200" />
-                <span>or enter ID directly</span>
-                <div className="flex-1 border-t border-gray-200" />
-              </div>
-
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Hash className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="EZLynx Account ID"
-                    value={manualAccountId}
-                    onChange={(e) => setManualAccountId(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
-                    className="w-full pl-6 pr-2 py-1.5 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  />
-                </div>
-              </div>
-
-              <button
-                onClick={handleManualSearch}
-                disabled={manualSearching}
-                className="w-full px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1"
-              >
-                {manualSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
-                {manualAccountId.trim() ? 'Link Account' : 'Search'}
-              </button>
             </div>
 
+            <div className="flex items-center gap-2 text-[10px] text-gray-400 mb-3">
+              <div className="flex-1 border-t border-gray-200" />
+              <span>or link by ID</span>
+              <div className="flex-1 border-t border-gray-200" />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1">Account ID</label>
+              <div className="relative">
+                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="e.g. 153151412"
+                  value={searchAccountId}
+                  onChange={(e) => setSearchAccountId(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleSearch}
+              disabled={searching}
+              className="w-full px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              {searchAccountId.trim() ? 'Link Account' : 'Search'}
+            </button>
+
             {/* Error */}
-            {manualError && (
-              <p className="text-xs text-red-500 mb-2">{manualError}</p>
+            {searchError && (
+              <div className="flex items-center gap-1.5 mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{searchError}</span>
+              </div>
             )}
 
             {/* Results */}
-            {manualSearched && !manualError && manualResults.length > 0 && (
-              <div className="space-y-1 max-h-48 overflow-y-auto">
-                {manualResults.map((r) => (
-                  <ResultRow key={r.accountId} r={r} onLink={handleLink} />
+            {searched && !searchError && searchResults.length > 0 && (
+              <div className="mt-3 space-y-1.5 max-h-60 overflow-y-auto">
+                <p className="text-[10px] text-gray-400 uppercase font-medium">
+                  {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} — click to link
+                </p>
+                {searchResults.map((r) => (
+                  <button
+                    key={r.accountId}
+                    onClick={() => handleLink(r.accountId)}
+                    className="w-full text-left p-2.5 bg-gray-50 rounded-md border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-800">{r.firstName} {r.lastName}</span>
+                      <span className="text-gray-400 font-mono text-[11px]">#{r.accountId}</span>
+                    </div>
+                    {(r.address || r.dateOfBirth) && (
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {r.dateOfBirth && <span>DOB: {r.dateOfBirth}</span>}
+                        {r.dateOfBirth && r.address && <span className="mx-1">|</span>}
+                        {r.address && <span>{r.address}{r.city ? `, ${r.city}` : ''}{r.state ? ` ${r.state}` : ''} {r.zip}</span>}
+                      </div>
+                    )}
+                  </button>
                 ))}
               </div>
             )}
-            {manualSearched && !manualError && manualResults.length === 0 && !manualSearching && !manualAccountId.trim() && (
-              <p className="text-xs text-gray-400">No results</p>
+            {searched && !searchError && searchResults.length === 0 && !searching && !searchAccountId.trim() && (
+              <p className="text-xs text-gray-400 mt-3 text-center">No results found</p>
             )}
           </div>
         </div>
