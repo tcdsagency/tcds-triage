@@ -1465,7 +1465,8 @@ export function renewalToAutoApplication(
 
       if (firstName) existing.firstName = firstName.toUpperCase();
       if (lastName) existing.lastName = lastName.toUpperCase();
-      if (cd.dateOfBirth) existing.dateOfBirth = toEzlynxDate(cd.dateOfBirth);
+      const parsedDob = cd.dateOfBirth ? toEzlynxDate(cd.dateOfBirth) : undefined;
+      if (parsedDob) existing.dateOfBirth = parsedDob;
       if (cd.licenseNumber) existing.driversLicenseNumber = cd.licenseNumber;
       if (cd.licenseState) existing.driversLicenseState = cd.licenseState;
       // Never overwrite: gender, maritalStatus, occupation (not in canonical data)
@@ -1481,7 +1482,8 @@ export function renewalToAutoApplication(
       const newDriver: any = {};
       if (firstName) newDriver.firstName = firstName.toUpperCase();
       if (lastName) newDriver.lastName = lastName.toUpperCase();
-      if (cd.dateOfBirth) newDriver.dateOfBirth = toEzlynxDate(cd.dateOfBirth);
+      const newDob = cd.dateOfBirth ? toEzlynxDate(cd.dateOfBirth) : undefined;
+      if (newDob) newDriver.dateOfBirth = newDob;
       if (cd.licenseNumber) newDriver.driversLicenseNumber = cd.licenseNumber;
       if (cd.licenseState) newDriver.driversLicenseState = cd.licenseState;
       const relValue = canonicalRelationshipToDriver(cd.relationship);
@@ -1825,6 +1827,17 @@ export function renewalToHomeApplication(
 // HAWKSOFT POLICY → CANONICAL SNAPSHOT (for EZLynx sync without renewals)
 // =============================================================================
 
+/** Filter out bogus HawkSoft DOB values like "0001-01-01T00:00:00" or null */
+function isValidDob(dob?: string | null): boolean {
+  if (!dob) return false;
+  const str = String(dob);
+  if (str.startsWith('0001') || str.startsWith('0000')) return false;
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return false;
+  // Reject dates before 1900 (HawkSoft placeholder values)
+  return d.getFullYear() >= 1900;
+}
+
 /** HawkSoft coverage code → canonical auto coverage type */
 const HS_AUTO_COVERAGE_MAP: Record<string, string> = {
   'BI': 'bodily_injury',
@@ -1914,7 +1927,7 @@ export function hawksoftAutoToSnapshot(policy: any): { snapshot: any; comparison
   // Map drivers
   const drivers = (policy.drivers || []).map((d: any) => ({
     name: d.name || `${d.firstName || ''} ${d.lastName || ''}`.trim(),
-    dateOfBirth: d.dateOfBirth,
+    dateOfBirth: isValidDob(d.dateOfBirth) ? d.dateOfBirth : undefined,
     licenseNumber: d.licenseNumber,
     licenseState: d.licenseState,
     relationship: d.relationship,
