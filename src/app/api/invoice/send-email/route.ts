@@ -80,7 +80,12 @@ export async function POST(request: NextRequest) {
       `,
       attachments: [
         {
-          filename: `Invoice-${policyNumber || "TCDS"}-${new Date().toISOString().split("T")[0]}.pdf`,
+          filename: (() => {
+            const parts = (customerName || "Customer").trim().split(/\s+/);
+            return parts.length >= 2
+              ? `${parts[0]}_${parts[parts.length - 1]}_EOI.pdf`
+              : `${parts[0]}_EOI.pdf`;
+          })(),
           content: pdfBuffer,
         },
       ],

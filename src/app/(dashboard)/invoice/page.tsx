@@ -95,6 +95,9 @@ export default function InvoiceGeneratorPage() {
     message: string;
   } | null>(null);
 
+  // Uploaded dec page file (to append to generated PDF)
+  const [decPageFile, setDecPageFile] = useState<{ bytes: ArrayBuffer; type: string } | null>(null);
+
   // Carrier/broker combobox state
   const [carrierNames, setCarrierNames] = useState<string[]>([]);
   const [brokerNames, setBrokerNames] = useState<string[]>([]);
@@ -187,6 +190,10 @@ export default function InvoiceGeneratorPage() {
     setNotification(null);
 
     try {
+      // Store the raw file bytes to append to the generated PDF later
+      const fileBytes = await file.arrayBuffer();
+      setDecPageFile({ bytes: fileBytes, type: file.type });
+
       const formDataUpload = new FormData();
       formDataUpload.append("file", file);
 
@@ -569,6 +576,44 @@ export default function InvoiceGeneratorPage() {
         color: grayColor,
       });
 
+      // Append uploaded dec page if available
+      if (decPageFile) {
+        try {
+          if (decPageFile.type === "application/pdf") {
+            const decPdf = await PDFDocument.load(decPageFile.bytes);
+            const copiedPages = await pdfDoc.copyPages(decPdf, decPdf.getPageIndices());
+            for (const copiedPage of copiedPages) {
+              pdfDoc.addPage(copiedPage);
+            }
+          } else {
+            // Image file (jpg, png, etc.)
+            const imageBytes = new Uint8Array(decPageFile.bytes);
+            let image;
+            if (decPageFile.type === "image/png") {
+              image = await pdfDoc.embedPng(imageBytes);
+            } else {
+              image = await pdfDoc.embedJpg(imageBytes);
+            }
+            const imgDims = image.scale(1);
+            // Fit image to letter page with margins
+            const maxW = 612 - 60;
+            const maxH = 792 - 60;
+            const scale = Math.min(maxW / imgDims.width, maxH / imgDims.height, 1);
+            const imgW = imgDims.width * scale;
+            const imgH = imgDims.height * scale;
+            const imgPage = pdfDoc.addPage([612, 792]);
+            imgPage.drawImage(image, {
+              x: (612 - imgW) / 2,
+              y: (792 - imgH) / 2,
+              width: imgW,
+              height: imgH,
+            });
+          }
+        } catch (err) {
+          console.error("Failed to append dec page:", err);
+        }
+      }
+
       const pdfBytes = await pdfDoc.save();
       setGeneratedPdf(pdfBytes);
 
@@ -609,7 +654,11 @@ export default function InvoiceGeneratorPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Invoice-${formData.policyNumber || "TCDS"}-${formData.invoiceDate}.pdf`;
+    const nameParts = formData.customerName.trim().split(/\s+/);
+    const fileName = nameParts.length >= 2
+      ? `${nameParts[0]}_${nameParts[nameParts.length - 1]}_EOI.pdf`
+      : `${nameParts[0] || "Customer"}_EOI.pdf`;
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
