@@ -291,10 +291,14 @@ export async function POST(request: NextRequest) {
 
           const appTemplate = await ezlynxBot.getAutoApplication(openAppId);
 
-          // Resolve prior carrier name to EZLynx enum
+          // Resolve prior carrier name to EZLynx enum (fall back to "Other Standard")
           if (policy.carrierName) {
             try {
-              const carrierEnum = await ezlynxReference.resolve('PriorCarrier', policy.carrierName);
+              let carrierEnum = await ezlynxReference.resolve('PriorCarrier', policy.carrierName);
+              if (!carrierEnum) {
+                carrierEnum = await ezlynxReference.resolve('PriorCarrier', 'Other Standard');
+                if (carrierEnum) console.log(`[SyncPolicies] Prior carrier "${policy.carrierName}" not found, using "Other Standard"`);
+              }
               if (carrierEnum) comparison.priorCarrierEnum = carrierEnum;
             } catch (e) {
               console.log(`[SyncPolicies] Could not resolve prior carrier "${policy.carrierName}":`, (e as Error).message);
@@ -393,6 +397,21 @@ export async function POST(request: NextRequest) {
           }
 
           const appTemplate = await ezlynxBot.getHomeApplication(openAppId);
+
+          // Resolve prior carrier name to EZLynx enum (fall back to "Other Standard")
+          if (policy.carrierName) {
+            try {
+              let carrierEnum = await ezlynxReference.resolve('PriorCarrier', policy.carrierName);
+              if (!carrierEnum) {
+                carrierEnum = await ezlynxReference.resolve('PriorCarrier', 'Other Standard');
+                if (carrierEnum) console.log(`[SyncPolicies] Home prior carrier "${policy.carrierName}" not found, using "Other Standard"`);
+              }
+              if (carrierEnum) comparison.priorCarrierEnum = carrierEnum;
+            } catch (e) {
+              console.log(`[SyncPolicies] Could not resolve home prior carrier "${policy.carrierName}":`, (e as Error).message);
+            }
+          }
+
           const { app: mergedApp, syncReport } = renewalToHomeApplication(snapshot, comparison, appTemplate, baselineSnapshot);
 
           // Build before/after diff

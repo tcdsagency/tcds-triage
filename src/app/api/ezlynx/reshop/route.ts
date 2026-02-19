@@ -122,10 +122,14 @@ export async function POST(request: NextRequest) {
       // Build mapper comparison with prior carrier data
       const mapperComparison: any = { ...comparison };
 
-      // Resolve prior carrier name to EZLynx enum
+      // Resolve prior carrier name to EZLynx enum (fall back to "Other Standard")
       if (comparison.carrierName) {
         try {
-          const carrierEnum = await ezlynxReference.resolve('PriorCarrier', comparison.carrierName);
+          let carrierEnum = await ezlynxReference.resolve('PriorCarrier', comparison.carrierName);
+          if (!carrierEnum) {
+            carrierEnum = await ezlynxReference.resolve('PriorCarrier', 'Other Standard');
+            if (carrierEnum) console.log(`[Reshop] Prior carrier "${comparison.carrierName}" not found, using "Other Standard"`);
+          }
           if (carrierEnum) mapperComparison.priorCarrierEnum = carrierEnum;
         } catch (e) {
           console.log(`[Reshop] Could not resolve prior carrier "${comparison.carrierName}":`, (e as Error).message);
@@ -252,8 +256,26 @@ export async function POST(request: NextRequest) {
       }
 
       const appTemplate = await ezlynxBot.getHomeApplication(openAppId);
+
+      // Build mapper comparison with prior carrier data
+      const homeMapperComparison: any = { ...comparison };
+
+      // Resolve prior carrier name to EZLynx enum (fall back to "Other Standard")
+      if (comparison.carrierName) {
+        try {
+          let carrierEnum = await ezlynxReference.resolve('PriorCarrier', comparison.carrierName);
+          if (!carrierEnum) {
+            carrierEnum = await ezlynxReference.resolve('PriorCarrier', 'Other Standard');
+            if (carrierEnum) console.log(`[Reshop] Home prior carrier "${comparison.carrierName}" not found, using "Other Standard"`);
+          }
+          if (carrierEnum) homeMapperComparison.priorCarrierEnum = carrierEnum;
+        } catch (e) {
+          console.log(`[Reshop] Could not resolve home prior carrier "${comparison.carrierName}":`, (e as Error).message);
+        }
+      }
+
       const baseline = comparison.baselineSnapshot as any;
-      const { app: mergedApp, syncReport } = renewalToHomeApplication(snapshot, comparison, appTemplate, baseline);
+      const { app: mergedApp, syncReport } = renewalToHomeApplication(snapshot, homeMapperComparison, appTemplate, baseline);
 
       // Build before/after diff for preview
       const beforeAfter: { field: string; before: string; after: string }[] = [];

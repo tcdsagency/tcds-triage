@@ -1852,6 +1852,22 @@ export function renewalToHomeApplication(
         syncReport.policyInfo.priorPolicyExpirationDate = expDate;
       }
     }
+
+    // Prior carrier — resolved enum passed in via comparison.priorCarrierEnum
+    if (comparison?.priorCarrierEnum) {
+      app.policyInformation.priorCarrier = comparison.priorCarrierEnum;
+      syncReport.policyInfo.priorCarrier = comparison.priorCarrierEnum.description;
+    }
+
+    // Prior policy term — 6 or 12 months
+    if (comparison?.priorPolicyTerm) {
+      app.policyInformation.priorPolicyTerm = comparison.priorPolicyTerm;
+    }
+
+    // Prior policy premium
+    if (comparison?.priorPolicyPremium != null) {
+      app.policyInformation.priorPolicyPremium = String(comparison.priorPolicyPremium);
+    }
   }
 
   return { app, syncReport };
@@ -2095,11 +2111,29 @@ export function hawksoftHomeToSnapshot(policy: any): { snapshot: any; comparison
     };
   }
 
+  // Compute prior policy term from effective→expiration date span
+  let priorPolicyTerm: { value: number; name: string; description: string } | undefined;
+  if (policy.effectiveDate && policy.expirationDate) {
+    const eff = new Date(policy.effectiveDate);
+    const exp = new Date(policy.expirationDate);
+    if (!isNaN(eff.getTime()) && !isNaN(exp.getTime())) {
+      const monthsDiff = (exp.getFullYear() - eff.getFullYear()) * 12 + (exp.getMonth() - eff.getMonth());
+      if (monthsDiff <= 7) {
+        priorPolicyTerm = { value: 1, name: 'Item6Months', description: '6 Months' };
+      } else {
+        priorPolicyTerm = { value: 2, name: 'Item12Months', description: '12 Months' };
+      }
+    }
+  }
+
   return {
     snapshot: { coverages },
     comparison: {
       renewalEffectiveDate: policy.effectiveDate,
       renewalExpirationDate: policy.expirationDate,
+      carrierName: policy.carrierName,
+      priorPolicyTerm,
+      priorPolicyPremium: policy.premium,
     },
     baselineSnapshot,
   };
