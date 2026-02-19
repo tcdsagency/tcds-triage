@@ -345,7 +345,7 @@ export async function POST(request: NextRequest) {
           for (let i = 0; i < newVehicles.length; i++) {
             const nv = newVehicles[i];
             const ov = oldVehicles[i];
-            const label = `${nv.year || ''} ${nv.make || ''} ${nv.model || ''}`.trim() || `Vehicle ${i + 1}`;
+            const label = `${nv.year?.description ?? nv.year ?? ''} ${nv.make?.description ?? nv.make ?? ''} ${nv.model?.description ?? nv.model ?? ''}`.trim() || `Vehicle ${i + 1}`;
             if (ov?.coverage?.comprehensive?.description !== nv.coverage?.comprehensive?.description)
               beforeAfter.push({ field: `${label} Comp Ded`, before: ov?.coverage?.comprehensive?.description || '(empty)', after: nv.coverage?.comprehensive?.description || '(empty)' });
             if (ov?.coverage?.collision?.description !== nv.coverage?.collision?.description)
