@@ -149,6 +149,12 @@ export class HawkSoftHiddenAPI {
       throw new Error(`HawkSoft Cloud auth failed: ${response.status}`);
     }
 
+    // Parse body first — HawkSoft returns 200 even for auth errors (locked, invalid, etc.)
+    const authBody = await response.json().catch(() => null) as any;
+    if (authBody?.status && authBody.status !== 0 && authBody.desc) {
+      throw new Error(`HawkSoft Cloud auth error: ${authBody.desc} — ${authBody.message || ''}`);
+    }
+
     // Extract Set-Cookie headers
     const setCookies = response.headers.getSetCookie?.() || [];
     const cookieStr = setCookies
@@ -159,8 +165,6 @@ export class HawkSoftHiddenAPI {
       throw new Error('HawkSoft Cloud auth returned no cookies');
     }
 
-    // Extract agency ID from auth response
-    const authBody = await response.json().catch(() => null) as any;
     const agencyId = authBody?.office?.agencyId || authBody?.claims?.agencyId || 0;
 
     this.session = {
