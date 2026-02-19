@@ -136,35 +136,33 @@ export async function POST(request: NextRequest) {
         if (!cloudUuid) continue;
       }
 
-      // Get attachments and client detail (for policy hex ID → number mapping) in parallel
+      // Get attachments (sequential calls to respect rate limiter and avoid concurrent auth)
       let attachments;
       let policyHexMap = new Map<string, string>(); // hex ID → policy number
       try {
-        const clientCode = parseInt(customer.hawksoftClientCode, 10);
-        const [attachResult, clientResult] = await Promise.allSettled([
-          hiddenClient.getAttachments(cloudUuid),
-          !isNaN(clientCode) ? hiddenClient.getClient(clientCode) : Promise.resolve(null),
-        ]);
-
-        if (attachResult.status === 'rejected') {
-          console.error(`[hawksoft-poll] Failed to get attachments for ${cloudUuid}:`, attachResult.reason);
-          errors++;
-          continue;
-        }
-        attachments = attachResult.value;
-
-        // Build hex ID → policy number map from Cloud API client detail
-        if (clientResult.status === 'fulfilled' && clientResult.value?.policies) {
-          for (const p of clientResult.value.policies) {
-            if (p.id && p.number) {
-              policyHexMap.set(p.id, p.number);
-            }
-          }
-        }
+        attachments = await hiddenClient.getAttachments(cloudUuid);
       } catch (err) {
-        console.error(`[hawksoft-poll] Failed to get data for ${cloudUuid}:`, err);
+        console.error(`[hawksoft-poll] Failed to get attachments for ${cloudUuid}:`, err);
         errors++;
         continue;
+      }
+
+      // Get client detail for policy hex ID → number mapping (only if there are AL3 attachments)
+      const hasAl3 = attachments.some(
+        (a) => a.al3_type != null && RENEWAL_AL3_TYPES.has(a.al3_type) && AL3_EXTENSIONS.has((a.file_ext || '').toLowerCase())
+      );
+      if (hasAl3) {
+        try {
+          const clientCode = parseInt(customer.hawksoftClientCode, 10);
+          if (!isNaN(clientCode)) {
+            const client = await hiddenClient.getClient(clientCode);
+            for (const p of client.policies || []) {
+              if (p.id && p.number) policyHexMap.set(p.id, p.number);
+            }
+          }
+        } catch {
+          // Non-fatal — we'll fall back to single-policy matching
+        }
       }
 
       // Filter for AL3 renewal attachments

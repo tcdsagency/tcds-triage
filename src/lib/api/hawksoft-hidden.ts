@@ -115,6 +115,7 @@ async function rateLimit(): Promise<void> {
 
 export class HawkSoftHiddenAPI {
   private session: AuthSession | null = null;
+  private authPromise: Promise<AuthSession> | null = null; // Mutex for concurrent auth calls
   private readonly username: string;
   private readonly password: string;
   private readonly authUrl = 'https://agencyauth.hawksoft.app';
@@ -227,8 +228,14 @@ export class HawkSoftHiddenAPI {
       // DB read failed — fall through to authenticate
     }
 
-    // 3. Fresh auth (authenticate() also persists to DB)
-    return this.authenticate();
+    // 3. Fresh auth — use mutex to prevent concurrent auth calls (causes lockout)
+    if (this.authPromise) {
+      return this.authPromise;
+    }
+    this.authPromise = this.authenticate().finally(() => {
+      this.authPromise = null;
+    });
+    return this.authPromise;
   }
 
   // --------------------------------------------------------------------------
