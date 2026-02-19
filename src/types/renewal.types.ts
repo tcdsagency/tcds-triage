@@ -259,7 +259,8 @@ export interface BaselineSnapshot {
   policyEffectiveDate?: string; // ISO date
   policyExpirationDate?: string; // ISO date
   fetchedAt: string; // ISO timestamp
-  fetchSource: 'hawksoft_api' | 'local_cache' | 'prior_term_snapshot';
+  fetchSource: 'hawksoft_api' | 'local_cache' | 'prior_term_snapshot' | 'hawksoft_hidden_api';
+  hiddenApiPremium?: number;
 }
 
 // =============================================================================
@@ -369,4 +370,20 @@ export interface ExtractedAL3File {
   content: string;
   sourceZip?: string;
   nestingDepth: number;
+}
+
+// =============================================================================
+// PREMIUM VERIFICATION (HawkSoft Hidden API cross-check)
+// =============================================================================
+
+export interface PremiumVerification {
+  al3Premium: number | undefined;
+  hiddenApiPremium: number | undefined;
+  premiumMatch: boolean; // Within $5 tolerance
+  discrepancy?: number; // Absolute difference
+  discrepancyPercent?: number;
+  rateChangeEffective?: string;
+  rateChangePremiumChg?: number;
+  rateChangePctChg?: number;
+  verifiedAt: string;
 }

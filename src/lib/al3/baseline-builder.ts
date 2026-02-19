@@ -21,6 +21,7 @@ import type {
 import { COVERAGE_CODE_MAP, DISCOUNT_COVERAGE_TYPES } from './constants';
 import { parseSplitLimit } from './parser';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
+import { getHawkSoftHiddenClient } from '@/lib/api/hawksoft-hidden';
 
 // =============================================================================
 // POLICY NUMBER NORMALIZATION
@@ -589,7 +590,7 @@ export async function buildBaselineSnapshot(
     return null;
   }
 
-  const snapshot: BaselineSnapshot = {
+  let snapshot: BaselineSnapshot = {
     premium: baselinePremium,
     coverages: realCoverages,
     vehicles: finalVehicles,
@@ -606,12 +607,111 @@ export async function buildBaselineSnapshot(
     fetchSource,
   };
 
+  // Enrich with Hidden API premium data (non-blocking validation layer)
+  if (renewalEffectiveDate) {
+    snapshot = await enrichBaselineWithHiddenApi(
+      snapshot,
+      localPolicy.customerId,
+      policyNumber,
+      renewalEffectiveDate
+    );
+  }
+
   return {
     snapshot,
     policyId: localPolicy.policyId,
     customerId: localPolicy.customerId,
   };
 }
+
+// =============================================================================
+// HIDDEN API BASELINE ENRICHMENT
+// =============================================================================
+
+/**
+ * Enrich a BaselineSnapshot with premium data from HawkSoft Cloud API's
+ * rate change history. Used as a validation layer — if the Hidden API premium
+ * differs significantly from the snapshot premium, both values are preserved.
+ */
+export async function enrichBaselineWithHiddenApi(
+  snapshot: BaselineSnapshot,
+  customerId: string,
+  policyNumber: string,
+  renewalEffectiveDate: string
+): Promise<BaselineSnapshot> {
+  try {
+    const hiddenClient = getHawkSoftHiddenClient();
+
+    // Get customer's HawkSoft client code
+    const [customer] = await db
+      .select({
+        hawksoftClientCode: customers.hawksoftClientCode,
+        lastName: customers.lastName,
+      })
+      .from(customers)
+      .where(eq(customers.id, customerId))
+      .limit(1);
+
+    if (!customer?.hawksoftClientCode) return snapshot;
+
+    const cloudUuid = await hiddenClient.resolveCloudUuid(
+      customer.hawksoftClientCode,
+      customer.lastName
+    );
+    if (!cloudUuid) return snapshot;
+
+    const cloudClient = await hiddenClient.getClient(cloudUuid);
+    const matchingPolicy = cloudClient.policies?.find(
+      (p) => p.number === policyNumber
+    );
+    if (!matchingPolicy) return snapshot;
+
+    const rateChanges = await hiddenClient.getRateChangeHistory(
+      cloudUuid,
+      matchingPolicy.id
+    );
+    if (!rateChanges?.length) return snapshot;
+
+    // Find the CURRENT term entry (effective before renewal date)
+    const renewalDate = renewalEffectiveDate.split('T')[0];
+    const currentTermEntry = rateChanges
+      .filter((rc) => {
+        const rcDate = rc.effective.split('T')[0];
+        return rcDate < renewalDate;
+      })
+      .sort((a, b) => b.effective.localeCompare(a.effective))[0];
+
+    if (!currentTermEntry) return snapshot;
+
+    const hiddenApiPremium = currentTermEntry.premium_amt;
+
+    if (snapshot.premium != null && hiddenApiPremium != null) {
+      const diff = Math.abs(snapshot.premium - hiddenApiPremium);
+      const pctDiff = snapshot.premium > 0 ? (diff / snapshot.premium) * 100 : 0;
+
+      if (pctDiff > 5) {
+        console.warn(
+          `[Baseline] Hidden API premium mismatch for ${policyNumber}: snapshot=$${snapshot.premium}, hiddenApi=$${hiddenApiPremium} (${pctDiff.toFixed(1)}% diff)`
+        );
+        snapshot.hiddenApiPremium = hiddenApiPremium;
+      }
+    } else if (snapshot.premium == null && hiddenApiPremium != null) {
+      // No premium in snapshot — use Hidden API as authoritative
+      console.log(`[Baseline] Using Hidden API premium for ${policyNumber}: $${hiddenApiPremium}`);
+      snapshot.premium = hiddenApiPremium;
+      snapshot.fetchSource = 'hawksoft_hidden_api';
+    }
+  } catch (err) {
+    // Non-blocking — Hidden API unavailable is not a failure
+    console.warn('[Baseline] Hidden API enrichment failed:', err);
+  }
+
+  return snapshot;
+}
+
+// =============================================================================
+// HAWKSOFT PUBLIC API ENRICHMENT
+// =============================================================================
 
 /**
  * Fetch policy data from HawkSoft API for baseline enrichment.

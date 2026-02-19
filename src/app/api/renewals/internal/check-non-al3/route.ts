@@ -19,6 +19,7 @@ import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import { logRenewalEvent } from '@/lib/api/renewal-audit';
 import { getAgencyZoomClient, type ServiceTicket } from '@/lib/api/agencyzoom';
 import { SERVICE_PIPELINES } from '@/lib/api/agencyzoom-service-tickets';
+import { getHawkSoftHiddenClient } from '@/lib/api/hawksoft-hidden';
 
 export async function POST(request: NextRequest) {
   try {
@@ -184,7 +185,97 @@ export async function POST(request: NextRequest) {
         assignedAgentId = customer?.producerId || null;
       }
 
-      // Create pending_manual_renewal comparison record
+      // Try HawkSoft Hidden API for rate change data (non-AL3 carriers)
+      let renewalPremium: string | null = null;
+      let premiumChangeAmount: string | null = null;
+      let premiumChangePercent: string | null = null;
+      let renewalSource: string = 'pending';
+      let comparisonStatus: string = 'pending_manual_renewal';
+      let recommendation: string = 'needs_review';
+      let comparisonSummary: Record<string, unknown> = hasBaseline
+        ? { note: 'AL3 carrier — renewal file not yet received. Will auto-update when AL3 arrives, or upload PDF manually.' }
+        : { note: 'Non-AL3 carrier — upload renewal dec page PDF to compare.' };
+
+      // Attempt Hidden API enrichment
+      try {
+        const hiddenClient = getHawkSoftHiddenClient();
+
+        // Get customer's HawkSoft client code and last name for UUID resolution
+        const [customerInfo] = await db
+          .select({
+            hawksoftClientCode: customers.hawksoftClientCode,
+            lastName: customers.lastName,
+          })
+          .from(customers)
+          .where(eq(customers.id, policy.customerId))
+          .limit(1);
+
+        if (customerInfo?.hawksoftClientCode) {
+          const cloudUuid = await hiddenClient.resolveCloudUuid(
+            customerInfo.hawksoftClientCode,
+            customerInfo.lastName
+          );
+
+          if (cloudUuid) {
+            const cloudClient = await hiddenClient.getClient(cloudUuid);
+            const matchingPolicy = cloudClient.policies?.find(
+              (p) => p.number === policy.policyNumber
+            );
+
+            if (matchingPolicy) {
+              const rateChanges = await hiddenClient.getRateChangeHistory(
+                cloudUuid,
+                matchingPolicy.id
+              );
+
+              // Find renewal entry matching expiration date
+              const expirationStr = policy.expirationDate.toISOString().split('T')[0];
+              const renewalEntry = rateChanges?.find((rc) => {
+                const rcDate = rc.effective.split('T')[0];
+                return rcDate === expirationStr && (rc.al3_type === 40 || rc.al3_type === 41);
+              });
+
+              if (renewalEntry) {
+                renewalPremium = String(renewalEntry.premium_amt);
+                premiumChangeAmount = String(renewalEntry.premium_amt_chg);
+                premiumChangePercent = String(renewalEntry.premium_pct_chg * 100);
+                renewalSource = 'hawksoft_cloud';
+                comparisonStatus = 'waiting_agent_review';
+                comparisonSummary = {
+                  note: 'Rate change data from HawkSoft Cloud API',
+                  premiumDirection: renewalEntry.premium_amt_chg > 0 ? 'increase' : renewalEntry.premium_amt_chg < 0 ? 'decrease' : 'same',
+                  premiumChangeAmount: renewalEntry.premium_amt_chg,
+                  premiumChangePercent: renewalEntry.premium_pct_chg * 100,
+                  rateChangeEffective: renewalEntry.effective,
+                  materialNegativeCount: renewalEntry.premium_amt_chg > 0 ? 1 : 0,
+                  materialPositiveCount: renewalEntry.premium_amt_chg < 0 ? 1 : 0,
+                  nonMaterialCount: 0,
+                  headline: renewalEntry.premium_amt_chg > 0
+                    ? `Premium increase of $${Math.abs(renewalEntry.premium_amt_chg).toFixed(0)} (${(renewalEntry.premium_pct_chg * 100).toFixed(1)}%)`
+                    : renewalEntry.premium_amt_chg < 0
+                      ? `Premium decrease of $${Math.abs(renewalEntry.premium_amt_chg).toFixed(0)} (${(Math.abs(renewalEntry.premium_pct_chg) * 100).toFixed(1)}%)`
+                      : 'No premium change',
+                };
+
+                // Determine recommendation based on premium change
+                const absPctChange = Math.abs(renewalEntry.premium_pct_chg * 100);
+                if (renewalEntry.premium_amt_chg > 0 && absPctChange >= 10) {
+                  recommendation = 'reshop';
+                } else if (renewalEntry.premium_amt_chg > 0 && absPctChange >= 5) {
+                  recommendation = 'needs_review';
+                } else {
+                  recommendation = 'renew_as_is';
+                }
+              }
+            }
+          }
+        }
+      } catch (hiddenApiErr) {
+        // Hidden API not configured or failed — fall back to placeholder
+        console.warn('[check-non-al3] Hidden API enrichment failed (using placeholder):', hiddenApiErr);
+      }
+
+      // Create comparison record (enriched or placeholder)
       const [comparison] = await db
         .insert(renewalComparisons)
         .values({
@@ -196,13 +287,14 @@ export async function POST(request: NextRequest) {
           lineOfBusiness: policy.lineOfBusiness,
           renewalEffectiveDate: policy.expirationDate,
           currentPremium: policy.premium,
-          status: 'pending_manual_renewal',
-          recommendation: 'needs_review',
-          renewalSource: 'pending',
+          renewalPremium,
+          premiumChangeAmount,
+          premiumChangePercent,
+          status: comparisonStatus as any,
+          recommendation: recommendation as any,
+          renewalSource,
           assignedAgentId,
-          comparisonSummary: hasBaseline
-            ? { note: 'AL3 carrier — renewal file not yet received. Will auto-update when AL3 arrives, or upload PDF manually.' }
-            : { note: 'Non-AL3 carrier — upload renewal dec page PDF to compare.' },
+          comparisonSummary,
         })
         .onConflictDoNothing()
         .returning();
@@ -216,11 +308,12 @@ export async function POST(request: NextRequest) {
           renewalComparisonId: comparison.id,
           eventType: 'ingested',
           eventData: {
-            source: hasBaseline ? 'al3_overdue_check' : 'non_al3_check',
+            source: renewalSource === 'hawksoft_cloud' ? 'hawksoft_cloud_enriched' : (hasBaseline ? 'al3_overdue_check' : 'non_al3_check'),
             hasAl3Baseline: !!hasBaseline,
             policyNumber: policy.policyNumber,
             carrierName: policy.carrier,
             expirationDate: policy.expirationDate.toISOString(),
+            renewalSource,
           },
           performedBy: 'system',
         });

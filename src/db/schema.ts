@@ -517,6 +517,9 @@ export const customers = pgTable('customers', {
   ezlynxAccountId: varchar('ezlynx_account_id', { length: 50 }),
   ezlynxSyncedAt: timestamp('ezlynx_synced_at'),
 
+  // HawkSoft Cloud (Hidden API) UUID
+  hawksoftCloudUuid: varchar('hawksoft_cloud_uuid', { length: 36 }),
+
   // Archive Status (soft-delete - never hard delete, customer may reappear)
   isArchived: boolean('is_archived').default(false),
   archivedAt: timestamp('archived_at'),
@@ -5233,6 +5236,30 @@ export const renewalCandidatesRelations = relations(renewalCandidates, ({ one })
     references: [renewalComparisons.id],
   }),
 }));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HAWKSOFT ATTACHMENT LOG - Tracks AL3 attachments downloaded from Cloud API
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const hawksoftAttachmentLog = pgTable('hawksoft_attachment_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  hawksoftAttachmentId: varchar('hawksoft_attachment_id', { length: 50 }).notNull(),
+  hawksoftClientUuid: varchar('hawksoft_client_uuid', { length: 36 }).notNull(),
+  policyNumber: varchar('policy_number', { length: 50 }),
+  al3Type: integer('al3_type'),
+  effectiveDate: timestamp('effective_date'),
+  fileExt: varchar('file_ext', { length: 10 }),
+  fileSize: integer('file_size'),
+  processedAt: timestamp('processed_at'),
+  batchId: uuid('batch_id').references(() => renewalBatches.id, { onDelete: 'set null' }),
+  status: varchar('status', { length: 20 }).notNull().default('downloaded'), // downloaded | processed | skipped | failed
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('hs_attachment_log_tenant_idx').on(table.tenantId),
+  uniqueIndex('hs_attachment_log_dedup_idx').on(table.tenantId, table.hawksoftAttachmentId),
+  index('hs_attachment_log_policy_idx').on(table.tenantId, table.policyNumber),
+]);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AL3 TRANSACTION ARCHIVE - Non-renewal transactions stored for reference

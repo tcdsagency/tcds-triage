@@ -280,6 +280,42 @@ export async function initializeScheduledJobs(): Promise<void> {
     );
     logger.info('Scheduled: az-renewal-sync (every 30 min)');
 
+    // HawkSoft AL3 Poll - Every 4 hours
+    // Downloads AL3 renewal attachments from HawkSoft Cloud API
+    await (renewalQueue as Queue).upsertJobScheduler(
+      'hawksoft-al3-poll',
+      { pattern: '0 */4 * * *', tz: 'America/Chicago' },
+      {
+        name: 'hawksoft-al3-poll',
+        data: {},
+      }
+    );
+    logger.info('Scheduled: hawksoft-al3-poll (every 4 hours)');
+
+    // HawkSoft UUID Sync - Daily at 2 AM Central
+    // Background sync of HawkSoft Cloud UUIDs for all customers
+    await (renewalQueue as Queue).upsertJobScheduler(
+      'hawksoft-uuid-sync-daily',
+      { pattern: '0 2 * * *', tz: 'America/Chicago' },
+      {
+        name: 'hawksoft-uuid-sync',
+        data: {},
+      }
+    );
+    logger.info('Scheduled: hawksoft-uuid-sync-daily (2 AM CT)');
+
+    // HawkSoft Tasks Sync - Every 6 hours
+    // Pulls renewal alert tasks from HawkSoft Cloud API
+    await (renewalQueue as Queue).upsertJobScheduler(
+      'hawksoft-tasks-sync',
+      { pattern: '0 */6 * * *', tz: 'America/Chicago' },
+      {
+        name: 'hawksoft-tasks-sync',
+        data: {},
+      }
+    );
+    logger.info('Scheduled: hawksoft-tasks-sync (every 6 hours)');
+
     logger.info('All scheduled jobs initialized');
   } catch (err) {
     logger.error({ error: err }, 'Failed to initialize scheduled jobs');

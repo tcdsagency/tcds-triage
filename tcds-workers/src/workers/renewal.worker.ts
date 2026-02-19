@@ -47,6 +47,15 @@ export function createRenewalWorker(): Worker {
           case 'az-renewal-sync':
             await syncAzRenewals();
             break;
+          case 'hawksoft-al3-poll':
+            await hawksoftAl3Poll();
+            break;
+          case 'hawksoft-uuid-sync':
+            await hawksoftUuidSync();
+            break;
+          case 'hawksoft-tasks-sync':
+            await hawksoftTasksSync();
+            break;
           default:
             logger.warn({ jobName: job.name }, 'Unknown renewal job type');
         }
@@ -592,6 +601,56 @@ async function processCandidate(data: RenewalCandidateJobData): Promise<void> {
 
     const comparison = await comparisonRes.json() as { success: boolean; comparisonId?: string };
 
+    // Premium verification via HawkSoft Hidden API (non-blocking — failures don't affect comparison)
+    if (comparison.comparisonId && baselineData.customerId) {
+      try {
+        const verifyRes = await internalFetch('/api/renewals/internal/verify-premium', {
+          method: 'POST',
+          body: JSON.stringify({
+            policyNumber: candidate.policyNumber,
+            effectiveDate: candidate.effectiveDate,
+            al3Premium: renewalSnapshot.premium,
+            customerId: baselineData.customerId,
+            hawksoftClientCode: candidate.hawksoftClientCode || null,
+            customerLastName: candidate.customerLastName || '',
+          }),
+        });
+        const verifyData = await verifyRes.json() as { success: boolean; verification?: Record<string, any> };
+        if (verifyData.success && verifyData.verification) {
+          const verification = verifyData.verification;
+          // Update comparison with verification result
+          const verificationStatus = verification.premiumMatch ? 'premium_verified' : 'premium_mismatch';
+          await internalFetch(`/api/renewals/internal/comparisons/${comparison.comparisonId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              verificationStatus,
+              comparisonSummary: {
+                ...comparisonResult.summary,
+                baselineSource,
+                baselineStatus: baselineSource === 'al3_baseline' ? 'prior_term' : comparisonResult.baselineStatus,
+                baselineStatusReason: baselineSource === 'al3_baseline'
+                  ? 'Baseline from prior-term AL3 file (apples-to-apples)'
+                  : comparisonResult.baselineStatusReason,
+                premiumVerification: verification,
+              },
+            }),
+          });
+          if (!verification.premiumMatch && verification.discrepancyPercent > 5) {
+            logger.warn({
+              candidateId,
+              comparisonId: comparison.comparisonId,
+              al3Premium: verification.al3Premium,
+              hiddenApiPremium: verification.hiddenApiPremium,
+              discrepancy: verification.discrepancy,
+              discrepancyPercent: verification.discrepancyPercent,
+            }, 'Premium mismatch detected — AL3 vs HawkSoft Cloud');
+          }
+        }
+      } catch (verifyErr) {
+        logger.warn({ candidateId, error: verifyErr }, 'Premium verification failed (non-blocking)');
+      }
+    }
+
     // Update candidate with completion
     await patchCandidate(candidateId, {
       status: 'completed',
@@ -766,5 +825,102 @@ async function checkBatchCompletion(batchId: string): Promise<void> {
     }
   } catch (err) {
     logger.warn({ batchId, error: err }, 'Failed to check batch completion');
+  }
+}
+
+// =============================================================================
+// HAWKSOFT AL3 POLL (downloads AL3 attachments from Cloud API)
+// =============================================================================
+
+async function hawksoftAl3Poll(): Promise<void> {
+  logger.info('Running HawkSoft AL3 poll');
+
+  try {
+    const res = await internalFetch('/api/renewals/internal/hawksoft-poll', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    const data = await res.json() as {
+      success: boolean;
+      downloaded?: number;
+      skipped?: number;
+      errors?: number;
+      error?: string;
+    };
+
+    if (!data.success) {
+      throw new Error(data.error || 'hawksoft-poll API returned failure');
+    }
+
+    logger.info({
+      downloaded: data.downloaded,
+      skipped: data.skipped,
+      errors: data.errors,
+    }, 'HawkSoft AL3 poll complete');
+  } catch (error) {
+    logger.error({ error }, 'HawkSoft AL3 poll failed');
+    throw error;
+  }
+}
+
+// =============================================================================
+// HAWKSOFT UUID SYNC (background full sync of cloud UUIDs)
+// =============================================================================
+
+async function hawksoftUuidSync(): Promise<void> {
+  logger.info('Running HawkSoft UUID sync');
+
+  try {
+    // This calls the Hidden API's client search for A-Z and caches UUIDs.
+    // Implemented via internal fetch to keep the worker stateless.
+    const res = await internalFetch('/api/renewals/internal/hawksoft-poll', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'uuid-sync' }),
+    });
+
+    const data = await res.json() as { success: boolean; error?: string };
+    if (!data.success) {
+      throw new Error(data.error || 'UUID sync failed');
+    }
+
+    logger.info('HawkSoft UUID sync complete');
+  } catch (error) {
+    logger.error({ error }, 'HawkSoft UUID sync failed');
+    throw error;
+  }
+}
+
+// =============================================================================
+// HAWKSOFT TASKS SYNC (pulls renewal alert tasks from Cloud API)
+// =============================================================================
+
+async function hawksoftTasksSync(): Promise<void> {
+  logger.info('Running HawkSoft tasks sync');
+
+  try {
+    const res = await internalFetch('/api/renewals/internal/hawksoft-poll', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'tasks-sync' }),
+    });
+
+    const data = await res.json() as {
+      success: boolean;
+      tasksFound?: number;
+      matched?: number;
+      error?: string;
+    };
+
+    if (!data.success) {
+      throw new Error(data.error || 'Tasks sync failed');
+    }
+
+    logger.info({
+      tasksFound: data.tasksFound,
+      matched: data.matched,
+    }, 'HawkSoft tasks sync complete');
+  } catch (error) {
+    logger.error({ error }, 'HawkSoft tasks sync failed');
+    throw error;
   }
 }
