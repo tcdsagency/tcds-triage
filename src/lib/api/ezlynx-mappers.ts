@@ -1720,47 +1720,66 @@ export function renewalToHomeApplication(
 
     for (const cov of snapshot.coverages) {
       const t = (cov.type || '').toLowerCase();
+      const code = (cov.code || '').toLowerCase();
+      const desc = (cov.description || '').toLowerCase();
 
       // Dollar-amount coverages (plain strings)
-      if (t === 'dwelling' && cov.limitAmount) {
+      if ((t === 'dwelling' || code === 'dwell') && cov.limitAmount) {
         gc.dwelling = String(cov.limitAmount);
         syncReport.coverages.updated.push(`Dwelling → $${cov.limitAmount}`);
       }
-      if (t === 'personal_property' && cov.limitAmount) {
+      if ((t === 'personal_property' || code === 'pp') && cov.limitAmount) {
         gc.personalProperty = String(cov.limitAmount);
         syncReport.coverages.updated.push(`Personal Property → $${cov.limitAmount}`);
       }
-      if (t === 'loss_of_use' && cov.limitAmount) {
+      if ((t === 'loss_of_use' || code === 'lou') && cov.limitAmount) {
         gc.lossOfUse = String(cov.limitAmount);
         syncReport.coverages.updated.push(`Loss of Use → $${cov.limitAmount}`);
       }
-      if (t === 'other_structures' && cov.limitAmount) {
+      if ((t === 'other_structures' || code === 'os') && cov.limitAmount) {
         gc.otherStructures = String(cov.limitAmount);
         syncReport.coverages.updated.push(`Other Structures → $${cov.limitAmount}`);
       }
 
       // Enum coverages
-      if (t === 'personal_liability') {
+      if (t === 'personal_liability' || code === 'pl') {
         const e = findEnum(HOME_LIABILITY_ENUMS, `Item${cov.limitAmount}`);
         if (e) { gc.personalLiability = e; syncReport.coverages.updated.push(`Liability → $${e.description}`); }
       }
-      if (t === 'medical_payments' || t === 'medical_payments_to_others') {
+      if (t === 'medical_payments' || t === 'medical_payments_to_others' || code === 'medpm') {
         const e = findEnum(HOME_MEDPAY_ENUMS, `Item${cov.limitAmount}`);
         if (e) { gc.medicalPayments = e; syncReport.coverages.updated.push(`MedPay → $${e.description}`); }
       }
 
-      // Deductibles
-      if ((t.includes('all_peril') || t === 'deductible') && !t.includes('wind') && !t.includes('hurricane')) {
-        const e = canonicalDeductibleToEnum(cov.deductible, cov.deductibleAmount, HOME_PERILS_DEDUCTIBLE_ENUMS);
+      // Deductibles — match by canonical type, AL3 code, or description text
+      const isAllPeril = t.includes('all_peril') || t === 'deductible' || code === 'rpded'
+        || desc.includes('all other peril') || desc.includes('all peril');
+      const isWind = t.includes('wind') || t.includes('hail') || code === 'wndsd'
+        || desc.includes('windhail') || desc.includes('wind/hail') || desc.includes('wind hail');
+      const isHurricane = t.includes('hurricane') || code === 'hurded'
+        || desc.includes('hurricane');
+
+      if (isAllPeril && !isWind && !isHurricane) {
+        // For RPDED: deductible amount is in limitAmount (AL3 quirk), not deductibleAmount
+        const dedAmt = cov.deductibleAmount || cov.limitAmount;
+        const e = canonicalDeductibleToEnum(cov.deductible, dedAmt, HOME_PERILS_DEDUCTIBLE_ENUMS);
         if (e) { gc.perilsDeductible = e; syncReport.coverages.updated.push(`All Peril Ded → $${e.description}`); }
       }
-      if (t.includes('wind') || t.includes('hail')) {
-        const e = canonicalDeductibleToEnum(cov.deductible, cov.deductibleAmount, HOME_WIND_DEDUCTIBLE_ENUMS);
-        if (e) { gc.windDeductible = e; syncReport.coverages.updated.push(`Wind/Hail Ded → ${e.description}`); }
+      if (isWind) {
+        // For WNDSD: the limitAmount is the credit amount, not the deductible
+        // Use deductibleAmount if available, otherwise try to extract from the dwelling deductible
+        const dedAmt = cov.deductibleAmount;
+        if (dedAmt) {
+          const e = canonicalDeductibleToEnum(cov.deductible, dedAmt, HOME_WIND_DEDUCTIBLE_ENUMS);
+          if (e) { gc.windDeductible = e; syncReport.coverages.updated.push(`Wind/Hail Ded → $${e.description}`); }
+        }
       }
-      if (t.includes('hurricane')) {
-        const e = canonicalDeductibleToEnum(cov.deductible, cov.deductibleAmount, HOME_HURRICANE_DEDUCTIBLE_ENUMS);
-        if (e) { gc.hurricaneDeductible = e; syncReport.coverages.updated.push(`Hurricane Ded → ${e.description}`); }
+      if (isHurricane) {
+        const dedAmt = cov.deductibleAmount;
+        if (dedAmt) {
+          const e = canonicalDeductibleToEnum(cov.deductible, dedAmt, HOME_HURRICANE_DEDUCTIBLE_ENUMS);
+          if (e) { gc.hurricaneDeductible = e; syncReport.coverages.updated.push(`Hurricane Ded → $${e.description}`); }
+        }
       }
     }
   }
