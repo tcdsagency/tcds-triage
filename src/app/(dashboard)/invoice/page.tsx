@@ -430,18 +430,46 @@ export default function InvoiceGeneratorPage() {
         formData.premium ? `$${parseFloat(formData.premium).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "$0.00",
       ];
 
-      columns.forEach((col, i) => {
-        page.drawText(rowData[i], {
-          x: col.x,
-          y,
-          size: 10,
-          font: helvetica,
-          color: darkColor,
+      // Helper to wrap text within a column width
+      const fontSize = 10;
+      const lineHeight = 14;
+      let maxLines = 1;
+      const wrapText = (text: string, maxWidth: number, font: typeof helvetica) => {
+        const words = text.split(" ");
+        const lines: string[] = [];
+        let current = "";
+        for (const word of words) {
+          const test = current ? `${current} ${word}` : word;
+          if (font.widthOfTextAtSize(test, fontSize) <= maxWidth) {
+            current = test;
+          } else {
+            if (current) lines.push(current);
+            current = word;
+          }
+        }
+        if (current) lines.push(current);
+        return lines;
+      };
+
+      const rowLines: string[][] = columns.map((col, i) =>
+        wrapText(rowData[i], col.width - 5, helvetica)
+      );
+      maxLines = Math.max(...rowLines.map((l) => l.length));
+
+      rowLines.forEach((lines, i) => {
+        lines.forEach((line, lineIdx) => {
+          page.drawText(line, {
+            x: columns[i].x,
+            y: y - lineIdx * lineHeight,
+            size: fontSize,
+            font: helvetica,
+            color: darkColor,
+          });
         });
       });
 
       // Divider line
-      y -= 20;
+      y -= Math.max(20, maxLines * lineHeight + 6);
       page.drawLine({
         start: { x: 50, y },
         end: { x: width - 50, y },
