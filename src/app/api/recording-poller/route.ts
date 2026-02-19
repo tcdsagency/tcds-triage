@@ -449,9 +449,17 @@ async function updateExistingCall(
   callData: ReturnType<typeof mapRecordingToCallData>,
   aiResult: Awaited<ReturnType<typeof extractCallData>>,
 ): Promise<string> {
+  const phone = normalizePhone(callData.externalNumber);
+  const customer = phone ? await findCustomerByPhone(phone) : null;
+  const agent = callData.extension ? await findAgentByExtension(callData.extension) : null;
+
   await db.update(calls).set({
     status: 'completed',
     directionFinal: callData.direction,
+    ...(agent?.id && { agentId: agent.id }),
+    ...(customer?.id && { customerId: customer.id }),
+    ...(callData.extension && { extension: callData.extension }),
+    ...(callData.externalNumber && { externalNumber: callData.externalNumber }),
     endedAt: callData.endedAt,
     durationSeconds: callData.durationSeconds,
     recordingUrl: callData.recordingUrl,
