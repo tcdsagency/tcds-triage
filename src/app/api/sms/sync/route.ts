@@ -1,6 +1,8 @@
 // API Route: /api/sms/sync
 // SMS Thread Sync Service - Track and resync SMS history from AgencyZoom
 
+export const maxDuration = 300; // 5 minutes — sync processes many threads
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { messages } from "@/db/schema";
@@ -309,7 +311,6 @@ async function runSync(tenantId: string, type: "full" | "incremental", months: n
         lastDateUTC = lastThread.lastMessageDateUTC;
       }
 
-      await new Promise((r) => setTimeout(r, 300));
     }
 
     currentJob.threadsTotal = allThreads.length;
@@ -331,8 +332,6 @@ async function runSync(tenantId: string, type: "full" | "incremental", months: n
       currentJob.messagesSkipped += result.skipped;
       currentJob.errors.push(...result.errors);
       currentJob.threadsProcessed++;
-
-      await new Promise((r) => setTimeout(r, 100));
     }
 
     currentJob.status = "completed";
@@ -364,7 +363,7 @@ async function runSync(tenantId: string, type: "full" | "incremental", months: n
 // =============================================================================
 
 /**
- * POST /api/sms/sync - Start a sync job
+ * POST /api/sms/sync - Run a sync job
  * Query params:
  *   - type: "full" | "incremental" (default: "full")
  *   - months: Number of months to sync (default: 6)
@@ -387,13 +386,13 @@ export async function POST(request: NextRequest) {
   const type = (searchParams.get("type") as "full" | "incremental") || "full";
   const months = parseInt(searchParams.get("months") || "6", 10);
 
-  // Start sync in background
-  runSync(tenantId, type, months).catch(console.error);
+  // Await sync so Vercel keeps the function alive until completion
+  await runSync(tenantId, type, months);
 
   return NextResponse.json({
     success: true,
-    message: `${type} sync started for last ${months} months`,
-    jobId: (currentJob as SyncJob | null)?.id,
+    message: `${type} sync completed`,
+    job: syncHistory[0] || null,
   });
 }
 
@@ -409,7 +408,7 @@ export async function GET(request: NextRequest) {
   const trigger = searchParams.get("trigger");
   const isVercelCron = request.headers.get("x-vercel-cron") === "1";
 
-  // If triggered by cron or explicit trigger param, start an incremental sync
+  // If triggered by cron or explicit trigger param, run an incremental sync
   if (isVercelCron || trigger === "true") {
     const tenantId = process.env.DEFAULT_TENANT_ID;
 
@@ -425,13 +424,13 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Start incremental sync (last 1 month of threads)
-    runSync(tenantId, "incremental", 1).catch(console.error);
+    // Await sync so Vercel keeps the function alive until completion
+    await runSync(tenantId, "incremental", 1);
 
     return NextResponse.json({
       success: true,
-      message: "Incremental SMS sync started via cron",
-      jobId: (currentJob as SyncJob | null)?.id,
+      message: "Incremental SMS sync completed via cron",
+      job: syncHistory[0] || null,
     });
   }
 
