@@ -945,6 +945,13 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
   let inAutoSection = false;
   let hasHomeCoverages = false;
   let seenHomeRecord = false; // Tracks whether we've encountered a home record in the main loop
+
+  // Multi-location detection: Allstate can bundle multiple locations (properties)
+  // under a single policy number. When 5LAG appears AFTER 6CVH records have been
+  // parsed, it indicates a secondary location. We skip those coverages to avoid
+  // mixing two properties' data into one snapshot.
+  let inSecondaryLocation = false;
+  let primaryLocationCoverageCount = 0;
   // First pass: check if this transaction has any 6CVH (home) records.
   // Also check for 6CVH sub-records embedded inside 6HRU/5REP lines.
   for (const line of lines) {
@@ -1008,6 +1015,12 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
       if (gc === '5AOI' || gc === '9AOI') {
         continue;
       }
+    }
+
+    // Bundled Allstate: skip ALL records once we detect a second insured's section.
+    // The 5BPI handler sets this flag when it encounters a different policy number.
+    if (inSecondaryLocation) {
+      continue;
     }
 
     switch (groupCode) {
@@ -1275,14 +1288,20 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
 
       case AL3_GROUP_CODES.COVERAGE_HOME: {
         // 6CVH: home coverage record
+        // Skip secondary location coverages in multi-location policies
+        if (inSecondaryLocation) {
+          break;
+        }
         if (isEDIFACTFormat(line)) {
           // EDIFACT (Allstate): multiple coverages packed in one record line
           const cvhList = parseEDIFACTHomeCoverages(line);
           coverages.push(...cvhList);
+          primaryLocationCoverageCount += cvhList.length;
         } else {
           const cvh = parse6LevelCoverage(line, 'home');
           if (cvh) {
             coverages.push(cvh);
+            primaryLocationCoverageCount++;
           }
         }
         break;
@@ -1297,6 +1316,31 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
 
       case AL3_GROUP_CODES.BUSINESS_PURPOSE_INFO: {
         // 5BPI: Policy number, dates, premium, LOB
+
+        // Bundled Allstate detection: if we already have a policy number and coverages,
+        // check if this 5BPI belongs to a DIFFERENT insured/policy (bundled in same file).
+        // If so, skip all subsequent records from this point.
+        if (header.policyNumber && primaryLocationCoverageCount > 0) {
+          // Extract policy number from this 5BPI to compare
+          let bpiPolicyNum: string | null = null;
+          if (line.length > 49) {
+            bpiPolicyNum = extractField(line, BPI_FIELDS.POLICY_NUMBER)
+              .replace(/\?+/g, '')
+              .replace(/^[A-Z]?\d{1,2}\s{2,}/, '')
+              .trim() || null;
+          }
+          if (!bpiPolicyNum && isEDIFACTFormat(line)) {
+            // Try extracting from EDIFACT segments
+            const m = line.match(/\b(\d{8,15})\b/);
+            if (m) bpiPolicyNum = m[1];
+          }
+          if (bpiPolicyNum && bpiPolicyNum.length >= 5 && bpiPolicyNum !== header.policyNumber) {
+            // Different policy number detected — this is a bundled second insured
+            inSecondaryLocation = true;
+            break; // Skip this 5BPI entirely
+          }
+        }
+
         // Position-based extraction first, then regex fallback
         if (line.length > 49) {
           // Policy number at positions 24-48 (25 chars)
@@ -1559,6 +1603,12 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
           // 5LAG: Location Address Group — use proper reference positions
           const loc = parseLAGLocation(line);
           if (loc) locations.push(loc);
+          // Multi-location detection: if we've already parsed home coverages and encounter
+          // a new 5LAG, this is a secondary location (e.g., Allstate multi-property policy).
+          // Skip subsequent 6CVH records to avoid merging two properties' coverages.
+          if (primaryLocationCoverageCount > 0) {
+            inSecondaryLocation = true;
+          }
         } else if ((gc === '6HRU' || gc === '6FRU') && isEDIFACTFormat(line)) {
           // 6HRU/6FRU: Home/Fire Underwriting — may contain embedded 5AOI mortgagee data
           // AND embedded 6CVH coverage sub-records (DWELL, OS, CONT, LOU, PL).
@@ -1611,25 +1661,29 @@ function parseTransaction(lines: string[]): AL3ParsedTransaction | null {
           // Extract embedded 6CVH coverage sub-records from 6HRU/6FRU lines.
           // Some carriers pack the first few coverages (DWELL, OS, CONT, LOU, PL)
           // inside the 6HRU line rather than as standalone 6CVH lines.
-          if (line.includes('6CVH')) {
+          if (line.includes('6CVH') && !inSecondaryLocation) {
             const cvhList = parseEDIFACTHomeCoverages(line);
             coverages.push(...cvhList);
+            primaryLocationCoverageCount += cvhList.length;
           }
-        } else if ((gc === '6HRU' || gc === '6FRU') && !isEDIFACTFormat(line) && line.includes('6CVH')) {
+        } else if ((gc === '6HRU' || gc === '6FRU') && !isEDIFACTFormat(line) && line.includes('6CVH') && !inSecondaryLocation) {
           // Non-EDIFACT 6HRU/6FRU: NatGen/Foremost embed 6CVH sub-records using positional fields
           // (no 0xFA delimiters). Extract coverages using DDT-standard field positions.
           const cvhList = parsePositional6CVHCoverages(line);
           coverages.push(...cvhList);
-        } else if (gc === '5REP' && isEDIFACTFormat(line) && line.includes('6CVH')) {
+          primaryLocationCoverageCount += cvhList.length;
+        } else if (gc === '5REP' && isEDIFACTFormat(line) && line.includes('6CVH') && !inSecondaryLocation) {
           // 5REP: Replacement cost/property report — some carriers (CAN STRATEGIC)
           // embed the first coverage sub-records (DWELL, OS, PP) inside this line.
           const cvhList = parseEDIFACTHomeCoverages(line);
           coverages.push(...cvhList);
-        } else if (gc === '9AOI' && isEDIFACTFormat(line) && line.includes('6CVH')) {
+          primaryLocationCoverageCount += cvhList.length;
+        } else if (gc === '9AOI' && isEDIFACTFormat(line) && line.includes('6CVH') && !inSecondaryLocation) {
           // 9AOI: Additional Interest continuation — some carriers (American Strategic)
           // embed 5REP and 6CVH coverage sub-records (e.g. DWELL) inside this line.
           const cvhList = parseEDIFACTHomeCoverages(line);
           coverages.push(...cvhList);
+          primaryLocationCoverageCount += cvhList.length;
         }
         break;
       }
