@@ -11,6 +11,7 @@ import type { CheckResult, CheckSummary } from '@/types/check-rules.types';
 import type { MaterialChange, ComparisonSummary, CanonicalClaim } from '@/types/renewal.types';
 import { AgencyZoomLink, getAgencyZoomUrl } from '@/components/ui/agencyzoom-link';
 import { HawkSoftLink } from '@/components/ui/hawksoft-link';
+import { User } from 'lucide-react';
 
 interface RightSidebarProps {
   checkResults: CheckResult[];
@@ -96,7 +97,16 @@ export default function RightSidebar({
             {hawksoftClientCode && (
               <HawkSoftLink clientCode={hawksoftClientCode} showText size="sm" />
             )}
-            {!agencyzoomId && !hawksoftClientCode && (
+            {customerId && (
+              <a
+                href={`/customers/${customerId}`}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              >
+                <User className="h-3.5 w-3.5" />
+                Profile
+              </a>
+            )}
+            {!agencyzoomId && !hawksoftClientCode && !customerId && (
               <p className="text-xs text-gray-400">No linked profiles</p>
             )}
           </div>
