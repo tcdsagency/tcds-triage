@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import DOMPurify from "isomorphic-dompurify";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -86,6 +86,7 @@ import {
 import { LifeInsuranceTab } from "@/components/features/life-insurance";
 import { mapMergedProfileToLifeInsurance, hasLifeInsurance, calculateOpportunityScore } from "@/lib/utils/lifeInsuranceMapper";
 import { DonnaInsightsCard } from "@/components/features/DonnaInsightsCard";
+import EzlynxProfileCard from "@/components/features/EzlynxProfileCard";
 import { MortgageePaymentStatus } from "@/components/features/MortgageePaymentStatus";
 import { CanopyConnectSMS } from "@/components/CanopyConnectSMS";
 import { CoverageScreen } from "@/components/features/coverage";
@@ -217,6 +218,9 @@ export default function CustomerProfilePage() {
   const hsId = searchParams.get("hsId");
   const azId = searchParams.get("azId");
   
+  // Refs
+  const ezlynxCardRef = useRef<HTMLDivElement>(null);
+
   // State
   const [profile, setProfile] = useState<MergedProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -245,6 +249,9 @@ export default function CustomerProfilePage() {
   // EZLynx
   const [sendingToEzlynx, setSendingToEzlynx] = useState(false);
   const [quotingInEzlynx, setQuotingInEzlynx] = useState(false);
+
+  // Syncable renewals (for EZLynx profile card)
+  const [syncableRenewals, setSyncableRenewals] = useState<{ comparisonId: string; lob: string; label: string }[]>([]);
 
   const ezlynxUrl = (accountId: string) =>
     `https://app.ezlynx.com/web/account/${accountId}/details`;
@@ -485,7 +492,27 @@ export default function CustomerProfilePage() {
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
-  
+
+  // Fetch syncable renewals when profile loads
+  useEffect(() => {
+    if (!profile?.id) return;
+    fetch(`/api/customers/${profile.id}/policies`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.policies) {
+          const renewals = data.policies
+            .filter((p: any) => p.renewalComparisonId)
+            .map((p: any) => ({
+              comparisonId: p.renewalComparisonId,
+              lob: p.lineOfBusiness || '',
+              label: `${p.carrier || 'Unknown'} ${p.lineOfBusiness || ''}`.trim(),
+            }));
+          setSyncableRenewals(renewals);
+        }
+      })
+      .catch(console.error);
+  }, [profile?.id]);
+
   // =============================================================================
   // ACTIONS
   // =============================================================================
@@ -782,7 +809,7 @@ export default function CustomerProfilePage() {
                   )}
 
                   {/* EZLynx link */}
-                  {(profile as any).ezlynxAccountId && (
+                  {(profile as any).ezlynxAccountId ? (
                     <a
                       href={`https://app.ezlynx.com/web/account/${(profile as any).ezlynxAccountId}/details`}
                       target="_blank"
@@ -792,6 +819,14 @@ export default function CustomerProfilePage() {
                       <ExternalLink className="w-3.5 h-3.5" />
                       EZLynx
                     </a>
+                  ) : (
+                    <button
+                      onClick={() => ezlynxCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                      className="flex items-center gap-1 text-sm text-gray-400 hover:text-emerald-600 hover:underline"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      Link EZLynx
+                    </button>
                   )}
                 </div>
               </div>
@@ -1336,6 +1371,20 @@ export default function CustomerProfilePage() {
                   </p>
                 )}
               </div>
+            </div>
+
+            {/* EZLynx Profile Card */}
+            <div ref={ezlynxCardRef}>
+            <EzlynxProfileCard
+              ezlynxAccountId={(profile as any).ezlynxAccountId}
+              insuredName={`${profile.firstName || ''} ${profile.lastName || ''}`.trim()}
+              customerId={profile.id}
+              hawksoftClientId={profile.hawksoftClientNumber}
+              syncableRenewals={syncableRenewals}
+              onLinked={() => fetchProfile(true)}
+              onSyncProfile={handleSendToEzlynx}
+              syncingProfile={sendingToEzlynx}
+            />
             </div>
 
             {/* Donna AI Insights Card */}
