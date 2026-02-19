@@ -1034,13 +1034,19 @@ export default function PropertyIntelligencePage() {
                   )}
                   {(viewMode === 'street' || viewMode === 'split') && (
                     <div className="h-[500px] relative">
-                      <iframe
-                        src={`https://www.google.com/maps/embed/v1/streetview?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&location=${lookup.lat},${lookup.lng}&heading=0&pitch=0&fov=90`}
-                        className="absolute inset-0 w-full h-full"
-                        style={{ border: 0 }}
-                        allowFullScreen
-                        loading="lazy"
-                      />
+                      {lookup.lat != null && lookup.lng != null && !isNaN(lookup.lat) && !isNaN(lookup.lng) ? (
+                        <iframe
+                          src={`https://www.google.com/maps/embed/v1/streetview?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&location=${lookup.lat},${lookup.lng}&heading=0&pitch=0&fov=90`}
+                          className="absolute inset-0 w-full h-full"
+                          style={{ border: 0 }}
+                          allowFullScreen
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                          Street View unavailable — no coordinates for this address
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
