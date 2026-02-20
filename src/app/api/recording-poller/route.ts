@@ -334,6 +334,7 @@ async function matchExistingCall(callData: ReturnType<typeof mapRecordingToCallD
   const windowStart = new Date(callData.startedAt.getTime() - 5 * 60_000);
   const windowEnd = new Date(callData.startedAt.getTime() + 5 * 60_000);
   const phone = normalizePhone(callData.externalNumber);
+  const targetTime = callData.startedAt.toISOString();
 
   if (phone) {
     // Phone-based matching
@@ -352,7 +353,7 @@ async function matchExistingCall(callData: ReturnType<typeof mapRecordingToCallD
           ilike(calls.externalNumber, phoneSuffix),
         ),
       ))
-      .orderBy(sql`ABS(EXTRACT(EPOCH FROM ${calls.startedAt} - ${callData.startedAt}::timestamp))`)
+      .orderBy(sql`ABS(EXTRACT(EPOCH FROM ${calls.startedAt} - ${targetTime}::timestamp))`)
       .limit(1);
 
     if (match) return match;
@@ -373,7 +374,7 @@ async function matchExistingCall(callData: ReturnType<typeof mapRecordingToCallD
           eq(calls.toNumber, callData.extension),
         ),
       ))
-      .orderBy(sql`ABS(EXTRACT(EPOCH FROM ${calls.startedAt} - ${callData.startedAt}::timestamp))`)
+      .orderBy(sql`ABS(EXTRACT(EPOCH FROM ${calls.startedAt} - ${targetTime}::timestamp))`)
       .limit(1);
 
     if (match) return match;
