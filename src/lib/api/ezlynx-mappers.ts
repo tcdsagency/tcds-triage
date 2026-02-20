@@ -1672,37 +1672,36 @@ export function renewalToAutoApplication(
   // =========================================================================
   // POLICY INFO
   // =========================================================================
-  if (app.policyInformation) {
-    if (comparison?.renewalEffectiveDate) {
-      const dateStr = typeof comparison.renewalEffectiveDate === 'string'
-        ? comparison.renewalEffectiveDate
-        : comparison.renewalEffectiveDate instanceof Date
-          ? comparison.renewalEffectiveDate.toISOString()
-          : undefined;
-      const effDate = toEzlynxDate(dateStr);
-      if (effDate) {
-        app.policyInformation.effectiveDate = effDate;
-        syncReport.policyInfo.effectiveDate = effDate;
-      }
+  if (!app.policyInformation) app.policyInformation = {};
+  if (comparison?.renewalEffectiveDate) {
+    const dateStr = typeof comparison.renewalEffectiveDate === 'string'
+      ? comparison.renewalEffectiveDate
+      : comparison.renewalEffectiveDate instanceof Date
+        ? comparison.renewalEffectiveDate.toISOString()
+        : undefined;
+    const effDate = toEzlynxDate(dateStr);
+    if (effDate) {
+      app.policyInformation.effectiveDate = effDate;
+      syncReport.policyInfo.effectiveDate = effDate;
     }
-    if (comparison?.renewalExpirationDate) {
-      const dateStr = typeof comparison.renewalExpirationDate === 'string'
-        ? comparison.renewalExpirationDate
-        : comparison.renewalExpirationDate instanceof Date
-          ? comparison.renewalExpirationDate.toISOString()
-          : undefined;
-      const expDate = toEzlynxDate(dateStr);
-      if (expDate) {
-        app.policyInformation.priorPolicyExpirationDate = expDate;
-        syncReport.policyInfo.priorPolicyExpirationDate = expDate;
-      }
+  }
+  if (comparison?.renewalExpirationDate) {
+    const dateStr = typeof comparison.renewalExpirationDate === 'string'
+      ? comparison.renewalExpirationDate
+      : comparison.renewalExpirationDate instanceof Date
+        ? comparison.renewalExpirationDate.toISOString()
+        : undefined;
+    const expDate = toEzlynxDate(dateStr);
+    if (expDate) {
+      app.policyInformation.priorPolicyExpirationDate = expDate;
+      syncReport.policyInfo.priorPolicyExpirationDate = expDate;
     }
+  }
 
-    // Prior carrier — resolved enum passed in via comparison.priorCarrierEnum
-    if (comparison?.priorCarrierEnum) {
-      app.policyInformation.priorCarrier = comparison.priorCarrierEnum;
-      syncReport.policyInfo.priorCarrier = comparison.priorCarrierEnum.description;
-    }
+  // Prior carrier — resolved enum passed in via comparison.priorCarrierEnum
+  if (comparison?.priorCarrierEnum) {
+    app.policyInformation.priorCarrier = comparison.priorCarrierEnum;
+    syncReport.policyInfo.priorCarrier = comparison.priorCarrierEnum.description;
   }
 
   return { app, syncReport };
@@ -1812,37 +1811,36 @@ export function renewalToHomeApplication(
   // =========================================================================
   // POLICY INFO
   // =========================================================================
-  if (app.policyInformation) {
-    if (comparison?.renewalEffectiveDate) {
-      const dateStr = typeof comparison.renewalEffectiveDate === 'string'
-        ? comparison.renewalEffectiveDate
-        : comparison.renewalEffectiveDate instanceof Date
-          ? comparison.renewalEffectiveDate.toISOString()
-          : undefined;
-      const effDate = toEzlynxDate(dateStr);
-      if (effDate) {
-        app.policyInformation.effectiveDate = effDate;
-        syncReport.policyInfo.effectiveDate = effDate;
-      }
+  if (!app.policyInformation) app.policyInformation = {};
+  if (comparison?.renewalEffectiveDate) {
+    const dateStr = typeof comparison.renewalEffectiveDate === 'string'
+      ? comparison.renewalEffectiveDate
+      : comparison.renewalEffectiveDate instanceof Date
+        ? comparison.renewalEffectiveDate.toISOString()
+        : undefined;
+    const effDate = toEzlynxDate(dateStr);
+    if (effDate) {
+      app.policyInformation.effectiveDate = effDate;
+      syncReport.policyInfo.effectiveDate = effDate;
     }
-    if (comparison?.renewalExpirationDate) {
-      const dateStr = typeof comparison.renewalExpirationDate === 'string'
-        ? comparison.renewalExpirationDate
-        : comparison.renewalExpirationDate instanceof Date
-          ? comparison.renewalExpirationDate.toISOString()
-          : undefined;
-      const expDate = toEzlynxDate(dateStr);
-      if (expDate) {
-        app.policyInformation.priorPolicyExpirationDate = expDate;
-        syncReport.policyInfo.priorPolicyExpirationDate = expDate;
-      }
+  }
+  if (comparison?.renewalExpirationDate) {
+    const dateStr = typeof comparison.renewalExpirationDate === 'string'
+      ? comparison.renewalExpirationDate
+      : comparison.renewalExpirationDate instanceof Date
+        ? comparison.renewalExpirationDate.toISOString()
+        : undefined;
+    const expDate = toEzlynxDate(dateStr);
+    if (expDate) {
+      app.policyInformation.priorPolicyExpirationDate = expDate;
+      syncReport.policyInfo.priorPolicyExpirationDate = expDate;
     }
+  }
 
-    // Prior carrier — resolved enum passed in via comparison.priorCarrierEnum
-    if (comparison?.priorCarrierEnum) {
-      app.policyInformation.priorCarrier = comparison.priorCarrierEnum;
-      syncReport.policyInfo.priorCarrier = comparison.priorCarrierEnum.description;
-    }
+  // Prior carrier — resolved enum passed in via comparison.priorCarrierEnum
+  if (comparison?.priorCarrierEnum) {
+    app.policyInformation.priorCarrier = comparison.priorCarrierEnum;
+    syncReport.policyInfo.priorCarrier = comparison.priorCarrierEnum.description;
   }
 
   return { app, syncReport };
