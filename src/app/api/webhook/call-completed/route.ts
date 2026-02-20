@@ -29,7 +29,7 @@ import { trestleIQClient, quickLeadCheck } from "@/lib/api/trestleiq";
 import { getServiceRequestTypeId } from "@/lib/constants/agencyzoom";
 import { findRelatedTickets, determineTriageRecommendation } from "@/lib/triage/related-tickets";
 import { createAfterHoursServiceTicket } from "@/lib/api/after-hours-ticket";
-import { formatInboundCallDescription } from "@/lib/format-ticket-description";
+import { formatInboundCallDescription, formatSentimentEmoji } from "@/lib/format-ticket-description";
 
 // =============================================================================
 // AGENCY MAIN NUMBER
@@ -2250,7 +2250,8 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             const subjectSuffix = isNCMTicket
               ? ` - ${txResult.wrapup.customerName || phoneForLookup || 'Unknown Caller'}`
               : '';
-            const ticketSubject = `Inbound Call: ${callReason}${subjectSuffix}`;
+            const sentimentPrefix = formatSentimentEmoji(analysis.sentiment, call.threecxSentimentScore ?? null);
+            const ticketSubject = `${sentimentPrefix ? sentimentPrefix + ' ' : ''}Inbound Call: ${callReason}${subjectSuffix}`;
 
             // Deduplication - check if ticket already exists for this wrapup
             const [existingTicketForWrapup] = await db

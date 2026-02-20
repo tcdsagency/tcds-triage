@@ -654,7 +654,8 @@ async function autoCompleteInbound(
     const subjectSuffix = isNCM
       ? ` - ${aiResult.customerName || phone || 'Unknown Caller'}`
       : '';
-    const ticketSubject = `Inbound Call: ${callReason}${subjectSuffix}`;
+    const sentimentPrefix = formatSentimentEmoji(aiResult.sentiment, callData.sentimentScore);
+    const ticketSubject = `${sentimentPrefix ? sentimentPrefix + ' ' : ''}Inbound Call: ${callReason}${subjectSuffix}`;
 
     // Description
     const ticketDescription = formatInboundCallDescription({

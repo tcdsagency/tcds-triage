@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, customers, users, wrapupDrafts } from "@/db/schema";
 import { desc, eq, and, gte, lte, or, ilike, sql, isNull, isNotNull } from "drizzle-orm";
+import { formatSentimentEmoji } from "@/lib/format-ticket-description";
 
 type TriageAction =
   | "auto_posted"
@@ -152,6 +153,7 @@ export async function GET(request: NextRequest) {
         recordingUrl: calls.recordingUrl,
         transcription: calls.transcription,
         aiSentiment: calls.aiSentiment,
+        threecxSentimentScore: calls.threecxSentimentScore,
         qualityScore: calls.qualityScore,
         predictedReason: calls.predictedReason,
         // Customer fields
@@ -303,7 +305,17 @@ export async function GET(request: NextRequest) {
         hasRecording: !!row.recordingUrl,
         hasTranscript: !!(row.transcription && row.transcription.length > 0),
         transcript: row.transcription || null,
-        aiSentiment: row.aiSentiment != null ? Number(row.aiSentiment) : null,
+        aiSentiment: (() => {
+          const s = row.aiSentiment as { overall?: string; score?: number } | null;
+          if (!s?.overall) return null;
+          return s.overall;
+        })(),
+        sentimentScore: row.threecxSentimentScore ?? (row.aiSentiment as { score?: number } | null)?.score ?? null,
+        sentimentEmoji: (() => {
+          const s = row.aiSentiment as { overall?: string; score?: number } | null;
+          const score = row.threecxSentimentScore ?? s?.score ?? null;
+          return formatSentimentEmoji(s?.overall, score);
+        })(),
         qualityScore: row.qualityScore != null ? Number(row.qualityScore) : null,
         predictedReason: row.predictedReason || null,
         // Detail fields

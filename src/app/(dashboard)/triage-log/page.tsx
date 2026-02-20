@@ -72,7 +72,9 @@ interface TriageEntry {
   hasRecording: boolean;
   hasTranscript: boolean;
   transcript: string | null;
-  aiSentiment: number | null;
+  aiSentiment: string | null;
+  sentimentScore: number | null;
+  sentimentEmoji: string | null;
   qualityScore: number | null;
   predictedReason: string | null;
   duplicateCount: number;
@@ -149,18 +151,12 @@ function formatPhoneNumber(phone: string | undefined | null): string {
   return phone.replace(/^\+1/, "");
 }
 
-function getSentimentColor(sentiment: number | null | undefined): string {
+function getSentimentColor(sentiment: string | null | undefined): string {
   if (sentiment == null) return "text-gray-400 dark:text-gray-500";
-  if (sentiment >= 0.5) return "text-green-600 dark:text-green-400";
-  if (sentiment >= 0) return "text-yellow-600 dark:text-yellow-400";
+  const s = sentiment.toLowerCase();
+  if (s === "positive") return "text-green-600 dark:text-green-400";
+  if (s === "neutral") return "text-yellow-600 dark:text-yellow-400";
   return "text-red-600 dark:text-red-400";
-}
-
-function getSentimentLabel(sentiment: number | null | undefined): string {
-  if (sentiment == null) return "N/A";
-  if (sentiment >= 0.5) return "Positive";
-  if (sentiment >= 0) return "Neutral";
-  return "Negative";
 }
 
 // =============================================================================
@@ -788,7 +784,7 @@ function DetailSidebar({
                 <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Sentiment</p>
                   <p className={`font-medium ${getSentimentColor(entry.aiSentiment)}`}>
-                    {getSentimentLabel(entry.aiSentiment)}
+                    {entry.sentimentEmoji || entry.aiSentiment}
                   </p>
                 </div>
               )}
