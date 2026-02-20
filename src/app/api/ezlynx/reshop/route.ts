@@ -125,9 +125,9 @@ export async function POST(request: NextRequest) {
       // Resolve prior carrier name to EZLynx enum (fall back to "Other Standard")
       if (comparison.carrierName) {
         try {
-          let carrierEnum = await ezlynxReference.resolve('PriorCarrier', comparison.carrierName);
+          let carrierEnum = await ezlynxReference.resolve('auto_prior_carrier_types', comparison.carrierName);
           if (!carrierEnum) {
-            carrierEnum = await ezlynxReference.resolve('PriorCarrier', 'Other Standard');
+            carrierEnum = await ezlynxReference.resolve('auto_prior_carrier_types', 'Other Standard');
             if (carrierEnum) console.log(`[Reshop] Prior carrier "${comparison.carrierName}" not found, using "Other Standard"`);
           }
           if (carrierEnum) mapperComparison.priorCarrierEnum = carrierEnum;
@@ -162,12 +162,8 @@ export async function POST(request: NextRequest) {
       const newPI = mergedApp.policyInformation;
       if (oldPI?.priorCarrier?.description !== newPI?.priorCarrier?.description)
         beforeAfter.push({ field: 'Prior Carrier', before: oldPI?.priorCarrier?.description || '(empty)', after: newPI?.priorCarrier?.description || '(empty)' });
-      if (oldPI?.priorLiabilityLimits?.description !== newPI?.priorLiabilityLimits?.description)
-        beforeAfter.push({ field: 'Prior Liability Limits', before: oldPI?.priorLiabilityLimits?.description || '(empty)', after: newPI?.priorLiabilityLimits?.description || '(empty)' });
-      if (oldPI?.priorPolicyTerm?.description !== newPI?.priorPolicyTerm?.description)
-        beforeAfter.push({ field: 'Prior Policy Term', before: oldPI?.priorPolicyTerm?.description || '(empty)', after: newPI?.priorPolicyTerm?.description || '(empty)' });
-      if (String(oldPI?.priorPolicyPremium || '') !== String(newPI?.priorPolicyPremium || ''))
-        beforeAfter.push({ field: 'Prior Policy Premium', before: oldPI?.priorPolicyPremium || '(empty)', after: newPI?.priorPolicyPremium || '(empty)' });
+      if ((oldPI?.priorPolicyExpirationDate || '') !== (newPI?.priorPolicyExpirationDate || ''))
+        beforeAfter.push({ field: 'Prior Expiration', before: oldPI?.priorPolicyExpirationDate || '(empty)', after: newPI?.priorPolicyExpirationDate || '(empty)' });
       // Vehicle coverages
       const oldVehicles = appTemplate.vehicles?.vehicleCollection || [];
       const newVehicles = mergedApp.vehicles?.vehicleCollection || [];
@@ -263,9 +259,9 @@ export async function POST(request: NextRequest) {
       // Resolve prior carrier name to EZLynx enum (fall back to "Other Standard")
       if (comparison.carrierName) {
         try {
-          let carrierEnum = await ezlynxReference.resolve('PriorCarrier', comparison.carrierName);
+          let carrierEnum = await ezlynxReference.resolve('home_prior_carrier_types', comparison.carrierName);
           if (!carrierEnum) {
-            carrierEnum = await ezlynxReference.resolve('PriorCarrier', 'Other Standard');
+            carrierEnum = await ezlynxReference.resolve('home_prior_carrier_types', 'Other Standard');
             if (carrierEnum) console.log(`[Reshop] Home prior carrier "${comparison.carrierName}" not found, using "Other Standard"`);
           }
           if (carrierEnum) homeMapperComparison.priorCarrierEnum = carrierEnum;
