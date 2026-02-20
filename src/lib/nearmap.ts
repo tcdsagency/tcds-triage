@@ -450,7 +450,8 @@ class NearmapClient {
    */
   getTileUrl(lat: number, lng: number, zoom: number = 19): string {
     if (!this.apiKey) return '';
-    return `https://api.nearmap.com/tiles/v3/Vert/{z}/{x}/{y}.img?apikey=${this.apiKey}`;
+    const { x, y } = this.latLngToTile(lat, lng, zoom);
+    return `https://api.nearmap.com/tiles/v3/Vert/${zoom}/${x}/${y}.img`;
   }
 
   /**
