@@ -90,6 +90,8 @@ function transformPolicy(hsPolicy: any, people?: any[]) {
       model: veh.model,
       vin: veh.vin,
       annualMiles: veh.annualMiles,
+      usage: veh.usage || veh.use || veh.primaryUse,
+      costNew: veh.costNew || veh.estimatedValue,
       coverages: Array.from(covByType.values()),
     };
   });
@@ -110,6 +112,7 @@ function transformPolicy(hsPolicy: any, people?: any[]) {
       licenseState: drv.licenseState || matchingPerson?.licenseState,
       relationship: drv.relationship,
       gender: drv.gender || matchingPerson?.gender,
+      maritalStatus: matchingPerson?.maritalStatus,
       excludedFromPolicy: drv.excluded,
     };
   });
@@ -132,6 +135,15 @@ function transformPolicy(hsPolicy: any, people?: any[]) {
       squareFeet: uw.squareFootage || uw.squareFeet || loc.squareFeet,
       constructionType: uw.dwellingType || uw.constructionType || loc.constructionType,
       roofType: uw.roofTypeCode !== 'Unknown' ? uw.roofTypeCode : undefined,
+      stories: uw.stories || uw.numberOfStories,
+      heatingType: uw.homeHeatSourceCode || uw.heatingType,
+      protectionClass: uw.protectionClass,
+      distanceToFireStation: uw.milesFromRFD || uw.distanceToFireStation,
+      distanceToHydrant: uw.feetFromHydrant || uw.distanceToHydrant,
+      roofYear: uw.roofYear,
+      foundationType: uw.foundationType || uw.foundation,
+      swimmingPool: uw.swimmingPoolType,
+      trampoline: uw.trampolineType,
     };
   }
 

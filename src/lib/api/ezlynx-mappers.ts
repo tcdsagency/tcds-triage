@@ -78,6 +78,12 @@ export function customerToApplicant(profile: any): CreateApplicantData {
     addressZip: profile.address?.zip,
   };
 
+  // Defaults for applicant fields
+  data.yearsAtAddress = 3;
+  data.monthsAtAddress = 2;
+  data.occupation = 'Admin Assistant';
+  data.industry = 'Business/Sales/Office';
+
   // Add co-applicant if there's a spouse/partner in household
   const spouse = profile.household?.find((m: any) =>
     m.relationship && /spouse|partner|wife|husband/i.test(m.relationship)
@@ -1704,6 +1710,81 @@ export function renewalToAutoApplication(
     syncReport.policyInfo.priorCarrier = comparison.priorCarrierEnum.description;
   }
 
+  // Defaults for policy info fields
+  if (!app.policyInformation.yearsPriorCarrier)
+    app.policyInformation.yearsPriorCarrier = { value: 1, name: 'Item2', description: '2' };
+  if (!app.policyInformation.yearsContinuousCoverage)
+    app.policyInformation.yearsContinuousCoverage = { value: 9, name: 'Item10', description: '10' };
+  if (app.policyInformation.creditCheckAuthorized == null)
+    app.policyInformation.creditCheckAuthorized = true;
+
+  // =========================================================================
+  // DRIVER DEFAULTS — gender/marital mapping + standard defaults
+  // =========================================================================
+  for (const existing of (app.drivers || [])) {
+    // Map HawkSoft gender if available (find matching canonical driver)
+    const cd = canonicalDrivers.find((c: any) => {
+      const { firstName } = splitName(c.name || '');
+      return firstName && (existing.firstName || '').toUpperCase() === firstName.toUpperCase();
+    });
+    if (!existing.gender && cd?.gender) {
+      const g = (cd.gender || '').toLowerCase();
+      if (g === 'male' || g === 'm') existing.gender = { value: 0, name: 'Male', description: 'Male' };
+      else if (g === 'female' || g === 'f') existing.gender = { value: 1, name: 'Female', description: 'Female' };
+    }
+    if (!existing.maritalStatus && cd?.maritalStatus) {
+      const ms = (cd.maritalStatus || '').toLowerCase();
+      if (ms.includes('single') || ms === 's') existing.maritalStatus = { value: 0, name: 'Single', description: 'Single' };
+      else if (ms.includes('married') || ms === 'm') existing.maritalStatus = { value: 1, name: 'Married', description: 'Married' };
+      else if (ms.includes('divorced')) existing.maritalStatus = { value: 2, name: 'Divorced', description: 'Divorced' };
+      else if (ms.includes('widowed')) existing.maritalStatus = { value: 3, name: 'Widowed', description: 'Widowed' };
+    }
+    // Standard defaults
+    if (!existing.driversLicenseStatus)
+      existing.driversLicenseStatus = { value: 0, name: 'Valid', description: 'Valid' };
+    if (!existing.occupationIndustry)
+      existing.occupationIndustry = { value: 0, name: 'BusinessSalesOffice', description: 'Business/Sales/Office' };
+    if (!existing.occupationTitle)
+      existing.occupationTitle = { value: 0, name: 'AdminAssistant', description: 'Admin Assistant' };
+    if (existing.isSR22Required == null) existing.isSR22Required = false;
+    if (existing.hasLicensedBeenSuspendedRecently == null) existing.hasLicensedBeenSuspendedRecently = false;
+    if (existing.isGoodStudent == null) existing.isGoodStudent = false;
+    if (existing.isGoodDriver == null) existing.isGoodDriver = false;
+    if (existing.isStudentFarAway == null) existing.isStudentFarAway = false;
+    if (existing.hasTakenDriversEducation == null) existing.hasTakenDriversEducation = false;
+  }
+
+  // =========================================================================
+  // VEHICLE DEFAULTS — usage mapping + safety features + purchase date
+  // =========================================================================
+  for (let i = 0; i < vehicleCollection.length; i++) {
+    const target = vehicleCollection[i];
+    // Find matching canonical vehicle for HawkSoft data
+    const cv = canonicalVehicles.find((_: any, ci: number) => canonicalToEzlynxVehicleIdx.get(ci) === i)
+      || canonicalVehicles[i];
+    // Map HawkSoft usage if available
+    if (!target.use && cv?.usage) {
+      const u = (cv.usage || '').toLowerCase();
+      if (u.includes('pleas')) target.use = { value: 0, name: 'Pleasure', description: 'Pleasure' };
+      else if (u.includes('commut') || u.includes('work')) target.use = { value: 0, name: 'CommuteWork', description: 'Commute/Work' };
+      else if (u.includes('business')) target.use = { value: 0, name: 'Business', description: 'Business' };
+    }
+    // Defaults
+    if (!target.use) target.use = { value: 0, name: 'Pleasure', description: 'Pleasure' };
+    if (!target.daysPerWeek) target.daysPerWeek = { value: 4, name: 'Item5', description: '5' };
+    if (!target.ownershipType) target.ownershipType = { value: 0, name: 'Owned', description: 'Owned' };
+    if (target.antilockBrakes == null) target.antilockBrakes = true;
+    if (target.daytimeRunningLights == null) target.daytimeRunningLights = true;
+    if (!target.passiveRestraints) target.passiveRestraints = { value: 0, name: 'AirbagBothSides', description: 'Airbag Both Sides' };
+    if (target.usedForDelivery == null) target.usedForDelivery = false;
+    if (target.priorDamagePresent == null) target.priorDamagePresent = false;
+    // Purchase date: Jan 15 of vehicle year (if year available and no purchase date)
+    if (!target.vehiclePurchaseDate) {
+      const vYear = typeof target.year === 'object' ? target.year?.description : target.year;
+      if (vYear) target.vehiclePurchaseDate = `${vYear}-01-15`;
+    }
+  }
+
   return { app, syncReport };
 }
 
@@ -1729,11 +1810,48 @@ export function renewalToHomeApplication(
   // DWELLING INFO — from baselineSnapshot.propertyContext (if available)
   // =========================================================================
   const propCtx = baselineSnapshot?.propertyContext;
-  if (app.dwellingInfo && propCtx) {
+  if (!app.dwellingInfo) app.dwellingInfo = {};
+  if (propCtx) {
     if (propCtx.yearBuilt) { app.dwellingInfo.yearBuilt = String(propCtx.yearBuilt); syncReport.dwelling.updated.push(`yearBuilt → ${propCtx.yearBuilt}`); }
     if (propCtx.squareFeet) { app.dwellingInfo.squareFootage = String(propCtx.squareFeet); syncReport.dwelling.updated.push(`sqft → ${propCtx.squareFeet}`); }
     if (propCtx.roofType) { app.dwellingInfo.roofType = propCtx.roofType; syncReport.dwelling.updated.push(`roofType → ${propCtx.roofType}`); }
     if (propCtx.constructionType) { app.dwellingInfo.exteriorWall = propCtx.constructionType; syncReport.dwelling.updated.push(`exteriorWall → ${propCtx.constructionType}`); }
+  }
+
+  // Map additional HawkSoft property fields
+  if (propCtx?.stories && !app.dwellingInfo.numberOfStories) {
+    const n = parseInt(propCtx.stories);
+    if (n >= 1) app.dwellingInfo.numberOfStories = { value: n - 1, name: `Item${n}`, description: `${n}` };
+  }
+  if (propCtx?.heatingType && !app.dwellingInfo.heatingType) {
+    const ht = (propCtx.heatingType || '').toLowerCase();
+    if (ht.includes('electric')) app.dwellingInfo.heatingType = { value: 0, name: 'Electric', description: 'Electric' };
+    else if (ht.includes('gas')) app.dwellingInfo.heatingType = { value: 0, name: 'Gas', description: 'Gas' };
+    else if (ht.includes('oil')) app.dwellingInfo.heatingType = { value: 0, name: 'Oil', description: 'Oil' };
+  }
+  if (propCtx?.protectionClass && !app.dwellingInfo.protectionClass) {
+    const pc = parseInt(propCtx.protectionClass);
+    if (pc >= 1 && pc <= 10) app.dwellingInfo.protectionClass = { value: pc - 1, name: `Item${pc}`, description: `${pc}` };
+  }
+  if (propCtx?.distanceToFireStation && !app.dwellingInfo.distanceFromFireStation) {
+    app.dwellingInfo.distanceFromFireStation = String(propCtx.distanceToFireStation);
+  }
+  if (propCtx?.distanceToHydrant && !app.dwellingInfo.hydrantDistance) {
+    const feet = parseInt(propCtx.distanceToHydrant);
+    if (feet <= 500) app.dwellingInfo.hydrantDistance = { value: 0, name: 'Item1500', description: '1-500' };
+    else if (feet <= 1000) app.dwellingInfo.hydrantDistance = { value: 0, name: 'Item5011000', description: '501-1000' };
+    else app.dwellingInfo.hydrantDistance = { value: 0, name: 'Item1001orMore', description: '1001 or More' };
+  }
+  if (propCtx?.roofYear && !app.dwellingInfo.roofingUpdateYear) {
+    app.dwellingInfo.roofingUpdateYear = String(propCtx.roofYear);
+    app.dwellingInfo.roofingUpdateType = { value: 0, name: 'COMPLETEUPDATE', description: 'COMPLETE UPDATE' };
+  }
+  if (propCtx?.foundationType && !app.dwellingInfo.foundationType) {
+    const ft = (propCtx.foundationType || '').toLowerCase();
+    if (ft.includes('slab')) app.dwellingInfo.foundationType = { value: 0, name: 'Slab', description: 'Slab' };
+    else if (ft.includes('basement')) app.dwellingInfo.foundationType = { value: 0, name: 'Basement', description: 'Basement' };
+    else if (ft.includes('crawl')) app.dwellingInfo.foundationType = { value: 0, name: 'CrawlSpace', description: 'Crawl Space' };
+    else if (ft.includes('pier')) app.dwellingInfo.foundationType = { value: 0, name: 'Pier', description: 'Pier' };
   }
 
   // =========================================================================
@@ -1842,6 +1960,90 @@ export function renewalToHomeApplication(
     app.policyInformation.priorCarrier = comparison.priorCarrierEnum;
     syncReport.policyInfo.priorCarrier = comparison.priorCarrierEnum.description;
   }
+
+  // Defaults for policy info fields
+  if (!app.policyInformation.yearsPriorCarrier)
+    app.policyInformation.yearsPriorCarrier = { value: 9, name: 'Item10', description: '10' };
+  if (!app.policyInformation.yearsContinuousCoverage)
+    app.policyInformation.yearsContinuousCoverage = { value: 9, name: 'Item10', description: '10' };
+  if (app.policyInformation.creditCheckAuthorized == null)
+    app.policyInformation.creditCheckAuthorized = true;
+
+  // =========================================================================
+  // DWELLING DEFAULTS — fill remaining fields not from HawkSoft
+  // =========================================================================
+  if (!app.dwellingInfo.purchaseDate && comparison?.renewalEffectiveDate) {
+    app.dwellingInfo.purchaseDate = toEzlynxDate(
+      typeof comparison.renewalEffectiveDate === 'string'
+        ? comparison.renewalEffectiveDate
+        : comparison.renewalEffectiveDate?.toISOString?.()
+    );
+  }
+  if (!app.dwellingInfo.roofDesign)
+    app.dwellingInfo.roofDesign = { value: 0, name: 'Gable', description: 'Gable' };
+  if (!app.dwellingInfo.constructionStyle)
+    app.dwellingInfo.constructionStyle = { value: 0, name: 'Dwelling', description: 'Dwelling' };
+  if (!app.dwellingInfo.dwellingUsage)
+    app.dwellingInfo.dwellingUsage = { value: 0, name: 'Primary', description: 'Primary' };
+  if (!app.dwellingInfo.dwellingOccupancy)
+    app.dwellingInfo.dwellingOccupancy = { value: 0, name: 'OwnerOccupied', description: 'Owner Occupied' };
+  if (!app.dwellingInfo.numberOfOccupants)
+    app.dwellingInfo.numberOfOccupants = { value: 1, name: 'Item2', description: '2' };
+  if (!app.dwellingInfo.numberOfStories)
+    app.dwellingInfo.numberOfStories = { value: 0, name: 'Item1', description: '1' };
+  if (!app.dwellingInfo.numberOfFullBaths)
+    app.dwellingInfo.numberOfFullBaths = { value: 2, name: 'Item3', description: '3' };
+  if (!app.dwellingInfo.numberOfHalfBaths)
+    app.dwellingInfo.numberOfHalfBaths = { value: 1, name: 'Item2', description: '2' };
+  if (app.dwellingInfo.insideCityLimits == null)
+    app.dwellingInfo.insideCityLimits = true;
+  if (app.dwellingInfo.withinFireDistrict == null)
+    app.dwellingInfo.withinFireDistrict = true;
+  if (app.dwellingInfo.deadBolt == null)
+    app.dwellingInfo.deadBolt = true;
+  if (app.dwellingInfo.visibleToNeighbor == null)
+    app.dwellingInfo.visibleToNeighbor = true;
+  if (app.dwellingInfo.fireExtinguisher == null)
+    app.dwellingInfo.fireExtinguisher = true;
+  if (app.dwellingInfo.mannedSecurity == null)
+    app.dwellingInfo.mannedSecurity = false;
+  if (app.dwellingInfo.nonSmoker == null)
+    app.dwellingInfo.nonSmoker = true;
+
+  // Update years: use 2015 or yearBuilt if newer
+  const yearBuilt = parseInt(app.dwellingInfo.yearBuilt) || 0;
+  const updateYear = String(Math.max(yearBuilt, 2015));
+  if (!app.dwellingInfo.heatingUpdateYear) {
+    app.dwellingInfo.heatingUpdateYear = updateYear;
+    app.dwellingInfo.heatingUpdateType = { value: 0, name: 'COMPLETEUPDATE', description: 'COMPLETE UPDATE' };
+  }
+  if (!app.dwellingInfo.electricalUpdateYear) {
+    app.dwellingInfo.electricalUpdateYear = updateYear;
+    app.dwellingInfo.electricalUpdateType = { value: 0, name: 'COMPLETEUPDATE', description: 'COMPLETE UPDATE' };
+  }
+  if (!app.dwellingInfo.plumbingUpdateYear) {
+    app.dwellingInfo.plumbingUpdateYear = updateYear;
+    app.dwellingInfo.plumbingUpdateType = { value: 0, name: 'COMPLETEUPDATE', description: 'COMPLETE UPDATE' };
+  }
+  // Default heating type if not from HawkSoft
+  if (!app.dwellingInfo.heatingType)
+    app.dwellingInfo.heatingType = { value: 0, name: 'Electric', description: 'Electric' };
+  // Default foundation if not from HawkSoft
+  if (!app.dwellingInfo.foundationType)
+    app.dwellingInfo.foundationType = { value: 0, name: 'Slab', description: 'Slab' };
+
+  // =========================================================================
+  // UNDERWRITING DEFAULTS
+  // =========================================================================
+  if (!app.underWriting) app.underWriting = {};
+  if (app.underWriting.businessOrDaycareOnPremises == null)
+    app.underWriting.businessOrDaycareOnPremises = false;
+  if (app.underWriting.dogsOnPremises == null)
+    app.underWriting.dogsOnPremises = false;
+  if (app.underWriting.trampoline == null)
+    app.underWriting.trampoline = propCtx?.trampoline ? true : false;
+  if (propCtx?.swimmingPool && app.underWriting.swimmingPool == null)
+    app.underWriting.swimmingPool = true;
 
   return { app, syncReport };
 }
@@ -1958,6 +2160,8 @@ export function hawksoftAutoToSnapshot(policy: any): { snapshot: any; comparison
     licenseNumber: d.licenseNumber,
     licenseState: d.licenseState,
     relationship: d.relationship,
+    gender: d.gender,
+    maritalStatus: d.maritalStatus,
     isExcluded: d.excludedFromPolicy || false,
   }));
 
@@ -1977,6 +2181,8 @@ export function hawksoftAutoToSnapshot(policy: any): { snapshot: any; comparison
       make: v.make,
       model: v.model,
       annualMileage: v.annualMiles,
+      usage: v.usage,
+      costNew: v.costNew,
       coverages: vehCoverages,
     };
   });
@@ -2057,6 +2263,15 @@ export function hawksoftHomeToSnapshot(policy: any): { snapshot: any; comparison
       squareFeet: prop.squareFeet,
       roofType: prop.roofType,
       constructionType: prop.constructionType,
+      stories: prop.stories,
+      heatingType: prop.heatingType,
+      protectionClass: prop.protectionClass,
+      distanceToFireStation: prop.distanceToFireStation,
+      distanceToHydrant: prop.distanceToHydrant,
+      roofYear: prop.roofYear,
+      foundationType: prop.foundationType,
+      swimmingPool: prop.swimmingPool,
+      trampoline: prop.trampoline,
     };
   }
 
