@@ -19,7 +19,7 @@ import {
   type AutoSyncReport,
   type HomeSyncReport,
 } from "@/lib/api/ezlynx-mappers";
-import { ezlynxReference } from "@/lib/api/ezlynx-reference";
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -122,18 +122,10 @@ export async function POST(request: NextRequest) {
       // Build mapper comparison with prior carrier data
       const mapperComparison: any = { ...comparison };
 
-      // Resolve prior carrier name to EZLynx enum (fall back to "Other Standard")
+      // Set prior carrier enum — EZLynx API resolves by name internally
       if (comparison.carrierName) {
-        try {
-          let carrierEnum = await ezlynxReference.resolve('auto_prior_carrier_types', comparison.carrierName);
-          if (!carrierEnum) {
-            carrierEnum = await ezlynxReference.resolve('auto_prior_carrier_types', 'Other Standard');
-            if (carrierEnum) console.log(`[Reshop] Prior carrier "${comparison.carrierName}" not found, using "Other Standard"`);
-          }
-          if (carrierEnum) mapperComparison.priorCarrierEnum = carrierEnum;
-        } catch (e) {
-          console.log(`[Reshop] Could not resolve prior carrier "${comparison.carrierName}":`, (e as Error).message);
-        }
+        const name = comparison.carrierName;
+        mapperComparison.priorCarrierEnum = { value: 0, name, description: name };
       }
 
       const { app: mergedApp, syncReport } = renewalToAutoApplication(snapshot, mapperComparison, appTemplate);
@@ -256,18 +248,10 @@ export async function POST(request: NextRequest) {
       // Build mapper comparison with prior carrier data
       const homeMapperComparison: any = { ...comparison };
 
-      // Resolve prior carrier name to EZLynx enum (fall back to "Other Standard")
+      // Set prior carrier enum — EZLynx API resolves by name internally
       if (comparison.carrierName) {
-        try {
-          let carrierEnum = await ezlynxReference.resolve('home_prior_carrier_types', comparison.carrierName);
-          if (!carrierEnum) {
-            carrierEnum = await ezlynxReference.resolve('home_prior_carrier_types', 'Other Standard');
-            if (carrierEnum) console.log(`[Reshop] Home prior carrier "${comparison.carrierName}" not found, using "Other Standard"`);
-          }
-          if (carrierEnum) homeMapperComparison.priorCarrierEnum = carrierEnum;
-        } catch (e) {
-          console.log(`[Reshop] Could not resolve home prior carrier "${comparison.carrierName}":`, (e as Error).message);
-        }
+        const name = comparison.carrierName;
+        homeMapperComparison.priorCarrierEnum = { value: 0, name, description: name };
       }
 
       const baseline = comparison.baselineSnapshot as any;

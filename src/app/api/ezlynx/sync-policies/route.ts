@@ -26,7 +26,7 @@ import {
 import {
   getPolicyTypeFromLineOfBusiness,
 } from "@/types/customer-profile";
-import { ezlynxReference } from "@/lib/api/ezlynx-reference";
+
 
 // Inline the same transform logic from merged-profile (kept minimal)
 function transformPolicy(hsPolicy: any, people?: any[]) {
@@ -291,18 +291,10 @@ export async function POST(request: NextRequest) {
 
           const appTemplate = await ezlynxBot.getAutoApplication(openAppId);
 
-          // Resolve prior carrier name to EZLynx enum (fall back to "Other Standard")
+          // Set prior carrier enum — EZLynx API resolves by name internally
           if (policy.carrierName) {
-            try {
-              let carrierEnum = await ezlynxReference.resolve('auto_prior_carrier_types', policy.carrierName);
-              if (!carrierEnum) {
-                carrierEnum = await ezlynxReference.resolve('auto_prior_carrier_types', 'Other Standard');
-                if (carrierEnum) console.log(`[SyncPolicies] Prior carrier "${policy.carrierName}" not found, using "Other Standard"`);
-              }
-              if (carrierEnum) comparison.priorCarrierEnum = carrierEnum;
-            } catch (e) {
-              console.log(`[SyncPolicies] Could not resolve prior carrier "${policy.carrierName}":`, (e as Error).message);
-            }
+            const name = policy.carrierName;
+            comparison.priorCarrierEnum = { value: 0, name, description: name };
           }
 
           const { app: mergedApp, syncReport } = renewalToAutoApplication(snapshot, comparison, appTemplate);
@@ -394,18 +386,10 @@ export async function POST(request: NextRequest) {
 
           const appTemplate = await ezlynxBot.getHomeApplication(openAppId);
 
-          // Resolve prior carrier name to EZLynx enum (fall back to "Other Standard")
+          // Set prior carrier enum — EZLynx API resolves by name internally
           if (policy.carrierName) {
-            try {
-              let carrierEnum = await ezlynxReference.resolve('home_prior_carrier_types', policy.carrierName);
-              if (!carrierEnum) {
-                carrierEnum = await ezlynxReference.resolve('home_prior_carrier_types', 'Other Standard');
-                if (carrierEnum) console.log(`[SyncPolicies] Home prior carrier "${policy.carrierName}" not found, using "Other Standard"`);
-              }
-              if (carrierEnum) comparison.priorCarrierEnum = carrierEnum;
-            } catch (e) {
-              console.log(`[SyncPolicies] Could not resolve home prior carrier "${policy.carrierName}":`, (e as Error).message);
-            }
+            const name = policy.carrierName;
+            comparison.priorCarrierEnum = { value: 0, name, description: name };
           }
 
           const { app: mergedApp, syncReport } = renewalToHomeApplication(snapshot, comparison, appTemplate, baselineSnapshot);
