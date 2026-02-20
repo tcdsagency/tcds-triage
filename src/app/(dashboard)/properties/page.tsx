@@ -247,7 +247,8 @@ export default function PropertyIntelligencePage() {
   const [generationProgress, setGenerationProgress] = useState(0);
 
   // View State
-  const [viewMode, setViewMode] = useState<'aerial' | 'street' | 'split'>('aerial');
+  const [viewMode, setViewMode] = useState<'aerial' | 'street' | 'satellite' | 'split'>('aerial');
+  const [splitPair, setSplitPair] = useState<['aerial' | 'street' | 'satellite', 'aerial' | 'street' | 'satellite']>(['aerial', 'satellite']);
   const [selectedHistoricalDate, setSelectedHistoricalDate] = useState<string | null>(null);
   const [comparisonDate, setComparisonDate] = useState<string | null>(null);
 
@@ -641,7 +642,15 @@ export default function PropertyIntelligencePage() {
                     <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
                       <Home className="w-5 h-5 text-blue-600" />
                       Property Snapshot
-                      <SourceBadge source="RPR" />
+                      <SourceBadge source={lookup.rprData ? 'RPR' : lookup.propertyApiData ? 'PropertyAPI' : 'RPR'} />
+                      <a
+                        href={`https://www.zillow.com/homes/${encodeURIComponent(lookup.formattedAddress)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+                      >
+                        View on Zillow →
+                      </a>
                     </h3>
                     {lookup.rprData ? (
                       <>
@@ -662,6 +671,25 @@ export default function PropertyIntelligencePage() {
                           <InfoRow label="Tax" value={`${formatCurrency(lookup.rprData.taxAmount)}/yr`} icon="💵" />
                         </div>
                       </>
+                    ) : lookup.propertyApiData ? (
+                      <>
+                        <div className="grid grid-cols-3 gap-4 mb-4">
+                          <StatCard icon="🛏️" label="Beds" value={lookup.propertyApiData.building?.bedrooms ?? '—'} />
+                          <StatCard icon="🚿" label="Baths" value={lookup.propertyApiData.building?.bathrooms ?? '—'} />
+                          <StatCard icon="📐" label="Sqft" value={lookup.propertyApiData.building?.sqft?.toLocaleString() ?? '—'} />
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <InfoRow label="Year Built" value={lookup.propertyApiData.building?.yearBuilt ?? '—'} icon="📅" />
+                          <InfoRow label="Stories" value={lookup.propertyApiData.building?.stories ?? '—'} icon="🏗️" />
+                          <InfoRow label="Lot Size" value={lookup.propertyApiData.building?.lotSizeAcres ? `${lookup.propertyApiData.building.lotSizeAcres} acres` : '—'} icon="📏" />
+                          <InfoRow label="Owner" value={lookup.propertyApiData.owner?.name ?? '—'} icon="👤" />
+                          <div className="border-t border-gray-100 dark:border-gray-700 my-3" />
+                          <InfoRow label="Market Value" value={formatCurrency(lookup.propertyApiData.valuation?.marketValue)} highlight icon="💰" />
+                          <InfoRow label="Assessed" value={formatCurrency(lookup.propertyApiData.valuation?.assessedTotal)} icon="📋" />
+                          <InfoRow label="Last Sale" value={lookup.propertyApiData.saleHistory?.lastSaleDate ? `${formatCurrency(lookup.propertyApiData.saleHistory.lastSalePrice)} (${lookup.propertyApiData.saleHistory.lastSaleDate})` : '—'} icon="🏷️" />
+                          <InfoRow label="Tax" value={lookup.propertyApiData.tax?.annualTax ? `${formatCurrency(lookup.propertyApiData.tax.annualTax)}/yr` : '—'} icon="💵" />
+                        </div>
+                      </>
                     ) : (
                       <div className="text-center py-8 text-gray-500">Property data not available</div>
                     )}
@@ -674,12 +702,13 @@ export default function PropertyIntelligencePage() {
                       Aerial View
                       <SourceBadge source="Nearmap" />
                     </h3>
-                    <div className="aspect-video bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden relative">
-                      {lookup.nearmapData?.tileUrl ? (
-                        <img
-                          src={`/api/property/nearmap-tile?url=${encodeURIComponent(lookup.nearmapData.tileUrl)}`}
-                          alt="Aerial view"
-                          className="w-full h-full object-cover"
+                    <div className="aspect-video bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden relative" style={{ minHeight: 300 }}>
+                      {lookup.lat != null && lookup.lng != null ? (
+                        <NearmapMap
+                          lat={lookup.lat}
+                          lng={lookup.lng}
+                          zoom={19}
+                          surveyDate={lookup.nearmapData?.surveyDate}
                         />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center">
@@ -980,9 +1009,9 @@ export default function PropertyIntelligencePage() {
             {activeTab === 'imagery' && (
               <div className="p-6 space-y-6">
                 {/* View Controls */}
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex gap-2">
-                    {(['aerial', 'street', 'split'] as const).map((v) => (
+                    {(['aerial', 'street', 'satellite', 'split'] as const).map((v) => (
                       <button
                         key={v}
                         onClick={() => setViewMode(v)}
@@ -993,9 +1022,23 @@ export default function PropertyIntelligencePage() {
                             : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
                         )}
                       >
-                        {v === 'aerial' ? '🛰️ Aerial' : v === 'street' ? '🚗 Street View' : '⬜ Split View'}
+                        {v === 'aerial' ? '🛰️ Aerial' : v === 'street' ? '🚗 Street View' : v === 'satellite' ? '🌍 Satellite' : '⬜ Split View'}
                       </button>
                     ))}
+                    {viewMode === 'split' && (
+                      <select
+                        value={`${splitPair[0]}-${splitPair[1]}`}
+                        onChange={(e) => {
+                          const [left, right] = e.target.value.split('-') as ['aerial' | 'street' | 'satellite', 'aerial' | 'street' | 'satellite'];
+                          setSplitPair([left, right]);
+                        }}
+                        className="ml-2 px-3 py-2 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                      >
+                        <option value="aerial-satellite">Aerial + Satellite</option>
+                        <option value="aerial-street">Aerial + Street</option>
+                        <option value="satellite-street">Satellite + Street</option>
+                      </select>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-600 dark:text-gray-400">Overlays:</span>
@@ -1021,33 +1064,68 @@ export default function PropertyIntelligencePage() {
                   'rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700',
                   viewMode === 'split' ? 'grid grid-cols-2 gap-1' : ''
                 )}>
-                  {(viewMode === 'aerial' || viewMode === 'split') && (
-                    <div className="h-[500px] relative bg-gray-200 dark:bg-gray-700">
-                      <NearmapMap
-                        lat={lookup.lat}
-                        lng={lookup.lng}
-                        zoom={19}
-                        surveyDate={selectedHistoricalDate || lookup.nearmapData?.surveyDate}
-                        overlays={lookup.nearmapData?.overlays}
-                      />
-                    </div>
-                  )}
-                  {(viewMode === 'street' || viewMode === 'split') && (
-                    <div className="h-[500px] relative">
-                      {lookup.lat != null && lookup.lng != null && !isNaN(lookup.lat) && !isNaN(lookup.lng) ? (
-                        <iframe
-                          src={`https://www.google.com/maps/embed/v1/streetview?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&location=${lookup.lat},${lookup.lng}&heading=0&pitch=0&fov=90`}
-                          className="absolute inset-0 w-full h-full"
-                          style={{ border: 0 }}
-                          allowFullScreen
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
-                          Street View unavailable — no coordinates for this address
+                  {viewMode === 'split' ? (
+                    <>
+                      <SplitPane view={splitPair[0]} lookup={lookup} selectedHistoricalDate={selectedHistoricalDate} />
+                      <SplitPane view={splitPair[1]} lookup={lookup} selectedHistoricalDate={selectedHistoricalDate} />
+                    </>
+                  ) : (
+                    <>
+                      {viewMode === 'aerial' && (
+                        <div className="h-[500px] relative bg-gray-200 dark:bg-gray-700">
+                          <NearmapMap
+                            lat={lookup.lat}
+                            lng={lookup.lng}
+                            zoom={19}
+                            surveyDate={selectedHistoricalDate || lookup.nearmapData?.surveyDate}
+                            overlays={lookup.nearmapData?.overlays}
+                          />
+                          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                            Nearmap — {selectedHistoricalDate || lookup.nearmapData?.surveyDate || 'N/A'}
+                          </div>
                         </div>
                       )}
-                    </div>
+                      {viewMode === 'street' && (
+                        <div className="h-[500px] relative">
+                          {lookup.lat != null && lookup.lng != null && !isNaN(lookup.lat) && !isNaN(lookup.lng) ? (
+                            <iframe
+                              src={`https://www.google.com/maps/embed/v1/streetview?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&location=${lookup.lat},${lookup.lng}&heading=0&pitch=0&fov=90`}
+                              className="absolute inset-0 w-full h-full"
+                              style={{ border: 0 }}
+                              allowFullScreen
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                              Street View unavailable — no coordinates for this address
+                            </div>
+                          )}
+                          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                            Google Street View — Date: per Google Maps
+                          </div>
+                        </div>
+                      )}
+                      {viewMode === 'satellite' && (
+                        <div className="h-[500px] relative">
+                          {lookup.lat != null && lookup.lng != null && !isNaN(lookup.lat) && !isNaN(lookup.lng) ? (
+                            <iframe
+                              src={`https://www.google.com/maps/embed/v1/view?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&center=${lookup.lat},${lookup.lng}&zoom=20&maptype=satellite`}
+                              className="absolute inset-0 w-full h-full"
+                              style={{ border: 0 }}
+                              allowFullScreen
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                              Satellite view unavailable — no coordinates for this address
+                            </div>
+                          )}
+                          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                            Google Satellite — Date: per Google Maps
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -1829,6 +1907,68 @@ export default function PropertyIntelligencePage() {
 // =============================================================================
 // SUB-COMPONENTS
 // =============================================================================
+
+function SplitPane({ view, lookup, selectedHistoricalDate }: { view: 'aerial' | 'street' | 'satellite'; lookup: PropertyLookup; selectedHistoricalDate: string | null }) {
+  if (view === 'aerial') {
+    return (
+      <div className="h-[500px] relative bg-gray-200 dark:bg-gray-700">
+        <NearmapMap
+          lat={lookup.lat}
+          lng={lookup.lng}
+          zoom={19}
+          surveyDate={selectedHistoricalDate || lookup.nearmapData?.surveyDate}
+          overlays={lookup.nearmapData?.overlays}
+        />
+        <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+          Nearmap — {selectedHistoricalDate || lookup.nearmapData?.surveyDate || 'N/A'}
+        </div>
+      </div>
+    );
+  }
+  if (view === 'satellite') {
+    return (
+      <div className="h-[500px] relative">
+        {lookup.lat != null && lookup.lng != null && !isNaN(lookup.lat) && !isNaN(lookup.lng) ? (
+          <iframe
+            src={`https://www.google.com/maps/embed/v1/view?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&center=${lookup.lat},${lookup.lng}&zoom=20&maptype=satellite`}
+            className="absolute inset-0 w-full h-full"
+            style={{ border: 0 }}
+            allowFullScreen
+            loading="lazy"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
+            Satellite view unavailable — no coordinates
+          </div>
+        )}
+        <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+          Google Satellite — Date: per Google Maps
+        </div>
+      </div>
+    );
+  }
+  // street
+  return (
+    <div className="h-[500px] relative">
+      {lookup.lat != null && lookup.lng != null && !isNaN(lookup.lat) && !isNaN(lookup.lng) ? (
+        <iframe
+          src={`https://www.google.com/maps/embed/v1/streetview?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&location=${lookup.lat},${lookup.lng}&heading=0&pitch=0&fov=90`}
+          className="absolute inset-0 w-full h-full"
+          style={{ border: 0 }}
+          allowFullScreen
+          loading="lazy"
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
+          Street View unavailable — no coordinates
+        </div>
+      )}
+      <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+        Google Street View — Date: per Google Maps
+      </div>
+    </div>
+  );
+}
 
 function DecisionBanner({
   address,
