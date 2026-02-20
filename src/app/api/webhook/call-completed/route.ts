@@ -2252,7 +2252,8 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
               ? ` - ${txResult.wrapup.customerName || phoneForLookup || 'Unknown Caller'}`
               : '';
             const sentimentPrefix = formatSentimentEmoji(analysis.sentiment, call.threecxSentimentScore ?? null);
-            const ticketSubject = `${sentimentPrefix ? sentimentPrefix + ' ' : ''}Inbound Call: ${callReason}${subjectSuffix}`;
+            const directionLabel = direction === 'outbound' ? 'Outbound Call' : 'Inbound Call';
+            const ticketSubject = `${sentimentPrefix ? sentimentPrefix + ' ' : ''}${directionLabel}: ${callReason}${subjectSuffix}`;
 
             // Deduplication - check if ticket already exists for this wrapup
             const [existingTicketForWrapup] = await db
@@ -2306,7 +2307,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
                     csrName: assignedCsrName,
                     dueDate: getDefaultDueDate(),
                     azCreatedAt: new Date(),
-                    source: 'inbound_call',
+                    source: direction === 'outbound' ? 'outbound_call' : 'inbound_call',
                     lastSyncedFromAz: new Date(),
                   });
                   console.log(`[Call-Completed] 🎫 Ticket stored locally`);

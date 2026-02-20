@@ -656,7 +656,8 @@ async function autoCompleteInbound(
       ? ` - ${aiResult.customerName || phone || 'Unknown Caller'}`
       : '';
     const sentimentPrefix = formatSentimentEmoji(aiResult.sentiment, callData.sentimentScore);
-    const ticketSubject = `${sentimentPrefix ? sentimentPrefix + ' ' : ''}Inbound Call: ${callReason}${subjectSuffix}`;
+    const directionLabel = callData.direction === 'outbound' ? 'Outbound Call' : 'Inbound Call';
+    const ticketSubject = `${sentimentPrefix ? sentimentPrefix + ' ' : ''}${directionLabel}: ${callReason}${subjectSuffix}`;
 
     // Description
     const ticketDescription = formatInboundCallDescription({
