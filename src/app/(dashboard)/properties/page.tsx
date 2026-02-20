@@ -191,7 +191,6 @@ interface MMIData {
 }
 
 type Mode = 'report' | 'explore';
-type TabType = 'overview' | 'imagery' | 'analysis' | 'market' | 'historical' | 'report_card' | 'export';
 
 interface GenerationStep {
   id: string;
@@ -203,15 +202,6 @@ interface GenerationStep {
 // CONSTANTS
 // =============================================================================
 
-const TABS: { id: TabType; label: string; icon: React.ReactNode }[] = [
-  { id: 'overview', label: 'Overview', icon: <Home className="w-4 h-4" /> },
-  { id: 'imagery', label: 'Imagery & Maps', icon: <Layers className="w-4 h-4" /> },
-  { id: 'analysis', label: 'Analysis', icon: <Shield className="w-4 h-4" /> },
-  { id: 'market', label: 'Market Data', icon: <TrendingUp className="w-4 h-4" /> },
-  { id: 'historical', label: 'Historical', icon: <History className="w-4 h-4" /> },
-  { id: 'report_card', label: 'Report Card', icon: <ClipboardCheck className="w-4 h-4" /> },
-  { id: 'export', label: 'Export', icon: <FileOutput className="w-4 h-4" /> },
-];
 
 const GENERATION_STEPS: GenerationStep[] = [
   { id: 'geocoding', label: 'Geocoding', status: 'pending' },
@@ -226,9 +216,8 @@ const GENERATION_STEPS: GenerationStep[] = [
 // =============================================================================
 
 export default function PropertyIntelligencePage() {
-  // Mode & Navigation
+  // Mode
   const [mode, setMode] = useState<Mode>('report');
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
 
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -301,7 +290,6 @@ export default function PropertyIntelligencePage() {
     setShowSuggestions(false);
     setLoading(true);
     setError(null);
-    setActiveTab('overview');
     setGenerationSteps(GENERATION_STEPS.map(s => ({ ...s, status: 'pending' })));
     setGenerationProgress(0);
 
@@ -601,44 +589,26 @@ export default function PropertyIntelligencePage() {
           </div>
         </div>
       ) : lookup ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Tabs */}
-          <div className="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-                  activeTab === tab.id
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:border-gray-300'
-                )}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6 space-y-8">
             {/* ============================================================ */}
-            {/* OVERVIEW TAB */}
+            {/* SECTION 1: DECISION BANNER */}
             {/* ============================================================ */}
-            {activeTab === 'overview' && (
-              <div className="p-6 space-y-6">
-                {/* Decision Banner */}
-                <DecisionBanner
-                  address={lookup.formattedAddress}
-                  aiAnalysis={lookup.aiAnalysis}
-                  nearmapData={lookup.nearmapData}
-                  analyzing={analyzing}
-                />
+            <div id="section-decision">
+              <DecisionBanner
+                address={lookup.formattedAddress}
+                aiAnalysis={lookup.aiAnalysis}
+                nearmapData={lookup.nearmapData}
+                analyzing={analyzing}
+              />
+            </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Property Snapshot */}
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+            {/* ============================================================ */}
+            {/* SECTION 2: PROPERTY SNAPSHOT + AERIAL VIEW */}
+            {/* ============================================================ */}
+            <div id="section-property" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Property Snapshot */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
                     <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
                       <Home className="w-5 h-5 text-blue-600" />
                       Property Snapshot
@@ -684,9 +654,9 @@ export default function PropertyIntelligencePage() {
                           <InfoRow label="Lot Size" value={lookup.propertyApiData.building?.lotSizeAcres ? `${lookup.propertyApiData.building.lotSizeAcres} acres` : '—'} icon="📏" />
                           <InfoRow label="Owner" value={lookup.propertyApiData.owner?.name ?? '—'} icon="👤" />
                           <div className="border-t border-gray-100 dark:border-gray-700 my-3" />
-                          <InfoRow label="Market Value" value={formatCurrency(lookup.propertyApiData.valuation?.marketValue)} highlight icon="💰" />
-                          <InfoRow label="Assessed" value={formatCurrency(lookup.propertyApiData.valuation?.assessedTotal)} icon="📋" />
-                          <InfoRow label="Last Sale" value={lookup.propertyApiData.saleHistory?.lastSaleDate ? `${formatCurrency(lookup.propertyApiData.saleHistory.lastSalePrice)} (${lookup.propertyApiData.saleHistory.lastSaleDate})` : '—'} icon="🏷️" />
+                          <InfoRow label="Market Value" value={lookup.propertyApiData.valuation?.marketValue != null ? formatCurrency(lookup.propertyApiData.valuation.marketValue) : '—'} highlight icon="💰" />
+                          <InfoRow label="Assessed" value={lookup.propertyApiData.valuation?.assessedTotal != null ? formatCurrency(lookup.propertyApiData.valuation.assessedTotal) : '—'} icon="📋" />
+                          <InfoRow label="Last Sale" value={lookup.propertyApiData.saleHistory?.lastSaleDate ? `${formatCurrency(lookup.propertyApiData.saleHistory.lastSalePrice ?? 0)} (${lookup.propertyApiData.saleHistory.lastSaleDate})` : '—'} icon="🏷️" />
                           <InfoRow label="Tax" value={lookup.propertyApiData.tax?.annualTax ? `${formatCurrency(lookup.propertyApiData.tax.annualTax)}/yr` : '—'} icon="💵" />
                         </div>
                       </>
@@ -716,20 +686,179 @@ export default function PropertyIntelligencePage() {
                         </div>
                       )}
                     </div>
-                    <div className="mt-3 flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+                    <div className="mt-3 text-sm text-gray-600 dark:text-gray-400">
                       <span>Survey Date: {lookup.nearmapData?.surveyDate || 'N/A'}</span>
-                      <button
-                        onClick={() => setActiveTab('imagery')}
-                        className="text-blue-600 hover:underline font-medium"
-                      >
-                        View Full Map →
-                      </button>
                     </div>
                   </div>
-                </div>
+            </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Detected Features */}
+            {/* ============================================================ */}
+            {/* SECTION 3: IMAGERY */}
+            {/* ============================================================ */}
+            <div id="section-imagery">
+              <SectionHeader icon={<Layers className="w-5 h-5" />} title="Imagery & Maps" />
+
+              {/* View Controls */}
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+                <div className="flex gap-2">
+                  {(['aerial', 'street', 'satellite', 'split'] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setViewMode(v)}
+                      className={cn(
+                        'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                        viewMode === v
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      )}
+                    >
+                      {v === 'aerial' ? 'Aerial' : v === 'street' ? 'Street View' : v === 'satellite' ? 'Satellite' : 'Split View'}
+                    </button>
+                  ))}
+                  {viewMode === 'split' && (
+                    <select
+                      value={`${splitPair[0]}-${splitPair[1]}`}
+                      onChange={(e) => {
+                        const [left, right] = e.target.value.split('-') as ['aerial' | 'street' | 'satellite', 'aerial' | 'street' | 'satellite'];
+                        setSplitPair([left, right]);
+                      }}
+                      className="ml-2 px-3 py-2 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                    >
+                      <option value="aerial-satellite">Aerial + Satellite</option>
+                      <option value="aerial-street">Aerial + Street</option>
+                      <option value="satellite-street">Satellite + Street</option>
+                    </select>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Overlays:</span>
+                  {Object.entries(overlays).map(([key, value]) => (
+                    <button
+                      key={key}
+                      onClick={() => setOverlays(prev => ({ ...prev, [key]: !prev[key as keyof typeof overlays] }))}
+                      className={cn(
+                        'px-2 py-1 text-xs rounded border transition-colors',
+                        value
+                          ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700'
+                          : 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-600'
+                      )}
+                    >
+                      {key.charAt(0).toUpperCase() + key.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Main Viewport */}
+              <div className={cn(
+                'rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700',
+                viewMode === 'split' ? 'grid grid-cols-2 gap-1' : ''
+              )}>
+                {viewMode === 'split' ? (
+                  <>
+                    <SplitPane view={splitPair[0]} lookup={lookup} selectedHistoricalDate={selectedHistoricalDate} />
+                    <SplitPane view={splitPair[1]} lookup={lookup} selectedHistoricalDate={selectedHistoricalDate} />
+                  </>
+                ) : (
+                  <>
+                    {viewMode === 'aerial' && (
+                      <div className="h-[500px] relative bg-gray-200 dark:bg-gray-700">
+                        <NearmapMap
+                          lat={lookup.lat}
+                          lng={lookup.lng}
+                          zoom={19}
+                          surveyDate={selectedHistoricalDate || lookup.nearmapData?.surveyDate}
+                          overlays={lookup.nearmapData?.overlays}
+                        />
+                        <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                          Nearmap — {selectedHistoricalDate || lookup.nearmapData?.surveyDate || 'N/A'}
+                        </div>
+                      </div>
+                    )}
+                    {viewMode === 'street' && (
+                      <div className="h-[500px] relative">
+                        {lookup.lat != null && lookup.lng != null && !isNaN(lookup.lat) && !isNaN(lookup.lng) ? (
+                          <iframe
+                            src={`https://www.google.com/maps/embed/v1/streetview?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&location=${lookup.lat},${lookup.lng}&heading=0&pitch=0&fov=90`}
+                            className="absolute inset-0 w-full h-full"
+                            style={{ border: 0 }}
+                            allowFullScreen
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                            Street View unavailable — no coordinates for this address
+                          </div>
+                        )}
+                        <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                          Google Street View — Date: per Google Maps
+                        </div>
+                      </div>
+                    )}
+                    {viewMode === 'satellite' && (
+                      <div className="h-[500px] relative">
+                        {lookup.lat != null && lookup.lng != null && !isNaN(lookup.lat) && !isNaN(lookup.lng) ? (
+                          <iframe
+                            src={`https://www.google.com/maps/embed/v1/view?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&center=${lookup.lat},${lookup.lng}&zoom=20&maptype=satellite`}
+                            className="absolute inset-0 w-full h-full"
+                            style={{ border: 0 }}
+                            allowFullScreen
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                            Satellite view unavailable — no coordinates for this address
+                          </div>
+                        )}
+                        <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                          Google Satellite — Date: per Google Maps
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Oblique Views */}
+              {lookup.obliqueViews && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 mt-4">
+                  <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4">Oblique Views (4-Direction)</h3>
+                  <div className="grid grid-cols-4 gap-4">
+                    {(['north', 'south', 'east', 'west'] as const).map((dir) => (
+                      <div key={dir} className="aspect-square bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden">
+                        {lookup.obliqueViews?.[dir] ? (
+                          <img
+                            src={lookup.obliqueViews[dir]}
+                            alt={`${dir} view`}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-500">
+                            {dir.toUpperCase()}
+                          </div>
+                        )}
+                        <div className="text-center mt-2 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase">
+                          {dir}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Survey Info */}
+              <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 mt-4">
+                <span>Survey Date: <strong>{lookup.nearmapData?.surveyDate || 'N/A'}</strong></span>
+                <span>Resolution: <strong>7.5cm</strong></span>
+                <span>Coverage: <strong className="text-green-600">Full</strong></span>
+              </div>
+            </div>
+
+            {/* ============================================================ */}
+            {/* SECTION 4: DETECTED FEATURES + RISK FACTORS */}
+            {/* ============================================================ */}
+            <div id="section-features" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Detected Features */}
                   <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
                     <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
                       <Eye className="w-5 h-5 text-blue-600" />
@@ -811,43 +940,47 @@ export default function PropertyIntelligencePage() {
                   </div>
                 </div>
 
-                {/* Owner & Occupancy */}
-                {lookup.rprData && (
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-                    <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4">Owner & Occupancy</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400">Owner</span>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">{lookup.rprData.ownerName || 'Unknown'}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400">Occupancy</span>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">
-                          {lookup.rprData.ownerOccupied ? 'Owner-Occupied ✓' : 'Rental/Tenant'}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400">Mailing</span>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">Same as property</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400">Years Owned</span>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">
-                          {lookup.rprData.lastSaleDate ? `${Math.floor((Date.now() - new Date(lookup.rprData.lastSaleDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} years` : 'Unknown'}
-                        </p>
-                      </div>
-                    </div>
+            {/* ============================================================ */}
+            {/* SECTION 5: OWNER & OCCUPANCY */}
+            {/* ============================================================ */}
+            {lookup.rprData && (
+              <div id="section-owner" className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4">Owner & Occupancy</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">Owner</span>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">{lookup.rprData.ownerName || 'Unknown'}</p>
                   </div>
-                )}
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">Occupancy</span>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">
+                      {lookup.rprData.ownerOccupied ? 'Owner-Occupied ✓' : 'Rental/Tenant'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">Mailing</span>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">Same as property</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 dark:text-gray-400">Years Owned</span>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">
+                      {lookup.rprData.lastSaleDate ? `${Math.floor((Date.now() - new Date(lookup.rprData.lastSaleDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))} years` : 'Unknown'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
-                {/* PropertyAPI Enrichment */}
-                {lookup.propertyApiData && (
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-                    <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-blue-600" />
-                      Parcel &amp; Tax Records
-                      <SourceBadge source="PropertyAPI" />
-                    </h3>
+            {/* ============================================================ */}
+            {/* SECTION 6: PARCEL & TAX RECORDS */}
+            {/* ============================================================ */}
+            {lookup.propertyApiData && (
+              <div id="section-parcel" className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-blue-600" />
+                  Parcel &amp; Tax Records
+                  <SourceBadge source="PropertyAPI" />
+                </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
                       {/* Parcel Info */}
                       <div className="space-y-2">
@@ -906,17 +1039,19 @@ export default function PropertyIntelligencePage() {
                         )}
                       </div>
                     </div>
-                  </div>
-                )}
+              </div>
+            )}
 
-                {/* Orion180 Risk Report */}
-                {lookup.orion180Data && (
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-                    <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-                      <Shield className="w-5 h-5 text-amber-600" />
-                      Orion180 Risk Report
-                      <SourceBadge source="orion180" />
-                    </h3>
+            {/* ============================================================ */}
+            {/* SECTION 7: ORION180 RISK REPORT */}
+            {/* ============================================================ */}
+            {lookup.orion180Data && (
+              <div id="section-orion180" className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-amber-600" />
+                  Orion180 Risk Report
+                  <SourceBadge source="orion180" />
+                </h3>
 
                     {/* Risk Grades */}
                     <div className="mb-5">
@@ -998,178 +1133,14 @@ export default function PropertyIntelligencePage() {
                         </div>
                       </details>
                     )}
-                  </div>
-                )}
               </div>
             )}
 
             {/* ============================================================ */}
-            {/* IMAGERY TAB */}
+            {/* SECTION 8: AI ANALYSIS */}
             {/* ============================================================ */}
-            {activeTab === 'imagery' && (
-              <div className="p-6 space-y-6">
-                {/* View Controls */}
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex gap-2">
-                    {(['aerial', 'street', 'satellite', 'split'] as const).map((v) => (
-                      <button
-                        key={v}
-                        onClick={() => setViewMode(v)}
-                        className={cn(
-                          'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                          viewMode === v
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-                        )}
-                      >
-                        {v === 'aerial' ? '🛰️ Aerial' : v === 'street' ? '🚗 Street View' : v === 'satellite' ? '🌍 Satellite' : '⬜ Split View'}
-                      </button>
-                    ))}
-                    {viewMode === 'split' && (
-                      <select
-                        value={`${splitPair[0]}-${splitPair[1]}`}
-                        onChange={(e) => {
-                          const [left, right] = e.target.value.split('-') as ['aerial' | 'street' | 'satellite', 'aerial' | 'street' | 'satellite'];
-                          setSplitPair([left, right]);
-                        }}
-                        className="ml-2 px-3 py-2 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-                      >
-                        <option value="aerial-satellite">Aerial + Satellite</option>
-                        <option value="aerial-street">Aerial + Street</option>
-                        <option value="satellite-street">Satellite + Street</option>
-                      </select>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Overlays:</span>
-                    {Object.entries(overlays).map(([key, value]) => (
-                      <button
-                        key={key}
-                        onClick={() => setOverlays(prev => ({ ...prev, [key]: !prev[key as keyof typeof overlays] }))}
-                        className={cn(
-                          'px-2 py-1 text-xs rounded border transition-colors',
-                          value
-                            ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700'
-                            : 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-600'
-                        )}
-                      >
-                        {key.charAt(0).toUpperCase() + key.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Main Viewport */}
-                <div className={cn(
-                  'rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700',
-                  viewMode === 'split' ? 'grid grid-cols-2 gap-1' : ''
-                )}>
-                  {viewMode === 'split' ? (
-                    <>
-                      <SplitPane view={splitPair[0]} lookup={lookup} selectedHistoricalDate={selectedHistoricalDate} />
-                      <SplitPane view={splitPair[1]} lookup={lookup} selectedHistoricalDate={selectedHistoricalDate} />
-                    </>
-                  ) : (
-                    <>
-                      {viewMode === 'aerial' && (
-                        <div className="h-[500px] relative bg-gray-200 dark:bg-gray-700">
-                          <NearmapMap
-                            lat={lookup.lat}
-                            lng={lookup.lng}
-                            zoom={19}
-                            surveyDate={selectedHistoricalDate || lookup.nearmapData?.surveyDate}
-                            overlays={lookup.nearmapData?.overlays}
-                          />
-                          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
-                            Nearmap — {selectedHistoricalDate || lookup.nearmapData?.surveyDate || 'N/A'}
-                          </div>
-                        </div>
-                      )}
-                      {viewMode === 'street' && (
-                        <div className="h-[500px] relative">
-                          {lookup.lat != null && lookup.lng != null && !isNaN(lookup.lat) && !isNaN(lookup.lng) ? (
-                            <iframe
-                              src={`https://www.google.com/maps/embed/v1/streetview?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&location=${lookup.lat},${lookup.lng}&heading=0&pitch=0&fov=90`}
-                              className="absolute inset-0 w-full h-full"
-                              style={{ border: 0 }}
-                              allowFullScreen
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
-                              Street View unavailable — no coordinates for this address
-                            </div>
-                          )}
-                          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
-                            Google Street View — Date: per Google Maps
-                          </div>
-                        </div>
-                      )}
-                      {viewMode === 'satellite' && (
-                        <div className="h-[500px] relative">
-                          {lookup.lat != null && lookup.lng != null && !isNaN(lookup.lat) && !isNaN(lookup.lng) ? (
-                            <iframe
-                              src={`https://www.google.com/maps/embed/v1/view?key=AIzaSyCwt9YE8VmZkkZZllchR1gOeX08_63r3Ns&center=${lookup.lat},${lookup.lng}&zoom=20&maptype=satellite`}
-                              className="absolute inset-0 w-full h-full"
-                              style={{ border: 0 }}
-                              allowFullScreen
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
-                              Satellite view unavailable — no coordinates for this address
-                            </div>
-                          )}
-                          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
-                            Google Satellite — Date: per Google Maps
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Oblique Views */}
-                {lookup.obliqueViews && (
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-                    <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4">Oblique Views (4-Direction)</h3>
-                    <div className="grid grid-cols-4 gap-4">
-                      {(['north', 'south', 'east', 'west'] as const).map((dir) => (
-                        <div key={dir} className="aspect-square bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden">
-                          {lookup.obliqueViews?.[dir] ? (
-                            <img
-                              src={lookup.obliqueViews[dir]}
-                              alt={`${dir} view`}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-gray-500">
-                              {dir.toUpperCase()}
-                            </div>
-                          )}
-                          <div className="text-center mt-2 text-sm font-medium text-gray-700 dark:text-gray-300 uppercase">
-                            {dir}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Survey Info */}
-                <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                  <span>Survey Date: <strong>{lookup.nearmapData?.surveyDate || 'N/A'}</strong></span>
-                  <span>Resolution: <strong>7.5cm</strong></span>
-                  <span>Coverage: <strong className="text-green-600">✓ Full</strong></span>
-                </div>
-              </div>
-            )}
-
-            {/* ============================================================ */}
-            {/* ANALYSIS TAB */}
-            {/* ============================================================ */}
-            {activeTab === 'analysis' && (
-              <div className="p-6 space-y-6">
+            <div id="section-analysis">
+              <SectionHeader icon={<Shield className="w-5 h-5" />} title="AI Analysis" />
                 {analyzing ? (
                   <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-8 text-center border border-blue-200 dark:border-blue-800">
                     <div className="animate-spin text-4xl mb-4">🤖</div>
@@ -1405,15 +1376,14 @@ export default function PropertyIntelligencePage() {
                     <p>AI analysis not available yet</p>
                   </div>
                 )}
-              </div>
-            )}
+            </div>
 
             {/* ============================================================ */}
-            {/* MARKET DATA TAB */}
+            {/* SECTION 9: MARKET DATA */}
             {/* ============================================================ */}
-            {activeTab === 'market' && (
-              <div className="p-6 space-y-6">
-                {lookup.mmiData ? (
+            <div id="section-market">
+              <SectionHeader icon={<TrendingUp className="w-5 h-5" />} title="Market Data" />
+              {lookup.mmiData ? (
                   <>
                     {/* Current Status */}
                     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
@@ -1571,15 +1541,14 @@ export default function PropertyIntelligencePage() {
                     <p>Market data not available</p>
                   </div>
                 )}
-              </div>
-            )}
+            </div>
 
             {/* ============================================================ */}
-            {/* HISTORICAL TAB */}
+            {/* SECTION 10: HISTORICAL COMPARISON */}
             {/* ============================================================ */}
-            {activeTab === 'historical' && (
-              <div className="p-6 space-y-6">
-                {/* Date Selectors */}
+            <div id="section-historical">
+              <SectionHeader icon={<History className="w-5 h-5" />} title="Historical Comparison" />
+              {/* Date Selectors */}
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
                   <div className="flex items-center gap-4">
                     <div className="flex-1">
@@ -1723,21 +1692,21 @@ export default function PropertyIntelligencePage() {
                     </table>
                   </div>
                 )}
-              </div>
-            )}
+            </div>
 
             {/* ============================================================ */}
-            {/* REPORT CARD TAB */}
+            {/* SECTION 11: REPORT CARD */}
             {/* ============================================================ */}
-            {activeTab === 'report_card' && (
+            <div id="section-report-card">
+              <SectionHeader icon={<ClipboardCheck className="w-5 h-5" />} title="Report Card" />
               <ReportCardTab lookup={lookup} />
-            )}
+            </div>
 
             {/* ============================================================ */}
-            {/* EXPORT TAB */}
+            {/* SECTION 12: EXPORT / ACTIONS */}
             {/* ============================================================ */}
-            {activeTab === 'export' && (
-              <div className="p-6 space-y-6">
+            <div id="section-export">
+              <SectionHeader icon={<FileOutput className="w-5 h-5" />} title="Export / Actions" />
                 {/* Download Report */}
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
                   <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
@@ -1895,8 +1864,8 @@ export default function PropertyIntelligencePage() {
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+            </div>
+
           </div>
         </div>
       ) : null}
@@ -1907,6 +1876,15 @@ export default function PropertyIntelligencePage() {
 // =============================================================================
 // SUB-COMPONENTS
 // =============================================================================
+
+function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+      <span className="text-blue-600">{icon}</span>
+      <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{title}</h2>
+    </div>
+  );
+}
 
 function SplitPane({ view, lookup, selectedHistoricalDate }: { view: 'aerial' | 'street' | 'satellite'; lookup: PropertyLookup; selectedHistoricalDate: string | null }) {
   if (view === 'aerial') {
