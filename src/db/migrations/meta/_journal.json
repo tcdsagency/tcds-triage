@@ -127,6 +127,13 @@
       "when": 1771602605343,
       "tag": "0017_heavy_greymalkin",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1771602850490,
+      "tag": "0018_jazzy_timeslip",
+      "breakpoints": true
     }
   ]
 }

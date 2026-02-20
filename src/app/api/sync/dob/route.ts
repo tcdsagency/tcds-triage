@@ -5,14 +5,21 @@
  *
  * POST /api/sync/dob - Run full DOB sync
  * GET /api/sync/dob - Get sync status/stats
+ *
+ * Uses dobSyncAttemptedAt to avoid retrying the same customers every night.
+ * Customers where no DOB was found get stamped so the sync progresses through
+ * the full customer list rather than getting stuck on the same batch.
+ * Re-attempts customers after 30 days in case upstream data has been updated.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { customers } from "@/db/schema";
-import { eq, and, isNull, isNotNull, or } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, or, sql, lt } from "drizzle-orm";
 import { getHawkSoftClient } from "@/lib/api/hawksoft";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
+
+const RETRY_AFTER_DAYS = 30;
 
 // =============================================================================
 // GET - Sync Stats
@@ -32,6 +39,7 @@ export async function GET() {
         firstName: customers.firstName,
         lastName: customers.lastName,
         dateOfBirth: customers.dateOfBirth,
+        dobSyncAttemptedAt: customers.dobSyncAttemptedAt,
         hawksoftClientCode: customers.hawksoftClientCode,
         agencyzoomId: customers.agencyzoomId,
         isLead: customers.isLead,
@@ -48,6 +56,9 @@ export async function GET() {
     const needsDob = allCustomers.filter(
       (c) => c.dateOfBirth === null && (c.hawksoftClientCode || c.agencyzoomId)
     );
+    const attemptedNoResult = allCustomers.filter(
+      (c) => c.dateOfBirth === null && c.dobSyncAttemptedAt !== null
+    );
 
     return NextResponse.json({
       success: true,
@@ -58,6 +69,7 @@ export async function GET() {
         withHawksoftId: withHawksoft.length,
         withAgencyzoomId: withAgencyzoom.length,
         eligibleForSync: needsDob.length,
+        attemptedNoResult: attemptedNoResult.length,
       },
     });
   } catch (error) {
@@ -86,7 +98,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`[DOB Sync] Starting sync (limit: ${limit}, dryRun: ${dryRun})`);
 
+    // Calculate retry cutoff (re-attempt after RETRY_AFTER_DAYS days)
+    const retryCutoff = new Date();
+    retryCutoff.setDate(retryCutoff.getDate() - RETRY_AFTER_DAYS);
+
     // Get customers without DOB who have external IDs
+    // Skip customers that were already attempted recently (dobSyncAttemptedAt within last 30 days)
     const customersToSync = await db
       .select({
         id: customers.id,
@@ -101,7 +118,12 @@ export async function POST(request: NextRequest) {
           eq(customers.tenantId, tenantId),
           or(eq(customers.isLead, false), isNull(customers.isLead)),
           isNull(customers.dateOfBirth),
-          or(isNotNull(customers.hawksoftClientCode), isNotNull(customers.agencyzoomId))
+          or(isNotNull(customers.hawksoftClientCode), isNotNull(customers.agencyzoomId)),
+          // Only pick customers never attempted, or attempted more than 30 days ago
+          or(
+            isNull(customers.dobSyncAttemptedAt),
+            lt(customers.dobSyncAttemptedAt, retryCutoff)
+          )
         )
       )
       .limit(limit);
@@ -188,6 +210,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const now = new Date();
+
     // Process each customer
     for (const customer of customersToSync) {
       let dob: string | null = null;
@@ -218,20 +242,27 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // 3. Update customer if DOB found
+        // 3. Update customer
         if (dob && !dryRun) {
           // Parse DOB string to Date
           const dobDate = new Date(dob);
           if (!isNaN(dobDate.getTime())) {
             await db
               .update(customers)
-              .set({ dateOfBirth: dobDate, updatedAt: new Date() })
+              .set({ dateOfBirth: dobDate, dobSyncAttemptedAt: now, updatedAt: now })
               .where(eq(customers.id, customer.id));
 
             results.synced++;
             if (source === "hawksoft") results.fromHawksoft++;
             if (source === "agencyzoom") results.fromAgencyzoom++;
           } else {
+            // Invalid date format — stamp as attempted so we don't retry immediately
+            if (!dryRun) {
+              await db
+                .update(customers)
+                .set({ dobSyncAttemptedAt: now })
+                .where(eq(customers.id, customer.id));
+            }
             results.skipped++;
           }
         } else if (dob && dryRun) {
@@ -239,6 +270,13 @@ export async function POST(request: NextRequest) {
           if (source === "hawksoft") results.fromHawksoft++;
           if (source === "agencyzoom") results.fromAgencyzoom++;
         } else {
+          // No DOB found from any source — stamp as attempted
+          if (!dryRun) {
+            await db
+              .update(customers)
+              .set({ dobSyncAttemptedAt: now })
+              .where(eq(customers.id, customer.id));
+          }
           results.skipped++;
         }
 
@@ -260,7 +298,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[DOB Sync] Complete: ${results.synced} synced, ${results.failed} failed`);
+    console.log(`[DOB Sync] Complete: ${results.synced} synced, ${results.skipped} skipped (no DOB found), ${results.failed} failed`);
 
     return NextResponse.json({
       success: true,

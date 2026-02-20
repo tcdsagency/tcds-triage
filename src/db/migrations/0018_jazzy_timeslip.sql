@@ -1,0 +1,1 @@
+ALTER TABLE "customers" ADD COLUMN "dob_sync_attempted_at" timestamp;
