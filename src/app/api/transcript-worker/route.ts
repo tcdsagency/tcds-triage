@@ -26,18 +26,18 @@ import {
 import { processPendingQuoteTicketLinks } from "@/lib/quote-ticket-linker";
 import { formatInboundCallDescription } from "@/lib/format-ticket-description";
 
-// Retry schedule (exponential backoff)
+// Retry schedule (flattened — most transcripts arrive within 1-2 minutes)
 const RETRY_DELAYS = [
-  30,    // Attempt 1: 30s
-  60,    // Attempt 2: 1m
-  60,    // Attempt 3: 1m
-  120,   // Attempt 4: 2m
-  120,   // Attempt 5: 2m
-  180,   // Attempt 6: 3m
-  180,   // Attempt 7: 3m
-  300,   // Attempt 8: 5m
-  300,   // Attempt 9: 5m
-  600,   // Attempt 10: 10m
+  15,    // Attempt 1: 15s
+  15,    // Attempt 2: 15s
+  30,    // Attempt 3: 30s
+  30,    // Attempt 4: 30s
+  60,    // Attempt 5: 1m
+  60,    // Attempt 6: 1m
+  60,    // Attempt 7: 1m
+  120,   // Attempt 8: 2m
+  120,   // Attempt 9: 2m
+  120,   // Attempt 10: 2m
 ];
 
 const MAX_ATTEMPTS = RETRY_DELAYS.length;
@@ -1516,9 +1516,9 @@ function getDismissReason(wrapup: {
 
 async function autoCompletePendingWrapups(): Promise<number> {
   const tenantId = process.env.DEFAULT_TENANT_ID!;
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
 
-  // Find pending_review wrapups older than 5 min (give webhook time to auto-complete first)
+  // Find pending_review wrapups older than 2 min (give webhook time to auto-complete first)
   const pending = await db.select({
     id: wrapupDrafts.id,
     callId: wrapupDrafts.callId,
@@ -1537,7 +1537,7 @@ async function autoCompletePendingWrapups(): Promise<number> {
   .where(and(
     eq(wrapupDrafts.tenantId, tenantId),
     eq(wrapupDrafts.status, "pending_review"),
-    lte(wrapupDrafts.createdAt, fiveMinutesAgo),
+    lte(wrapupDrafts.createdAt, twoMinutesAgo),
   ))
   .orderBy(asc(wrapupDrafts.createdAt))
   .limit(10); // Process 10 per cycle to stay within Vercel timeout

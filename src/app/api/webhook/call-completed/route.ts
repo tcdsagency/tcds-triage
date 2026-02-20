@@ -1079,7 +1079,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
         : (call.toNumber || calledNumber);
 
       try {
-        const nextAttemptAt = new Date(Date.now() + 60 * 1000); // 60s delay
+        const nextAttemptAt = new Date(Date.now() + 15 * 1000); // 15s delay
         await db
           .insert(pendingTranscriptJobs)
           .values({

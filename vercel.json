@@ -2,11 +2,11 @@
   "crons": [
     {
       "path": "/api/transcript-worker",
-      "schedule": "*/2 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/recording-poller",
-      "schedule": "*/2 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/sync/cron",

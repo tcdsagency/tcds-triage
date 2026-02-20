@@ -103,10 +103,10 @@ export const transcriptQueue = new Queue<TranscriptJobData>('transcript-processi
   connection: redis,
   defaultJobOptions: {
     ...defaultJobOptions,
-    attempts: 10, // More attempts - waiting on SQL Server write delay
+    attempts: 6,
     backoff: {
-      type: 'exponential' as const,
-      delay: 10000, // Start at 10s for SQL Server delay
+      type: 'fixed' as const,
+      delay: 5000, // 5s fixed backoff
     },
   },
 });
