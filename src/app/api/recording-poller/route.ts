@@ -337,7 +337,7 @@ async function matchExistingCall(callData: ReturnType<typeof mapRecordingToCallD
   const targetTime = callData.startedAt.toISOString();
 
   if (phone) {
-    // Phone-based matching
+    // Phone-based matching — only match calls that don't already have a 3CX recording
     const phoneSuffix = `%${phone.slice(-10)}`;
 
     const [match] = await db
@@ -347,6 +347,7 @@ async function matchExistingCall(callData: ReturnType<typeof mapRecordingToCallD
         eq(calls.tenantId, TENANT_ID),
         gte(calls.startedAt, windowStart),
         lte(calls.startedAt, windowEnd),
+        isNull(calls.threecxRecordingId),
         or(
           ilike(calls.fromNumber, phoneSuffix),
           ilike(calls.toNumber, phoneSuffix),

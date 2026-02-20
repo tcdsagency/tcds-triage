@@ -315,12 +315,29 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
       throw new Error("MSSQL client not available");
     }
 
-    // Find transcript in SQL Server
+    // Get SQL record IDs already claimed by other completed jobs to prevent
+    // two different calls from matching the same VoIPTools recording
+    const claimedJobs = await db
+      .select({ sqlRecordId: pendingTranscriptJobs.sqlRecordId })
+      .from(pendingTranscriptJobs)
+      .where(
+        and(
+          eq(pendingTranscriptJobs.status, "completed"),
+          sql`${pendingTranscriptJobs.sqlRecordId} IS NOT NULL`
+        )
+      );
+    const excludeRecordIds = claimedJobs
+      .map(j => j.sqlRecordId!)
+      .filter(id => id > 0);
+
+    // Find transcript in SQL Server — ordered by closest time match,
+    // excluding already-claimed recordings
     const transcript = await mssqlClient.findTranscript({
       callerNumber: job.callerNumber || undefined,
       agentExtension: job.agentExtension || undefined,
       startTime: job.callStartedAt,
       endTime: job.callEndedAt,
+      excludeRecordIds,
     });
 
     await mssqlClient.close();

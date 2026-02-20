@@ -1,0 +1,1 @@
+ALTER TABLE "pending_transcript_jobs" ADD COLUMN "external_call_id" varchar(100);

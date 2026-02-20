@@ -270,6 +270,7 @@ export class MSSQLTranscriptsClient {
     agentExtension?: string;
     startTime?: Date;
     endTime?: Date;
+    excludeRecordIds?: number[];
   }): Promise<TranscriptRecord | null> {
     const pool = await this.getPool();
     const request = pool.request();
@@ -292,17 +293,34 @@ export class MSSQLTranscriptsClient {
     }
 
     if (params.startTime) {
-      // Add 5 minute buffer before
-      const bufferedStart = new Date(params.startTime.getTime() - 5 * 60 * 1000);
+      // Add 3 minute buffer before (tightened from 5 to reduce cross-matching)
+      const bufferedStart = new Date(params.startTime.getTime() - 3 * 60 * 1000);
       request.input("startTime", this.mssql.DateTime, bufferedStart);
       whereConditions.push("RecordingDate >= @startTime");
     }
 
     if (params.endTime) {
-      // Add 5 minute buffer after
-      const bufferedEnd = new Date(params.endTime.getTime() + 5 * 60 * 1000);
+      // Add 3 minute buffer after (tightened from 5 to reduce cross-matching)
+      const bufferedEnd = new Date(params.endTime.getTime() + 3 * 60 * 1000);
       request.input("endTime", this.mssql.DateTime, bufferedEnd);
       whereConditions.push("RecordingDate <= @endTime");
+    }
+
+    // Exclude SQL record IDs already claimed by other completed jobs
+    if (params.excludeRecordIds && params.excludeRecordIds.length > 0) {
+      const idList = params.excludeRecordIds.filter(id => !isNaN(id) && id > 0);
+      if (idList.length > 0) {
+        whereConditions.push(`RecordId NOT IN (${idList.join(",")})`);
+      }
+    }
+
+    // Order by closest match to call start time (not most recent).
+    // Prevents cross-matching when multiple calls on the same extension
+    // occur within the time window.
+    let orderClause = "RecordingDate DESC";
+    if (params.startTime) {
+      request.input("anchorTime", this.mssql.DateTime, params.startTime);
+      orderClause = "ABS(DATEDIFF(SECOND, RecordingDate, @anchorTime)) ASC";
     }
 
     const result = await request.query(`
@@ -310,7 +328,7 @@ export class MSSQLTranscriptsClient {
              RecordingDate, Duration, Transcription, Score, FileName, Archive
       FROM Recordings
       WHERE ${whereConditions.join(" AND ")}
-      ORDER BY RecordingDate DESC
+      ORDER BY ${orderClause}
     `);
 
     if (result.recordset.length === 0) return null;

@@ -113,6 +113,20 @@
       "when": 1739836800000,
       "tag": "0015_az_gated_renewals",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1771556300018,
+      "tag": "0016_previous_cerebro",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1771602605343,
+      "tag": "0017_heavy_greymalkin",
+      "breakpoints": true
     }
   ]
 }

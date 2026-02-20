@@ -445,6 +445,7 @@ export const customers = pgTable('customers', {
   
   // Demographics
   dateOfBirth: timestamp('date_of_birth'),
+  dobSyncAttemptedAt: timestamp('dob_sync_attempted_at'), // Tracks when DOB sync was last tried (prevents retrying same customers)
   ssn: varchar('ssn_last4', { length: 4 }), // Last 4 only
   
   // Assignment
@@ -1113,6 +1114,7 @@ export const pendingTranscriptJobs = pgTable('pending_transcript_jobs', {
   // Call identification for SQL Server lookup
   callerNumber: varchar('caller_number', { length: 20 }),
   agentExtension: varchar('agent_extension', { length: 10 }),
+  externalCallId: varchar('external_call_id', { length: 100 }), // 3CX/VoIPTools call ID for direct matching
   callStartedAt: timestamp('call_started_at').notNull(),
   callEndedAt: timestamp('call_ended_at').notNull(),
 

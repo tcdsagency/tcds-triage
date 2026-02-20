@@ -1087,6 +1087,7 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             callId: call.id,
             callerNumber: jobCallerNumber || null,
             agentExtension: call.extension || extension || null,
+            externalCallId: body.callId || null,
             callStartedAt: call.startedAt || new Date(),
             callEndedAt: call.endedAt || new Date(),
             status: "pending",
