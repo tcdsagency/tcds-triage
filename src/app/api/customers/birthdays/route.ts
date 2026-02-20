@@ -10,7 +10,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { customers } from "@/db/schema";
-import { eq, and, sql, isNotNull, or } from "drizzle-orm";
+import { eq, and, sql, isNotNull, or, type SQL } from "drizzle-orm";
+
+// Convert DOB timestamp to date in UTC (avoids timezone shift from UTC midnight to previous day)
+const dobAsDate = sql`(${customers.dateOfBirth} AT TIME ZONE 'UTC')::date`;
+
+// Leap-year-safe MAKE_DATE: clamps Feb 29 to Feb 28 in non-leap years
+// Uses (target_year, month, LEAST(day, max_day_in_that_month))
+const safeMakeDate = (targetYear: SQL) => sql`
+  MAKE_DATE(
+    (${targetYear})::int,
+    EXTRACT(MONTH FROM ${dobAsDate})::int,
+    LEAST(
+      EXTRACT(DAY FROM ${dobAsDate})::int,
+      EXTRACT(DAY FROM (
+        MAKE_DATE((${targetYear})::int, EXTRACT(MONTH FROM ${dobAsDate})::int, 1)
+        + INTERVAL '1 month' - INTERVAL '1 day'
+      ))::int
+    )
+  )`;
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,13 +51,16 @@ export async function GET(request: NextRequest) {
     // Fetch customers with birthdays
     // Filter: active customers (not leads), have DOB, have address
     // Note: isLead could be NULL for some records, treat NULL as false (they're customers)
-    // Cast timestamp to date to avoid timezone issues with month extraction
     const baseConditions = and(
       eq(customers.tenantId, tenantId),
       // Active customers only - treat NULL as false (they're customers)
       or(eq(customers.isLead, false), sql`${customers.isLead} IS NULL`),
       isNotNull(customers.dateOfBirth)
     );
+
+    // Leap-safe birthday date for this year and next year
+    const birthdayThisYear = safeMakeDate(sql.raw(`${year}`));
+    const birthdayNextYear = safeMakeDate(sql.raw(`${year + 1}`));
 
     // For "all" mode, fetch all birthdays and sort by upcoming date
     // For single month mode, filter by month
@@ -61,32 +82,20 @@ export async function GET(request: NextRequest) {
           ? baseConditions
           : and(
               baseConditions,
-              // Cast to date first to avoid timezone issues, then extract month
-              sql`EXTRACT(MONTH FROM ${customers.dateOfBirth}::date) = ${month}`
+              sql`EXTRACT(MONTH FROM ${dobAsDate}) = ${month}`
             )
       )
       .orderBy(
         fetchAll
-          ? // Sort by upcoming birthday: calculate days until next birthday
+          ? // Sort by upcoming birthday: days until next occurrence
             sql`(
-              EXTRACT(DOY FROM (
-                MAKE_DATE(
-                  CASE
-                    WHEN MAKE_DATE(${year}, EXTRACT(MONTH FROM ${customers.dateOfBirth}::date)::int, EXTRACT(DAY FROM ${customers.dateOfBirth}::date)::int) >= CURRENT_DATE
-                    THEN ${year}
-                    ELSE ${year} + 1
-                  END,
-                  EXTRACT(MONTH FROM ${customers.dateOfBirth}::date)::int,
-                  EXTRACT(DAY FROM ${customers.dateOfBirth}::date)::int
-                )
-              )) - EXTRACT(DOY FROM CURRENT_DATE) +
               CASE
-                WHEN MAKE_DATE(${year}, EXTRACT(MONTH FROM ${customers.dateOfBirth}::date)::int, EXTRACT(DAY FROM ${customers.dateOfBirth}::date)::int) >= CURRENT_DATE
-                THEN 0
-                ELSE 365
+                WHEN ${birthdayThisYear} >= CURRENT_DATE
+                THEN ${birthdayThisYear} - CURRENT_DATE
+                ELSE ${birthdayNextYear} - CURRENT_DATE
               END
             ) ASC`
-          : sql`EXTRACT(DAY FROM ${customers.dateOfBirth}::date) ASC`
+          : sql`EXTRACT(DAY FROM ${dobAsDate}) ASC`
       );
 
     // Filter to only customers with valid mailing addresses (unless includeNoAddress is set)
@@ -168,7 +177,7 @@ export async function GET(request: NextRequest) {
           and(
             eq(customers.tenantId, tenantId),
             isNotNull(customers.dateOfBirth),
-            sql`EXTRACT(MONTH FROM ${customers.dateOfBirth}::date) = ${month}`
+            sql`EXTRACT(MONTH FROM ${dobAsDate}) = ${month}`
           )
         );
 
@@ -180,7 +189,7 @@ export async function GET(request: NextRequest) {
         FROM customers
         WHERE tenant_id = ${tenantId}
           AND date_of_birth IS NOT NULL
-          AND EXTRACT(MONTH FROM date_of_birth::date) = ${month}
+          AND EXTRACT(MONTH FROM (date_of_birth AT TIME ZONE 'UTC')::date) = ${month}
         GROUP BY is_lead
       `) as unknown as { rows: Array<{ is_lead: boolean | null; count: number }> };
 
