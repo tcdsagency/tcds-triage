@@ -1,5 +1,5 @@
 // ePayPolicy v2 API Client
-// Docs: https://docs.epaypolicy.com/v2
+// Docs: https://docs.epaypolicy.com
 
 const EPAY_BASE_URL = process.env.EPAY_BASE_URL || "https://api-sandbox.epaypolicy.com";
 const EPAY_API_KEY = process.env.EPAY_API_KEY || "";
@@ -26,9 +26,24 @@ async function epayFetch<T>(path: string, options: RequestInit = {}): Promise<T>
     let detail = text;
     try {
       const json = JSON.parse(text);
-      detail = json.message || json.error || text;
+      // Include modelState validation errors for debugging
+      if (json.modelState) {
+        const errors = Object.values(json.modelState).flat().join("; ");
+        detail = `${json.message || "Validation error"}: ${errors}`;
+      } else {
+        detail = json.message || json.error || text;
+      }
     } catch {}
     throw new Error(`ePayPolicy API error ${res.status}: ${detail}`);
+  }
+
+  // Token creation returns 201 with empty body — ID is in Location header
+  const contentLength = res.headers.get("content-length");
+  if (contentLength === "0" || res.status === 204) {
+    const location = res.headers.get("location") || "";
+    // Location format: /tokens/{id}
+    const id = location.split("/").pop() || "";
+    return { id } as T;
   }
 
   return res.json() as Promise<T>;
@@ -40,8 +55,6 @@ async function epayFetch<T>(path: string, options: RequestInit = {}): Promise<T>
 
 export interface EPayToken {
   id: string;
-  last4: string;
-  type: "card" | "ach";
   [key: string]: any;
 }
 
@@ -62,9 +75,8 @@ export interface EPayTransaction {
 }
 
 export interface EPayTransactionFees {
-  amount: number;
-  fee: number;
-  total: number;
+  achPayerFee: number;
+  creditCardPayerFee: number;
   [key: string]: any;
 }
 
@@ -81,15 +93,18 @@ export async function tokenizeCard(data: {
   payer: string;
   emailAddress: string;
 }): Promise<EPayToken> {
+  // ePay v2 uses nested creditCardInformation object
+  // Field names: month (int), year (int), cvc (string), accountHolder (string)
   return epayFetch<EPayToken>("/api/v2/tokens", {
     method: "POST",
     body: JSON.stringify({
-      type: "card",
-      cardNumber: data.cardNumber,
-      expirationMonth: data.expMonth,
-      expirationYear: data.expYear,
-      cvv: data.cvv,
-      zipCode: data.zip,
+      creditCardInformation: {
+        cardNumber: data.cardNumber,
+        month: parseInt(data.expMonth) || 0,
+        year: parseInt(data.expYear) >= 100 ? parseInt(data.expYear) : 2000 + (parseInt(data.expYear) || 0),
+        cvc: data.cvv,
+        accountHolder: data.payer,
+      },
       payer: data.payer,
       emailAddress: data.emailAddress,
     }),
@@ -99,17 +114,22 @@ export async function tokenizeCard(data: {
 export async function tokenizeACH(data: {
   routingNumber: string;
   accountNumber: string;
-  accountType?: string;
   payer: string;
   emailAddress: string;
 }): Promise<EPayToken> {
+  // ePay v2 uses nested bankAccountInformation object
+  // accountType: 1 = Checking, 2 = Savings
   return epayFetch<EPayToken>("/api/v2/tokens", {
     method: "POST",
     body: JSON.stringify({
-      type: "ach",
-      routingNumber: data.routingNumber,
-      accountNumber: data.accountNumber,
-      accountType: data.accountType || "checking",
+      bankAccountInformation: {
+        routingNumber: data.routingNumber,
+        accountNumber: data.accountNumber,
+        accountType: 1, // Checking
+        accountHolder: data.payer,
+        firstName: data.payer.split(" ")[0] || data.payer,
+        lastName: data.payer.split(" ").slice(1).join(" ") || data.payer,
+      },
       payer: data.payer,
       emailAddress: data.emailAddress,
     }),
