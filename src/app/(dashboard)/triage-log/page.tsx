@@ -605,6 +605,13 @@ function EntryRow({
       <td className="px-4 py-3">
         <ActionBadge action={entry.action} />
       </td>
+      <td className="px-4 py-3 text-center">
+        {entry.sentimentEmoji ? (
+          <span className="text-lg" title={entry.aiSentiment || undefined}>{entry.sentimentEmoji}</span>
+        ) : (
+          <span className="text-xs text-gray-400 dark:text-gray-500">-</span>
+        )}
+      </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
           {entry.hasRecording && (
@@ -1173,6 +1180,9 @@ export default function TriageLogPage() {
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                   Action
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                  Sentiment
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                   Media
