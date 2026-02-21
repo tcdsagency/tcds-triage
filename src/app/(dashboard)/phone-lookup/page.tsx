@@ -174,11 +174,15 @@ function StreetViewCard({ address }: { address: { street?: string; city?: string
   // Google Maps search URL (for external link)
   const mapsSearchUrl = `https://www.google.com/maps/search/${encodedAddress}`;
 
-  // Interactive Street View embed URL
-  const streetViewEmbedUrl = `https://www.google.com/maps/embed/v1/streetview?key=${apiKey}&location=${encodedAddress}&heading=0&pitch=0&fov=90`;
+  // Street View: use Google Street View Image API as a static preview,
+  // with a link to open interactive Street View in Google Maps
+  const streetViewImageUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x400&location=${encodedAddress}&key=${apiKey}`;
 
-  // Map view embed URL (fallback if street view not available)
+  // Map embed URL — place mode accepts addresses directly
   const mapEmbedUrl = `https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodedAddress}&zoom=18&maptype=satellite`;
+
+  // Interactive Street View URL (opens in new tab)
+  const streetViewLinkUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=0,0&query=${encodedAddress}`;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
@@ -215,14 +219,29 @@ function StreetViewCard({ address }: { address: { street?: string; city?: string
       {/* Interactive Map/Street View - larger and interactive */}
       <div className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 mb-3">
         {apiKey && !iframeError ? (
-          <iframe
-            src={viewMode === 'streetview' ? streetViewEmbedUrl : mapEmbedUrl}
-            className="w-full h-80 border-0"
-            allowFullScreen
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            onError={() => setIframeError(true)}
-          />
+          viewMode === 'streetview' ? (
+            <a href={mapsSearchUrl} target="_blank" rel="noopener noreferrer" className="block cursor-pointer">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={streetViewImageUrl}
+                alt={`Street view of ${fullAddress}`}
+                className="w-full h-80 object-cover"
+                onError={() => setIframeError(true)}
+              />
+              <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                Click to open in Google Maps
+              </div>
+            </a>
+          ) : (
+            <iframe
+              src={mapEmbedUrl}
+              className="w-full h-80 border-0"
+              allowFullScreen
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              onError={() => setIframeError(true)}
+            />
+          )
         ) : (
           <div className="w-full h-80 flex items-center justify-center text-gray-400 dark:text-gray-500">
             <div className="text-center">
