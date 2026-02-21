@@ -78,6 +78,8 @@ export async function tokenizeCard(data: {
   expYear: string;
   cvv: string;
   zip: string;
+  payer: string;
+  emailAddress: string;
 }): Promise<EPayToken> {
   return epayFetch<EPayToken>("/api/v2/tokens", {
     method: "POST",
@@ -88,6 +90,8 @@ export async function tokenizeCard(data: {
       expirationYear: data.expYear,
       cvv: data.cvv,
       zipCode: data.zip,
+      payer: data.payer,
+      emailAddress: data.emailAddress,
     }),
   });
 }
@@ -96,6 +100,8 @@ export async function tokenizeACH(data: {
   routingNumber: string;
   accountNumber: string;
   accountType?: string;
+  payer: string;
+  emailAddress: string;
 }): Promise<EPayToken> {
   return epayFetch<EPayToken>("/api/v2/tokens", {
     method: "POST",
@@ -104,6 +110,8 @@ export async function tokenizeACH(data: {
       routingNumber: data.routingNumber,
       accountNumber: data.accountNumber,
       accountType: data.accountType || "checking",
+      payer: data.payer,
+      emailAddress: data.emailAddress,
     }),
   });
 }

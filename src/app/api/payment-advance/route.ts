@@ -63,10 +63,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Debug: log incoming payment fields
-    console.log("[Payment Advance] Incoming body keys:", Object.keys(body));
-    console.log("[Payment Advance] paymentType:", body.paymentType, "| routingNumber:", body.routingNumber ? "present" : "missing", "| accountNumber:", body.accountNumber ? "present" : "missing", "| cardNumber:", body.cardNumber ? "present" : "missing", "| paymentInfo:", body.paymentInfo ? "present" : "missing");
-
     // Validate payment-type-specific fields
     if (body.paymentType === "card") {
       if (!body.cardNumber || !body.cardExp || !body.cardCvv || !body.cardZip) {
@@ -106,6 +102,9 @@ export async function POST(request: NextRequest) {
     let epayError: string | null = null;
     let status: "scheduled" | "failed" | "pending" = "pending";
 
+    const payerName = `${body.firstName} ${body.lastName}`;
+    const payerEmail = body.submitterEmail || "payments@tcdsagency.com";
+
     try {
       // Tokenize
       if (body.paymentType === "card") {
@@ -116,12 +115,16 @@ export async function POST(request: NextRequest) {
           expYear: year,
           cvv: body.cardCvv,
           zip: body.cardZip,
+          payer: payerName,
+          emailAddress: payerEmail,
         });
         epayTokenId = token.id;
       } else {
         const token = await tokenizeACH({
           routingNumber: body.routingNumber,
           accountNumber: body.accountNumber,
+          payer: payerName,
+          emailAddress: payerEmail,
         });
         epayTokenId = token.id;
       }
