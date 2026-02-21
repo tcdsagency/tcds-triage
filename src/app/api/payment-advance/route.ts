@@ -6,7 +6,30 @@ import { db } from "@/db";
 import { paymentAdvances } from "@/db/schema";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 import { outlookClient } from "@/lib/outlook";
+import { tokenizeCard, tokenizeACH, createSchedule } from "@/lib/epay";
 import { desc, eq } from "drizzle-orm";
+
+// Helper: Mask card/ACH data for storage (same format as before)
+function buildMaskedPaymentInfo(body: any): string {
+  if (body.paymentType === "card") {
+    const last4 = (body.cardNumber || "").slice(-4);
+    const maskedCard = last4.padStart((body.cardNumber || "").length, "X");
+    return `Card: ${maskedCard}, Exp: ${body.cardExp || "**/**"}, CVV: ***, Zip: ${body.cardZip || "*****"}`;
+  } else {
+    const maskedRouting = (body.routingNumber || "").slice(-4).padStart(9, "X");
+    const maskedAccount = (body.accountNumber || "").slice(-4).padStart((body.accountNumber || "").length, "X");
+    return `ACH: Routing ${maskedRouting}, Account ${maskedAccount}`;
+  }
+}
+
+// Helper: Parse card expiration "MM/YY" into month and year strings
+function parseCardExp(exp: string): { month: string; year: string } {
+  const parts = (exp || "").split("/");
+  return {
+    month: (parts[0] || "").trim(),
+    year: (parts[1] || "").trim(),
+  };
+}
 
 // POST - Submit a new payment advance
 export async function POST(request: NextRequest) {
@@ -25,7 +48,6 @@ export async function POST(request: NextRequest) {
       "policyNumber",
       "amount",
       "paymentType",
-      "paymentInfo",
       "draftDate",
       "todaysDate",
       "processingFee",
@@ -36,6 +58,23 @@ export async function POST(request: NextRequest) {
       if (!body[field]) {
         return NextResponse.json(
           { success: false, error: `Missing required field: ${field}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate payment-type-specific fields
+    if (body.paymentType === "card") {
+      if (!body.cardNumber || !body.cardExp || !body.cardCvv || !body.cardZip) {
+        return NextResponse.json(
+          { success: false, error: "Missing card payment fields (cardNumber, cardExp, cardCvv, cardZip)" },
+          { status: 400 }
+        );
+      }
+    } else if (body.paymentType === "checking") {
+      if (!body.routingNumber || !body.accountNumber) {
+        return NextResponse.json(
+          { success: false, error: "Missing ACH payment fields (routingNumber, accountNumber)" },
           { status: 400 }
         );
       }
@@ -54,6 +93,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Build masked payment info for DB storage
+    const maskedPaymentInfo = body.paymentInfo || buildMaskedPaymentInfo(body);
+
+    // Tokenize + schedule via ePayPolicy
+    let epayTokenId: string | null = null;
+    let epayScheduleId: string | null = null;
+    let epayError: string | null = null;
+    let status: "scheduled" | "failed" | "pending" = "pending";
+
+    try {
+      // Tokenize
+      if (body.paymentType === "card") {
+        const { month, year } = parseCardExp(body.cardExp);
+        const token = await tokenizeCard({
+          cardNumber: body.cardNumber,
+          expMonth: month,
+          expYear: year,
+          cvv: body.cardCvv,
+          zip: body.cardZip,
+        });
+        epayTokenId = token.id;
+      } else {
+        const token = await tokenizeACH({
+          routingNumber: body.routingNumber,
+          accountNumber: body.accountNumber,
+        });
+        epayTokenId = token.id;
+      }
+
+      // Create payment schedule
+      const schedule = await createSchedule({
+        tokenId: epayTokenId,
+        amount: totalAmount,
+        payerName: `${body.firstName} ${body.lastName}`,
+        email: body.submitterEmail || undefined,
+        startDate: body.draftDate,
+      });
+      epayScheduleId = schedule.id;
+      status = "scheduled";
+
+      console.log(`[Payment Advance] ePay scheduled: token=${epayTokenId}, schedule=${epayScheduleId}`);
+    } catch (err: any) {
+      epayError = err.message || "ePayPolicy tokenization/scheduling failed";
+      status = "failed";
+      console.error("[Payment Advance] ePay error:", epayError);
+    }
+
     // Insert into database
     const [advance] = await db
       .insert(paymentAdvances)
@@ -68,7 +154,7 @@ export async function POST(request: NextRequest) {
         convenienceFeeWaived: body.convenienceFeeWaived || false,
         totalAmount,
         paymentType: body.paymentType,
-        paymentInfo: body.paymentInfo,
+        paymentInfo: maskedPaymentInfo,
         draftDate: body.draftDate,
         submittedDate: body.todaysDate,
         reason: body.reason || null,
@@ -76,7 +162,10 @@ export async function POST(request: NextRequest) {
         agencyzoomId: body.customerId?.toString() || null,
         agencyzoomType: body.customerType || null,
         submitterEmail: body.submitterEmail || null,
-        status: "pending",
+        status,
+        epayTokenId,
+        epayScheduleId,
+        epayError,
       })
       .returning();
 
@@ -85,7 +174,7 @@ export async function POST(request: NextRequest) {
     if (body.customerId && body.customerType) {
       try {
         const azClient = getAgencyZoomClient();
-        const noteContent = buildAzNote(body, advance.id);
+        const noteContent = buildAzNote(body, advance.id, status, epayError);
 
         if (body.customerType === "customer") {
           await azClient.addNote(parseInt(body.customerId), noteContent);
@@ -96,14 +185,13 @@ export async function POST(request: NextRequest) {
         }
       } catch (azError) {
         console.error("[Payment Advance] Failed to create AgencyZoom note:", azError);
-        // Don't fail the request, just log the error
       }
     }
 
     // Send email notification
     let emailSent = false;
     try {
-      emailSent = await sendEmailNotification(body, advance.id);
+      emailSent = await sendEmailNotification(body, advance.id, status, epayError);
       if (emailSent) {
         await db
           .update(paymentAdvances)
@@ -115,7 +203,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      success: true,
+      success: status !== "failed",
       advance: {
         id: advance.id,
         firstName: advance.firstName,
@@ -126,6 +214,7 @@ export async function POST(request: NextRequest) {
         draftDate: advance.draftDate,
         status: advance.status,
       },
+      epayError: epayError || undefined,
       azNoteCreated,
       emailSent,
     });
@@ -168,6 +257,8 @@ export async function GET(request: NextRequest) {
         reason: paymentAdvances.reason,
         submitterEmail: paymentAdvances.submitterEmail,
         createdAt: paymentAdvances.createdAt,
+        epayScheduleId: paymentAdvances.epayScheduleId,
+        epayError: paymentAdvances.epayError,
       })
       .from(paymentAdvances)
       .where(eq(paymentAdvances.tenantId, tenantId))
@@ -187,8 +278,10 @@ export async function GET(request: NextRequest) {
     const stats = {
       total: allAdvances.length,
       pending: allAdvances.filter((a) => a.status === "pending").length,
+      scheduled: allAdvances.filter((a) => a.status === "scheduled").length,
       processed: allAdvances.filter((a) => a.status === "processed").length,
       failed: allAdvances.filter((a) => a.status === "failed").length,
+      cancelled: allAdvances.filter((a) => a.status === "cancelled").length,
     };
 
     return NextResponse.json({
@@ -206,7 +299,7 @@ export async function GET(request: NextRequest) {
 }
 
 // Helper: Build AgencyZoom note content
-function buildAzNote(data: any, advanceId: string): string {
+function buildAzNote(data: any, advanceId: string, epayStatus?: string, epayError?: string | null): string {
   const lines = [
     "💵 PAYMENT ADVANCE SUBMITTED",
     "",
@@ -230,6 +323,12 @@ function buildAzNote(data: any, advanceId: string): string {
     `Submitted: ${data.todaysDate}`
   );
 
+  if (epayStatus === "scheduled") {
+    lines.push("", "✅ Payment scheduled via ePayPolicy");
+  } else if (epayStatus === "failed" && epayError) {
+    lines.push("", `❌ ePayPolicy scheduling failed: ${epayError}`);
+  }
+
   if (data.reason) {
     lines.push(`Reason: ${data.reason}`);
     if (data.reasonDetails) {
@@ -245,7 +344,7 @@ function buildAzNote(data: any, advanceId: string): string {
 }
 
 // Helper: Send email notification
-async function sendEmailNotification(data: any, advanceId: string): Promise<boolean> {
+async function sendEmailNotification(data: any, advanceId: string, epayStatus?: string, epayError?: string | null): Promise<boolean> {
   const emailRecipients = process.env.PAYMENT_ADVANCE_EMAIL_RECIPIENTS;
   if (!emailRecipients) {
     console.warn("[Payment Advance] No email recipients configured (PAYMENT_ADVANCE_EMAIL_RECIPIENTS)");
@@ -258,8 +357,14 @@ async function sendEmailNotification(data: any, advanceId: string): Promise<bool
     return false;
   }
 
+  const epayLine = epayStatus === "scheduled"
+    ? "\nePayPolicy Status: SCHEDULED (will draft automatically on draft date)"
+    : epayStatus === "failed"
+    ? `\nePayPolicy Status: FAILED - ${epayError || "Unknown error"}\n⚠️ This payment was NOT scheduled and requires manual processing.`
+    : "";
+
   // Build email content
-  const subject = `Payment Advance: ${data.firstName} ${data.lastName} - $${parseFloat(data.totalAmount).toFixed(2)}`;
+  const subject = `Payment Advance: ${data.firstName} ${data.lastName} - $${parseFloat(data.totalAmount).toFixed(2)}${epayStatus === "failed" ? " [FAILED]" : ""}`;
 
   const body = `
 Payment Advance Request
@@ -275,6 +380,7 @@ Total Amount: $${parseFloat(data.totalAmount).toFixed(2)}
 Payment Type: ${data.paymentType === "card" ? "Credit Card" : "ACH/Checking"}
 Draft Date: ${data.draftDate}
 Submission Date: ${data.todaysDate}
+${epayLine}
 
 ${data.reason ? `Reason: ${data.reason}` : ""}
 ${data.reasonDetails ? `Details: ${data.reasonDetails}` : ""}

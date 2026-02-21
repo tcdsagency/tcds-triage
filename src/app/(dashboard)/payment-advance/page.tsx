@@ -64,6 +64,8 @@ interface PaymentAdvance {
   reason: string | null;
   submitterEmail: string | null;
   createdAt: string;
+  epayScheduleId: string | null;
+  epayError: string | null;
 }
 
 // =============================================================================
@@ -130,7 +132,7 @@ export default function PaymentAdvancePage() {
   // History state
   const [advances, setAdvances] = useState<PaymentAdvance[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [stats, setStats] = useState({ total: 0, pending: 0, processed: 0, failed: 0 });
+  const [stats, setStats] = useState({ total: 0, pending: 0, scheduled: 0, processed: 0, failed: 0, cancelled: 0 });
 
   // Bank validation state
   const [bankInfo, setBankInfo] = useState<{
@@ -380,39 +382,40 @@ export default function PaymentAdvancePage() {
     setSubmitError(null);
 
     try {
-      // Build payment info string (masked for security)
-      let paymentInfo = "";
+      // Send raw payment data — API handles masking for storage and tokenization via ePay
+      const payload: any = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        policyNumber: formData.policyNumber,
+        amount: formData.amount,
+        paymentType: formData.paymentType,
+        draftDate: formData.draftDate,
+        todaysDate,
+        processingFee: processingFee.toFixed(2),
+        convenienceFee: convenienceFee.toFixed(2),
+        convenienceFeeWaived: waiveConvenienceFee,
+        totalAmount: totalAmount.toFixed(2),
+        customerId: selectedCustomer?.id,
+        customerType: selectedCustomer?.type,
+        reason: formData.reason,
+        reasonDetails: formData.reasonDetails,
+        submitterEmail: formData.submitterEmail,
+      };
+
       if (formData.paymentType === "card") {
-        const maskedCard = formData.cardNumber.slice(-4).padStart(formData.cardNumber.length, "X");
-        paymentInfo = `Card: ${maskedCard}, Exp: ${formData.cardExp}, CVV: ***, Zip: ${formData.cardZip}`;
+        payload.cardNumber = formData.cardNumber;
+        payload.cardExp = formData.cardExp;
+        payload.cardCvv = formData.cardCvv;
+        payload.cardZip = formData.cardZip;
       } else {
-        const maskedRouting = formData.routingNumber.slice(-4).padStart(9, "X");
-        const maskedAccount = formData.accountNumber.slice(-4).padStart(formData.accountNumber.length, "X");
-        paymentInfo = `ACH: Routing ${maskedRouting}, Account ${maskedAccount}`;
+        payload.routingNumber = formData.routingNumber;
+        payload.accountNumber = formData.accountNumber;
       }
 
       const res = await fetch("/api/payment-advance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          policyNumber: formData.policyNumber,
-          amount: formData.amount,
-          paymentType: formData.paymentType,
-          paymentInfo,
-          draftDate: formData.draftDate,
-          todaysDate,
-          processingFee: processingFee.toFixed(2),
-          convenienceFee: convenienceFee.toFixed(2),
-          convenienceFeeWaived: waiveConvenienceFee,
-          totalAmount: totalAmount.toFixed(2),
-          customerId: selectedCustomer?.id,
-          customerType: selectedCustomer?.type,
-          reason: formData.reason,
-          reasonDetails: formData.reasonDetails,
-          submitterEmail: formData.submitterEmail,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -494,6 +497,23 @@ export default function PaymentAdvancePage() {
     }
   };
 
+  const handleCancel = async (id: string) => {
+    if (!confirm("Are you sure you want to cancel this scheduled payment?")) return;
+    try {
+      const res = await fetch(`/api/payment-advance/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+
+      if (res.ok) {
+        loadHistory();
+      }
+    } catch (error) {
+      console.error("Cancel error:", error);
+    }
+  };
+
   // ==========================================================================
   // RENDER
   // ==========================================================================
@@ -532,7 +552,7 @@ export default function PaymentAdvancePage() {
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               )}
             >
-              History ({stats.pending} pending)
+              History ({stats.pending + stats.scheduled} active)
             </button>
           </div>
         </div>
@@ -1159,7 +1179,7 @@ export default function PaymentAdvancePage() {
           /* History Tab */
           <div className="max-w-5xl mx-auto">
             {/* Stats */}
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-6 gap-4 mb-6">
               <div className="bg-white rounded-lg border p-4 text-center">
                 <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
                 <div className="text-sm text-gray-500">Total</div>
@@ -1169,12 +1189,20 @@ export default function PaymentAdvancePage() {
                 <div className="text-sm text-gray-500">Pending</div>
               </div>
               <div className="bg-white rounded-lg border p-4 text-center">
+                <div className="text-2xl font-bold text-blue-600">{stats.scheduled}</div>
+                <div className="text-sm text-gray-500">Scheduled</div>
+              </div>
+              <div className="bg-white rounded-lg border p-4 text-center">
                 <div className="text-2xl font-bold text-green-600">{stats.processed}</div>
                 <div className="text-sm text-gray-500">Processed</div>
               </div>
               <div className="bg-white rounded-lg border p-4 text-center">
                 <div className="text-2xl font-bold text-red-600">{stats.failed}</div>
                 <div className="text-sm text-gray-500">Failed</div>
+              </div>
+              <div className="bg-white rounded-lg border p-4 text-center">
+                <div className="text-2xl font-bold text-gray-400">{stats.cancelled}</div>
+                <div className="text-sm text-gray-500">Cancelled</div>
               </div>
             </div>
 
@@ -1244,30 +1272,50 @@ export default function PaymentAdvancePage() {
                             className={cn(
                               "px-2 py-1 rounded text-xs font-medium",
                               adv.status === "pending" && "bg-amber-100 text-amber-700",
+                              adv.status === "scheduled" && "bg-blue-100 text-blue-700",
                               adv.status === "processed" && "bg-green-100 text-green-700",
-                              adv.status === "failed" && "bg-red-100 text-red-700"
+                              adv.status === "failed" && "bg-red-100 text-red-700",
+                              adv.status === "cancelled" && "bg-gray-100 text-gray-500"
                             )}
                           >
                             {adv.status}
                           </span>
+                          {adv.status === "failed" && adv.epayError && (
+                            <div className="text-xs text-red-500 mt-1 max-w-[200px] truncate" title={adv.epayError}>
+                              {adv.epayError}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
-                          {adv.status === "pending" && (
-                            <button
-                              onClick={() => handleMarkProcessed(adv.id, true)}
-                              className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
-                            >
-                              Mark Processed
-                            </button>
-                          )}
-                          {adv.status === "processed" && (
-                            <button
-                              onClick={() => handleMarkProcessed(adv.id, false)}
-                              className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                            >
-                              Reopen
-                            </button>
-                          )}
+                          <div className="flex gap-2">
+                            {/* Legacy records (no ePay) — manual mark processed */}
+                            {adv.status === "pending" && !adv.epayScheduleId && (
+                              <button
+                                onClick={() => handleMarkProcessed(adv.id, true)}
+                                className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+                              >
+                                Mark Processed
+                              </button>
+                            )}
+                            {/* Scheduled ePay records — cancel button */}
+                            {adv.status === "scheduled" && adv.epayScheduleId && (
+                              <button
+                                onClick={() => handleCancel(adv.id)}
+                                className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                            {/* Processed legacy records — reopen */}
+                            {adv.status === "processed" && !adv.epayScheduleId && (
+                              <button
+                                onClick={() => handleMarkProcessed(adv.id, false)}
+                                className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                              >
+                                Reopen
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

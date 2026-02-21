@@ -2759,8 +2759,10 @@ export const riskMonitorActivityEventsRelations = relations(riskMonitorActivityE
 
 export const paymentAdvanceStatusEnum = pgEnum('payment_advance_status', [
   'pending',
+  'scheduled',
   'processed',
   'failed',
+  'cancelled',
 ]);
 
 export const paymentAdvanceTypeEnum = pgEnum('payment_advance_type', [
@@ -2810,6 +2812,13 @@ export const paymentAdvances = pgTable('payment_advances', {
   // Submitter
   submitterEmail: text('submitter_email'),
   submitterUserId: uuid('submitter_user_id').references(() => users.id),
+
+  // ePayPolicy integration
+  epayTokenId: text('epay_token_id'),
+  epayScheduleId: text('epay_schedule_id'),
+  epayTransactionId: text('epay_transaction_id'),
+  epayError: text('epay_error'),
+  epayLastSyncAt: timestamp('epay_last_sync_at'),
 
   // Notifications
   reminderSent: boolean('reminder_sent').default(false),

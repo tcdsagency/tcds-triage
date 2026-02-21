@@ -51,6 +51,10 @@
     {
       "path": "/api/token-service/health-check",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/payment-advance/sync",
+      "schedule": "0 15 * * *"
     }
   ]
 }

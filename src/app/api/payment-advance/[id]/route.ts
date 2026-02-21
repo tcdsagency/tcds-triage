@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { paymentAdvances } from "@/db/schema";
+import { cancelSchedule } from "@/lib/epay";
 import { eq, and } from "drizzle-orm";
 
 interface RouteParams {
@@ -100,6 +101,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.status = body.status;
       if (body.status === "processed") {
         updates.processedAt = new Date();
+      }
+    }
+
+    // If cancelling and there's an ePay schedule, cancel it first
+    if (updates.status === "cancelled" && existing.epayScheduleId) {
+      try {
+        await cancelSchedule(existing.epayScheduleId);
+        console.log(`[Payment Advance] ePay schedule ${existing.epayScheduleId} cancelled`);
+      } catch (err: any) {
+        console.error(`[Payment Advance] Failed to cancel ePay schedule:`, err.message);
+        updates.epayError = `Cancel failed: ${err.message}`;
       }
     }
 
