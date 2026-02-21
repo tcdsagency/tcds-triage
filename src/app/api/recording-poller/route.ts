@@ -52,7 +52,7 @@ const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL;
 const HANGUP_THRESHOLD_SECONDS = 35;
 const STALE_CALL_MINUTES = 30;
 const BACKLOG_THRESHOLD_HOURS = 1;
-const PER_RECORDING_TIMEOUT_MS = 60_000; // 60 seconds
+const PER_RECORDING_TIMEOUT_MS = 30_000; // 30 seconds per recording (fits ~10 in 5min maxDuration)
 const OVERLAP_STALE_MINUTES = 5; // Lock older than this is considered stale
 const OVERLAP_ACTIVE_MINUTES = 4; // Lock younger than this means still processing
 
@@ -101,114 +101,129 @@ export async function POST(req: NextRequest) {
       processingStartedAt: new Date(),
     }).where(eq(threecxPollingState.id, pollingState.id));
 
-    // 3. Fetch new recordings from 3CX XAPI
-    let recordings: ThreeCXRecording[];
+    // Wrap all processing in try/finally to GUARANTEE lock cleanup
     try {
-      recordings = await fetchNewRecordings(pollingState.lastSeenId);
-    } catch (error) {
-      await updatePollingError(pollingState.id, error);
-      await clearProcessingLock(pollingState.id);
-      return NextResponse.json({
-        success: false,
-        error: 'Failed to fetch recordings from 3CX XAPI',
-        details: error instanceof Error ? error.message : String(error),
-      }, { status: 502 });
-    }
+      // 3. Fetch new recordings from 3CX XAPI
+      let recordings: ThreeCXRecording[];
+      try {
+        recordings = await fetchNewRecordings(pollingState.lastSeenId);
+      } catch (error) {
+        await updatePollingError(pollingState.id, error);
+        return NextResponse.json({
+          success: false,
+          error: 'Failed to fetch recordings from 3CX XAPI',
+          details: error instanceof Error ? error.message : String(error),
+        }, { status: 502 });
+      }
 
-    if (recordings.length === 0) {
-      await updatePollingSuccess(pollingState.id, pollingState.lastSeenId);
+      if (recordings.length === 0) {
+        await updatePollingSuccess(pollingState.id, pollingState.lastSeenId);
+        return NextResponse.json({
+          success: true,
+          processed: 0,
+          elapsed: Date.now() - startMs,
+        });
+      }
+
+      // 4. Process each recording
+      const results = {
+        processed: 0,
+        skipped: 0,
+        ticketsCreated: 0,
+        notesPosted: 0,
+        autoVoided: 0,
+        awaitingTranscription: 0,
+        errors: 0,
+        errorSamples: [] as string[],
+      };
+
+      let highestId = pollingState.lastSeenId;
+
+      for (const rec of recordings) {
+        // Fix 2: Transcription gap prevention
+        if (!rec.IsTranscribed) {
+          if (!rec.CanBeTranscribed) {
+            // Permanently untranscribable — skip and advance
+            results.skipped++;
+            if (rec.Id > highestId) {
+              highestId = rec.Id;
+              await updatePollingSuccess(pollingState.id, highestId);
+            }
+            continue;
+          }
+
+          const recAge = Date.now() - new Date(rec.StartTime).getTime();
+          const recAgeHours = recAge / (60 * 60_000);
+
+          if (recAgeHours > 24) {
+            // Stale untranscribed — give up waiting, skip and advance
+            console.warn(`[recording-poller] Rec ${rec.Id} untranscribed after 24h, skipping`);
+            results.skipped++;
+            if (rec.Id > highestId) {
+              highestId = rec.Id;
+              await updatePollingSuccess(pollingState.id, highestId);
+            }
+            continue;
+          }
+
+          // Fresh untranscribed — skip but do NOT advance highestId (retry next poll)
+          results.awaitingTranscription++;
+          continue;
+        }
+
+        try {
+          const outcome = await withTimeout(
+            processRecording(rec),
+            PER_RECORDING_TIMEOUT_MS,
+            `Rec ${rec.Id}`,
+          );
+          if (outcome === 'processed') results.processed++;
+          else if (outcome === 'ticket') { results.processed++; results.ticketsCreated++; }
+          else if (outcome === 'note') { results.processed++; results.notesPosted++; }
+          else if (outcome === 'voided') { results.processed++; results.autoVoided++; }
+          else results.skipped++;
+        } catch (error) {
+          const errMsg = `Rec ${rec.Id}: ${error instanceof Error ? error.message : String(error)}`;
+          console.error(`[recording-poller] ${errMsg}`);
+          results.errors++;
+          if (results.errorSamples.length < 3) results.errorSamples.push(errMsg);
+        }
+
+        // Always advance past this recording (success or error)
+        if (rec.Id > highestId) {
+          highestId = rec.Id;
+          await updatePollingSuccess(pollingState.id, highestId);
+        }
+      }
+
+      // 5. Cleanup stale calls
+      try {
+        await cleanupStaleCalls();
+      } catch (error) {
+        console.error('[recording-poller] cleanupStaleCalls failed:', error);
+      }
+
+      // 6. Proactive alerting on high error batches
+      if (results.errors >= 3) {
+        try {
+          await sendAlert(`[recording-poller] ${results.errors} errors in batch. Samples: ${results.errorSamples.join('; ')}`);
+        } catch (error) {
+          console.error('[recording-poller] sendAlert failed:', error);
+        }
+      }
+
       return NextResponse.json({
         success: true,
-        processed: 0,
+        ...results,
+        lastSeenId: highestId,
         elapsed: Date.now() - startMs,
       });
+    } finally {
+      // ALWAYS clear the processing lock, even on errors/early returns
+      await clearProcessingLock(pollingState.id).catch((err) => {
+        console.error('[recording-poller] Failed to clear processing lock:', err);
+      });
     }
-
-    // 4. Process each recording
-    const results = {
-      processed: 0,
-      skipped: 0,
-      ticketsCreated: 0,
-      notesPosted: 0,
-      autoVoided: 0,
-      awaitingTranscription: 0,
-      errors: 0,
-      errorSamples: [] as string[],
-    };
-
-    let highestId = pollingState.lastSeenId;
-
-    for (const rec of recordings) {
-      // Fix 2: Transcription gap prevention
-      if (!rec.IsTranscribed) {
-        if (!rec.CanBeTranscribed) {
-          // Permanently untranscribable — skip and advance
-          results.skipped++;
-          if (rec.Id > highestId) {
-            highestId = rec.Id;
-            await updatePollingSuccess(pollingState.id, highestId);
-          }
-          continue;
-        }
-
-        const recAge = Date.now() - new Date(rec.StartTime).getTime();
-        const recAgeHours = recAge / (60 * 60_000);
-
-        if (recAgeHours > 24) {
-          // Stale untranscribed — give up waiting, skip and advance
-          console.warn(`[recording-poller] Rec ${rec.Id} untranscribed after 24h, skipping`);
-          results.skipped++;
-          if (rec.Id > highestId) {
-            highestId = rec.Id;
-            await updatePollingSuccess(pollingState.id, highestId);
-          }
-          continue;
-        }
-
-        // Fresh untranscribed — skip but do NOT advance highestId (retry next poll)
-        results.awaitingTranscription++;
-        continue;
-      }
-
-      try {
-        const outcome = await withTimeout(
-          processRecording(rec),
-          PER_RECORDING_TIMEOUT_MS,
-          `Rec ${rec.Id}`,
-        );
-        if (outcome === 'processed') results.processed++;
-        else if (outcome === 'ticket') { results.processed++; results.ticketsCreated++; }
-        else if (outcome === 'note') { results.processed++; results.notesPosted++; }
-        else if (outcome === 'voided') { results.processed++; results.autoVoided++; }
-        else results.skipped++;
-      } catch (error) {
-        const errMsg = `Rec ${rec.Id}: ${error instanceof Error ? error.message : String(error)}`;
-        console.error(`[recording-poller] ${errMsg}`);
-        results.errors++;
-        if (results.errorSamples.length < 3) results.errorSamples.push(errMsg);
-      }
-
-      // Always advance past this recording (success or error)
-      if (rec.Id > highestId) {
-        highestId = rec.Id;
-        await updatePollingSuccess(pollingState.id, highestId);
-      }
-    }
-
-    // 5. Cleanup stale calls
-    await cleanupStaleCalls();
-
-    // 6. Proactive alerting on high error batches
-    if (results.errors >= 3) {
-      await sendAlert(`[recording-poller] ${results.errors} errors in batch. Samples: ${results.errorSamples.join('; ')}`);
-    }
-
-    return NextResponse.json({
-      success: true,
-      ...results,
-      lastSeenId: highestId,
-      elapsed: Date.now() - startMs,
-    });
   } catch (error) {
     console.error('[recording-poller] Fatal error:', error);
     return NextResponse.json({
