@@ -63,6 +63,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Debug: log incoming payment fields
+    console.log("[Payment Advance] Incoming body keys:", Object.keys(body));
+    console.log("[Payment Advance] paymentType:", body.paymentType, "| routingNumber:", body.routingNumber ? "present" : "missing", "| accountNumber:", body.accountNumber ? "present" : "missing", "| cardNumber:", body.cardNumber ? "present" : "missing", "| paymentInfo:", body.paymentInfo ? "present" : "missing");
+
     // Validate payment-type-specific fields
     if (body.paymentType === "card") {
       if (!body.cardNumber || !body.cardExp || !body.cardCvv || !body.cardZip) {
