@@ -2813,6 +2813,11 @@ export const paymentAdvances = pgTable('payment_advances', {
   submitterEmail: text('submitter_email'),
   submitterUserId: uuid('submitter_user_id').references(() => users.id),
 
+  // Recurring payment fields
+  isRecurring: boolean('is_recurring').default(false),
+  numberOfPayments: integer('number_of_payments'),
+  paymentInterval: text('payment_interval'), // "Monthly", "Weekly", "Bi-weekly"
+
   // ePayPolicy integration
   epayTokenId: text('epay_token_id'),
   epayScheduleId: text('epay_schedule_id'),

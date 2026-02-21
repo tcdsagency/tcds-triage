@@ -104,18 +104,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // If cancelling and there's an ePay schedule, cancel it first
-    if (updates.status === "cancelled" && existing.epayScheduleId) {
-      try {
-        await cancelSchedule(existing.epayScheduleId);
-        console.log(`[Payment Advance] ePay schedule ${existing.epayScheduleId} cancelled`);
-      } catch (err: any) {
-        console.error(`[Payment Advance] Failed to cancel ePay schedule:`, err.message);
-        // Don't flip status — the ePay schedule is still active and could draft
-        return NextResponse.json(
-          { success: false, error: `Failed to cancel ePay schedule: ${err.message}` },
-          { status: 502 }
-        );
+    // Cancel handling: recurring records need ePay schedule cancelled, one-time just updates DB
+    if (updates.status === "cancelled" && existing.status === "scheduled") {
+      if (existing.isRecurring && existing.epayScheduleId) {
+        try {
+          await cancelSchedule(existing.epayScheduleId);
+          console.log(`[Payment Advance] ${id}: recurring schedule cancelled in ePay (${existing.epayScheduleId})`);
+        } catch (cancelErr: any) {
+          console.error(`[Payment Advance] ${id}: failed to cancel ePay schedule — ${cancelErr.message}`);
+          // Still proceed with DB cancellation
+        }
+      } else {
+        console.log(`[Payment Advance] ${id}: cancelled (token was not yet charged)`);
       }
     }
 

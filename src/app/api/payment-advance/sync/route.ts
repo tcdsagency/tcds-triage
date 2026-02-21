@@ -1,16 +1,15 @@
 // API Route: /api/payment-advance/sync
-// Cron job to poll ePayPolicy for payment status updates
+// Cron job to charge stored tokens on their draft date
 //
-// ePay schedule response has NO status field. Detect state via:
-//   - Executed: numberOfExecutedPayments >= numberOfTotalPayments
-//   - Cancelled externally: nextPaymentDate === null && numberOfExecutedPayments === 0
-//   - Still pending: nextPaymentDate !== null && numberOfExecutedPayments === 0
+// Finds records with status="scheduled", epayTokenId set, and draftDate <= today.
+// For each, fires a one-time direct transaction via createTransaction().
+// No recurring schedules — no confusing customer emails.
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { paymentAdvances } from "@/db/schema";
-import { getSchedule } from "@/lib/epay";
-import { eq, and, isNotNull } from "drizzle-orm";
+import { createTransaction, getSchedule } from "@/lib/epay";
+import { eq, and, isNotNull, lte } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,32 +24,103 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
     }
 
-    // Find all scheduled records with an ePay schedule ID
-    const scheduledAdvances = await db
+    // Today in YYYY-MM-DD (ET timezone)
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+
+    // Find records ready to charge: scheduled + has token + draft date is today or past
+    const dueAdvances = await db
       .select()
       .from(paymentAdvances)
       .where(
         and(
           eq(paymentAdvances.tenantId, tenantId),
           eq(paymentAdvances.status, "scheduled"),
+          isNotNull(paymentAdvances.epayTokenId),
+          lte(paymentAdvances.draftDate, today)
+        )
+      );
+
+    console.log(`[Payment Advance Sync] Found ${dueAdvances.length} advances due for charging (draftDate <= ${today})`);
+
+    let processed = 0;
+    let failed = 0;
+    let errors: string[] = [];
+
+    for (const advance of dueAdvances) {
+      const now = new Date();
+      try {
+        const payerName = `${advance.firstName} ${advance.lastName}`;
+        const result = await createTransaction({
+          tokenId: advance.epayTokenId!,
+          subTotal: advance.totalAmount,
+          payer: payerName,
+          emailAddress: advance.submitterEmail || "payments@tcdsagency.com",
+          sendReceipt: false,
+        });
+
+        await db
+          .update(paymentAdvances)
+          .set({
+            status: "processed",
+            processedAt: now,
+            epayTransactionId: result.id,
+            epayLastSyncAt: now,
+            updatedAt: now,
+          })
+          .where(eq(paymentAdvances.id, advance.id));
+
+        processed++;
+        console.log(`[Payment Advance Sync] ${advance.id}: charged successfully (txn=${result.id})`);
+      } catch (err: any) {
+        const errorMsg = err.message || "Unknown transaction error";
+        await db
+          .update(paymentAdvances)
+          .set({
+            status: "failed",
+            epayError: errorMsg,
+            epayLastSyncAt: now,
+            updatedAt: now,
+          })
+          .where(eq(paymentAdvances.id, advance.id));
+
+        failed++;
+        errors.push(`${advance.id}: ${errorMsg}`);
+        console.error(`[Payment Advance Sync] ${advance.id}: charge failed — ${errorMsg}`);
+      }
+    }
+
+    // =====================================================================
+    // RECURRING: Poll ePay schedules for completion/cancellation
+    // =====================================================================
+
+    const recurringAdvances = await db
+      .select()
+      .from(paymentAdvances)
+      .where(
+        and(
+          eq(paymentAdvances.tenantId, tenantId),
+          eq(paymentAdvances.status, "scheduled"),
+          eq(paymentAdvances.isRecurring, true),
           isNotNull(paymentAdvances.epayScheduleId)
         )
       );
 
-    console.log(`[Payment Advance Sync] Found ${scheduledAdvances.length} scheduled advances to check`);
+    console.log(`[Payment Advance Sync] Found ${recurringAdvances.length} recurring schedules to poll`);
 
-    let processed = 0;
-    let cancelled = 0;
-    let unchanged = 0;
-    let errors = 0;
+    let recurringProcessed = 0;
+    let recurringCancelled = 0;
 
-    for (const advance of scheduledAdvances) {
+    for (const advance of recurringAdvances) {
+      const now = new Date();
       try {
         const schedule = await getSchedule(advance.epayScheduleId!);
-        const now = new Date();
 
-        if (schedule.numberOfExecutedPayments >= schedule.numberOfTotalPayments && schedule.numberOfExecutedPayments > 0) {
-          // Payment has been executed
+        // Check if all payments completed
+        if (
+          schedule.numberOfTotalPayments &&
+          schedule.numberOfPaymentsMade &&
+          schedule.numberOfPaymentsMade >= schedule.numberOfTotalPayments
+        ) {
           await db
             .update(paymentAdvances)
             .set({
@@ -60,10 +130,10 @@ export async function GET(request: NextRequest) {
               updatedAt: now,
             })
             .where(eq(paymentAdvances.id, advance.id));
-          processed++;
-          console.log(`[Payment Advance Sync] ${advance.id}: processed (executed ${schedule.numberOfExecutedPayments}/${schedule.numberOfTotalPayments})`);
-        } else if (schedule.nextPaymentDate === null && schedule.numberOfExecutedPayments === 0) {
-          // Schedule was cancelled externally (nextPaymentDate is null but nothing executed)
+
+          recurringProcessed++;
+          console.log(`[Payment Advance Sync] ${advance.id}: recurring schedule completed (${schedule.numberOfPaymentsMade}/${schedule.numberOfTotalPayments})`);
+        } else if (schedule.status === "Cancelled" || schedule.status === "Suspended") {
           await db
             .update(paymentAdvances)
             .set({
@@ -72,31 +142,31 @@ export async function GET(request: NextRequest) {
               updatedAt: now,
             })
             .where(eq(paymentAdvances.id, advance.id));
-          cancelled++;
-          console.log(`[Payment Advance Sync] ${advance.id}: cancelled externally`);
+
+          recurringCancelled++;
+          console.log(`[Payment Advance Sync] ${advance.id}: recurring schedule ${schedule.status?.toLowerCase()}`);
         } else {
-          // Still pending — just update sync timestamp
+          // Still active — just update sync timestamp
           await db
             .update(paymentAdvances)
-            .set({
-              epayLastSyncAt: now,
-              updatedAt: now,
-            })
+            .set({ epayLastSyncAt: now, updatedAt: now })
             .where(eq(paymentAdvances.id, advance.id));
-          unchanged++;
         }
       } catch (err: any) {
-        errors++;
-        console.error(`[Payment Advance Sync] Error checking ${advance.id}:`, err.message);
+        console.error(`[Payment Advance Sync] ${advance.id}: recurring poll error — ${err.message}`);
       }
     }
 
     const summary = {
-      checked: scheduledAdvances.length,
+      checked: dueAdvances.length,
       processed,
-      cancelled,
-      unchanged,
-      errors,
+      failed,
+      errors: errors.length > 0 ? errors : undefined,
+      recurring: {
+        checked: recurringAdvances.length,
+        processed: recurringProcessed,
+        cancelled: recurringCancelled,
+      },
     };
 
     console.log("[Payment Advance Sync] Complete:", summary);

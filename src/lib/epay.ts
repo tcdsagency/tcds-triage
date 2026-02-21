@@ -38,7 +38,7 @@ async function epayFetch<T>(path: string, options: RequestInit = {}): Promise<T>
   }
 
   // 201 Created responses return empty body — resource ID is in Location header
-  // Location format: /tokens/{id} or /paymentSchedules/{id}
+  // Location format: /tokens/{id} or /transactions/{id}
   const contentLength = res.headers.get("content-length");
   if (contentLength === "0" || res.status === 204) {
     const location = res.headers.get("location") || "";
@@ -58,25 +58,6 @@ export interface EPayToken {
   [key: string]: any;
 }
 
-// Schedule response from GET /api/v2/paymentSchedules/{id}
-// Note: no "status" field — detect state via numberOfExecutedPayments and nextPaymentDate
-export interface EPaySchedule {
-  id: string;
-  payer: string;
-  emailAddress: string;
-  tokenId: string;
-  numberOfTotalPayments: number;
-  numberOfExecutedPayments: number;
-  amount: number;
-  payerFee: number;
-  startDate: string;
-  endDate: string | null;
-  nextPaymentDate: string | null;
-  interval: number;
-  intervalCount: number;
-  [key: string]: any;
-}
-
 export interface EPayTransaction {
   id: string;
   amount: number;
@@ -89,6 +70,14 @@ export interface EPayTransaction {
 export interface EPayTransactionFees {
   achPayerFee: number;
   creditCardPayerFee: number;
+  [key: string]: any;
+}
+
+export interface EPaySchedule {
+  id: string;
+  status?: string;
+  numberOfTotalPayments?: number;
+  numberOfPaymentsMade?: number;
   [key: string]: any;
 }
 
@@ -154,53 +143,30 @@ export async function tokenizeACH(data: {
 }
 
 // =============================================================================
-// SCHEDULE FUNCTIONS
+// TRANSACTION FUNCTIONS
 // =============================================================================
 
-// POST /api/v2/paymentSchedules → 201, Location: /paymentSchedules/{id}
-// Required: payer, emailAddress, tokenId, amount, interval, startDate
-// For one-time future payment: interval="Day", intervalCount=0, numberOfTotalPayments=1
-export async function createSchedule(data: {
+// POST /api/v2/transactions → 201, Location: /transactions/{numericId}
+// Creates a one-time direct charge against a stored token
+// PaymentResponseCode: 1=Success, 0=GenericDecline, 4=InsufficientFunds, 13=InvalidToken, 12=HardDuplicate
+export async function createTransaction(data: {
   tokenId: string;
-  amount: number;
+  subTotal: number;
   payer: string;
   emailAddress: string;
-  startDate: string; // YYYY-MM-DD
+  sendReceipt?: boolean;
 }): Promise<{ id: string }> {
-  return epayFetch<{ id: string }>("/api/v2/paymentSchedules", {
+  return epayFetch<{ id: string }>("/api/v2/transactions", {
     method: "POST",
     body: JSON.stringify({
       tokenId: data.tokenId,
-      amount: data.amount,
+      subTotal: data.subTotal,
       payer: data.payer,
       emailAddress: data.emailAddress,
-      startDate: data.startDate,
-      interval: "Day",
-      intervalCount: 0,
-      numberOfTotalPayments: 1,
+      sendReceipt: data.sendReceipt ?? false,
     }),
   });
 }
-
-// GET /api/v2/paymentSchedules/{id} → 200, JSON body
-// No "status" field. Detect state:
-//   - Executed: numberOfExecutedPayments >= numberOfTotalPayments
-//   - Cancelled: nextPaymentDate === null && numberOfExecutedPayments === 0
-//   - Pending: nextPaymentDate !== null && numberOfExecutedPayments === 0
-export async function getSchedule(id: string): Promise<EPaySchedule> {
-  return epayFetch<EPaySchedule>(`/api/v2/paymentSchedules/${encodeURIComponent(id)}`);
-}
-
-// POST /api/v2/paymentSchedules/{id}/cancel → 200, empty body
-export async function cancelSchedule(id: string): Promise<void> {
-  await epayFetch<any>(`/api/v2/paymentSchedules/${encodeURIComponent(id)}/cancel`, {
-    method: "POST",
-  });
-}
-
-// =============================================================================
-// TRANSACTION FUNCTIONS
-// =============================================================================
 
 // GET /api/v2/transactions/{id} → 200, JSON body
 export async function getTransaction(id: string): Promise<EPayTransaction> {
@@ -213,4 +179,50 @@ export async function getTransactionFees(amount: number): Promise<EPayTransactio
   return epayFetch<EPayTransactionFees>(
     `/api/v2/transactionFees?amount=${encodeURIComponent(amount)}`
   );
+}
+
+// =============================================================================
+// SCHEDULE FUNCTIONS (recurring payments)
+// =============================================================================
+
+// POST /api/v2/paymentSchedules → 201, Location: /paymentSchedules/{id}
+// Creates a recurring payment schedule against a stored token
+// interval: "Week" or "Month", intervalCount: 1 (monthly/weekly) or 2 (bi-weekly)
+export async function createSchedule(data: {
+  tokenId: string;
+  subTotal: number;
+  payer: string;
+  emailAddress: string;
+  startDate: string; // YYYY-MM-DD
+  totalNumberOfPayments: number;
+  interval: "Week" | "Month";
+  intervalCount: number;
+  sendReceipt?: boolean;
+}): Promise<{ id: string }> {
+  return epayFetch<{ id: string }>("/api/v2/paymentSchedules", {
+    method: "POST",
+    body: JSON.stringify({
+      tokenId: data.tokenId,
+      subTotal: data.subTotal,
+      payer: data.payer,
+      emailAddress: data.emailAddress,
+      startDate: data.startDate,
+      totalNumberOfPayments: data.totalNumberOfPayments,
+      interval: data.interval,
+      intervalCount: data.intervalCount,
+      sendReceipt: data.sendReceipt ?? false,
+    }),
+  });
+}
+
+// GET /api/v2/paymentSchedules/{id} → 200, JSON body
+export async function getSchedule(id: string): Promise<EPaySchedule> {
+  return epayFetch<EPaySchedule>(`/api/v2/paymentSchedules/${encodeURIComponent(id)}`);
+}
+
+// DELETE /api/v2/paymentSchedules/{id} → 200/204
+export async function cancelSchedule(id: string): Promise<void> {
+  await epayFetch<any>(`/api/v2/paymentSchedules/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }

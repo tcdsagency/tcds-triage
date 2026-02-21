@@ -1,15 +1,15 @@
-// API Route: /api/payment-advance
-// Submit a payment advance request
+// API Route: /api/payment-advance/recurring
+// Submit a recurring payment advance (creates ePay schedule)
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { paymentAdvances } from "@/db/schema";
 import { getAgencyZoomClient } from "@/lib/api/agencyzoom";
 import { outlookClient } from "@/lib/outlook";
-import { tokenizeCard, tokenizeACH } from "@/lib/epay";
-import { desc, eq } from "drizzle-orm";
+import { tokenizeCard, tokenizeACH, createSchedule } from "@/lib/epay";
+import { eq } from "drizzle-orm";
 
-// Helper: Mask card/ACH data for storage (same format as before)
+// Helper: Mask card/ACH data for storage
 function buildMaskedPaymentInfo(body: any): string {
   if (body.paymentType === "card") {
     const last4 = (body.cardNumber || "").slice(-4);
@@ -31,7 +31,19 @@ function parseCardExp(exp: string): { month: string; year: string } {
   };
 }
 
-// POST - Submit a new payment advance
+// Map UI interval to ePay schedule params
+function mapInterval(interval: string): { interval: "Week" | "Month"; intervalCount: number } {
+  switch (interval) {
+    case "Weekly":
+      return { interval: "Week", intervalCount: 1 };
+    case "Bi-weekly":
+      return { interval: "Week", intervalCount: 2 };
+    case "Monthly":
+    default:
+      return { interval: "Month", intervalCount: 1 };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const tenantId = process.env.DEFAULT_TENANT_ID;
@@ -48,7 +60,9 @@ export async function POST(request: NextRequest) {
       "policyNumber",
       "amount",
       "paymentType",
-      "draftDate",
+      "startDate",
+      "numberOfPayments",
+      "interval",
       "todaysDate",
       "processingFee",
       "totalAmount",
@@ -61,6 +75,23 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    // Validate recurring-specific fields
+    const numberOfPayments = parseInt(body.numberOfPayments);
+    if (isNaN(numberOfPayments) || numberOfPayments < 2) {
+      return NextResponse.json(
+        { success: false, error: "Number of payments must be at least 2" },
+        { status: 400 }
+      );
+    }
+
+    const validIntervals = ["Monthly", "Weekly", "Bi-weekly"];
+    if (!validIntervals.includes(body.interval)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid interval. Must be Monthly, Weekly, or Bi-weekly" },
+        { status: 400 }
+      );
     }
 
     // Validate payment-type-specific fields
@@ -93,18 +124,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build masked payment info for DB storage
-    const maskedPaymentInfo = body.paymentInfo || buildMaskedPaymentInfo(body);
+    const maskedPaymentInfo = buildMaskedPaymentInfo(body);
 
-    // Tokenize via ePayPolicy (charge happens later via sync cron on draft date)
+    // Tokenize via ePayPolicy, then create schedule
     let epayTokenId: string | null = null;
+    let epayScheduleId: string | null = null;
     let epayError: string | null = null;
-    let status: "scheduled" | "failed" | "pending" = "pending";
+    let status: "scheduled" | "failed" = "scheduled";
 
     const payerName = `${body.firstName} ${body.lastName}`;
     const payerEmail = body.submitterEmail || "payments@tcdsagency.com";
 
     try {
+      // Step 1: Tokenize
       if (body.paymentType === "card") {
         const { month, year } = parseCardExp(body.cardExp);
         const token = await tokenizeCard({
@@ -127,12 +159,26 @@ export async function POST(request: NextRequest) {
         epayTokenId = token.id;
       }
 
-      status = "scheduled";
-      console.log(`[Payment Advance] ePay token stored: ${epayTokenId} (charge deferred to draft date ${body.draftDate})`);
+      // Step 2: Create recurring schedule
+      const { interval, intervalCount } = mapInterval(body.interval);
+      const schedule = await createSchedule({
+        tokenId: epayTokenId,
+        subTotal: totalAmount,
+        payer: payerName,
+        emailAddress: payerEmail,
+        startDate: body.startDate,
+        totalNumberOfPayments: numberOfPayments,
+        interval,
+        intervalCount,
+        sendReceipt: false,
+      });
+      epayScheduleId = schedule.id;
+
+      console.log(`[Payment Advance Recurring] ePay schedule created: ${epayScheduleId} (${numberOfPayments} payments, ${body.interval}, starting ${body.startDate})`);
     } catch (err: any) {
-      epayError = err.message || "ePayPolicy tokenization failed";
+      epayError = err.message || "ePayPolicy schedule creation failed";
       status = "failed";
-      console.error("[Payment Advance] ePay error:", epayError);
+      console.error("[Payment Advance Recurring] ePay error:", epayError);
     }
 
     // Insert into database
@@ -150,7 +196,7 @@ export async function POST(request: NextRequest) {
         totalAmount,
         paymentType: body.paymentType,
         paymentInfo: maskedPaymentInfo,
-        draftDate: body.draftDate,
+        draftDate: body.startDate,
         submittedDate: body.todaysDate,
         reason: body.reason || null,
         reasonDetails: body.reasonDetails || null,
@@ -158,7 +204,11 @@ export async function POST(request: NextRequest) {
         agencyzoomType: body.customerType || null,
         submitterEmail: body.submitterEmail || null,
         status,
+        isRecurring: true,
+        numberOfPayments,
+        paymentInterval: body.interval,
         epayTokenId,
+        epayScheduleId,
         epayError,
       })
       .returning();
@@ -168,7 +218,7 @@ export async function POST(request: NextRequest) {
     if (body.customerId && body.customerType) {
       try {
         const azClient = getAgencyZoomClient();
-        const noteContent = buildAzNote(body, advance.id, status, epayError);
+        const noteContent = buildAzNote(body, advance.id, numberOfPayments, status, epayError);
 
         if (body.customerType === "customer") {
           await azClient.addNote(parseInt(body.customerId), noteContent);
@@ -178,14 +228,14 @@ export async function POST(request: NextRequest) {
           azNoteCreated = true;
         }
       } catch (azError) {
-        console.error("[Payment Advance] Failed to create AgencyZoom note:", azError);
+        console.error("[Payment Advance Recurring] Failed to create AgencyZoom note:", azError);
       }
     }
 
     // Send email notification
     let emailSent = false;
     try {
-      emailSent = await sendEmailNotification(body, advance.id, status, epayError);
+      emailSent = await sendEmailNotification(body, advance.id, numberOfPayments, status, epayError);
       if (emailSent) {
         await db
           .update(paymentAdvances)
@@ -193,7 +243,7 @@ export async function POST(request: NextRequest) {
           .where(eq(paymentAdvances.id, advance.id));
       }
     } catch (emailError) {
-      console.error("[Payment Advance] Failed to send email:", emailError);
+      console.error("[Payment Advance Recurring] Failed to send email:", emailError);
     }
 
     return NextResponse.json({
@@ -205,7 +255,9 @@ export async function POST(request: NextRequest) {
         policyNumber: advance.policyNumber,
         amount: advance.amount,
         totalAmount: advance.totalAmount,
-        draftDate: advance.draftDate,
+        startDate: body.startDate,
+        numberOfPayments,
+        interval: body.interval,
         status: advance.status,
       },
       epayError: epayError || undefined,
@@ -213,95 +265,22 @@ export async function POST(request: NextRequest) {
       emailSent,
     });
   } catch (error: any) {
-    console.error("[Payment Advance] Submit error:", error);
+    console.error("[Payment Advance Recurring] Submit error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to submit payment advance", details: error.message },
-      { status: 500 }
-    );
-  }
-}
-
-// GET - Get payment advance history
-export async function GET(request: NextRequest) {
-  try {
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (!tenantId) {
-      return NextResponse.json({ error: "Tenant not configured" }, { status: 500 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const status = searchParams.get("status");
-    const limit = parseInt(searchParams.get("limit") || "50");
-
-    const query = db
-      .select({
-        id: paymentAdvances.id,
-        firstName: paymentAdvances.firstName,
-        lastName: paymentAdvances.lastName,
-        policyNumber: paymentAdvances.policyNumber,
-        amount: paymentAdvances.amount,
-        processingFee: paymentAdvances.processingFee,
-        convenienceFee: paymentAdvances.convenienceFee,
-        totalAmount: paymentAdvances.totalAmount,
-        paymentType: paymentAdvances.paymentType,
-        draftDate: paymentAdvances.draftDate,
-        submittedDate: paymentAdvances.submittedDate,
-        status: paymentAdvances.status,
-        processedAt: paymentAdvances.processedAt,
-        reason: paymentAdvances.reason,
-        submitterEmail: paymentAdvances.submitterEmail,
-        createdAt: paymentAdvances.createdAt,
-        epayError: paymentAdvances.epayError,
-        isRecurring: paymentAdvances.isRecurring,
-        numberOfPayments: paymentAdvances.numberOfPayments,
-        paymentInterval: paymentAdvances.paymentInterval,
-      })
-      .from(paymentAdvances)
-      .where(eq(paymentAdvances.tenantId, tenantId))
-      .orderBy(desc(paymentAdvances.createdAt))
-      .limit(limit);
-
-    const advances = await query;
-
-    // Get stats
-    const allAdvances = await db
-      .select({
-        status: paymentAdvances.status,
-      })
-      .from(paymentAdvances)
-      .where(eq(paymentAdvances.tenantId, tenantId));
-
-    const stats = {
-      total: allAdvances.length,
-      pending: allAdvances.filter((a) => a.status === "pending").length,
-      scheduled: allAdvances.filter((a) => a.status === "scheduled").length,
-      processed: allAdvances.filter((a) => a.status === "processed").length,
-      failed: allAdvances.filter((a) => a.status === "failed").length,
-      cancelled: allAdvances.filter((a) => a.status === "cancelled").length,
-    };
-
-    return NextResponse.json({
-      success: true,
-      advances,
-      stats,
-    });
-  } catch (error: any) {
-    console.error("[Payment Advance] History error:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to get payment advances", details: error.message },
+      { success: false, error: "Failed to submit recurring payment advance", details: error.message },
       { status: 500 }
     );
   }
 }
 
 // Helper: Build AgencyZoom note content
-function buildAzNote(data: any, advanceId: string, epayStatus?: string, epayError?: string | null): string {
+function buildAzNote(data: any, advanceId: string, numberOfPayments: number, epayStatus?: string, epayError?: string | null): string {
   const lines = [
-    "💵 PAYMENT ADVANCE SUBMITTED",
+    "🔄 RECURRING PAYMENT ADVANCE SUBMITTED",
     "",
     `Customer: ${data.firstName} ${data.lastName}`,
     `Policy: ${data.policyNumber}`,
-    `Amount: $${parseFloat(data.amount).toFixed(2)}`,
+    `Amount per payment: $${parseFloat(data.amount).toFixed(2)}`,
     `Processing Fee: $${parseFloat(data.processingFee).toFixed(2)}`,
   ];
 
@@ -312,17 +291,18 @@ function buildAzNote(data: any, advanceId: string, epayStatus?: string, epayErro
   }
 
   lines.push(
-    `Total: $${parseFloat(data.totalAmount).toFixed(2)}`,
+    `Total per payment: $${parseFloat(data.totalAmount).toFixed(2)}`,
     "",
+    `Schedule: ${numberOfPayments} payments, ${data.interval}`,
+    `Start Date: ${data.startDate}`,
     `Payment Type: ${data.paymentType === "card" ? "Credit Card" : "ACH/Checking"}`,
-    `Draft Date: ${data.draftDate}`,
     `Submitted: ${data.todaysDate}`
   );
 
   if (epayStatus === "scheduled") {
-    lines.push("", "✅ Payment tokenized — will charge on draft date");
+    lines.push("", "✅ Recurring schedule created in ePayPolicy");
   } else if (epayStatus === "failed" && epayError) {
-    lines.push("", `❌ ePayPolicy tokenization failed: ${epayError}`);
+    lines.push("", `❌ ePayPolicy schedule creation failed: ${epayError}`);
   }
 
   if (data.reason) {
@@ -340,41 +320,40 @@ function buildAzNote(data: any, advanceId: string, epayStatus?: string, epayErro
 }
 
 // Helper: Send email notification
-async function sendEmailNotification(data: any, advanceId: string, epayStatus?: string, epayError?: string | null): Promise<boolean> {
+async function sendEmailNotification(data: any, advanceId: string, numberOfPayments: number, epayStatus?: string, epayError?: string | null): Promise<boolean> {
   const emailRecipients = process.env.PAYMENT_ADVANCE_EMAIL_RECIPIENTS;
   if (!emailRecipients) {
-    console.warn("[Payment Advance] No email recipients configured (PAYMENT_ADVANCE_EMAIL_RECIPIENTS)");
+    console.warn("[Payment Advance Recurring] No email recipients configured");
     return false;
   }
 
-  // Check if Outlook is configured
   if (!outlookClient.isConfigured()) {
-    console.warn("[Payment Advance] Outlook not configured for email sending");
+    console.warn("[Payment Advance Recurring] Outlook not configured");
     return false;
   }
 
   const epayLine = epayStatus === "scheduled"
-    ? "\nePayPolicy Status: TOKENIZED (will charge on draft date)"
+    ? "\nePayPolicy Status: RECURRING SCHEDULE CREATED"
     : epayStatus === "failed"
-    ? `\nePayPolicy Status: FAILED - ${epayError || "Unknown error"}\n⚠️ This payment was NOT tokenized and requires manual processing.`
+    ? `\nePayPolicy Status: FAILED - ${epayError || "Unknown error"}\n⚠️ This recurring schedule was NOT created and requires manual processing.`
     : "";
 
-  // Build email content
-  const subject = `Payment Advance: ${data.firstName} ${data.lastName} - $${parseFloat(data.totalAmount).toFixed(2)}${epayStatus === "failed" ? " [FAILED]" : ""}`;
+  const subject = `Recurring Payment Advance: ${data.firstName} ${data.lastName} - ${numberOfPayments}x $${parseFloat(data.totalAmount).toFixed(2)}${epayStatus === "failed" ? " [FAILED]" : ""}`;
 
   const body = `
-Payment Advance Request
+Recurring Payment Advance Request
 
 Customer: ${data.firstName} ${data.lastName}
 Policy Number: ${data.policyNumber}
 
-Amount: $${parseFloat(data.amount).toFixed(2)}
+Amount per payment: $${parseFloat(data.amount).toFixed(2)}
 Processing Fee: $${parseFloat(data.processingFee).toFixed(2)}
 ${data.convenienceFeeWaived ? "Convenience Fee: WAIVED" : `Convenience Fee: $${parseFloat(data.convenienceFee || "0").toFixed(2)}`}
-Total Amount: $${parseFloat(data.totalAmount).toFixed(2)}
+Total per payment: $${parseFloat(data.totalAmount).toFixed(2)}
 
+Schedule: ${numberOfPayments} payments, ${data.interval}
+Start Date: ${data.startDate}
 Payment Type: ${data.paymentType === "card" ? "Credit Card" : "ACH/Checking"}
-Draft Date: ${data.draftDate}
 Submission Date: ${data.todaysDate}
 ${epayLine}
 
@@ -395,14 +374,14 @@ This is an automated message from TCDS Triage.
     });
 
     if (result.success) {
-      console.log("[Payment Advance] Email sent successfully");
+      console.log("[Payment Advance Recurring] Email sent successfully");
       return true;
     } else {
-      console.error("[Payment Advance] Email send failed:", result.error);
+      console.error("[Payment Advance Recurring] Email send failed:", result.error);
       return false;
     }
   } catch (error) {
-    console.error("[Payment Advance] Email send error:", error);
+    console.error("[Payment Advance Recurring] Email send error:", error);
     return false;
   }
 }
