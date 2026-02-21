@@ -99,7 +99,7 @@ interface AuthSession {
 // CLIENT CLASS
 // ============================================================================
 
-const hiddenBreaker = new CircuitBreaker('HawkSoftHidden', 5, 60_000);
+const hiddenBreaker = new CircuitBreaker('HawkSoftHidden', 5, 5 * 60_000); // 5min cooldown to let lockout expire
 
 // Rate limiter: 100ms minimum gap between requests
 let lastRequestTime = 0;
@@ -116,6 +116,8 @@ async function rateLimit(): Promise<void> {
 export class HawkSoftHiddenAPI {
   private session: AuthSession | null = null;
   private authPromise: Promise<AuthSession> | null = null; // Mutex for concurrent auth calls
+  private lastAuthAttempt = 0; // Tracks last login attempt for cooldown
+  private authFailures = 0; // Consecutive auth failures
   private readonly username: string;
   private readonly password: string;
   private readonly authUrl = 'https://agencyauth.hawksoft.app';
@@ -135,6 +137,24 @@ export class HawkSoftHiddenAPI {
   // --------------------------------------------------------------------------
 
   async authenticate(): Promise<AuthSession> {
+    // Auth cooldown: exponential backoff on consecutive failures to prevent lockout
+    // 0 failures = no delay, 1 = 10s, 2 = 30s, 3+ = 5min
+    if (this.authFailures > 0) {
+      const cooldownMs = this.authFailures >= 3
+        ? 5 * 60_000   // 5 minutes after 3+ failures (account likely locked)
+        : this.authFailures >= 2
+          ? 30_000      // 30 seconds after 2 failures
+          : 10_000;     // 10 seconds after 1 failure
+      const elapsed = Date.now() - this.lastAuthAttempt;
+      if (elapsed < cooldownMs) {
+        throw new Error(
+          `HawkSoft auth cooldown: ${this.authFailures} consecutive failures, ` +
+          `waiting ${Math.round((cooldownMs - elapsed) / 1000)}s before retrying`
+        );
+      }
+    }
+
+    this.lastAuthAttempt = Date.now();
     await rateLimit();
     const authHeader = 'Basic ' + Buffer.from(`${this.username}:${this.password}`).toString('base64');
 
@@ -147,12 +167,14 @@ export class HawkSoftHiddenAPI {
     });
 
     if (!response.ok) {
+      this.authFailures++;
       throw new Error(`HawkSoft Cloud auth failed: ${response.status}`);
     }
 
     // Parse body first — HawkSoft returns 200 even for auth errors (locked, invalid, etc.)
     const authBody = await response.json().catch(() => null) as any;
     if (authBody?.status && authBody.status !== 0 && authBody.desc) {
+      this.authFailures++;
       throw new Error(`HawkSoft Cloud auth error: ${authBody.desc} — ${authBody.message || ''}`);
     }
 
@@ -163,8 +185,12 @@ export class HawkSoftHiddenAPI {
       .join('; ');
 
     if (!cookieStr) {
+      this.authFailures++;
       throw new Error('HawkSoft Cloud auth returned no cookies');
     }
+
+    // Auth succeeded — reset failure counter
+    this.authFailures = 0;
 
     const agencyId = authBody?.office?.agencyId || authBody?.claims?.agencyId || 0;
 
@@ -228,12 +254,63 @@ export class HawkSoftHiddenAPI {
       // DB read failed — fall through to authenticate
     }
 
-    // 3. Fresh auth — use mutex to prevent concurrent auth calls (causes lockout)
+    // 3. Cross-invocation auth guard — check if another invocation recently authenticated
+    //    If DB cache was just deleted (by a 401 handler), check if another invocation is
+    //    already re-authenticating by looking at a "auth_in_progress" marker
+    try {
+      const [authMarker] = await db
+        .select()
+        .from(systemCache)
+        .where(eq(systemCache.key, 'hawksoft_auth_in_progress'))
+        .limit(1);
+
+      if (authMarker?.expiresAt && new Date() < authMarker.expiresAt) {
+        // Another invocation is authenticating — wait and try DB cache again
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const [freshCached] = await db
+          .select()
+          .from(systemCache)
+          .where(eq(systemCache.key, HawkSoftHiddenAPI.CACHE_KEY))
+          .limit(1);
+        if (freshCached?.value && freshCached.expiresAt && new Date() < freshCached.expiresAt) {
+          const val = freshCached.value as { cookies: string; agencyId: number; authenticatedAt: number };
+          if (val.cookies) {
+            this.session = val;
+            return this.session;
+          }
+        }
+      }
+
+      // Set auth-in-progress marker (15s TTL — auto-expires if we crash)
+      await db
+        .insert(systemCache)
+        .values({
+          key: 'hawksoft_auth_in_progress',
+          value: { pid: Date.now() },
+          expiresAt: new Date(Date.now() + 15_000),
+        })
+        .onConflictDoUpdate({
+          target: systemCache.key,
+          set: {
+            value: { pid: Date.now() },
+            expiresAt: new Date(Date.now() + 15_000),
+            updatedAt: new Date(),
+          },
+        });
+    } catch {
+      // DB coordination failed — proceed with in-memory mutex only
+    }
+
+    // 4. Fresh auth — use mutex to prevent concurrent auth calls within this invocation
     if (this.authPromise) {
       return this.authPromise;
     }
-    this.authPromise = this.authenticate().finally(() => {
+    this.authPromise = this.authenticate().finally(async () => {
       this.authPromise = null;
+      // Clear auth-in-progress marker
+      try {
+        await db.delete(systemCache).where(eq(systemCache.key, 'hawksoft_auth_in_progress'));
+      } catch { /* best effort */ }
     });
     return this.authPromise;
   }
@@ -276,12 +353,15 @@ export class HawkSoftHiddenAPI {
 
       clearTimeout(timeoutId);
 
-      // Re-auth on 401 — invalidate both in-memory and DB cache
+      // Re-auth on 401 — invalidate session and retry once
       if (response.status === 401 && retry401) {
+        console.warn(`[HawkSoft] 401 on ${endpoint}, invalidating session and retrying`);
         this.session = null;
         try {
           await db.delete(systemCache).where(eq(systemCache.key, HawkSoftHiddenAPI.CACHE_KEY));
         } catch { /* best effort */ }
+        // Small delay before re-auth to avoid rapid-fire login attempts
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         return this.request<T>(baseUrl, endpoint, options, false);
       }
 

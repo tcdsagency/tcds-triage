@@ -280,17 +280,18 @@ export async function initializeScheduledJobs(): Promise<void> {
     );
     logger.info('Scheduled: az-renewal-sync (every 30 min)');
 
-    // HawkSoft AL3 Poll - Every 4 hours
+    // HawkSoft AL3 Poll - Every 4 hours (offset :10 to avoid collisions)
     // Downloads AL3 renewal attachments from HawkSoft Cloud API
+    // Staggered: runs at 0:10, 4:10, 8:10, 12:10, 16:10, 20:10
     await (renewalQueue as Queue).upsertJobScheduler(
       'hawksoft-al3-poll',
-      { pattern: '0 */4 * * *', tz: 'America/Chicago' },
+      { pattern: '10 */4 * * *', tz: 'America/Chicago' },
       {
         name: 'hawksoft-al3-poll',
         data: {},
       }
     );
-    logger.info('Scheduled: hawksoft-al3-poll (every 4 hours)');
+    logger.info('Scheduled: hawksoft-al3-poll (every 4 hours at :10)');
 
     // HawkSoft UUID Sync - Daily at 2 AM Central
     // Background sync of HawkSoft Cloud UUIDs for all customers
@@ -304,17 +305,18 @@ export async function initializeScheduledJobs(): Promise<void> {
     );
     logger.info('Scheduled: hawksoft-uuid-sync-daily (2 AM CT)');
 
-    // HawkSoft Tasks Sync - Every 6 hours
+    // HawkSoft Tasks Sync - Every 6 hours (offset :30 to avoid collisions)
     // Pulls renewal alert tasks from HawkSoft Cloud API
+    // Staggered: runs at 0:30, 6:30, 12:30, 18:30
     await (renewalQueue as Queue).upsertJobScheduler(
       'hawksoft-tasks-sync',
-      { pattern: '0 */6 * * *', tz: 'America/Chicago' },
+      { pattern: '30 */6 * * *', tz: 'America/Chicago' },
       {
         name: 'hawksoft-tasks-sync',
         data: {},
       }
     );
-    logger.info('Scheduled: hawksoft-tasks-sync (every 6 hours)');
+    logger.info('Scheduled: hawksoft-tasks-sync (every 6 hours at :30)');
 
     logger.info('All scheduled jobs initialized');
   } catch (err) {
