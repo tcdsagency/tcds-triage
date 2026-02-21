@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
 
     let processed = 0;
     let failed = 0;
+    let cancelled = 0;
     let unchanged = 0;
     let errors = 0;
 
@@ -82,6 +83,7 @@ export async function GET(request: NextRequest) {
               updatedAt: now,
             })
             .where(eq(paymentAdvances.id, advance.id));
+          cancelled++;
           console.log(`[Payment Advance Sync] ${advance.id}: cancelled externally`);
         } else {
           // Still pending — just update sync timestamp
@@ -104,6 +106,7 @@ export async function GET(request: NextRequest) {
       checked: scheduledAdvances.length,
       processed,
       failed,
+      cancelled,
       unchanged,
       errors,
     };

@@ -111,7 +111,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         console.log(`[Payment Advance] ePay schedule ${existing.epayScheduleId} cancelled`);
       } catch (err: any) {
         console.error(`[Payment Advance] Failed to cancel ePay schedule:`, err.message);
-        updates.epayError = `Cancel failed: ${err.message}`;
+        // Don't flip status — the ePay schedule is still active and could draft
+        return NextResponse.json(
+          { success: false, error: `Failed to cancel ePay schedule: ${err.message}` },
+          { status: 502 }
+        );
       }
     }
 
