@@ -1,5 +1,10 @@
 // API Route: /api/payment-advance/sync
 // Cron job to poll ePayPolicy for payment status updates
+//
+// ePay schedule response has NO status field. Detect state via:
+//   - Executed: numberOfExecutedPayments >= numberOfTotalPayments
+//   - Cancelled externally: nextPaymentDate === null && numberOfExecutedPayments === 0
+//   - Still pending: nextPaymentDate !== null && numberOfExecutedPayments === 0
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
@@ -35,7 +40,6 @@ export async function GET(request: NextRequest) {
     console.log(`[Payment Advance Sync] Found ${scheduledAdvances.length} scheduled advances to check`);
 
     let processed = 0;
-    let failed = 0;
     let cancelled = 0;
     let unchanged = 0;
     let errors = 0;
@@ -43,38 +47,23 @@ export async function GET(request: NextRequest) {
     for (const advance of scheduledAdvances) {
       try {
         const schedule = await getSchedule(advance.epayScheduleId!);
-
         const now = new Date();
 
-        if (schedule.status === "completed" || schedule.transactionId) {
-          // Payment completed
+        if (schedule.numberOfExecutedPayments >= schedule.numberOfTotalPayments && schedule.numberOfExecutedPayments > 0) {
+          // Payment has been executed
           await db
             .update(paymentAdvances)
             .set({
               status: "processed",
               processedAt: now,
-              epayTransactionId: schedule.transactionId || null,
               epayLastSyncAt: now,
               updatedAt: now,
             })
             .where(eq(paymentAdvances.id, advance.id));
           processed++;
-          console.log(`[Payment Advance Sync] ${advance.id}: processed (txn=${schedule.transactionId})`);
-        } else if (schedule.status === "failed" || schedule.status === "declined") {
-          // Payment failed
-          await db
-            .update(paymentAdvances)
-            .set({
-              status: "failed",
-              epayError: `Payment ${schedule.status}`,
-              epayLastSyncAt: now,
-              updatedAt: now,
-            })
-            .where(eq(paymentAdvances.id, advance.id));
-          failed++;
-          console.log(`[Payment Advance Sync] ${advance.id}: failed (${schedule.status})`);
-        } else if (schedule.status === "cancelled") {
-          // Schedule was cancelled externally
+          console.log(`[Payment Advance Sync] ${advance.id}: processed (executed ${schedule.numberOfExecutedPayments}/${schedule.numberOfTotalPayments})`);
+        } else if (schedule.nextPaymentDate === null && schedule.numberOfExecutedPayments === 0) {
+          // Schedule was cancelled externally (nextPaymentDate is null but nothing executed)
           await db
             .update(paymentAdvances)
             .set({
@@ -105,7 +94,6 @@ export async function GET(request: NextRequest) {
     const summary = {
       checked: scheduledAdvances.length,
       processed,
-      failed,
       cancelled,
       unchanged,
       errors,

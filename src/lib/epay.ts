@@ -1,5 +1,6 @@
 // ePayPolicy v2 API Client
-// Docs: https://docs.epaypolicy.com
+// Auth: Basic Auth (API Key : API Secret)
+// Docs: https://docs.epaypolicy.com, SDK: https://github.com/epay3/epay3.Sdk
 
 const EPAY_BASE_URL = process.env.EPAY_BASE_URL || "https://api-sandbox.epaypolicy.com";
 const EPAY_API_KEY = process.env.EPAY_API_KEY || "";
@@ -26,7 +27,6 @@ async function epayFetch<T>(path: string, options: RequestInit = {}): Promise<T>
     let detail = text;
     try {
       const json = JSON.parse(text);
-      // Include modelState validation errors for debugging
       if (json.modelState) {
         const errors = Object.values(json.modelState).flat().join("; ");
         detail = `${json.message || "Validation error"}: ${errors}`;
@@ -37,11 +37,11 @@ async function epayFetch<T>(path: string, options: RequestInit = {}): Promise<T>
     throw new Error(`ePayPolicy API error ${res.status}: ${detail}`);
   }
 
-  // Token creation returns 201 with empty body — ID is in Location header
+  // 201 Created responses return empty body — resource ID is in Location header
+  // Location format: /tokens/{id} or /paymentSchedules/{id}
   const contentLength = res.headers.get("content-length");
   if (contentLength === "0" || res.status === 204) {
     const location = res.headers.get("location") || "";
-    // Location format: /tokens/{id}
     const id = location.split("/").pop() || "";
     return { id } as T;
   }
@@ -58,19 +58,31 @@ export interface EPayToken {
   [key: string]: any;
 }
 
+// Schedule response from GET /api/v2/paymentSchedules/{id}
+// Note: no "status" field — detect state via numberOfExecutedPayments and nextPaymentDate
 export interface EPaySchedule {
   id: string;
-  status: string;
-  transactionId?: string;
+  payer: string;
+  emailAddress: string;
+  tokenId: string;
+  numberOfTotalPayments: number;
+  numberOfExecutedPayments: number;
   amount: number;
+  payerFee: number;
   startDate: string;
+  endDate: string | null;
+  nextPaymentDate: string | null;
+  interval: number;
+  intervalCount: number;
   [key: string]: any;
 }
 
 export interface EPayTransaction {
   id: string;
-  status: string;
   amount: number;
+  payer: string;
+  emailAddress: string;
+  maskedAccountNumber: string;
   [key: string]: any;
 }
 
@@ -84,6 +96,8 @@ export interface EPayTransactionFees {
 // TOKEN FUNCTIONS
 // =============================================================================
 
+// POST /api/v2/tokens → 201, Location: /tokens/{id}
+// Card fields: creditCardInformation { cardNumber, month (int), year (int 4-digit), cvc, accountHolder, postalCode }
 export async function tokenizeCard(data: {
   cardNumber: string;
   expMonth: string;
@@ -93,8 +107,6 @@ export async function tokenizeCard(data: {
   payer: string;
   emailAddress: string;
 }): Promise<EPayToken> {
-  // ePay v2 uses nested creditCardInformation object
-  // Field names: month (int), year (int), cvc (string), accountHolder (string)
   return epayFetch<EPayToken>("/api/v2/tokens", {
     method: "POST",
     body: JSON.stringify({
@@ -104,6 +116,7 @@ export async function tokenizeCard(data: {
         year: parseInt(data.expYear) >= 100 ? parseInt(data.expYear) : 2000 + (parseInt(data.expYear) || 0),
         cvc: data.cvv,
         accountHolder: data.payer,
+        postalCode: data.zip,
       },
       payer: data.payer,
       emailAddress: data.emailAddress,
@@ -111,24 +124,28 @@ export async function tokenizeCard(data: {
   });
 }
 
+// POST /api/v2/tokens → 201, Location: /tokens/{id}
+// ACH fields: bankAccountInformation { routingNumber, accountNumber, accountType (enum string), accountHolder, firstName, lastName }
+// AccountType values: "PersonalChecking", "PersonalSavings", "CorporateChecking", "CorporateSavings"
 export async function tokenizeACH(data: {
   routingNumber: string;
   accountNumber: string;
   payer: string;
   emailAddress: string;
 }): Promise<EPayToken> {
-  // ePay v2 uses nested bankAccountInformation object
-  // accountType: 1 = Checking, 2 = Savings
+  const firstName = data.payer.split(" ")[0] || data.payer;
+  const lastName = data.payer.split(" ").slice(1).join(" ") || data.payer;
+
   return epayFetch<EPayToken>("/api/v2/tokens", {
     method: "POST",
     body: JSON.stringify({
       bankAccountInformation: {
         routingNumber: data.routingNumber,
         accountNumber: data.accountNumber,
-        accountType: 1, // Checking
+        accountType: "PersonalChecking",
         accountHolder: data.payer,
-        firstName: data.payer.split(" ")[0] || data.payer,
-        lastName: data.payer.split(" ").slice(1).join(" ") || data.payer,
+        firstName,
+        lastName,
       },
       payer: data.payer,
       emailAddress: data.emailAddress,
@@ -140,34 +157,43 @@ export async function tokenizeACH(data: {
 // SCHEDULE FUNCTIONS
 // =============================================================================
 
+// POST /api/v2/paymentSchedules → 201, Location: /paymentSchedules/{id}
+// Required: payer, emailAddress, tokenId, amount, interval, startDate
+// For one-time future payment: interval="Day", intervalCount=0, numberOfTotalPayments=1
 export async function createSchedule(data: {
   tokenId: string;
   amount: number;
-  payerName: string;
-  email?: string;
+  payer: string;
+  emailAddress: string;
   startDate: string; // YYYY-MM-DD
-}): Promise<EPaySchedule> {
-  return epayFetch<EPaySchedule>("/api/v2/paymentSchedules", {
+}): Promise<{ id: string }> {
+  return epayFetch<{ id: string }>("/api/v2/paymentSchedules", {
     method: "POST",
     body: JSON.stringify({
       tokenId: data.tokenId,
       amount: data.amount,
-      payerName: data.payerName,
-      email: data.email || undefined,
+      payer: data.payer,
+      emailAddress: data.emailAddress,
       startDate: data.startDate,
-      interval: 0,
+      interval: "Day",
       intervalCount: 0,
       numberOfTotalPayments: 1,
     }),
   });
 }
 
+// GET /api/v2/paymentSchedules/{id} → 200, JSON body
+// No "status" field. Detect state:
+//   - Executed: numberOfExecutedPayments >= numberOfTotalPayments
+//   - Cancelled: nextPaymentDate === null && numberOfExecutedPayments === 0
+//   - Pending: nextPaymentDate !== null && numberOfExecutedPayments === 0
 export async function getSchedule(id: string): Promise<EPaySchedule> {
   return epayFetch<EPaySchedule>(`/api/v2/paymentSchedules/${encodeURIComponent(id)}`);
 }
 
-export async function cancelSchedule(id: string): Promise<EPaySchedule> {
-  return epayFetch<EPaySchedule>(`/api/v2/paymentSchedules/${encodeURIComponent(id)}/cancel`, {
+// POST /api/v2/paymentSchedules/{id}/cancel → 200, empty body
+export async function cancelSchedule(id: string): Promise<void> {
+  await epayFetch<any>(`/api/v2/paymentSchedules/${encodeURIComponent(id)}/cancel`, {
     method: "POST",
   });
 }
@@ -176,10 +202,13 @@ export async function cancelSchedule(id: string): Promise<EPaySchedule> {
 // TRANSACTION FUNCTIONS
 // =============================================================================
 
+// GET /api/v2/transactions/{id} → 200, JSON body
 export async function getTransaction(id: string): Promise<EPayTransaction> {
   return epayFetch<EPayTransaction>(`/api/v2/transactions/${encodeURIComponent(id)}`);
 }
 
+// GET /api/v2/transactionFees?amount={amount} → 200, JSON body
+// Returns { achPayerFee, creditCardPayerFee }
 export async function getTransactionFees(amount: number): Promise<EPayTransactionFees> {
   return epayFetch<EPayTransactionFees>(
     `/api/v2/transactionFees?amount=${encodeURIComponent(amount)}`

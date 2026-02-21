@@ -133,8 +133,8 @@ export async function POST(request: NextRequest) {
       const schedule = await createSchedule({
         tokenId: epayTokenId,
         amount: totalAmount,
-        payerName: `${body.firstName} ${body.lastName}`,
-        email: body.submitterEmail || undefined,
+        payer: payerName,
+        emailAddress: payerEmail,
         startDate: body.draftDate,
       });
       epayScheduleId = schedule.id;
