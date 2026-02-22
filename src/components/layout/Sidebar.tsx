@@ -43,6 +43,7 @@ import {
   DollarSign,
   CloudLightning,
   TreePine,
+  Activity,
 } from 'lucide-react';
 
 // Map routes to feature permission keys (must match keys in feature-permissions.ts)
@@ -162,6 +163,7 @@ const getSettingsNav = (canAccessAgencySettings: boolean) => {
     items.push({ name: 'Agency Settings', href: '/agency-settings', icon: Building2 });
   }
 
+  items.push({ name: 'Twilio Log', href: '/twilio-logs', icon: Activity });
   items.push({ name: 'My Settings', href: '/my-settings', icon: Settings });
 
   return items;

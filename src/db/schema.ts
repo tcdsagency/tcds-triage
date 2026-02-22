@@ -6248,6 +6248,30 @@ export const deadLetterJobs = pgTable('dead_letter_jobs', {
   index('dead_letter_jobs_failed_at_idx').on(table.failedAt),
 ]);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TWILIO WEBHOOK LOGS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const twilioWebhookLogs = pgTable('twilio_webhook_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  callSid: varchar('call_sid', { length: 64 }).notNull(),
+  callStatus: varchar('call_status', { length: 30 }).notNull(),
+  direction: varchar('direction', { length: 30 }),
+  fromNumber: varchar('from_number', { length: 30 }),
+  toNumber: varchar('to_number', { length: 30 }),
+  callDuration: integer('call_duration'),
+  callerName: varchar('caller_name', { length: 200 }),
+  matchedCallId: uuid('matched_call_id').references(() => calls.id, { onDelete: 'set null' }),
+  processingResult: varchar('processing_result', { length: 30 }).notNull(),
+  errorMessage: text('error_message'),
+  rawPayload: jsonb('raw_payload').notNull(),
+  receivedAt: timestamp('received_at').defaultNow().notNull(),
+}, (table) => [
+  index('twilio_webhook_logs_tenant_received_idx').on(table.tenantId, table.receivedAt),
+  index('twilio_webhook_logs_tenant_callsid_idx').on(table.tenantId, table.callSid),
+]);
+
 // Relations
 export const assistantSessionsRelations = relations(assistantSessions, ({ one, many }) => ({
   tenant: one(tenants, { fields: [assistantSessions.tenantId], references: [tenants.id] }),

@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { calls, users, customers } from "@/db/schema";
+import { calls, users, customers, twilioWebhookLogs } from "@/db/schema";
 import { eq, and, or, ilike, desc } from "drizzle-orm";
 
 // =============================================================================
@@ -96,14 +96,45 @@ interface TwilioStatusPayload {
 }
 
 // =============================================================================
+// Webhook Logging
+// =============================================================================
+
+async function logWebhookEvent(params: {
+  tenantId: string;
+  payload: TwilioStatusPayload;
+  processingResult: string;
+  matchedCallId?: string | null;
+  errorMessage?: string | null;
+}) {
+  try {
+    await db.insert(twilioWebhookLogs).values({
+      tenantId: params.tenantId,
+      callSid: params.payload.CallSid,
+      callStatus: params.payload.CallStatus,
+      direction: params.payload.Direction || null,
+      fromNumber: params.payload.From || null,
+      toNumber: params.payload.To || null,
+      callDuration: params.payload.CallDuration ? parseInt(params.payload.CallDuration, 10) : null,
+      callerName: params.payload.CallerName || null,
+      matchedCallId: params.matchedCallId || null,
+      processingResult: params.processingResult,
+      errorMessage: params.errorMessage || null,
+      rawPayload: params.payload as any,
+    });
+  } catch (err) {
+    console.error("[Twilio Status] Failed to log webhook event:", err);
+  }
+}
+
+// =============================================================================
 // POST Handler
 // =============================================================================
 
 export async function POST(request: NextRequest) {
+  let payload: TwilioStatusPayload | undefined;
   try {
     // Parse body — support both form-urlencoded (direct Twilio) and JSON (Zapier)
     const contentType = request.headers.get("content-type") || "";
-    let payload: TwilioStatusPayload;
 
     if (contentType.includes("application/json")) {
       const body = await request.json();
@@ -140,6 +171,10 @@ export async function POST(request: NextRequest) {
     // (e.g. Voice Intelligence transcription webhooks sent here by mistake)
     if (!payload.CallSid || !payload.From || !payload.CallStatus) {
       console.log(`[Twilio Status] Ignoring non-call-status event (missing CallSid/From/CallStatus)`);
+      const tenantIdForLog = process.env.DEFAULT_TENANT_ID;
+      if (tenantIdForLog) {
+        await logWebhookEvent({ tenantId: tenantIdForLog, payload, processingResult: "ignored", errorMessage: "Missing CallSid/From/CallStatus" });
+      }
       return NextResponse.json({ success: true, ignored: true, reason: "not a call status event" });
     }
 
@@ -208,6 +243,9 @@ export async function POST(request: NextRequest) {
               })
               .where(eq(calls.id, existingCall.id));
             console.log(`[Twilio Status] Updated call ${existingCall.id} to in_progress`);
+            await logWebhookEvent({ tenantId, payload, processingResult: "anchor_updated", matchedCallId: existingCall.id });
+          } else {
+            await logWebhookEvent({ tenantId, payload, processingResult: "anchor_updated", matchedCallId: existingCall.id });
           }
           return NextResponse.json({ success: true, existing: true });
         }
@@ -236,6 +274,7 @@ export async function POST(request: NextRequest) {
           .returning();
 
         console.log(`[Twilio Status] Created call ${newCall.id} for Twilio CallSid=${payload.CallSid}`);
+        await logWebhookEvent({ tenantId, payload, processingResult: "anchor_created", matchedCallId: newCall.id });
 
         // Broadcast to trigger screen pop
         await notifyRealtimeServer({
@@ -293,6 +332,7 @@ export async function POST(request: NextRequest) {
             .where(eq(calls.id, existingCall.id));
 
           console.log(`[Twilio Status] Updated call ${existingCall.id} to ${status}`);
+          await logWebhookEvent({ tenantId, payload, processingResult: "completed", matchedCallId: existingCall.id });
 
           // Broadcast call ended
           await notifyRealtimeServer({
@@ -305,6 +345,7 @@ export async function POST(request: NextRequest) {
           });
         } else {
           console.log(`[Twilio Status] No call found for completed CallSid=${payload.CallSid}`);
+          await logWebhookEvent({ tenantId, payload, processingResult: "ignored", errorMessage: "No matching call record found" });
         }
 
         return NextResponse.json({ success: true });
@@ -312,10 +353,17 @@ export async function POST(request: NextRequest) {
 
       default:
         console.log(`[Twilio Status] Ignoring status: ${payload.CallStatus}`);
+        await logWebhookEvent({ tenantId, payload, processingResult: "ignored", errorMessage: `Unhandled status: ${payload.CallStatus}` });
         return NextResponse.json({ success: true });
     }
   } catch (error) {
     console.error("[Twilio Status] Error:", error);
+    const tenantIdForErr = process.env.DEFAULT_TENANT_ID;
+    if (tenantIdForErr && payload) {
+      try {
+        await logWebhookEvent({ tenantId: tenantIdForErr, payload, processingResult: "error", errorMessage: error instanceof Error ? error.message : "Unknown error" });
+      } catch { /* swallow logging errors */ }
+    }
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Webhook error" },
       { status: 500 }
