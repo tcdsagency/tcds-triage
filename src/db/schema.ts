@@ -4981,6 +4981,7 @@ export const renewalComparisons = pgTable('renewal_comparisons', {
   index('renewal_comparisons_carrier_idx').on(table.tenantId, table.carrierName),
   index('renewal_comparisons_lob_idx').on(table.tenantId, table.lineOfBusiness),
   index('renewal_comparisons_assigned_agent_idx').on(table.tenantId, table.assignedAgentId),
+  index('renewal_comparisons_recommendation_idx').on(table.tenantId, table.recommendation),
   uniqueIndex('renewal_comparisons_dedup_unique').on(table.tenantId, table.policyNumber, table.carrierName, table.renewalEffectiveDate),
 ]);
 
@@ -5350,6 +5351,7 @@ export const renewalBaselines = pgTable('renewal_baselines', {
   index('renewal_baselines_policy_idx').on(table.policyNumber),
   index('renewal_baselines_carrier_idx').on(table.carrierCode),
   index('renewal_baselines_effective_idx').on(table.effectiveDate),
+  index('renewal_baselines_tenant_policy_idx').on(table.tenantId, table.policyNumber, table.effectiveDate),
   uniqueIndex('renewal_baselines_dedup_unique').on(table.tenantId, table.carrierCode, table.policyNumber, table.effectiveDate),
 ]);
 
