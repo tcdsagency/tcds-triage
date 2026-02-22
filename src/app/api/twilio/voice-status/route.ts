@@ -153,14 +153,20 @@ export async function POST(request: NextRequest) {
 
     // Handle based on call status
     switch (payload.CallStatus) {
+      case "initiated":
       case "ringing":
       case "in-progress":
       case "answered": {
-        // Check if call already exists
+        // Check if call already exists by twilioCallSid
         const [existingCall] = await db
           .select({ id: calls.id, status: calls.status })
           .from(calls)
-          .where(eq(calls.externalCallId, payload.CallSid))
+          .where(
+            and(
+              eq(calls.tenantId, tenantId),
+              eq(calls.twilioCallSid, payload.CallSid)
+            )
+          )
           .limit(1);
 
         if (existingCall) {
@@ -187,6 +193,7 @@ export async function POST(request: NextRequest) {
           .values({
             tenantId,
             externalCallId: payload.CallSid,
+            twilioCallSid: payload.CallSid,
             fromNumber: callerPhone,
             toNumber: destinationPhone,
             externalNumber: callDirection === "inbound" ? callerPhone : destinationPhone,
@@ -231,11 +238,16 @@ export async function POST(request: NextRequest) {
       case "no-answer":
       case "canceled":
       case "failed": {
-        // Find and update the call
+        // Find and update the call by twilioCallSid
         const [existingCall] = await db
           .select({ id: calls.id })
           .from(calls)
-          .where(eq(calls.externalCallId, payload.CallSid))
+          .where(
+            and(
+              eq(calls.tenantId, tenantId),
+              eq(calls.twilioCallSid, payload.CallSid)
+            )
+          )
           .limit(1);
 
         if (existingCall) {

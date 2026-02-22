@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { calls, customers, users } from "@/db/schema";
-import { eq, or, ilike, and } from "drizzle-orm";
+import { eq, or, ilike, and, gte, lte, isNotNull, isNull } from "drizzle-orm";
 
 // =============================================================================
 // REALTIME SERVER PUSH
@@ -312,26 +312,79 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 3. Create call record in database
-    const [call] = await db
-      .insert(calls)
-      .values({
-        tenantId,
-        externalCallId: body.callId || body.sessionId,
-        extension: extension || null, // Store extension for call correlation
-        direction: direction as "inbound" | "outbound",
-        directionLive: direction as "inbound" | "outbound",
-        status: "ringing",
-        fromNumber: normalizePhone(callerNumber),
-        toNumber: normalizePhone(calledNumber || extension),
-        customerId: customer?.id,
-        agentId: agent?.id,
-        startedAt: timestamp,
-        transcriptionStatus: "pending", // Will be updated when call is answered
-      })
-      .returning();
+    // 3. Search for Twilio-anchored record before creating a new one
+    //    Match by phone suffix + narrow time window (±30 seconds)
+    const anchorWindowStart = new Date(timestamp.getTime() - 30 * 1000);
+    const anchorWindowEnd = new Date(timestamp.getTime() + 30 * 1000);
+    const customerPhoneDigitsSuffix = customerPhoneDigits.length >= 10 ? customerPhoneDigits.slice(-10) : null;
 
-    console.log(`[Call-Started] Created call session: ${call.id}`);
+    let call!: typeof calls.$inferSelect;
+    let enrichedAnchor = false;
+
+    if (customerPhoneDigitsSuffix) {
+      const phoneSuffix = `%${customerPhoneDigitsSuffix}`;
+      const [anchor] = await db
+        .select()
+        .from(calls)
+        .where(
+          and(
+            eq(calls.tenantId, tenantId),
+            isNotNull(calls.twilioCallSid),
+            isNull(calls.extension), // Not yet enriched by VoIPTools
+            gte(calls.startedAt, anchorWindowStart),
+            lte(calls.startedAt, anchorWindowEnd),
+            or(
+              ilike(calls.fromNumber, phoneSuffix),
+              ilike(calls.toNumber, phoneSuffix),
+            )
+          )
+        )
+        .limit(1);
+
+      if (anchor) {
+        // Enrich the Twilio anchor with VoIPTools data
+        await db
+          .update(calls)
+          .set({
+            extension: extension || null,
+            agentId: agent?.id || anchor.agentId,
+            customerId: customer?.id || anchor.customerId,
+            directionLive: direction as "inbound" | "outbound",
+            externalCallId: body.callId || body.sessionId || anchor.externalCallId,
+            transcriptionStatus: "pending",
+            updatedAt: new Date(),
+          })
+          .where(eq(calls.id, anchor.id));
+
+        call = { ...anchor, extension: extension || null };
+        enrichedAnchor = true;
+        console.log(`[Call-Started] Enriched Twilio anchor ${anchor.id} (twilioCallSid=${anchor.twilioCallSid})`);
+      }
+    }
+
+    if (!enrichedAnchor) {
+      // No anchor found — create new record (existing behavior)
+      const [newCall] = await db
+        .insert(calls)
+        .values({
+          tenantId,
+          externalCallId: body.callId || body.sessionId,
+          extension: extension || null,
+          direction: direction as "inbound" | "outbound",
+          directionLive: direction as "inbound" | "outbound",
+          status: "ringing",
+          fromNumber: normalizePhone(callerNumber),
+          toNumber: normalizePhone(calledNumber || extension),
+          customerId: customer?.id,
+          agentId: agent?.id,
+          startedAt: timestamp,
+          transcriptionStatus: "pending",
+        })
+        .returning();
+
+      call = newCall;
+      console.log(`[Call-Started] Created new call session: ${call.id} (no Twilio anchor)`);
+    }
 
     // 4. Push to realtime server to notify browser (CallProvider)
     await notifyRealtimeServer({

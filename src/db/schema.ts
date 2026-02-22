@@ -970,6 +970,7 @@ export const calls = pgTable('calls', {
   
   // External Reference
   externalCallId: varchar('external_call_id', { length: 100 }), // Twilio/3CX ID
+  twilioCallSid: varchar('twilio_call_sid', { length: 40 }), // Twilio CallSid — canonical anchor
   vmSessionId: varchar('vm_session_id', { length: 100 }), // VM Bridge session ID
   extension: varchar('extension', { length: 10 }), // Agent extension for call correlation
   externalNumber: varchar('external_number', { length: 20 }), // Frozen external party number
@@ -1049,6 +1050,7 @@ export const calls = pgTable('calls', {
   index('calls_from_idx').on(table.tenantId, table.fromNumber),
   index('calls_started_idx').on(table.tenantId, table.startedAt),
   index('calls_extension_idx').on(table.tenantId, table.extension),
+  index('calls_twilio_sid_idx').on(table.tenantId, table.twilioCallSid),
 ]);
 
 // ═══════════════════════════════════════════════════════════════════════════

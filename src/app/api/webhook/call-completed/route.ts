@@ -255,6 +255,26 @@ async function matchCallSession(
   const timeWindowStart = new Date(timestamp.getTime() - 30 * 60 * 1000);
   const timeWindowEnd = new Date(timestamp.getTime() + 30 * 60 * 1000);
 
+  // Strategy 0: If callId looks like a Twilio CallSid (CA + 32 hex chars = 34 chars),
+  // look up directly by twilioCallSid — highest confidence match
+  if (callId.startsWith("CA") && callId.length === 34) {
+    const [byTwilioSid] = await db
+      .select()
+      .from(calls)
+      .where(
+        and(
+          eq(calls.tenantId, tenantId),
+          eq(calls.twilioCallSid, callId)
+        )
+      )
+      .limit(1);
+
+    if (byTwilioSid) {
+      console.log("[Call-Completed] Matched by twilioCallSid:", byTwilioSid.id);
+      return { call: byTwilioSid, method: "callId", confidence: 1.0 };
+    }
+  }
+
   // Try exact callId match first - only check UUID column if callId is valid UUID
   let byCallId = null;
 
@@ -313,7 +333,28 @@ async function matchCallSession(
   }
 
   if (phoneMatchConditions.length > 0) {
-    // First try to find a call WITH an agent assigned (from call-started)
+    // Priority: find a Twilio-anchored call by phone+time (highest confidence fuzzy match)
+    const [byPhoneTwilio] = await db
+      .select()
+      .from(calls)
+      .where(
+        and(
+          eq(calls.tenantId, tenantId),
+          gte(calls.startedAt, timeWindowStart),
+          lte(calls.startedAt, timeWindowEnd),
+          isNotNull(calls.twilioCallSid),
+          or(...phoneMatchConditions)
+        )
+      )
+      .orderBy(desc(calls.startedAt))
+      .limit(1);
+
+    if (byPhoneTwilio) {
+      console.log("[Call-Completed] Matched to Twilio anchor by phone+time:", byPhoneTwilio.id);
+      return { call: byPhoneTwilio, method: "phone_time", confidence: 0.97 };
+    }
+
+    // Then try to find a call WITH an agent assigned (from call-started)
     const [byPhoneWithAgent] = await db
       .select()
       .from(calls)
