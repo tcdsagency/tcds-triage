@@ -7,9 +7,6 @@
  */
 
 import { getHawkSoftHiddenClient } from '@/lib/api/hawksoft-hidden';
-import { db } from '@/db';
-import { customers } from '@/db/schema';
-import { eq } from 'drizzle-orm';
 import type { PremiumVerification } from '@/types/renewal.types';
 
 /**
@@ -34,6 +31,9 @@ function normalizeDate(dateStr: string): string {
  * Returns null if verification is not possible (no UUID, no matching policy,
  * no rate change entry). Returns PremiumVerification with match/mismatch details
  * if the data is available.
+ *
+ * Uses a single getClient call to fetch both UUID and policies (avoids the
+ * double-call that previously triggered account lockouts).
  */
 export async function verifyRenewalPremium(params: {
   policyNumber: string;
@@ -43,9 +43,14 @@ export async function verifyRenewalPremium(params: {
   hawksoftClientCode: string | null;
   customerLastName: string;
 }): Promise<PremiumVerification | null> {
-  const { policyNumber, effectiveDate, al3Premium, customerId, hawksoftClientCode, customerLastName } = params;
+  const { policyNumber, effectiveDate, al3Premium, hawksoftClientCode } = params;
 
   if (!hawksoftClientCode) {
+    return null;
+  }
+
+  const clientNum = parseInt(hawksoftClientCode, 10);
+  if (isNaN(clientNum)) {
     return null;
   }
 
@@ -57,18 +62,7 @@ export async function verifyRenewalPremium(params: {
     return null;
   }
 
-  // 1. Resolve cloud UUID (needed for rate change history endpoint)
-  const uuid = await hiddenClient.resolveCloudUuid(hawksoftClientCode, customerLastName);
-  if (!uuid) {
-    return null;
-  }
-
-  // 2. Get client with policies (uses client number)
-  const clientNum = parseInt(hawksoftClientCode, 10);
-  if (isNaN(clientNum)) {
-    return null;
-  }
-
+  // 1. Single getClient call — returns both UUID (id field) and policies
   let client;
   try {
     client = await hiddenClient.getClient(clientNum);
@@ -77,9 +71,15 @@ export async function verifyRenewalPremium(params: {
     return null;
   }
 
-  if (!client.policies?.length) {
+  if (!client.id || !client.policies?.length) {
     return null;
   }
+
+  // 2. Derive UUID from client id (32-char hex → 8-4-4-4-12 dashed format)
+  const hex = client.id.replace(/-/g, '');
+  const uuid = hex.length === 32
+    ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+    : client.id;
 
   // 3. Find matching policy by number
   const matchingPolicy = client.policies.find(

@@ -101,14 +101,14 @@ interface AuthSession {
 
 const hiddenBreaker = new CircuitBreaker('HawkSoftHidden', 5, 5 * 60_000); // 5min cooldown to let lockout expire
 
-// Rate limiter: 100ms minimum gap between requests
+// Rate limiter: 500ms minimum gap between requests (conservative to avoid account lockout)
 let lastRequestTime = 0;
 
 async function rateLimit(): Promise<void> {
   const now = Date.now();
   const elapsed = now - lastRequestTime;
-  if (elapsed < 100) {
-    await new Promise((resolve) => setTimeout(resolve, 100 - elapsed));
+  if (elapsed < 500) {
+    await new Promise((resolve) => setTimeout(resolve, 500 - elapsed));
   }
   lastRequestTime = Date.now();
 }
@@ -353,15 +353,20 @@ export class HawkSoftHiddenAPI {
 
       clearTimeout(timeoutId);
 
-      // Re-auth on 401 — invalidate session and retry once
+      // Re-auth on 401 — invalidate session and retry once.
+      // No delay here — ensureAuth's authPromise mutex coalesces concurrent
+      // re-auth attempts into a single login call, preventing lockouts.
       if (response.status === 401 && retry401) {
-        console.warn(`[HawkSoft] 401 on ${endpoint}, invalidating session and retrying`);
+        const staleAuthTime = this.session?.authenticatedAt;
         this.session = null;
         try {
           await db.delete(systemCache).where(eq(systemCache.key, HawkSoftHiddenAPI.CACHE_KEY));
         } catch { /* best effort */ }
-        // Small delay before re-auth to avoid rapid-fire login attempts
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        // If another concurrent request already re-authenticated while we
+        // were waiting for our response, ensureAuth will find the fresh
+        // session (via authPromise or DB cache) without hitting login again.
+        console.warn(`[HawkSoft] 401 on ${endpoint}, re-authenticating (stale session from ${staleAuthTime ? new Date(staleAuthTime).toISOString() : 'unknown'})`);
         return this.request<T>(baseUrl, endpoint, options, false);
       }
 
