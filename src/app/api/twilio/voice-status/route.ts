@@ -100,19 +100,37 @@ interface TwilioStatusPayload {
 
 export async function POST(request: NextRequest) {
   try {
-    // Parse form-urlencoded body (Twilio sends this format)
-    const formData = await request.formData();
-    const payload: TwilioStatusPayload = {
-      CallSid: formData.get("CallSid") as string,
-      AccountSid: formData.get("AccountSid") as string,
-      From: formData.get("From") as string,
-      To: formData.get("To") as string,
-      CallStatus: formData.get("CallStatus") as TwilioStatusPayload["CallStatus"],
-      Direction: formData.get("Direction") as TwilioStatusPayload["Direction"],
-      CallerName: formData.get("CallerName") as string || undefined,
-      ForwardedFrom: formData.get("ForwardedFrom") as string || undefined,
-      CallDuration: formData.get("CallDuration") as string || undefined,
-    };
+    // Parse body — support both form-urlencoded (direct Twilio) and JSON (Zapier)
+    const contentType = request.headers.get("content-type") || "";
+    let payload: TwilioStatusPayload;
+
+    if (contentType.includes("application/json")) {
+      const body = await request.json();
+      payload = {
+        CallSid: body.CallSid || body.callSid || body.call_sid,
+        AccountSid: body.AccountSid || body.accountSid || body.account_sid,
+        From: body.From || body.from,
+        To: body.To || body.to,
+        CallStatus: body.CallStatus || body.callStatus || body.call_status,
+        Direction: body.Direction || body.direction,
+        CallerName: body.CallerName || body.callerName || body.caller_name || undefined,
+        ForwardedFrom: body.ForwardedFrom || body.forwardedFrom || body.forwarded_from || undefined,
+        CallDuration: body.CallDuration || body.callDuration || body.call_duration || undefined,
+      };
+    } else {
+      const formData = await request.formData();
+      payload = {
+        CallSid: formData.get("CallSid") as string,
+        AccountSid: formData.get("AccountSid") as string,
+        From: formData.get("From") as string,
+        To: formData.get("To") as string,
+        CallStatus: formData.get("CallStatus") as TwilioStatusPayload["CallStatus"],
+        Direction: formData.get("Direction") as TwilioStatusPayload["Direction"],
+        CallerName: formData.get("CallerName") as string || undefined,
+        ForwardedFrom: formData.get("ForwardedFrom") as string || undefined,
+        CallDuration: formData.get("CallDuration") as string || undefined,
+      };
+    }
 
     console.log(`[Twilio Status] ${payload.CallStatus} - CallSid=${payload.CallSid} From=${payload.From} To=${payload.To}`);
 
