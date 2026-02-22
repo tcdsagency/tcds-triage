@@ -616,6 +616,13 @@ async function createAfterHoursTriageItem(
     urgencyKeywords: parsedData?.urgencyKeywords,
   });
 
+  // Skip service ticket for hangups (caller not on the line)
+  const isHangup = isCallHangup(parsedData?.reason, emailData.subject);
+  if (isHangup) {
+    console.log(`[After-Hours] Hangup detected, skipping service ticket creation`);
+    return triageItem;
+  }
+
   // Auto-create AgencyZoom service ticket (non-blocking, never fails the webhook)
   await createAfterHoursServiceTicket({
     tenantId,
@@ -778,6 +785,15 @@ function buildBasicSummary(
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+function isCallHangup(reason?: string | null, subject?: string | null): boolean {
+  const text = `${reason || ""} ${subject || ""}`.toLowerCase();
+  return (
+    text.includes("caller not on the line") ||
+    text.includes("caller hung up") ||
+    text.includes("caller disconnected")
+  );
+}
 
 function normalizePhone(phone: string | undefined | null): string | null {
   if (!phone) return null;
