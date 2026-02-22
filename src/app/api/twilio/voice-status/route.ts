@@ -136,6 +136,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Twilio Status] ${payload.CallStatus} - CallSid=${payload.CallSid} From=${payload.From} To=${payload.To}`);
 
+    // Guard: reject payloads missing required call status fields
+    // (e.g. Voice Intelligence transcription webhooks sent here by mistake)
+    if (!payload.CallSid || !payload.From || !payload.CallStatus) {
+      console.log(`[Twilio Status] Ignoring non-call-status event (missing CallSid/From/CallStatus)`);
+      return NextResponse.json({ success: true, ignored: true, reason: "not a call status event" });
+    }
+
     const tenantId = process.env.DEFAULT_TENANT_ID;
     if (!tenantId) {
       console.error("[Twilio Status] No DEFAULT_TENANT_ID configured");
