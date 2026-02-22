@@ -25,6 +25,7 @@ import {
 } from "@/lib/api/agencyzoom-service-tickets";
 import { processPendingQuoteTicketLinks } from "@/lib/quote-ticket-linker";
 import { formatInboundCallDescription } from "@/lib/format-ticket-description";
+import { outlookClient } from "@/lib/outlook";
 
 // Retry schedule (flattened — most transcripts arrive within 1-2 minutes)
 const RETRY_DELAYS = [
@@ -558,6 +559,38 @@ async function processJob(job: typeof pendingTranscriptJobs.$inferSelect) {
             attemptCount,
           })
           .where(eq(pendingTranscriptJobs.id, job.id));
+
+        // Send dead letter email notification
+        try {
+          const alertEmail = process.env.TRIAGE_ALERT_EMAIL || process.env.OUTLOOK_SENDER_EMAIL;
+          if (alertEmail && outlookClient.isConfigured()) {
+            const callTime = job.callStartedAt
+              ? new Date(job.callStartedAt).toLocaleString("en-US", { timeZone: "America/Chicago" })
+              : "Unknown";
+            await outlookClient.sendEmail({
+              to: alertEmail,
+              subject: `[TCDS] Transcript failed after ${attemptCount} retries — ${job.callerNumber || "Unknown"}`,
+              body: [
+                `A transcript job exhausted all retries without finding a recording in SQL Server.`,
+                ``,
+                `<b>Job ID:</b> ${job.id}`,
+                `<b>Call ID:</b> ${job.callId || "N/A"}`,
+                `<b>Caller:</b> ${job.callerNumber || "Unknown"}`,
+                `<b>Agent Ext:</b> ${job.agentExtension || "Unknown"}`,
+                `<b>Call Time:</b> ${callTime}`,
+                `<b>Attempts:</b> ${attemptCount}`,
+                ``,
+                `This call has been queued for manual review in the wrapup queue.`,
+                ``,
+                `— TCDS Transcript Worker`,
+              ].join("<br/>"),
+              isHtml: true,
+            });
+            console.log(`[TranscriptWorker] Dead letter email sent for job ${job.id}`);
+          }
+        } catch (emailErr) {
+          console.error(`[TranscriptWorker] Failed to send dead letter email:`, emailErr instanceof Error ? emailErr.message : emailErr);
+        }
 
         // Create wrapup draft for manual review
         if (job.callId) {

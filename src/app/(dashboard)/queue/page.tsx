@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Search,
   RefreshCw,
@@ -108,6 +108,18 @@ function formatDate(isoString: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function getAgingInfo(createdAt: string): { label: string; level: "none" | "warning" | "critical" } {
+  const ageMs = Date.now() - new Date(createdAt).getTime();
+  const ageMinutes = Math.floor(ageMs / 60000);
+  const hours = Math.floor(ageMinutes / 60);
+  const mins = ageMinutes % 60;
+
+  if (ageMinutes < 120) return { label: "", level: "none" };
+  const label = `${hours}h ${mins}m`;
+  if (ageMinutes >= 360) return { label, level: "critical" };
+  return { label, level: "warning" };
 }
 
 function formatPhoneNumber(phone: string | null): string {
@@ -298,6 +310,11 @@ export default function QueuePage() {
 
   const selectedItem = items.find(i => i.id === selectedId);
 
+  const agingCount = useMemo(() => {
+    if (view !== "pending") return 0;
+    return items.filter(i => i.status === "pending_review" && getAgingInfo(i.createdAt).level !== "none").length;
+  }, [items, view]);
+
   // ─── Render ─────────────────────────────────────────────────────
 
   return (
@@ -308,6 +325,9 @@ export default function QueuePage() {
         <StatBadge icon={<CheckCircle2 className="w-4 h-4" />} label="Completed Today" value={stats.completed} color="text-green-600" />
         <StatBadge icon={<XCircle className="w-4 h-4" />} label="Auto-Voided" value={stats.autoVoided} color="text-gray-500" />
         <StatBadge icon={<ClipboardList className="w-4 h-4" />} label="Tickets" value={stats.ticketsCreated} color="text-blue-600" />
+        {agingCount > 0 && (
+          <StatBadge icon={<AlertCircle className="w-4 h-4" />} label="Aging" value={agingCount} color="text-red-600" />
+        )}
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => fetchQueue()}
@@ -565,6 +585,7 @@ function QueueItemRow({ item, isSelected, isChecked, onSelect, onCheck, isPendin
 }) {
   const badge = getActionBadge(item);
   const sentimentDisplay = getSentimentDisplay(item.sentiment, item.sentimentScore);
+  const aging = isPending ? getAgingInfo(item.createdAt) : { label: "", level: "none" as const };
 
   return (
     <div
@@ -607,6 +628,18 @@ function QueueItemRow({ item, isSelected, isChecked, onSelect, onCheck, isPendin
           {item.source === 'twilio_fallback' && (
             <span className="px-1.5 py-0.5 text-[10px] rounded bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
               Forwarded
+            </span>
+          )}
+          {aging.level === "warning" && (
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" title="Aging item">
+              <Clock className="w-3 h-3" />
+              {aging.label}
+            </span>
+          )}
+          {aging.level === "critical" && (
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" title="Stale item — needs attention">
+              <AlertCircle className="w-3 h-3" />
+              {aging.label}
             </span>
           )}
         </div>

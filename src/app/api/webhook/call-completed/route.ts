@@ -30,6 +30,7 @@ import { getServiceRequestTypeId } from "@/lib/constants/agencyzoom";
 import { findRelatedTickets, determineTriageRecommendation } from "@/lib/triage/related-tickets";
 import { createAfterHoursServiceTicket } from "@/lib/api/after-hours-ticket";
 import { formatInboundCallDescription, formatSentimentEmoji } from "@/lib/format-ticket-description";
+import { addToRetryQueue } from "@/lib/api/retry-queue";
 
 // =============================================================================
 // AGENCY MAIN NUMBER
@@ -2445,23 +2446,41 @@ async function processCallCompletedBackground(body: VoIPToolsPayload, startTime:
             }
 
             if (azTargetCustomerId > 0) {
-              const result = await azClient.addNote(azTargetCustomerId, noteText);
-              if (result.success) {
-                await db
-                  .update(wrapupDrafts)
-                  .set({
-                    noteAutoPosted: true,
-                    noteAutoPostedAt: now,
-                    completionAction: "posted",
-                    status: "completed",
-                    completedAt: now,
-                    agencyzoomNoteId: result.id?.toString() || null,
-                  })
-                  .where(eq(wrapupDrafts.id, wrapupForPost.id));
-                const target = azTargetCustomerId === SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER ? "NCM placeholder" : `AZ customer ${azTargetCustomerId}`;
-                console.log(`[Call-Completed] ✅ Auto-posted note to AgencyZoom for wrapup ${wrapupForPost.id} (${target})`);
-              } else {
-                console.warn(`[Call-Completed] ⚠️ AZ note post returned non-success for wrapup ${wrapupForPost.id}`);
+              try {
+                const result = await azClient.addNote(azTargetCustomerId, noteText);
+                if (result.success) {
+                  await db
+                    .update(wrapupDrafts)
+                    .set({
+                      noteAutoPosted: true,
+                      noteAutoPostedAt: now,
+                      completionAction: "posted",
+                      status: "completed",
+                      completedAt: now,
+                      agencyzoomNoteId: result.id?.toString() || null,
+                    })
+                    .where(eq(wrapupDrafts.id, wrapupForPost.id));
+                  const target = azTargetCustomerId === SPECIAL_HOUSEHOLDS.NCM_PLACEHOLDER ? "NCM placeholder" : `AZ customer ${azTargetCustomerId}`;
+                  console.log(`[Call-Completed] ✅ Auto-posted note to AgencyZoom for wrapup ${wrapupForPost.id} (${target})`);
+                } else {
+                  console.warn(`[Call-Completed] ⚠️ AZ note post returned non-success for wrapup ${wrapupForPost.id}, queuing for retry`);
+                  await addToRetryQueue(tenantId, {
+                    operationType: "agencyzoom_note",
+                    targetService: "agencyzoom",
+                    requestPayload: { customerId: azTargetCustomerId, noteText },
+                    wrapupDraftId: wrapupForPost.id,
+                    callId: call.id,
+                  }, "Auto-post returned non-success");
+                }
+              } catch (noteError) {
+                console.error(`[Call-Completed] ⚠️ AZ note post threw for wrapup ${wrapupForPost.id}, queuing for retry:`, noteError instanceof Error ? noteError.message : noteError);
+                await addToRetryQueue(tenantId, {
+                  operationType: "agencyzoom_note",
+                  targetService: "agencyzoom",
+                  requestPayload: { customerId: azTargetCustomerId, noteText },
+                  wrapupDraftId: wrapupForPost.id,
+                  callId: call.id,
+                }, noteError instanceof Error ? noteError.message : "AZ note post failed");
               }
             }
           }
