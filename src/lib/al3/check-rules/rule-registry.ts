@@ -17,16 +17,28 @@ import { autoPremiumRules } from './rules/auto-premium';
 
 /**
  * All rules in one flat array.
- * Core rules only: coverage limits, deductibles, and premium changes.
+ *
+ * Phase roadmap & reserved rule ID ranges:
+ *   Phase 1 (IDENTITY):    H-001–H-009 / A-001–A-009  — reserved
+ *   Phase 2 (DATA QUALITY): H-002–H-009 / A-002–A-009  — reserved (shares range with phase 1)
+ *   Phase 3 (COVERAGE):    H-010–H-029 / A-030–A-039  — ACTIVE
+ *   Phase 4 (PREMIUM):     H-030–H-039 / A-040–A-049  — ACTIVE
+ *   Phase 5 (MATH):        H-040–H-049 / A-050–A-059  — reserved
+ *   Phase 6 (CROSS-FIELD): H-050–H-059 / A-060–A-069  — reserved
+ *   Phase 7 (PROPERTY):    H-060–H-069 / A-070–A-079  — reserved
  */
 export const ALL_RULES: CheckRuleDefinition[] = [
-  // Home rules: H-010–H-015 (coverage limits), H-020–H-023 (deductibles), H-030 (premium)
+  // Phase 3 — Home: H-010–H-015 (coverage limits), H-020–H-023 (deductibles)
   ...homeCoverageRules,
   ...homeDeductibleRules,
+
+  // Phase 4 — Home: H-030 (premium)
   ...homePremiumRules,
 
-  // Auto rules: A-030–A-038 (coverages/deductibles), A-040 (premium)
+  // Phase 3 — Auto: A-030–A-038 (coverages/deductibles)
   ...autoCoverageRules,
+
+  // Phase 4 — Auto: A-040 (premium)
   ...autoPremiumRules,
 ];
 

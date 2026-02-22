@@ -4,12 +4,24 @@
  * Post-processing layer that runs core check rules against
  * renewal/baseline snapshots and the existing comparison result.
  *
- * Active phases (core rules only):
- *   Phase 3: COVERAGE — Limits and deductibles
- *   Phase 4: THRESHOLD — Premium change severity classification
+ * Phase pipeline (7 phases, 2 blocking gates):
  *
- * Phases 1, 2, 5, 6, 7 are empty (rules removed).
- * Blocking gates are no-ops with no rules in phases 1 and 5.
+ *   Phase 1 (IDENTITY):     Reserved — policy identity validation
+ *                            (insured name match, policy number format)
+ *   ── Gate 1: halt if identity can't be verified (wrong policy matched) ──
+ *   Phase 2 (DATA QUALITY): Reserved — data completeness checks
+ *                            (missing coverages, parse confidence)
+ *   Phase 3 (COVERAGE):     ACTIVE — coverage limit and deductible change detection
+ *                            (H-010–H-015, H-020–H-023, A-030–A-038)
+ *   Phase 4 (PREMIUM):      ACTIVE — premium change severity classification
+ *                            (H-030, A-040)
+ *   Phase 5 (MATH):         Reserved — premium math verification
+ *                            (sum of parts vs total)
+ *   ── Gate 2: halt if premium math fails (likely bad parse) ──
+ *   Phase 6 (CROSS-FIELD):  Reserved — cross-field validation
+ *                            (coverage ratios, replacement cost drift)
+ *   Phase 7 (PROPERTY):     Reserved — property-specific concerns
+ *                            (roof age, ACV vs RCV)
  */
 
 import type {
@@ -138,7 +150,13 @@ export function runCheckEngine(
 
 /**
  * Check if a specific phase produced any critical blocking results.
- * Currently no blocking rules exist (phases 1 and 5 are empty).
+ *
+ * Phase 1 gate: would halt pipeline if identity can't be verified
+ *   (wrong policy matched to renewal — all downstream checks meaningless)
+ * Phase 5 gate: would halt pipeline if premium math fails
+ *   (sum of coverage premiums != total — likely bad parse, cross-field checks unreliable)
+ *
+ * Currently no blocking rules exist (phases 1 and 5 are empty/reserved).
  */
 const PHASE_BLOCKING_RULES: Record<number, Set<string>> = {};
 

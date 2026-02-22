@@ -15,8 +15,9 @@ import type {
   CanonicalClaim,
   CanonicalMortgagee,
 } from '@/types/renewal.types';
-import { COVERAGE_CODE_MAP, DISCOUNT_COVERAGE_TYPES, VEHICLE_LEVEL_COVERAGE_TYPES } from './constants';
+import { COVERAGE_CODE_MAP } from './constants';
 import { parseSplitLimit } from './parser';
+import { classifyCoverages, resolvePremium } from './coverage-utils';
 
 /**
  * Normalize a carrier-specific coverage code to a canonical type.
@@ -166,20 +167,7 @@ export function buildRenewalSnapshot(
   }
 
   // Partition discount-type coverages into discounts array
-  const realCoverages: CanonicalCoverage[] = [];
-  const discountCoverages: CanonicalDiscount[] = [];
-  for (const cov of coverages) {
-    if (DISCOUNT_COVERAGE_TYPES.has(cov.type)) {
-      discountCoverages.push({
-        code: cov.type,
-        description: cov.description || cov.type,
-        amount: cov.premium,
-      });
-    } else {
-      realCoverages.push(cov);
-    }
-  }
-  // Replace coverages with only real coverages
+  const { coverages: realCoverages, discounts: discountCoverages } = classifyCoverages(coverages);
   coverages.length = 0;
   coverages.push(...realCoverages);
 
@@ -204,22 +192,8 @@ export function buildRenewalSnapshot(
     }
   }
 
-  // Calculate total premium
-  // PRIMARY: Use 5BPI record premium (authoritative policy-level)
-  // FALLBACK: Sum coverage premiums if 5BPI not available
-  let totalPremium: number | undefined = transaction.totalPremium;
-
-  if (!totalPremium) {
-    // Fallback: sum from coverage-level premiums.
-    // Vehicle coverages are already flattened into the policy-level coverages array above,
-    // so we only need to sum from coverages (not vehicles) to avoid double-counting.
-    const allCoveragePremiums = coverages
-      .filter((c) => c.premium != null)
-      .map((c) => c.premium!);
-    if (allCoveragePremiums.length > 0) {
-      totalPremium = allCoveragePremiums.reduce((sum, p) => sum + p, 0);
-    }
-  }
+  // Calculate total premium: 5BPI authoritative → sum coverages → undefined
+  const totalPremium = resolvePremium(coverages, transaction.totalPremium);
 
   // Map structured endorsement records to canonical format
   const endorsements: CanonicalEndorsement[] = transaction.endorsementRecords.map((e) => ({

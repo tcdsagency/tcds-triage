@@ -13,13 +13,13 @@ import type {
   CanonicalCoverage,
   CanonicalVehicle,
   CanonicalDriver,
-  CanonicalDiscount,
   CanonicalClaim,
   CanonicalMortgagee,
   PropertyContext,
 } from '@/types/renewal.types';
-import { COVERAGE_CODE_MAP, DISCOUNT_COVERAGE_TYPES } from './constants';
+import { COVERAGE_CODE_MAP } from './constants';
 import { parseSplitLimit } from './parser';
+import { classifyCoverages, resolvePremium } from './coverage-utils';
 import { getHawkSoftClient } from '@/lib/api/hawksoft';
 import { getHawkSoftHiddenClient } from '@/lib/api/hawksoft-hidden';
 
@@ -282,28 +282,8 @@ function reconstructFromPriorTerm(
   claims?: CanonicalClaim[]
 ): BaselineSnapshot {
   const coverages = normalizeHawkSoftCoverages(priorTerm.coverages);
-
-  const realCoverages: CanonicalCoverage[] = [];
-  const discountCoverages: CanonicalDiscount[] = [];
-  for (const cov of coverages) {
-    if (DISCOUNT_COVERAGE_TYPES.has(cov.type)) {
-      discountCoverages.push({
-        code: cov.type,
-        description: cov.description || cov.type,
-        amount: cov.premium,
-      });
-    } else {
-      realCoverages.push(cov);
-    }
-  }
-
-  // Calculate premium from coverages, fall back to stored premium
-  let calculatedPremium: number | undefined;
-  const allCoveragePremiums = realCoverages.filter(c => c.premium != null).map(c => c.premium!);
-  if (allCoveragePremiums.length > 0) {
-    calculatedPremium = allCoveragePremiums.reduce((sum, p) => sum + p, 0);
-  }
-  const premium = calculatedPremium ?? (priorTerm.premium ? parseFloat(priorTerm.premium) : undefined);
+  const { coverages: realCoverages, discounts: discountCoverages } = classifyCoverages(coverages);
+  const premium = resolvePremium(realCoverages, null, priorTerm.premium ? parseFloat(priorTerm.premium) : null);
 
   // Reconstruct vehicles (preserve their coverages from prior term)
   const priorVehicles: CanonicalVehicle[] = (priorTerm.vehicles || []).map((v: any) => ({
@@ -484,21 +464,8 @@ export async function buildBaselineSnapshot(
       return null;
     }
 
-    // Partition coverages vs discounts
-    const realCoverages: CanonicalCoverage[] = [];
-    const discountCoverages: CanonicalDiscount[] = [];
-    for (const cov of hsData.coverages) {
-      if (DISCOUNT_COVERAGE_TYPES.has(cov.type)) {
-        discountCoverages.push({ code: cov.type, description: cov.description || cov.type, amount: cov.premium });
-      } else {
-        realCoverages.push(cov);
-      }
-    }
-
-    const allCoveragePremiums = realCoverages.filter(c => c.premium != null).map(c => c.premium!);
-    const apiPremium = allCoveragePremiums.length > 0
-      ? allCoveragePremiums.reduce((sum, p) => sum + p, 0)
-      : undefined;
+    const { coverages: realCoverages, discounts: discountCoverages } = classifyCoverages(hsData.coverages);
+    const apiPremium = resolvePremium(realCoverages);
 
     const snapshot: BaselineSnapshot = {
       premium: apiPremium,
@@ -553,31 +520,10 @@ export async function buildBaselineSnapshot(
 
   // Partition discount-type coverages into discounts array
   const allCoverages = localCoverages.length > 0 ? localCoverages : hsCoverages;
-  const realCoverages: CanonicalCoverage[] = [];
-  const discountCoverages: CanonicalDiscount[] = [];
-  for (const cov of allCoverages) {
-    if (DISCOUNT_COVERAGE_TYPES.has(cov.type)) {
-      discountCoverages.push({
-        code: cov.type,
-        description: cov.description || cov.type,
-        amount: cov.premium,
-      });
-    } else {
-      realCoverages.push(cov);
-    }
-  }
+  const { coverages: realCoverages, discounts: discountCoverages } = classifyCoverages(allCoverages);
 
-  // Calculate premium from coverage premiums (more reliable than stored policy.premium
-  // which may get overwritten when HawkSoft syncs new term data)
-  let calculatedPremium: number | undefined;
-  const allCoveragePremiums = realCoverages
-    .filter(c => c.premium != null)
-    .map(c => c.premium!);
-  if (allCoveragePremiums.length > 0) {
-    calculatedPremium = allCoveragePremiums.reduce((sum, p) => sum + p, 0);
-  }
-  // Fall back to stored policy premium if no coverage premiums
-  const baselinePremium = calculatedPremium ?? (policy.premium ? parseFloat(policy.premium) : undefined);
+  // Calculate premium: sum coverages first, fall back to stored policy.premium
+  const baselinePremium = resolvePremium(realCoverages, null, policy.premium ? parseFloat(policy.premium) : null);
 
   // Build snapshot — use HawkSoft API data if local was empty
   const finalVehicles = policyVehicles.length > 0 ? normalizeHawkSoftVehicles(policyVehicles) : hsVehicles;
