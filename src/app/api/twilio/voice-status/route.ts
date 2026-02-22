@@ -42,7 +42,8 @@ async function notifyRealtimeServer(event: Record<string, unknown>) {
 // Phone Normalization
 // =============================================================================
 
-function normalizePhone(phone: string): string {
+function normalizePhone(phone: string | undefined | null): string {
+  if (!phone) return "";
   return phone.replace(/\D/g, "").slice(-10);
 }
 
@@ -106,13 +107,14 @@ export async function POST(request: NextRequest) {
 
     if (contentType.includes("application/json")) {
       const body = await request.json();
+      console.log("[Twilio Status] Raw JSON body:", JSON.stringify(body, null, 2));
       payload = {
-        CallSid: body.CallSid || body.callSid || body.call_sid,
-        AccountSid: body.AccountSid || body.accountSid || body.account_sid,
-        From: body.From || body.from,
-        To: body.To || body.to,
-        CallStatus: body.CallStatus || body.callStatus || body.call_status,
-        Direction: body.Direction || body.direction,
+        CallSid: body.CallSid || body.callSid || body.call_sid || "",
+        AccountSid: body.AccountSid || body.accountSid || body.account_sid || "",
+        From: body.From || body.from || body.caller || body.fromNumber || body.from_number || "",
+        To: body.To || body.to || body.called || body.toNumber || body.to_number || "",
+        CallStatus: body.CallStatus || body.callStatus || body.call_status || "initiated",
+        Direction: body.Direction || body.direction || "inbound",
         CallerName: body.CallerName || body.callerName || body.caller_name || undefined,
         ForwardedFrom: body.ForwardedFrom || body.forwardedFrom || body.forwarded_from || undefined,
         CallDuration: body.CallDuration || body.callDuration || body.call_duration || undefined,
